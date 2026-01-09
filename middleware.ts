@@ -16,8 +16,7 @@ function isPublicAsset(pathname: string) {
     return true;
   }
 
-  // Any file with an extension (e.g., .png, .jpg, .svg, .css, .js, .woff2)
-  // Useful for assets referenced by /login even when the rest is gated.
+  // Any file with an extension (images, fonts, css, js, etc.)
   if (/\.[a-zA-Z0-9]+$/.test(pathname)) return true;
 
   return false;
