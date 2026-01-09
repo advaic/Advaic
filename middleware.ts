@@ -2,16 +2,57 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
 
+function isPublicAsset(pathname: string) {
+  // Next internals
+  if (pathname.startsWith("/_next")) return true;
+
+  // Common public files
+  if (
+    pathname === "/favicon.ico" ||
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml" ||
+    pathname === "/site.webmanifest"
+  ) {
+    return true;
+  }
+
+  // Any file with an extension (e.g., .png, .jpg, .svg, .css, .js, .woff2)
+  // Useful for assets referenced by /login even when the rest is gated.
+  if (/\.[a-zA-Z0-9]+$/.test(pathname)) return true;
+
+  return false;
+}
+
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
+  const { pathname, search } = req.nextUrl;
 
-  const pathname = req.nextUrl.pathname;
-
-  // Allow non-dashboard routes (matcher already limits to /app/*, but keep it safe)
-  if (!pathname.startsWith("/app")) {
+  // ✅ Always allow static assets and Next internals
+  if (isPublicAsset(pathname)) {
     return res;
   }
 
+  // ✅ Always allow the login page
+  if (pathname === "/login") {
+    return res;
+  }
+
+  // ✅ Allow Gmail OAuth routes (otherwise Gmail connect breaks)
+  if (pathname.startsWith("/api/auth/gmail")) {
+    return res;
+  }
+
+  // ✅ Allow Gmail push endpoint (Pub/Sub must reach it without a user session)
+  if (pathname.startsWith("/api/gmail/push")) {
+    return res;
+  }
+
+  // (Optional) allow simple health checks if you add them later
+  if (pathname.startsWith("/api/health")) {
+    return res;
+  }
+
+  // ---- Auth check ----
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -39,7 +80,7 @@ export async function middleware(req: NextRequest) {
     const redirectUrl = req.nextUrl.clone();
     redirectUrl.pathname = "/login";
 
-    const nextPath = pathname + (req.nextUrl.search || "");
+    const nextPath = pathname + (search || "");
     redirectUrl.searchParams.set("next", nextPath);
 
     return NextResponse.redirect(redirectUrl);
@@ -49,5 +90,6 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/app/:path*"],
+  // 🔒 Protect everything by default; we allow-list specific public paths above.
+  matcher: ["/:path*"],
 };

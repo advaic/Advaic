@@ -8,7 +8,9 @@ import { useSearchParams } from "next/navigation";
 export default function LoginPage() {
   const supabase = useSupabaseClient<Database>();
   const searchParams = useSearchParams();
-  const nextUrl = searchParams.get("next") || "/app/startseite";
+  const rawNext = searchParams.get("next");
+  // Prevent open-redirects: only allow internal relative paths.
+  const nextUrl = rawNext && rawNext.startsWith("/") ? rawNext : "/app/startseite";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -79,14 +81,25 @@ export default function LoginPage() {
           {loading ? "Einloggen..." : "Einloggen"}
         </button>
 
-        {/* Secondary button */}
+        {/* Secondary action */}
         <button
           type="button"
-          onClick={() => (window.location.href = "/")}
+          onClick={() => window.location.assign(nextUrl)}
           className="w-full mt-4 px-4 py-2 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-100"
         >
-          ← Zurück zur Startseite
+          Weiter zum Ziel
         </button>
+
+        <p className="mt-4 text-xs text-gray-500 text-center">
+          Probleme beim Login? Schreib uns an{" "}
+          <a
+            className="underline hover:text-gray-700"
+            href="mailto:support@advaic.com"
+          >
+            support@advaic.com
+          </a>
+          .
+        </p>
       </form>
     </div>
   );
