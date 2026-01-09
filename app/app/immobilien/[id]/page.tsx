@@ -2,15 +2,17 @@ import { supabase } from "@/lib/supabaseClient";
 import { notFound } from "next/navigation";
 import PropertyDetailClient from "@/components/PropertyDetailClient";
 
-export default async function PropertyDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+type PageProps = {
+  params: Promise<{ id: string }>;
+};
+
+export default async function PropertyDetailPage({ params }: PageProps) {
+  const { id } = await params;
+
   const { data: property, error: propertyError } = await supabase
     .from("properties")
     .select("*")
-    .eq("id", params.id)
+    .eq("id", id)
     .single();
 
   if (propertyError) {
@@ -22,7 +24,7 @@ export default async function PropertyDetailPage({
   const { data: images } = await supabase
     .from("property_images")
     .select("*")
-    .eq("property_id", params.id)
+    .eq("property_id", id)
     .order("created_at", { ascending: true });
 
   return (
