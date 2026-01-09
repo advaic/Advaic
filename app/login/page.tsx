@@ -8,9 +8,11 @@ import { useSearchParams } from "next/navigation";
 export default function LoginPage() {
   const supabase = useSupabaseClient<Database>();
   const searchParams = useSearchParams();
-  const rawNext = searchParams.get("next");
   // Prevent open-redirects: only allow internal relative paths.
-  const nextUrl = rawNext && rawNext.startsWith("/") ? rawNext : "/app/startseite";
+  // Also avoid redirect loops back to /login.
+  const rawNext = searchParams.get("next");
+  const nextUrl =
+    rawNext && rawNext.startsWith("/") && rawNext !== "/login" ? rawNext : "/";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -79,15 +81,6 @@ export default function LoginPage() {
           className="w-full px-4 py-2 text-white bg-black rounded hover:bg-gray-800 disabled:opacity-50"
         >
           {loading ? "Einloggen..." : "Einloggen"}
-        </button>
-
-        {/* Secondary action */}
-        <button
-          type="button"
-          onClick={() => window.location.assign(nextUrl)}
-          className="w-full mt-4 px-4 py-2 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-100"
-        >
-          Weiter zum Ziel
         </button>
 
         <p className="mt-4 text-xs text-gray-500 text-center">
