@@ -1,0 +1,10 @@
+@import "keen-slider/keen-slider.min.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Optional: custom global styles */
+body {
+  @apply bg-white text-gray-900;
+  font-family: "Inter", sans-serif;
+}
