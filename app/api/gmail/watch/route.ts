@@ -34,14 +34,15 @@ export async function POST() {
 
     // 1) Load Gmail connection row for this user
     const { data: conn, error: connErr } = await supabase
-      .from("gmail_connections")
+      .from("email_connections")
       .select("*")
-      .eq("user_id", user.id)
+      .eq("agent_id", user.id)
+      .eq("provider", "gmail")
       .single();
 
     if (connErr || !conn) {
       return NextResponse.json(
-        { error: "No Gmail connection found" },
+        { error: "No Gmail connection found. Please connect Gmail first." },
         { status: 400 }
       );
     }
@@ -73,18 +74,26 @@ export async function POST() {
     });
 
     const historyId = watchRes.data.historyId ?? null;
-    const expiration = watchRes.data.expiration ?? null;
+
+    const expirationMs = watchRes.data.expiration
+      ? Number(watchRes.data.expiration)
+      : null;
+
+    const expirationIso = expirationMs
+      ? new Date(expirationMs).toISOString()
+      : null;
 
     // 4) Persist watch state
     const { error: upErr } = await supabase
-      .from("gmail_connections")
+      .from("email_connections")
       .update({
         last_history_id: historyId,
-        watch_expiration: expiration,
+        watch_expiration: expirationIso,
         watch_active: true,
-        updated_at: new Date().toISOString(),
+        status: "watching",
       })
-      .eq("user_id", user.id);
+      .eq("agent_id", user.id)
+      .eq("provider", "gmail");
 
     if (upErr) {
       return NextResponse.json(
@@ -96,7 +105,7 @@ export async function POST() {
     return NextResponse.json({
       ok: true,
       historyId,
-      expiration,
+      expiration: expirationIso,
       topicName,
     });
   } catch (e: any) {
