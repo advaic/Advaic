@@ -286,8 +286,10 @@ export async function POST(req: Request) {
             {
               lead_id: leadId,
               agent_id: conn.agent_id,
-              sender: from,
-              text: snippet,
+              // `messages.sender` has a CHECK constraint in your schema (allowed values: 'agent' | 'user' | 'assistant').
+              // For inbound Gmail messages we store sender as 'user'.
+              sender: "user",
+              text: from ? `From: ${from}\n\n${snippet}` : snippet,
               timestamp: timestampIso,
 
               gpt_score: null,
