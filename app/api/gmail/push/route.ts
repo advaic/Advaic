@@ -279,6 +279,25 @@ export async function POST(req: Request) {
           leadId = newLead.id;
         }
 
+        // Determine sender: agent if message is from the connected Gmail account, else user
+        const isFromAgent =
+          from.toLowerCase().includes(emailAddress.toLowerCase());
+
+        const sender = isFromAgent ? "agent" : "user";
+
+        // If this is an outgoing message and it already exists, skip early
+        if (sender === "agent") {
+          const { data: existingMsg } = await supabase
+            .from("messages")
+            .select("id")
+            .eq("gmail_message_id", gmailMessageId)
+            .maybeSingle();
+
+          if (existingMsg) {
+            continue;
+          }
+        }
+
         // 6b) Upsert message (dedupe via gmail_message_id)
         const { error: msgUpsertErr } = await supabase
           .from("messages")
@@ -286,10 +305,9 @@ export async function POST(req: Request) {
             {
               lead_id: leadId,
               agent_id: conn.agent_id,
-              // `messages.sender` has a CHECK constraint in your schema (allowed values: 'agent' | 'user' | 'assistant').
-              // For inbound Gmail messages we store sender as 'user'.
-              sender: "user",
-              text: from ? `From: ${from}\n\n${snippet}` : snippet,
+              // Determine sender: agent if message is from the connected Gmail account, else user
+              sender,
+              text: snippet,
               timestamp: timestampIso,
 
               gpt_score: null,

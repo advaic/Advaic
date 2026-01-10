@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
 
   const { lead_id, gmail_thread_id, to, subject, text } = body || {};
 
-  if (!lead_id || !gmail_thread_id || !to || !subject || !text) {
+  if (!lead_id || !to || !subject || !text) {
     return NextResponse.json(
       { error: "Missing required fields" },
       { status: 400 }
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     .select("refresh_token, email_address")
     .eq("agent_id", user.id)
     .eq("provider", "gmail")
-    .eq("status", "connected")
+    .in("status", ["connected", "active"])
     .single();
 
   type GmailConnection = {
@@ -105,15 +105,21 @@ export async function POST(req: NextRequest) {
     .replace(/\//g, "_")
     .replace(/=+$/, "");
 
-  // 5️⃣ Send email via Gmail API
+  // 5️⃣ Send email via Gmail API (capture Gmail message id/thread id)
+  let sentMessageId: string | null = null;
+  let sentThreadId: string | null = gmail_thread_id ?? null;
+
   try {
-    await gmail.users.messages.send({
+    const sendRes = await gmail.users.messages.send({
       userId: "me",
       requestBody: {
         raw: encodedMessage,
-        threadId: gmail_thread_id,
+        ...(gmail_thread_id ? { threadId: gmail_thread_id } : {}),
       },
     });
+
+    sentMessageId = sendRes.data.id ?? null;
+    sentThreadId = sendRes.data.threadId ?? sentThreadId;
   } catch (e: any) {
     console.error("[gmail/send] Gmail API error:", e?.message || e);
     return NextResponse.json(
@@ -122,20 +128,41 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 6️⃣ Persist message in Supabase
-  const { error: msgErr } = await (
-    supabaseAdmin.from("messages") as any
-  ).insert({
+  // 6️⃣ Persist message in Supabase (dedupe via gmail_message_id when available)
+  const baseRow: Record<string, any> = {
     lead_id,
     sender: "agent",
     text,
-    gmail_thread_id,
-  });
+    gmail_thread_id: sentThreadId,
+  };
+
+  if (sentMessageId) baseRow.gmail_message_id = sentMessageId;
+
+  let msgErr: any = null;
+
+  if (sentMessageId) {
+    // Prefer upsert to prevent duplicates with Gmail Push ingestion
+    const { error } = await (supabaseAdmin.from("messages") as any).upsert(
+      baseRow,
+      { onConflict: "gmail_message_id" }
+    );
+    msgErr = error;
+
+    // If the column/constraint isn't there yet, fall back to insert
+    if (msgErr) {
+      console.error("[gmail/send] DB upsert failed (falling back to insert):", msgErr.message);
+      const { error: fallbackErr } = await (supabaseAdmin.from("messages") as any).insert(baseRow);
+      msgErr = fallbackErr;
+    }
+  } else {
+    const { error } = await (supabaseAdmin.from("messages") as any).insert(baseRow);
+    msgErr = error;
+  }
 
   if (msgErr) {
-    console.error("[gmail/send] DB insert failed:", msgErr.message);
+    console.error("[gmail/send] DB write failed:", msgErr.message);
     // Email was sent — don’t fail the request
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, gmail_message_id: sentMessageId, gmail_thread_id: sentThreadId });
 }
