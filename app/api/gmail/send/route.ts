@@ -137,6 +137,5 @@ export async function POST(req: NextRequest) {
     // Email was sent — don’t fail the request
   }
 
-
   return NextResponse.json({ ok: true });
 }
