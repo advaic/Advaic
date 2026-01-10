@@ -163,7 +163,7 @@ export async function POST(req: Request) {
       return ok200();
     }
 
-    const startHistoryId = String(prevHistoryId);
+    const startHistoryId = String(prevHistoryId);   
 
     let historyRes;
     try {
@@ -184,15 +184,141 @@ export async function POST(req: Request) {
     const history = historyRes.data.history || [];
     console.log("📚 Gmail history items", { count: history.length });
 
-    // --- 6) TODO: Insert into messages (this may fail if lead_id mapping isn’t solved yet) ---
-    // For now, we just log message ids so we know ingestion works.
-    const messageIds: string[] = [];
+    // --- 6) Insert/update Leads + Messages using Gmail threadId mapping ---
+    // Assumes you added:
+    // - leads.gmail_thread_id + unique index (agent_id, gmail_thread_id)
+    // - messages.gmail_message_id (unique) + messages.gmail_thread_id
+
+    const insertedMessageIds: string[] = [];
+
     for (const h of history) {
-      for (const m of h.messages || []) {
-        if (m.id) messageIds.push(m.id);
+      const msgs = h.messages || [];
+
+      for (const m of msgs) {
+        if (!m.id) continue;
+
+        // Fetch message metadata so we get threadId + snippet + headers
+        let msgRes;
+        try {
+          msgRes = await gmail.users.messages.get({
+            userId: "me",
+            id: m.id,
+            format: "metadata",
+            metadataHeaders: ["From", "To", "Subject", "Date"],
+          });
+        } catch (e: any) {
+          console.error("❌ Gmail Push: gmail.messages.get failed", {
+            gmailMessageId: m.id,
+            err: e?.message || String(e),
+          });
+          continue;
+        }
+
+        const gmailMessageId = msgRes.data.id;
+        const threadId = msgRes.data.threadId;
+        if (!gmailMessageId || !threadId) continue;
+
+        const headers = msgRes.data.payload?.headers || [];
+        const from =
+          headers.find((x) => x.name?.toLowerCase() === "from")?.value || "";
+
+        const snippet = msgRes.data.snippet || "";
+        const internalDateMs = msgRes.data.internalDate
+          ? Number(msgRes.data.internalDate)
+          : Date.now();
+        const timestampIso = new Date(internalDateMs).toISOString();
+
+        // 6a) Find or create Lead for (agent_id, gmail_thread_id)
+        let leadId: string | null = null;
+
+        const { data: existingLead, error: leadSelErr } = await supabase
+          .from("leads")
+          .select("id")
+          .eq("agent_id", conn.agent_id)
+          .eq("gmail_thread_id", threadId)
+          .maybeSingle();
+
+        if (leadSelErr) {
+          console.error("❌ Gmail Push: lead select failed", leadSelErr.message);
+          continue;
+        }
+
+        if (existingLead?.id) {
+          leadId = existingLead.id;
+
+          // keep last_message_at current
+          const { error: leadUpdErr } = await supabase
+            .from("leads")
+            .update({ last_message_at: timestampIso } as any)
+            .eq("id", leadId);
+
+          if (leadUpdErr) {
+            console.error(
+              "⚠️ Gmail Push: failed updating lead last_message_at",
+              leadUpdErr.message
+            );
+          }
+        } else {
+          // Minimal insert; if your leads table has other NOT NULL cols without defaults,
+          // this insert will fail and we need to adjust accordingly.
+          const { data: newLead, error: leadInsErr } = await supabase
+            .from("leads")
+            .insert({
+              agent_id: conn.agent_id,
+              gmail_thread_id: threadId,
+              last_message_at: timestampIso,
+            } as any)
+            .select("id")
+            .single();
+
+          if (leadInsErr) {
+            console.error("❌ Gmail Push: lead insert failed", leadInsErr.message);
+            continue;
+          }
+
+          leadId = newLead.id;
+        }
+
+        // 6b) Upsert message (dedupe via gmail_message_id)
+        const { error: msgUpsertErr } = await supabase
+          .from("messages")
+          .upsert(
+            {
+              lead_id: leadId,
+              agent_id: conn.agent_id,
+              sender: from,
+              text: snippet,
+              timestamp: timestampIso,
+
+              gpt_score: null,
+              was_followup: false,
+              visible_to_agent: true,
+              approval_required: false,
+
+              snippet,
+              history_id: String(h.id || historyId),
+              email_address: emailAddress,
+              status: "new",
+
+              gmail_message_id: gmailMessageId,
+              gmail_thread_id: threadId,
+            } as any,
+            { onConflict: "gmail_message_id" }
+          );
+
+        if (msgUpsertErr) {
+          console.error("❌ Gmail Push: message upsert failed", msgUpsertErr.message);
+          continue;
+        }
+
+        insertedMessageIds.push(gmailMessageId);
       }
     }
-    console.log("📨 New Gmail message IDs", messageIds.slice(0, 20));
+
+    console.log("✅ Inserted/Upserted Gmail messages", {
+      count: insertedMessageIds.length,
+      sample: insertedMessageIds.slice(0, 20),
+    });
 
     // --- 7) Update connection last_history_id so next push uses correct startHistoryId ---
     const { error: updErr } = await supabase
