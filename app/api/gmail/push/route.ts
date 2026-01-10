@@ -134,9 +134,36 @@ export async function POST(req: Request) {
     const gmail = google.gmail({ version: "v1", auth: oauth2 });
 
     // IMPORTANT:
-    // For history.list you should use the *previous* stored history id, not the new one.
-    // Otherwise you often get empty history.
-    const startHistoryId = conn.last_history_id || historyId;
+    // Gmail push sends the *latest* historyId. To fetch changes, we must diff from the
+    // previously stored last_history_id. If we don't have a baseline yet, we store the
+    // current historyId and exit — the next push will produce a real diff.
+    const prevHistoryId = conn.last_history_id;
+
+    if (!prevHistoryId) {
+      const { error: baselineErr } = await supabase
+        .from("email_connections")
+        .update({
+          last_history_id: String(historyId),
+          status: "active",
+        })
+        .eq("id", conn.id);
+
+      if (baselineErr) {
+        console.error(
+          "⚠️ Gmail Push: failed setting baseline last_history_id",
+          baselineErr.message
+        );
+      }
+
+      console.log("🧷 Set baseline last_history_id (no diff on first push)", {
+        emailAddress,
+        historyId,
+      });
+
+      return ok200();
+    }
+
+    const startHistoryId = String(prevHistoryId);
 
     let historyRes;
     try {
