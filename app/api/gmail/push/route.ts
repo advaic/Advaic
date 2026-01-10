@@ -21,12 +21,9 @@ function supabaseAdmin() {
   });
 }
 
-function ok204(extra?: any) {
-  // Pub/Sub only cares about 2xx. 204 is perfect.
-  return new NextResponse(extra ? JSON.stringify(extra) : null, {
-    status: 204,
-    headers: { "content-type": "application/json" },
-  });
+function ok204() {
+  // 204 must not include a response body
+  return new NextResponse(null, { status: 204 });
 }
 
 export async function POST(req: Request) {
@@ -44,7 +41,7 @@ export async function POST(req: Request) {
     const token = getBearerToken(req);
     if (!token) {
       console.error("❌ Gmail Push: Missing Authorization Bearer token");
-      return ok204({ ok: false, reason: "missing_bearer" });
+      return ok204();
     }
 
     // If you left "Audience" empty in Pub/Sub, Google sets aud = endpoint URL.
@@ -61,7 +58,7 @@ export async function POST(req: Request) {
         expectedAud,
         err: e?.message || String(e),
       });
-      return ok204({ ok: false, reason: "jwt_verify_failed" });
+      return ok204();
     }
 
     // --- 2) Read Pub/Sub envelope ---
@@ -70,7 +67,7 @@ export async function POST(req: Request) {
       body = await req.json();
     } catch (e: any) {
       console.error("❌ Gmail Push: req.json() failed", e?.message || e);
-      return ok204({ ok: false, reason: "invalid_json" });
+      return ok204();
     }
 
     const messageDataB64 = body?.message?.data;
@@ -78,7 +75,7 @@ export async function POST(req: Request) {
       console.error("❌ Gmail Push: No body.message.data", {
         bodyKeys: Object.keys(body || {}),
       });
-      return ok204({ ok: false, reason: "missing_message_data" });
+      return ok204();
     }
 
     // --- 3) Decode Gmail push payload ---
@@ -91,7 +88,7 @@ export async function POST(req: Request) {
         "❌ Gmail Push: Failed to decode/parse data",
         e?.message || e
       );
-      return ok204({ ok: false, reason: "decode_parse_failed" });
+      return ok204();
     }
 
     const emailAddress = data?.emailAddress;
@@ -99,7 +96,7 @@ export async function POST(req: Request) {
 
     if (!emailAddress || !historyId) {
       console.error("❌ Gmail Push: Missing emailAddress/historyId", { data });
-      return ok204({ ok: false, reason: "missing_email_or_history" });
+      return ok204();
     }
 
     console.log("✅ Gmail Push payload", { emailAddress, historyId });
@@ -118,7 +115,7 @@ export async function POST(req: Request) {
         emailAddress,
         connErr: connErr?.message,
       });
-      return ok204({ ok: false, reason: "connection_not_found" });
+      return ok204();
     }
 
     // --- 5) Gmail API client with refresh token ---
@@ -153,7 +150,7 @@ export async function POST(req: Request) {
         startHistoryId,
         err: e?.message || String(e),
       });
-      return ok204({ ok: false, reason: "gmail_history_failed" });
+      return ok204();
     }
 
     const history = historyRes.data.history || [];
@@ -190,10 +187,10 @@ export async function POST(req: Request) {
     });
 
     // Always 204 to stop Pub/Sub retries
-    return ok204({ ok: true });
+    return ok204();
   } catch (err: any) {
     console.error("💥 Gmail Push: Unhandled error", err?.message || err);
     // Still return 204 so Pub/Sub stops hammering you
-    return ok204({ ok: false, reason: "unhandled" });
+    return ok204();
   }
 }
