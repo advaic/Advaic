@@ -1,85 +1,112 @@
 import { NextResponse } from "next/server";
 import { OAuth2Client } from "google-auth-library";
-import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
-import { cookies } from "next/headers";
 
-// Setup Google OAuth2 Client
-const oauth2Client = new OAuth2Client();
+export const runtime = "nodejs";
 
-// Get the Bearer token from the request headers
+const oidcClient = new OAuth2Client();
+
 function getBearerToken(req: Request) {
   const auth = req.headers.get("authorization") || "";
   const match = auth.match(/^Bearer (.+)$/i);
   return match ? match[1] : null;
 }
 
-export const runtime = "nodejs";
+function supabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
 
-async function supabaseServer() {
-  const cookieStore = await cookies();
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-      },
-    }
-  );
+function ok204(extra?: any) {
+  // Pub/Sub only cares about 2xx. 204 is perfect.
+  return new NextResponse(extra ? JSON.stringify(extra) : null, {
+    status: 204,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 export async function POST(req: Request) {
-  try {
-    // 1. Verify the Pub/Sub JWT token from the header
-    const token = getBearerToken(req);
-    if (!token) {
-      return NextResponse.json(
-        { error: "Missing Bearer token" },
-        { status: 401 }
-      );
-    }
+  const startedAt = Date.now();
 
-    const ticket = await oauth2Client.verifyIdToken({
-      idToken: token,
-      audience: process.env.GMAIL_PUBSUB_PUSH_AUDIENCE, // Should match what we set in Pub/Sub Subscription
+  try {
+    const host = req.headers.get("host");
+    console.log("📩 Gmail Push HIT", {
+      url: req.url,
+      host,
+      at: new Date().toISOString(),
     });
 
-    const payload = ticket.getPayload();
-    if (!payload) {
-      return NextResponse.json(
-        { error: "Invalid JWT payload" },
-        { status: 401 }
-      );
+    // --- 1) Verify Pub/Sub push JWT (OIDC) ---
+    const token = getBearerToken(req);
+    if (!token) {
+      console.error("❌ Gmail Push: Missing Authorization Bearer token");
+      return ok204({ ok: false, reason: "missing_bearer" });
     }
 
-    // 2. Parse the Pub/Sub message (base64-decoded)
-    const body = await req.json();
+    // If you left "Audience" empty in Pub/Sub, Google sets aud = endpoint URL.
+    // So we verify against req.url by default.
+    const expectedAud = process.env.GMAIL_PUBSUB_PUSH_AUDIENCE || req.url;
+
+    try {
+      await oidcClient.verifyIdToken({
+        idToken: token,
+        audience: expectedAud,
+      });
+    } catch (e: any) {
+      console.error("❌ Gmail Push: JWT verify failed", {
+        expectedAud,
+        err: e?.message || String(e),
+      });
+      return ok204({ ok: false, reason: "jwt_verify_failed" });
+    }
+
+    // --- 2) Read Pub/Sub envelope ---
+    let body: any;
+    try {
+      body = await req.json();
+    } catch (e: any) {
+      console.error("❌ Gmail Push: req.json() failed", e?.message || e);
+      return ok204({ ok: false, reason: "invalid_json" });
+    }
+
     const messageDataB64 = body?.message?.data;
     if (!messageDataB64) {
-      return NextResponse.json(
-        { error: "No message data in request" },
-        { status: 400 }
-      );
+      console.error("❌ Gmail Push: No body.message.data", {
+        bodyKeys: Object.keys(body || {}),
+      });
+      return ok204({ ok: false, reason: "missing_message_data" });
     }
 
-    const decodedData = Buffer.from(messageDataB64, "base64").toString("utf8");
-    const data = JSON.parse(decodedData);
+    // --- 3) Decode Gmail push payload ---
+    let data: any;
+    try {
+      const decoded = Buffer.from(messageDataB64, "base64").toString("utf8");
+      data = JSON.parse(decoded);
+    } catch (e: any) {
+      console.error(
+        "❌ Gmail Push: Failed to decode/parse data",
+        e?.message || e
+      );
+      return ok204({ ok: false, reason: "decode_parse_failed" });
+    }
 
     const emailAddress = data?.emailAddress;
     const historyId = data?.historyId;
 
     if (!emailAddress || !historyId) {
-      return NextResponse.json(
-        { error: "Missing emailAddress or historyId" },
-        { status: 400 }
-      );
+      console.error("❌ Gmail Push: Missing emailAddress/historyId", { data });
+      return ok204({ ok: false, reason: "missing_email_or_history" });
     }
 
-    // 3. Fetch the user's email connection details from Supabase
-    const supabase = await supabaseServer();
+    console.log("✅ Gmail Push payload", { emailAddress, historyId });
+
+    // --- 4) Fetch connection from Supabase (service role, bypass RLS) ---
+    const supabase = supabaseAdmin();
+
     const { data: conn, error: connErr } = await supabase
       .from("email_connections")
       .select("*")
@@ -87,12 +114,14 @@ export async function POST(req: Request) {
       .single();
 
     if (connErr || !conn) {
-      return NextResponse.json(
-        { error: "User Gmail connection not found" },
-        { status: 400 }
-      );
+      console.error("❌ Gmail Push: email_connections not found", {
+        emailAddress,
+        connErr: connErr?.message,
+      });
+      return ok204({ ok: false, reason: "connection_not_found" });
     }
 
+    // --- 5) Gmail API client with refresh token ---
     const oauth2 = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID!,
       process.env.GOOGLE_CLIENT_SECRET!,
@@ -106,52 +135,65 @@ export async function POST(req: Request) {
 
     const gmail = google.gmail({ version: "v1", auth: oauth2 });
 
-    // Fetch the history from Gmail using the historyId
-    const historyRes = await gmail.users.history.list({
-      userId: "me",
-      startHistoryId: historyId,
-      historyTypes: ["messageAdded", "messageModified"],
-    });
+    // IMPORTANT:
+    // For history.list you should use the *previous* stored history id, not the new one.
+    // Otherwise you often get empty history.
+    const startHistoryId = conn.last_history_id || historyId;
 
-    // Process each message from the history
-    const newMessages = historyRes.data.history || [];
-    for (const history of newMessages) {
-      const messages = history.messages || [];
-      for (const message of messages) {
-        const msg = await gmail.users.messages.get({
-          userId: "me",
-          id: message.id!,
-        });
-
-        // Insert the message into Supabase
-        await supabase.from("messages").upsert({
-          lead_id: conn.agent_id,
-          sender: msg.data.payload.headers?.find((h) => h.name === "From")
-            ?.value,
-          text: msg.data.snippet,
-          timestamp: new Date(msg.data.internalDate),
-          gpt_score: "", // Add GPT score logic if needed
-          was_followup: false, // Set based on your application logic
-          visible_to_agent: true, // You can update this based on your needs
-          approval_required: false, // Set this based on your needs
-          agent_id: conn.agent_id,
-          snippet: msg.data.snippet,
-          history_id: historyId,
-          email_address: emailAddress,
-          status: "new", // You can add logic to determine status
-        });
-
-        console.log(`Inserted new message with ID: ${msg.data.id}`);
-      }
+    let historyRes;
+    try {
+      historyRes = await gmail.users.history.list({
+        userId: "me",
+        startHistoryId: String(startHistoryId),
+        historyTypes: ["messageAdded"],
+      });
+    } catch (e: any) {
+      console.error("❌ Gmail Push: gmail.history.list failed", {
+        emailAddress,
+        startHistoryId,
+        err: e?.message || String(e),
+      });
+      return ok204({ ok: false, reason: "gmail_history_failed" });
     }
 
-    // Respond with success
-    return NextResponse.json({ ok: true });
-  } catch (error) {
-    console.error("Gmail Push error:", error);
-    return NextResponse.json(
-      { error: "Failed to process push" },
-      { status: 500 }
-    );
+    const history = historyRes.data.history || [];
+    console.log("📚 Gmail history items", { count: history.length });
+
+    // --- 6) TODO: Insert into messages (this may fail if lead_id mapping isn’t solved yet) ---
+    // For now, we just log message ids so we know ingestion works.
+    const messageIds: string[] = [];
+    for (const h of history) {
+      for (const m of h.messages || []) {
+        if (m.id) messageIds.push(m.id);
+      }
+    }
+    console.log("📨 New Gmail message IDs", messageIds.slice(0, 20));
+
+    // --- 7) Update connection last_history_id so next push uses correct startHistoryId ---
+    const { error: updErr } = await supabase
+      .from("email_connections")
+      .update({
+        last_history_id: String(historyId),
+        status: "active",
+      })
+      .eq("id", conn.id);
+
+    if (updErr) {
+      console.error(
+        "⚠️ Gmail Push: failed updating email_connections",
+        updErr.message
+      );
+    }
+
+    console.log("✅ Gmail Push done", {
+      ms: Date.now() - startedAt,
+    });
+
+    // Always 204 to stop Pub/Sub retries
+    return ok204({ ok: true });
+  } catch (err: any) {
+    console.error("💥 Gmail Push: Unhandled error", err?.message || err);
+    // Still return 204 so Pub/Sub stops hammering you
+    return ok204({ ok: false, reason: "unhandled" });
   }
 }
