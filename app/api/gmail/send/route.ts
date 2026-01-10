@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     .select("refresh_token, email_address")
     .eq("agent_id", user.id)
     .eq("provider", "gmail")
-    .eq("status", "active")
+    .eq("status", "connected")
     .single();
 
   type GmailConnection = {
