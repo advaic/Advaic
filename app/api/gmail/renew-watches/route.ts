@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
 
@@ -12,13 +12,21 @@ function supabaseAdmin() {
   );
 }
 
-export async function POST(req: Request) {
-  // Simple bearer protection so nobody can trigger this publicly
-  const auth = req.headers.get("authorization") || "";
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+function isAuthorized(req: Request) {
+  const expected = process.env.CRON_SECRET;
+  if (!expected) return false;
 
+  const auth = req.headers.get("authorization") || "";
+  const bearerOk = auth === `Bearer ${expected}`;
+
+  const url = new URL(req.url);
+  const secret = url.searchParams.get("secret") || "";
+  const queryOk = secret === expected;
+
+  return bearerOk || queryOk;
+}
+
+async function runRenewWatches() {
   const supabase = supabaseAdmin();
 
   const { data: conns, error } = await supabase
@@ -28,7 +36,8 @@ export async function POST(req: Request) {
     .eq("status", "active");
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Let the handler wrap this into a 500
+    throw new Error(error.message);
   }
 
   const now = Date.now();
@@ -60,13 +69,21 @@ export async function POST(req: Request) {
 
       const gmail = google.gmail({ version: "v1", auth: oauth2 });
 
-      const topicName = `projects/${process.env.GCP_PROJECT_NUMBER}/topics/${process.env.GMAIL_PUBSUB_TOPIC_ID}`;
+      const projectNumber = process.env.GCP_PROJECT_NUMBER;
+      const topicId = process.env.GMAIL_PUBSUB_TOPIC_ID;
+      if (!projectNumber || !topicId) {
+        throw new Error(
+          "Missing env vars: GCP_PROJECT_NUMBER or GMAIL_PUBSUB_TOPIC_ID"
+        );
+      }
+
+      const topicName = `projects/${projectNumber}/topics/${topicId}`;
 
       const watchRes = await gmail.users.watch({
         userId: "me",
         requestBody: {
           topicName,
-          labelIds: ["INBOX"], // optional: limit to inbox
+          labelIds: ["INBOX"],
         },
       });
 
@@ -76,7 +93,9 @@ export async function POST(req: Request) {
       await supabase
         .from("email_connections")
         .update({
-          last_history_id: newHistoryId ? String(newHistoryId) : conn.last_history_id,
+          last_history_id: newHistoryId
+            ? String(newHistoryId)
+            : conn.last_history_id,
           watch_expiration: expiration ? String(expiration) : conn.watch_expiration,
           status: "active",
         })
@@ -84,10 +103,31 @@ export async function POST(req: Request) {
 
       renewed++;
     } catch (e) {
-      console.error("Renew watch failed for", conn.email_address, e);
+      console.error("Renew watch failed for", conn?.email_address, e);
       failed++;
     }
   }
 
-  return NextResponse.json({ ok: true, renewed, skipped, failed });
+  return { ok: true, renewed, skipped, failed };
+}
+
+export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const result = await runRenewWatches();
+    return NextResponse.json(result);
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "Failed to renew watches" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(req: NextRequest) {
+  // Vercel Cron commonly calls GET. We support both GET and POST.
+  return POST(req);
 }

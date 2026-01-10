@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { google } from "googleapis";
 
 function safeDecodeURIComponent(value: string) {
   try {
@@ -156,6 +157,93 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       throw new Error(`DB upsert failed: ${error.message}`);
+    }
+
+    // --- Start Gmail watch immediately on connect (so push works without manual steps) ---
+    const projectNumber = process.env.GCP_PROJECT_NUMBER;
+    const topicId = process.env.GMAIL_PUBSUB_TOPIC_ID;
+    if (!projectNumber || !topicId) {
+      throw new Error("Missing env vars: GCP_PROJECT_NUMBER or GMAIL_PUBSUB_TOPIC_ID");
+    }
+
+    // Fetch the persisted connection to get the final refresh_token (Google may omit it on re-connect)
+    type EmailConnMinimal = { id: number; refresh_token: string | null };
+
+    const connRes = await supabaseAdmin
+      .from("email_connections")
+      .select("id, refresh_token")
+      .eq("agent_id", user.id)
+      .eq("provider", "gmail")
+      .maybeSingle();
+
+    const persistedConn = connRes.data as EmailConnMinimal | null;
+    const connFetchErr = connRes.error;
+
+    if (connFetchErr || !persistedConn) {
+      throw new Error(
+        `Failed to load persisted email connection: ${connFetchErr?.message || "unknown"}`
+      );
+    }
+
+    const refreshToken =
+      (tokens.refresh_token ?? undefined) ||
+      (persistedConn.refresh_token ?? undefined);
+
+    if (!refreshToken) {
+      // Without a refresh token we cannot reliably renew watch or access Gmail long-term.
+      // This usually means Google did not return it because the user previously consented.
+      throw new Error(
+        "Missing refresh_token. Please disconnect/reconnect Gmail with consent (prompt=consent)."
+      );
+    }
+
+    const oauth2 = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID!,
+      process.env.GOOGLE_CLIENT_SECRET!,
+      new URL("/api/auth/gmail/callback", process.env.NEXT_PUBLIC_SITE_URL).toString()
+    );
+
+    oauth2.setCredentials({
+      refresh_token: refreshToken,
+      access_token: tokens.access_token,
+    });
+
+    const gmail = google.gmail({ version: "v1", auth: oauth2 });
+
+    const topicName = `projects/${projectNumber}/topics/${topicId}`;
+
+    let watchRes;
+    try {
+      watchRes = await gmail.users.watch({
+        userId: "me",
+        requestBody: {
+          topicName,
+          labelIds: ["INBOX"],
+        },
+      });
+    } catch (e: any) {
+      console.error("[gmail/callback] users.watch failed:", e?.message || e);
+      throw new Error(`Gmail watch failed: ${e?.message || String(e)}`);
+    }
+
+    const newHistoryId = watchRes.data.historyId;
+    const expiration = watchRes.data.expiration; // string ms timestamp
+
+    const watchUpdatePayload: Record<string, any> = {
+      last_history_id: newHistoryId ? String(newHistoryId) : null,
+      watch_expiration: expiration ? String(expiration) : null,
+      status: "active",
+      // ensure refresh_token is persisted even if Google omitted it this time
+      refresh_token: refreshToken,
+    };
+
+    const { error: watchUpdErr } = await (supabaseAdmin
+      .from("email_connections") as any)
+      .update(watchUpdatePayload)
+      .eq("id", persistedConn.id);
+
+    if (watchUpdErr) {
+      throw new Error(`Failed to persist watch state: ${watchUpdErr.message}`);
     }
 
     // Notify Make (optional)
