@@ -1,7 +1,7 @@
 export interface Message {
   id: string;
   lead_id: string;
-  sender: "assistant" | "user";
+  sender: "assistant" | "user" | "agent";
   text: string;
   timestamp: string;
   gpt_score?: number | null;

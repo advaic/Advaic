@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Lead } from "@/types/lead";
 import type { Message } from "@/types/message";
@@ -8,7 +8,6 @@ import type { Database, Json } from "@/types/supabase";
 import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import LeadDocumentList from "./LeadDocumentList";
 import LeadKeyInfoCard from "./LeadKeyInfoCard";
-import { sendMessageToMake } from "@/lib/sendMessageToMake";
 
 interface Document {
   id: string;
@@ -39,6 +38,7 @@ export default function LeadChatView({
   const [isEscalated, setIsEscalated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -55,7 +55,7 @@ export default function LeadChatView({
         .eq("lead_id", leadId)
         .order("timestamp", { ascending: true });
 
-      const { data: documentData, error: documentError } = await supabase
+      const { data: documentData } = await supabase
         .from("documents")
         .select("*")
         .eq("lead_id", leadId)
@@ -93,6 +93,7 @@ export default function LeadChatView({
         }
       )
       .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
     };
@@ -105,44 +106,42 @@ export default function LeadChatView({
   const handleSend = async () => {
     if (!newMessage.trim() || sending) return;
 
+    if (!lead?.email) {
+      setSendError("Kein Empfänger gefunden (E-Mail fehlt beim Interessenten).");
+      return;
+    }
+
     setSending(true);
+    setSendError(null);
 
     const newMessageText = newMessage.trim();
-    // Ensure all required fields are present when creating the new message
-    const newMsg = {
-      lead_id: leadId,
-      sender: "assistant",
-      text: newMessageText,
-      timestamp: new Date().toISOString(),
-      gpt_score: "", // default empty string, or null if preferred
-      was_followup: false,
-      visible_to_agent: true,
-      approval_required: false,
-    };
+    const subject = `Re: ${lead.type ?? "Anfrage"}`;
 
-    const { data, error } = await supabase
-      .from("messages")
-      .insert(newMsg)
-      .select()
-      .single();
-
-    if (!error && data) {
-      setMessages((prev) => [...prev, data]);
-      setNewMessage("");
-
-      // Send full object with all required fields to sendMessageToMake
-      const message = data;
-      await sendMessageToMake({
-        id: message.id,
-        text: message.text,
-        leadId: message.lead_id,
-        sender: message.sender,
-        timestamp: message.timestamp,
-        gpt_score: message.gpt_score ?? "",
-        was_followup: message.was_followup ?? false,
-        visible_to_agent: message.visible_to_agent ?? true,
-        approval_required: message.approval_required ?? false,
+    try {
+      const res = await fetch("/api/gmail/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: leadId,
+          gmail_thread_id: (lead as any).gmail_thread_id ?? null,
+          to: lead.email,
+          subject,
+          text: newMessageText,
+        }),
       });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setSendError(data?.error || "Senden fehlgeschlagen.");
+        setSending(false);
+        return;
+      }
+
+      setNewMessage("");
+    } catch (err) {
+      console.error("Failed to send via /api/gmail/send", err);
+      setSendError("Senden fehlgeschlagen (Netzwerkfehler).");
     }
 
     setSending(false);
@@ -171,31 +170,15 @@ export default function LeadChatView({
 
   return (
     <div className="flex h-[calc(100vh-80px)]">
-      {/* Chat Section */}
       <main className="flex-1 flex flex-col p-6 max-w-4xl mx-auto">
-        {/* Header */}
         <div className="mb-4">
           <h1 className="text-2xl font-bold mb-1">{lead.name}</h1>
           <p className="text-sm text-muted-foreground">E-Mail: {lead.email}</p>
           <p className="text-sm text-muted-foreground">
             Kategorie: {lead.type} · Priorität: {lead.priority}
           </p>
-          {/* Removed Bonitätsprofil block from here as per instructions */}
-          {/* {lead.key_info && (
-            <div className="space-y-1 text-sm">
-              <p><strong>Name:</strong> {lead.key_info.name}</p>
-              <p><strong>Geburtsdatum:</strong> {lead.key_info.birthdate}</p>
-              <p><strong>Nettoeinkommen:</strong> {lead.key_info.income_net}</p>
-              <p><strong>Arbeitgeber:</strong> {lead.key_info.employer}</p>
-              <p><strong>Schufa-Score:</strong> {lead.key_info.schufa_score}</p>
-              <p><strong>Negative Einträge:</strong> {lead.key_info.negatives}</p>
-              <p><strong>Vertragsart:</strong> {lead.key_info.contract_type}</p>
-              <p><strong>Beschäftigt seit:</strong> {lead.key_info.start_date}</p>
-            </div>
-          )} */}
         </div>
 
-        {/* Chat Bubbles */}
         <div className="flex-1 overflow-y-auto space-y-6 bg-muted p-4 rounded-md shadow-inner">
           {Object.entries(groupedMessages).map(([date, msgs]) => (
             <div key={date}>
@@ -203,7 +186,9 @@ export default function LeadChatView({
                 {date}
               </div>
               {msgs.map((msg) => {
-                const isAgent = msg.sender === "assistant";
+                const sender = msg.sender as unknown as string;
+                const isAgent = sender === "assistant" || sender === "agent";
+
                 return (
                   <div
                     key={msg.id}
@@ -249,7 +234,7 @@ export default function LeadChatView({
                           return (
                             <ReactMarkdown
                               components={{
-                                p: ({ node, ...props }) => (
+                                p: ({ ...props }) => (
                                   <p
                                     className="prose prose-sm prose-invert"
                                     {...props}
@@ -281,7 +266,10 @@ export default function LeadChatView({
           <div ref={bottomRef} />
         </div>
 
-        {/* Input Field */}
+        {sendError && (
+          <div className="mt-3 text-sm text-red-600">{sendError}</div>
+        )}
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -304,25 +292,10 @@ export default function LeadChatView({
             Senden
           </button>
         </form>
-
-        {/* Removed LeadKeyInfoCard from chat area as per instructions */}
-
-        {/* Removed duplicate Bonitätsprofil block from here as per instructions */}
       </main>
 
-      {/* Sidebar */}
       <aside className="w-[300px] border-l border-gray-200 p-6 bg-white shadow-inner hidden md:block">
         <h2 className="text-xl font-semibold mb-4">Interessenten-Profil</h2>
-
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-muted-foreground mb-1">
-            Zusammenfassung
-          </h3>
-          <p className="text-sm text-gray-700">
-            {lead.name} hat Interesse an einer Immobilie und führt aktiv eine
-            Konversation.
-          </p>
-        </div>
 
         <div className="space-y-2 text-sm text-gray-800">
           <p>
@@ -347,7 +320,6 @@ export default function LeadChatView({
         </div>
 
         <LeadKeyInfoCard leadId={leadId} />
-
         <LeadDocumentList leadId={leadId} />
 
         <div className="mt-6 space-y-3">
