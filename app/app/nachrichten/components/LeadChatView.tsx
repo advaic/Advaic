@@ -541,10 +541,7 @@ export default function LeadChatView({
     );
   }
 
-  const groupedMessages = useMemo(
-    () => groupMessagesByDate(),
-    [filteredMessages]
-  );
+  const groupedMessages = groupMessagesByDate();
   const hasMessages = filteredMessages.length > 0;
 
   return (
