@@ -18,11 +18,7 @@ import {
   Wand2,
   X,
 } from "lucide-react";
-import {
-  sendFollowUpNow,
-  snoozeFollowUp,
-  suggestFollowUpText,
-} from "@/app/actions/followups";
+import { snoozeFollowUp, suggestFollowUpText } from "@/app/actions/followups";
 
 /** View-Zeile aus `leads_with_metrics` */
 type LeadMetrics = {
@@ -72,8 +68,20 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   /** pro Lead: Editor auf/zu */
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  /** pro Lead: busy-state */
+  /** pro Lead: busy-state (suggest/snooze/send) */
   const [busy, setBusy] = useState<Record<string, boolean>>({});
+
+  /** pro Lead: pending send state */
+  const [sendPending, setSendPending] = useState<Record<string, boolean>>({});
+
+  /** pro Lead: last send error (shown in card) */
+  const [sendError, setSendError] = useState<Record<string, string | null>>({});
+
+  const setSendPendingFor = (id: string, v: boolean) =>
+    setSendPending((p) => ({ ...p, [id]: v }));
+
+  const setSendErrorFor = (id: string, msg: string | null) =>
+    setSendError((p) => ({ ...p, [id]: msg }));
 
   const buildDefaultText = (lead: Pick<LeadMetrics, "name">) =>
     `${
@@ -234,39 +242,119 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
   };
 
   const onSend = async (lead: LeadMetrics) => {
+    // prevent double send
+    if (sendPending[lead.id]) return;
+
+    const leadId = lead.id;
+    const text = (drafts[leadId] || "").trim() || buildDefaultText(lead);
+
+    if (!lead.email) {
+      toast.error("Kein Empfänger gefunden (E-Mail fehlt beim Interessenten). ");
+      return;
+    }
+
+    // optimistic UI
+    const localSentId = `local-${leadId}-${Date.now()}`;
+    setSendPendingFor(leadId, true);
+    setSendErrorFor(leadId, null);
+
+    // Keep a snapshot for rollback
+    const removedLeadSnapshot = lead;
+
+    // Remove from due/soon immediately
+    setMetrics((prev) => prev.filter((x) => x.id !== leadId));
+
+    // Close editor + remove draft locally (keeps UI clean)
+    setExpanded((prev) => ({ ...prev, [leadId]: false }));
+
+    // Add to sent immediately (visual)
+    setSent((prev) => [
+      {
+        id: localSentId,
+        lead_id: leadId,
+        text,
+        timestamp: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+    setSentLeadMap((prev) => ({
+      ...prev,
+      [leadId]: { id: leadId, name: lead.name, email: lead.email },
+    }));
+
     try {
-      setBusyFor(lead.id, true);
-      const text = (drafts[lead.id] || "").trim() || buildDefaultText(lead);
-      await sendFollowUpNow(lead.id, text);
+      setBusyFor(leadId, true);
+
+      // Load gmail_thread_id from leads (view doesn't include it)
+      const { data: leadRow, error: leadErr } = await supabase
+        .from("leads")
+        .select("id, gmail_thread_id, type")
+        .eq("id", leadId)
+        .single();
+
+      if (leadErr || !leadRow) {
+        throw new Error("Konnte Interessent nicht laden.");
+      }
+
+      const subject = `Re: ${leadRow.type ?? "Anfrage"}`;
+
+      const res = await fetch("/api/gmail/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: leadId,
+          gmail_thread_id: (leadRow as any).gmail_thread_id ?? null,
+          to: lead.email,
+          subject,
+          text,
+          was_followup: true,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Senden fehlgeschlagen.");
+      }
+
       toast.success("Follow-up gesendet.");
 
-      // Entferne aus „fällig/bald“ (der Lead ist dealt-with)
-      setMetrics((prev) => prev.filter((x) => x.id !== lead.id));
-      setExpanded((prev) => ({ ...prev, [lead.id]: false }));
+      // Optionally: replace local sent row id with real gmail_message_id (keeps list consistent)
+      if (data?.gmail_message_id) {
+        setSent((prev) =>
+          prev.map((m) =>
+            m.id === localSentId
+              ? { ...m, id: data.gmail_message_id }
+              : m
+          )
+        );
+      }
+
+      // Remove draft now that it succeeded
       setDrafts((prev) => {
-        const { [lead.id]: _, ...rest } = prev;
+        const { [leadId]: _, ...rest } = prev;
         return rest;
       });
 
-      // Optional: sofort in „Gesendet“ puffern (rein optisch)
-      setSent((prev) => [
-        {
-          id: `local-${lead.id}-${Date.now()}`,
-          lead_id: lead.id,
-          text,
-          timestamp: new Date().toISOString(),
-        },
-        ...prev,
-      ]);
-      setSentLeadMap((prev) => ({
-        ...prev,
-        [lead.id]: { id: lead.id, name: lead.name, email: lead.email },
-      }));
+      setSendErrorFor(leadId, null);
     } catch (e: any) {
       console.error(e);
-      toast.error(e?.message ?? "Senden fehlgeschlagen.");
+      const msg = e?.message ?? "Senden fehlgeschlagen.";
+      toast.error(msg);
+      setSendErrorFor(leadId, msg);
+
+      // rollback: put lead back into metrics list (top)
+      setMetrics((prev) => {
+        const exists = prev.some((x) => x.id === removedLeadSnapshot.id);
+        if (exists) return prev;
+        return [removedLeadSnapshot, ...prev];
+      });
+
+      // rollback: remove optimistic sent entry
+      setSent((prev) => prev.filter((m) => m.id !== localSentId));
     } finally {
-      setBusyFor(lead.id, false);
+      setBusyFor(leadId, false);
+      setSendPendingFor(leadId, false);
     }
   };
 
@@ -422,6 +510,8 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
           drafts={drafts}
           expanded={expanded}
           busy={busy}
+          sendPending={sendPending}
+          sendError={sendError}
           onToggleEditor={onToggleEditor}
           onDraftChange={onDraftChange}
           onSend={onSend}
@@ -436,6 +526,8 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
           drafts={drafts}
           expanded={expanded}
           busy={busy}
+          sendPending={sendPending}
+          sendError={sendError}
           onToggleEditor={onToggleEditor}
           onDraftChange={onDraftChange}
           onSend={onSend}
@@ -462,6 +554,8 @@ function SectionDue({
   drafts,
   expanded,
   busy,
+  sendPending,
+  sendError,
   onToggleEditor,
   onDraftChange,
   onSend,
@@ -473,6 +567,8 @@ function SectionDue({
   drafts: Record<string, string>;
   expanded: Record<string, boolean>;
   busy: Record<string, boolean>;
+  sendPending: Record<string, boolean>;
+  sendError: Record<string, string | null>;
   onToggleEditor: (id: string) => void;
   onDraftChange: (id: string, val: string) => void;
   onSend: (lead: LeadMetrics) => void;
@@ -494,6 +590,8 @@ function SectionDue({
           draft={drafts[lead.id] ?? ""}
           expanded={!!expanded[lead.id]}
           busy={!!busy[lead.id]}
+          sendPending={!!sendPending[lead.id]}
+          sendError={sendError[lead.id] ?? null}
           onToggleEditor={() => onToggleEditor(lead.id)}
           onDraftChange={(v) => onDraftChange(lead.id, v)}
           onSend={() => onSend(lead)}
@@ -511,6 +609,8 @@ function SectionSoon({
   drafts,
   expanded,
   busy,
+  sendPending,
+  sendError,
   onToggleEditor,
   onDraftChange,
   onSend,
@@ -522,6 +622,8 @@ function SectionSoon({
   drafts: Record<string, string>;
   expanded: Record<string, boolean>;
   busy: Record<string, boolean>;
+  sendPending: Record<string, boolean>;
+  sendError: Record<string, string | null>;
   onToggleEditor: (id: string) => void;
   onDraftChange: (id: string, val: string) => void;
   onSend: (lead: LeadMetrics) => void;
@@ -541,6 +643,8 @@ function SectionSoon({
           draft={drafts[lead.id] ?? ""}
           expanded={!!expanded[lead.id]}
           busy={!!busy[lead.id]}
+          sendPending={!!sendPending[lead.id]}
+          sendError={sendError[lead.id] ?? null}
           onToggleEditor={() => onToggleEditor(lead.id)}
           onDraftChange={(v) => onDraftChange(lead.id, v)}
           onSend={() => onSend(lead)}
@@ -594,7 +698,7 @@ function SectionSent({
 
             <div className="flex flex-col items-end gap-2">
               <Link
-                href={`/nachrichten/${m.lead_id}`}
+                href={`/app/nachrichten/${m.lead_id}`}
                 className="text-xs border rounded px-3 py-1 hover:bg-gray-100"
               >
                 Konversation öffnen
@@ -614,6 +718,8 @@ function LeadCardWithActions({
   draft,
   expanded,
   busy,
+  sendPending,
+  sendError,
   onToggleEditor,
   onDraftChange,
   onSend,
@@ -625,6 +731,8 @@ function LeadCardWithActions({
   draft: string;
   expanded: boolean;
   busy: boolean;
+  sendPending: boolean;
+  sendError: string | null;
   onToggleEditor: () => void;
   onDraftChange: (val: string) => void;
   onSend: () => void;
@@ -652,24 +760,32 @@ function LeadCardWithActions({
               ? new Date(lead.updated_at).toLocaleString("de-DE")
               : "–"}
           </p>
+          {sendError && (
+            <p className="mt-2 text-xs text-red-600">{sendError}</p>
+          )}
         </div>
 
         <div className="flex flex-col items-end gap-2 shrink-0">
           <span className="text-xs font-medium rounded-full px-2 py-1 bg-amber-100 text-amber-800">
             {badge}
           </span>
-
+          {sendPending && (
+            <span className="text-xs font-medium rounded-full px-2 py-1 bg-blue-50 text-blue-700">
+              Wird gesendet…
+            </span>
+          )}
           <div className="flex items-center gap-2">
             <Link
-              href={`/nachrichten/${lead.id}`}
+              href={`/app/nachrichten/${lead.id}`}
               className="text-xs border rounded px-3 py-1 hover:bg-gray-100"
             >
               Konversation öffnen
             </Link>
 
             <button
+              disabled={busy || sendPending}
               onClick={onToggleEditor}
-              className="text-xs inline-flex items-center gap-1 border rounded px-2 py-1 hover:bg-gray-100"
+              className="text-xs inline-flex items-center gap-1 border rounded px-2 py-1 hover:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
               title={expanded ? "Text-Editor schließen" : "Text editieren"}
             >
               {expanded ? (
@@ -686,7 +802,7 @@ function LeadCardWithActions({
             </button>
             <button
               onClick={onSuggest}
-              disabled={busy}
+              disabled={busy || sendPending}
               className="text-xs inline-flex items-center gap-1 border rounded px-2 py-1 hover:bg-gray-100 disabled:opacity-60"
               title="KI-Vorschlag einfügen"
             >
@@ -711,14 +827,14 @@ function LeadCardWithActions({
             placeholder="Individuellen Follow-up-Text eingeben…"
           />
           <div className="mt-1 text-xs text-gray-500">
-            Der Text wird direkt per Make versendet.
+            Der Text wird direkt über Ihr verbundenes Gmail versendet.
           </div>
         </div>
       )}
 
       <div className="flex flex-wrap items-center gap-2 justify-end">
         <button
-          disabled={busy}
+          disabled={busy || sendPending}
           onClick={onSnooze24h}
           className="inline-flex items-center gap-2 border rounded-md px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-60"
           title="Follow-up um 24h verschieben"
@@ -732,7 +848,7 @@ function LeadCardWithActions({
         </button>
 
         <button
-          disabled={busy}
+          disabled={busy || sendPending}
           onClick={onSend}
           className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60"
           title="Follow-up jetzt senden"

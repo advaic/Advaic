@@ -228,6 +228,12 @@ export async function POST(req: Request) {
           : Date.now();
         const timestampIso = new Date(internalDateMs).toISOString();
 
+        // Determine sender: agent if message is from the connected Gmail account, else user
+        const isFromAgent =
+          from.toLowerCase().includes(emailAddress.toLowerCase());
+
+        const sender = isFromAgent ? "agent" : "user";
+
         // 6a) Find or create Lead for (agent_id, gmail_thread_id)
         let leadId: string | null = null;
 
@@ -259,6 +265,16 @@ export async function POST(req: Request) {
             );
           }
         } else {
+          // Never create a lead from an outgoing (agent) email.
+          // Outgoing messages should only be stored if we can already map them to an existing lead/thread.
+          if (sender === "agent") {
+            console.log(
+              "↩️ Gmail Push: outgoing message without lead match - skipping lead creation",
+              { threadId, gmailMessageId }
+            );
+            continue;
+          }
+
           // Minimal insert; if your leads table has other NOT NULL cols without defaults,
           // this insert will fail and we need to adjust accordingly.
           const { data: newLead, error: leadInsErr } = await supabase
@@ -278,12 +294,6 @@ export async function POST(req: Request) {
 
           leadId = newLead.id;
         }
-
-        // Determine sender: agent if message is from the connected Gmail account, else user
-        const isFromAgent =
-          from.toLowerCase().includes(emailAddress.toLowerCase());
-
-        const sender = isFromAgent ? "agent" : "user";
 
         // If this is an outgoing message and it already exists, skip early
         if (sender === "agent") {
