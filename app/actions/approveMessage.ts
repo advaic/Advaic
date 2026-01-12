@@ -1,6 +1,5 @@
 "use server";
 
-import { supabase } from "@/lib/supabaseClient";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -18,7 +17,8 @@ export async function approveMessage(messageId: string) {
     {
       cookies: {
         getAll: () => cookieStore.getAll(),
-        setAll: async () => {}, // no-op
+        // We don’t set cookies inside server actions for this flow.
+        setAll: async () => {},
       },
     }
   );
@@ -33,11 +33,21 @@ export async function approveMessage(messageId: string) {
     throw new Error("Nicht eingeloggt");
   }
 
-  const { error } = await supabase
+  // Best-effort update. Some columns may not exist on your table yet.
+  // Using `as any` avoids TS getting in the way while keeping runtime behavior.
+  const patch: any = {
+    approval_required: false,
+    status: "approved",
+    approved_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
     .from("messages")
-    .update({ approval_required: false })
+    .update(patch)
     .eq("id", messageId)
-    .eq("agent_id", user.id);
+    .eq("agent_id", user.id)
+    .select("id, lead_id, approval_required, status")
+    .maybeSingle();
 
   if (error) {
     console.error("❌ Failed to approve message:", error.message);
@@ -45,5 +55,12 @@ export async function approveMessage(messageId: string) {
   }
 
   console.log("✅ Message approved:", messageId);
-  revalidatePath("/zur-freigabe");
+
+  // Revalidate the dashboard route (your app lives under /app)
+  revalidatePath("/app/zur-freigabe");
+
+  return {
+    ok: true,
+    message: data ?? { id: messageId },
+  };
 }

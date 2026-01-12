@@ -9,8 +9,6 @@ import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import LeadDocumentList from "./LeadDocumentList";
 import LeadKeyInfoCard from "./LeadKeyInfoCard";
 
-type MessageSender = "user" | "agent" | "assistant";
-
 type LocalMessage = Omit<
   Message,
   | "agent_id"
@@ -83,8 +81,12 @@ const QUICK_TEMPLATES: Array<{ label: string; value: string }> = [
 ];
 
 /** -------- Attachment validation (client-side) -------- */
-const MAX_ATTACHMENT_MB = 12;
+// Conservative defaults: real estate agents mostly need PDFs + images.
+const MAX_ATTACHMENT_MB = 12; // per file
 const MAX_ATTACHMENT_BYTES = MAX_ATTACHMENT_MB * 1024 * 1024;
+
+const MAX_TOTAL_ATTACHMENTS_MB = 25; // total for one outgoing email
+const MAX_TOTAL_ATTACHMENT_BYTES = MAX_TOTAL_ATTACHMENTS_MB * 1024 * 1024;
 
 // Strict allowlist (real estate: PDFs + common images)
 const ALLOWED_MIME = new Set([
@@ -96,12 +98,57 @@ const ALLOWED_MIME = new Set([
 
 const ALLOWED_EXT = new Set(["pdf", "jpg", "jpeg", "png", "webp"]);
 
+// Extra safety: block common executable / script / archive types
+const BLOCKED_EXT = new Set([
+  "exe",
+  "bat",
+  "cmd",
+  "com",
+  "scr",
+  "msi",
+  "dll",
+  "js",
+  "mjs",
+  "cjs",
+  "jar",
+  "ps1",
+  "vbs",
+  "vb",
+  "zip",
+  "rar",
+  "7z",
+]);
+
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function getExt(name: string): string {
+  return (
+    String(name || "")
+      .split(".")
+      .pop() || ""
+  ).toLowerCase();
+}
+
 function validateAttachmentFile(file: File): string | null {
   if (file.size > MAX_ATTACHMENT_BYTES) {
     return `Datei ist zu groß (max. ${MAX_ATTACHMENT_MB} MB).`;
   }
 
-  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  const ext = getExt(file.name);
+  if (BLOCKED_EXT.has(ext)) {
+    return `Dateityp blockiert (.${ext}).`;
+  }
+
   if (!ALLOWED_EXT.has(ext)) {
     return "Dateityp nicht erlaubt. Erlaubt: PDF, JPG, PNG, WEBP.";
   }
@@ -157,9 +204,9 @@ export default function LeadChatView({
     path: string;
     name: string;
     mime: string;
-    size?: number;
-    previewUrl?: string | null;
-    previewLoading?: boolean;
+    size: number;
+    previewUrl: string | null;
+    previewLoading: boolean;
   };
 
   const [pendingAttachments, setPendingAttachments] = useState<
@@ -191,6 +238,7 @@ export default function LeadChatView({
         .from("leads")
         .update({ status: next ? "closed" : "open" } as any)
         .eq("id", leadId);
+
       if (error) console.warn("Could not update lead status", error);
     } catch (e) {
       console.warn("Could not update lead status", e);
@@ -213,6 +261,24 @@ export default function LeadChatView({
     const owner = (currentUserId || (lead as any)?.agent_id || "").toString();
     if (!owner) {
       setSendError("Upload nicht möglich: Kein User gefunden.");
+      return;
+    }
+
+    // Total size guard (best-effort UX; server enforces again)
+    const currentTotal = pendingAttachments.reduce(
+      (sum, a) => sum + (a.size || 0),
+      0
+    );
+    const incomingTotal = Array.from(files).reduce(
+      (sum, f) => sum + (f.size || 0),
+      0
+    );
+    if (currentTotal + incomingTotal > MAX_TOTAL_ATTACHMENT_BYTES) {
+      setSendError(
+        `Zu groß: Maximal ${formatBytes(
+          MAX_TOTAL_ATTACHMENT_BYTES
+        )} insgesamt pro E-Mail.`
+      );
       return;
     }
 
@@ -282,12 +348,40 @@ export default function LeadChatView({
     );
 
     try {
+      // Preferred: ask the backend to sign (doesn't require Storage SELECT for the client session)
+      const apiRes = await fetch("/api/storage/signed-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bucket: att.bucket,
+          path: att.path,
+          expiresIn: 600,
+        }),
+      });
+
+      const apiData = await apiRes.json().catch(() => ({}));
+
+      if (apiRes.ok && apiData?.signedUrl) {
+        const url = String(apiData.signedUrl);
+        setPendingAttachments((prev) =>
+          prev.map((a) =>
+            a.path === att.path
+              ? { ...a, previewUrl: url, previewLoading: false }
+              : a
+          )
+        );
+        return;
+      }
+
+      // Fallback: client signed URL (may require Storage RLS SELECT)
       const { data, error } = await supabase.storage
         .from(att.bucket)
         .createSignedUrl(att.path, 60 * 10); // 10 min
 
       if (error || !data?.signedUrl) {
-        throw new Error(error?.message || "Kein Signed URL erhalten");
+        throw new Error(
+          apiData?.error || error?.message || "Kein Signed URL erhalten"
+        );
       }
 
       setPendingAttachments((prev) =>
@@ -300,7 +394,7 @@ export default function LeadChatView({
     } catch (e: any) {
       console.error("Signed preview failed", e);
       setSendError(
-        `Vorschau nicht möglich. Prüfe Storage RLS (SELECT) für diesen Pfad. (${att.name})`
+        `Vorschau nicht möglich. Prüfe Storage RLS/Backend Route. (${att.name})`
       );
       setPendingAttachments((prev) =>
         prev.map((a) =>
@@ -471,21 +565,13 @@ export default function LeadChatView({
       const returnedId =
         data?.message?.id || data?.inserted?.id || data?.inserted_id || null;
 
-      if (returnedId) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m._localId === optimisticId
-              ? { ...m, id: returnedId, _localStatus: undefined }
-              : m
-          )
-        );
-      } else {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m._localId === optimisticId ? { ...m, _localStatus: undefined } : m
-          )
-        );
-      }
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._localId === optimisticId
+            ? { ...m, id: returnedId ?? m.id, _localStatus: undefined }
+            : m
+        )
+      );
 
       setPendingAttachments([]);
     } catch (err) {
@@ -502,7 +588,7 @@ export default function LeadChatView({
     setSending(false);
   };
 
-  const groupMessagesByDate = () => {
+  const groupedMessages = useMemo(() => {
     const grouped: { [date: string]: LocalMessage[] } = {};
     filteredMessages.forEach((msg) => {
       const date = new Date(msg.timestamp).toLocaleDateString("de-DE", {
@@ -515,7 +601,9 @@ export default function LeadChatView({
       grouped[date].push(msg);
     });
     return grouped;
-  };
+  }, [filteredMessages]);
+
+  const hasMessages = filteredMessages.length > 0;
 
   if (loading) {
     return (
@@ -541,9 +629,6 @@ export default function LeadChatView({
     );
   }
 
-  const groupedMessages = groupMessagesByDate();
-  const hasMessages = filteredMessages.length > 0;
-
   return (
     <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
       <div className="max-w-6xl mx-auto px-4 md:px-6">
@@ -561,7 +646,7 @@ export default function LeadChatView({
                 </span>
 
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800">
-                  Priorität: {lead.priority}
+                  Priorität: {(lead as any).priority ?? "-"}
                 </span>
 
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
@@ -855,6 +940,31 @@ export default function LeadChatView({
                     Bucket).
                   </div>
 
+                  <div className="text-xs text-gray-600">
+                    {(() => {
+                      const total = pendingAttachments.reduce(
+                        (s, a) => s + (a.size || 0),
+                        0
+                      );
+                      const pct = total / MAX_TOTAL_ATTACHMENT_BYTES;
+
+                      return (
+                        <>
+                          Gesamtgröße:{" "}
+                          <span className="font-medium">
+                            {formatBytes(total)}
+                          </span>{" "}
+                          / {formatBytes(MAX_TOTAL_ATTACHMENT_BYTES)}
+                          {pct >= 0.8 && (
+                            <span className="ml-2 text-amber-700">
+                              (nah am Limit)
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+
                   <div className="flex flex-wrap gap-2">
                     {pendingAttachments.map((a) => (
                       <div
@@ -863,6 +973,14 @@ export default function LeadChatView({
                       >
                         <span className="truncate max-w-[220px]">
                           📎 {a.name}
+                        </span>
+
+                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-700">
+                          {getExt(a.name).toUpperCase() || "FILE"}
+                        </span>
+
+                        <span className="text-gray-500">
+                          {formatBytes(a.size || 0)}
                         </span>
 
                         <button
@@ -1079,19 +1197,20 @@ export default function LeadChatView({
                   <span className="text-gray-500">E-Mail:</span> {lead.email}
                 </p>
                 <p>
-                  <span className="text-gray-500">Anfrage:</span> {lead.type}
+                  <span className="text-gray-500">Anfrage:</span>{" "}
+                  {(lead as any).type}
                 </p>
                 <p>
                   <span className="text-gray-500">Priorität:</span>{" "}
-                  {lead.priority}
+                  {(lead as any).priority}
                 </p>
                 <p>
                   <span className="text-gray-500">Letzte Aktivität:</span>{" "}
-                  {new Date(lead.updated_at).toLocaleString()}
+                  {new Date((lead as any).updated_at).toLocaleString()}
                 </p>
                 <p>
                   <span className="text-gray-500">Nachrichten:</span>{" "}
-                  {lead.message_count}
+                  {(lead as any).message_count}
                 </p>
               </div>
 

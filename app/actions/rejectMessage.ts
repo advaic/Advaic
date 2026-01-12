@@ -1,6 +1,5 @@
 "use server";
 
-import { supabase } from "@/lib/supabaseClient";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -33,17 +32,33 @@ export async function rejectMessage(messageId: string) {
     throw new Error("Nicht eingeloggt");
   }
 
-  const { error } = await supabase
+  // Best-effort patch. Some columns may not exist on your table yet.
+  const patch: any = {
+    approval_required: false,
+    status: "rejected",
+    rejected_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
     .from("messages")
-    .delete()
+    .update(patch)
     .eq("id", messageId)
-    .eq("agent_id", user.id);
+    .eq("agent_id", user.id)
+    .select("id, lead_id, approval_required, status")
+    .maybeSingle();
 
   if (error) {
-    console.error("❌ Failed to delete message:", error.message);
+    console.error("❌ Failed to reject message:", error.message);
     throw new Error(error.message);
   }
 
-  console.log("✅ Message deleted from Supabase:", messageId);
-  revalidatePath("/zur-freigabe");
+  console.log("✅ Message rejected:", messageId);
+
+  // Revalidate correct dashboard path
+  revalidatePath("/app/zur-freigabe");
+
+  return {
+    ok: true,
+    message: data ?? { id: messageId },
+  };
 }

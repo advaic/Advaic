@@ -9,6 +9,16 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
 
+  function jsonError(status: number, error: string, extra?: Record<string, any>) {
+    return NextResponse.json({ error, ...(extra || {}) }, { status });
+  }
+
+  function mustEnv(name: string): string {
+    const v = process.env[name];
+    if (!v) throw new Error(`Missing env var: ${name}`);
+    return v;
+  }
+
   type AttachmentInput = {
     bucket: string;
     path: string;
@@ -21,7 +31,7 @@ export async function POST(req: NextRequest) {
 
   const MAX_ATTACHMENTS = 10;
   const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024; // 12MB per file
-  const MAX_TOTAL_ATTACHMENTS_BYTES = 20 * 1024 * 1024; // 20MB total safety cap
+  const MAX_TOTAL_ATTACHMENTS_BYTES = 25 * 1024 * 1024; // 25MB total (Gmail-safe)
 
   const ALLOWED_MIME = new Set([
     "application/pdf",
@@ -33,9 +43,11 @@ export async function POST(req: NextRequest) {
   const ALLOWED_EXT = new Set(["pdf", "jpg", "jpeg", "png", "webp"]);
 
   function sanitizeHeaderValue(input: unknown): string {
-    // Prevent header injection via CR/LF
+    // Prevent header injection + keep headers well-formed
     return String(input ?? "")
       .replace(/[\r\n]+/g, " ")
+      .replace(/[<>]/g, "")
+      .replace(/\s+/g, " ")
       .trim();
   }
 
@@ -74,6 +86,10 @@ export async function POST(req: NextRequest) {
     if (mime && !ALLOWED_MIME.has(mime)) {
       throw new Error(`Disallowed mime type: ${mime}`);
     }
+
+    if (!a.name || !a.path) {
+      throw new Error("Invalid attachment metadata");
+    }
   }
 
   function assertScopedPath(agentId: string, leadId: string, path: string) {
@@ -107,10 +123,9 @@ export async function POST(req: NextRequest) {
   };
 
   if (!lead_id || !to || !subject || !text) {
-    return NextResponse.json(
-      { error: "Missing required fields" },
-      { status: 400 }
-    );
+    return jsonError(400, "Missing required fields", {
+      required: ["lead_id", "to", "subject", "text"],
+    });
   }
 
   const safeTo = sanitizeHeaderValue(to);
@@ -118,29 +133,23 @@ export async function POST(req: NextRequest) {
   const safeText = String(text ?? "");
 
   if (!safeTo || !safeSubject || !safeText.trim()) {
-    return NextResponse.json(
-      { error: "Invalid required fields" },
-      { status: 400 }
-    );
+    return jsonError(400, "Invalid required fields");
   }
 
-  const res = NextResponse.next();
-
   // 1️⃣ Authenticate agent
+  // IMPORTANT: this route returns JSON, so we do not attempt to mutate cookies on a NextResponse we don't return.
+  // We only need cookie reads here to authenticate the current user.
   const supabaseAuth = createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    mustEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
     {
       cookies: {
         get(name) {
           return req.cookies.get(name)?.value;
         },
-        set(name, value, options) {
-          res.cookies.set({ name, value, ...options });
-        },
-        remove(name, options) {
-          res.cookies.set({ name, value: "", ...options, maxAge: 0 });
-        },
+        // no-op (we're not refreshing sessions here)
+        set() {},
+        remove() {},
       },
     }
   );
@@ -151,43 +160,45 @@ export async function POST(req: NextRequest) {
   } = await supabaseAuth.auth.getUser();
 
   if (authErr || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonError(401, "Unauthorized");
   }
 
   // 2️⃣ Load Gmail connection
   const supabaseAdmin = createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    mustEnv("SUPABASE_SERVICE_ROLE_KEY")
   );
 
   const { data: conn, error: connErr } = await supabaseAdmin
     .from("email_connections")
-    .select("refresh_token, email_address")
+    .select("id, refresh_token, email_address, status")
     .eq("agent_id", user.id)
     .eq("provider", "gmail")
     .in("status", ["connected", "active"])
     .single();
 
   type GmailConnection = {
+    id: string;
     refresh_token: string;
     email_address: string | null;
+    status: string | null;
   };
 
   const gmailConn = conn as GmailConnection | null;
 
   if (!gmailConn || !gmailConn.refresh_token) {
-    return NextResponse.json({ error: "Gmail not connected" }, { status: 400 });
+    return jsonError(400, "Gmail not connected");
   }
 
-  const fromEmail = gmailConn.email_address || "me";
+  const fromEmail = gmailConn.email_address || "";
 
   // 3️⃣ Gmail OAuth client
   const oauth2 = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID!,
-    process.env.GOOGLE_CLIENT_SECRET!,
+    mustEnv("GOOGLE_CLIENT_ID"),
+    mustEnv("GOOGLE_CLIENT_SECRET"),
     new URL(
       "/api/auth/gmail/callback",
-      process.env.NEXT_PUBLIC_SITE_URL
+      mustEnv("NEXT_PUBLIC_SITE_URL")
     ).toString()
   );
 
@@ -223,6 +234,10 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await data.arrayBuffer();
     const buf = Buffer.from(arrayBuffer);
 
+    if (buf.length === 0) {
+      throw new Error("Attachment is empty");
+    }
+
     if (buf.length > MAX_ATTACHMENT_BYTES) {
       throw new Error(
         `Attachment too large (max ${Math.round(
@@ -238,7 +253,16 @@ export async function POST(req: NextRequest) {
   }
 
   async function buildEncodedEmail() {
-    const attInputsRaw = Array.isArray(attachments) ? attachments : [];
+    const attInputsRaw: AttachmentInput[] = Array.isArray(attachments)
+      ? attachments.filter(
+          (a): a is AttachmentInput =>
+            !!a &&
+            typeof a.bucket === "string" &&
+            typeof a.path === "string" &&
+            typeof a.name === "string" &&
+            typeof a.mime === "string"
+        )
+      : [];
     if (attInputsRaw.length > MAX_ATTACHMENTS) {
       throw new Error(`Too many attachments (max ${MAX_ATTACHMENTS})`);
     }
@@ -258,7 +282,7 @@ export async function POST(req: NextRequest) {
     // No attachments → simple text email
     if (attInputs.length === 0) {
       const raw = [
-        `From: ${fromEmail}`,
+        ...(fromEmail ? [`From: ${fromEmail}`] : []),
         `To: ${safeTo}`,
         `Subject: ${safeSubject}`,
         'Content-Type: text/plain; charset="UTF-8"',
@@ -276,7 +300,7 @@ export async function POST(req: NextRequest) {
       .slice(2)}`;
 
     const headers: string[] = [
-      `From: ${fromEmail}`,
+      ...(fromEmail ? [`From: ${fromEmail}`] : []),
       `To: ${safeTo}`,
       `Subject: ${safeSubject}`,
       "MIME-Version: 1.0",
@@ -295,7 +319,11 @@ export async function POST(req: NextRequest) {
       const dl = await downloadAttachmentAsBase64(a.bucket, a.path);
       totalBytes += dl.bytes;
       if (totalBytes > MAX_TOTAL_ATTACHMENTS_BYTES) {
-        throw new Error("Total attachment size too large");
+        throw new Error(
+          `Total attachment size exceeds ${Math.round(
+            MAX_TOTAL_ATTACHMENTS_BYTES / (1024 * 1024)
+          )}MB`
+        );
       }
 
       const filename = sanitizeFilename(a.name);
@@ -322,10 +350,7 @@ export async function POST(req: NextRequest) {
     encodedMessage = await buildEncodedEmail();
   } catch (e: any) {
     console.error("[gmail/send] Attachment build failed:", e?.message || e);
-    return NextResponse.json(
-      { error: `Attachment failed: ${e?.message ?? "unknown"}` },
-      { status: 400 }
-    );
+    return jsonError(400, `Attachment failed: ${e?.message ?? "unknown"}`);
   }
 
   // 5️⃣ Send email via Gmail API (capture Gmail message id/thread id)
@@ -344,56 +369,94 @@ export async function POST(req: NextRequest) {
     sentMessageId = sendRes.data.id ?? null;
     sentThreadId = sendRes.data.threadId ?? sentThreadId;
   } catch (e: any) {
-    console.error("[gmail/send] Gmail API error:", e?.message || e);
-    return NextResponse.json(
-      { error: "Failed to send email" },
-      { status: 500 }
-    );
+    const status = Number(e?.code) || Number(e?.response?.status) || 500;
+    const details = {
+      code: e?.code,
+      status: e?.response?.status,
+      message: e?.message,
+      errors: e?.errors,
+      data: e?.response?.data,
+    };
+    console.error("[gmail/send] Gmail API error:", details);
+
+    // Common: 429 quota / rate limit
+    if (status === 429) {
+      return jsonError(429, "Gmail quota exceeded / rate limited", details);
+    }
+
+    return jsonError(500, "Failed to send email", details);
   }
 
-  // 6️⃣ Persist message in Supabase (dedupe via gmail_message_id when available)
+  // 6️⃣ Persist message in Supabase (dedupe via gmail_message_id)
+  const attachmentsMeta = Array.isArray(attachments)
+    ? attachments
+        .filter((a): a is AttachmentInput =>
+          !!a &&
+          typeof a.bucket === "string" &&
+          typeof a.path === "string" &&
+          typeof a.name === "string" &&
+          typeof a.mime === "string"
+        )
+        .slice(0, MAX_ATTACHMENTS)
+        .map((a) => ({
+          bucket: ATTACHMENTS_BUCKET,
+          path: a.path,
+          name: sanitizeFilename(a.name),
+          mime: String(a.mime || "").toLowerCase(),
+          // optional fields (ignored by DB if not stored)
+          size: (a as any).size ?? null,
+        }))
+    : [];
+
+  const nowIso = new Date().toISOString();
+
   const baseRow: Record<string, any> = {
     lead_id,
+    agent_id: user.id,
     sender: "agent",
     text: safeText,
+    timestamp: nowIso,
+    email_address: safeTo, // recipient
     gmail_thread_id: sentThreadId,
+    gmail_message_id: sentMessageId,
     was_followup: !!was_followup,
     visible_to_agent: true,
+    status: "sent",
+    // best-effort: store attachment references (requires a json/jsonb column named `attachments`)
+    attachments: attachmentsMeta,
   };
 
-  if (sentMessageId) baseRow.gmail_message_id = sentMessageId;
+  let insertedMessageId: string | null = null;
 
-  let msgErr: any = null;
+  async function upsertMessageRow(row: Record<string, any>) {
+    // Prefer returning the DB id so the UI can reconcile optimistic sends
+    const hasGmailMessageId =
+      typeof row.gmail_message_id === "string" && row.gmail_message_id.length > 0;
 
-  if (sentMessageId) {
-    // Prefer upsert to prevent duplicates with Gmail Push ingestion
-    const { error } = await (supabaseAdmin.from("messages") as any).upsert(
-      baseRow,
-      { onConflict: "gmail_message_id" }
-    );
-    msgErr = error;
+    const qBase = (supabaseAdmin.from("messages") as any);
 
-    // If the column/constraint isn't there yet, fall back to insert
-    if (msgErr) {
-      console.error(
-        "[gmail/send] DB upsert failed (falling back to insert):",
-        msgErr.message
-      );
-      const { error: fallbackErr } = await (
-        supabaseAdmin.from("messages") as any
-      ).insert(baseRow);
-      msgErr = fallbackErr;
-    }
-  } else {
-    const { error } = await (supabaseAdmin.from("messages") as any).insert(
-      baseRow
-    );
-    msgErr = error;
+    const q = hasGmailMessageId
+      ? qBase.upsert(row, { onConflict: "gmail_message_id" })
+      : qBase.insert(row);
+
+    return await q.select("id,gmail_message_id,gmail_thread_id,timestamp");
   }
 
-  if (msgErr) {
-    console.error("[gmail/send] DB write failed:", msgErr.message);
-    // Email was sent — don’t fail the request
+  let upsertRes = await upsertMessageRow(baseRow);
+
+  // If the `attachments` column doesn't exist, retry without it.
+  if (upsertRes?.error?.message?.toLowerCase?.().includes("column") &&
+      upsertRes.error.message.toLowerCase().includes("attachments")) {
+    const retryRow = { ...baseRow };
+    delete retryRow.attachments;
+    upsertRes = await upsertMessageRow(retryRow);
+  }
+
+  if (upsertRes?.error) {
+    console.error("[gmail/send] Message upsert failed:", upsertRes.error.message);
+  } else {
+    const first = Array.isArray(upsertRes.data) ? upsertRes.data[0] : upsertRes.data;
+    insertedMessageId = first?.id ?? null;
   }
 
   // 7️⃣ Persist threadId on lead so Gmail Push can map future events to the same lead
@@ -412,7 +475,10 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    gmail_message_id: sentMessageId,
-    gmail_thread_id: sentThreadId,
+    inserted_id: insertedMessageId,
+    message: {
+      gmail_message_id: sentMessageId,
+      gmail_thread_id: sentThreadId,
+    },
   });
 }

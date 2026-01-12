@@ -1,5 +1,3 @@
-// supabase.ts or types/supabase.ts
-
 export type KeyInfo = {
   name: string;
   birthdate: string;
@@ -80,23 +78,50 @@ export type Database = {
           id: string;
           lead_id: string;
           text: string;
-          sender: "user" | "agent" | "system";
+          // App-level sender types are: "assistant" | "user" | "agent".
+          // Keep "system" for legacy rows if any exist.
+          sender: "user" | "agent" | "assistant" | "system";
           timestamp: string;
-          gpt_score?: number;
-          was_followup?: boolean;
-          visible_to_agent: boolean;
-          approval_required?: boolean;
+
+          // Optional / nullable metadata
+          gpt_score?: number | null;
+          was_followup?: boolean | null;
+          visible_to_agent?: boolean | null;
+          approval_required?: boolean | null;
+
+          // Gmail / sync metadata (optional)
+          snippet?: string | null;
+          history_id?: string | number | null;
+          email_address?: string | null;
+          status?: string | null;
+
+          // Attachments: store storage references so backend can fetch & attach
+          // Using Json to avoid tight coupling to a specific shape in generated types.
+          attachments?: Json | null;
+
+          // Some schemas include this (optimistic UI / filtering). Keep optional.
+          agent_id?: string | null;
         };
         Insert: {
           id?: string;
           lead_id: string;
           text: string;
-          sender: "user" | "agent" | "system";
+          sender: "user" | "agent" | "assistant" | "system";
           timestamp?: string;
-          gpt_score?: number;
-          was_followup?: boolean;
-          visible_to_agent?: boolean;
-          approval_required?: boolean;
+
+          gpt_score?: number | null;
+          was_followup?: boolean | null;
+          visible_to_agent?: boolean | null;
+          approval_required?: boolean | null;
+
+          snippet?: string | null;
+          history_id?: string | number | null;
+          email_address?: string | null;
+          status?: string | null;
+
+          attachments?: Json | null;
+
+          agent_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["messages"]["Insert"]>;
       };
