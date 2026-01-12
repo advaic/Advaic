@@ -362,7 +362,7 @@ export default function StartseiteUI({
           </div>
 
           {/* Sections */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="flex flex-col gap-6">
             <Section
               title="Freigaben ausstehend"
               subtitle="Antworten, die noch bestätigt werden müssen."
@@ -471,7 +471,7 @@ function Section({
             <div className="text-sm text-gray-600 mt-2">{emptySubtitle}</div>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             {top.map((lead) => {
               const last = lastMessages[lead.id];
               const lastText = safeStr(last?.text);
@@ -481,7 +481,7 @@ function Section({
               const msgCount = messageCounts[lead.id] ?? 0;
 
               return (
-                <div key={lead.id} className="block">
+                <div key={lead.id} className="block w-full">
                   <InboxItem
                     lead={{
                       ...(lead as any),
@@ -497,7 +497,7 @@ function Section({
             })}
 
             {leads.length > 3 && (
-              <div className="pt-1">
+              <div className="pt-2">
                 <Link
                   href={
                     title.toLowerCase().includes("freigabe")
