@@ -119,8 +119,8 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
         <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
-          <div className="flex flex-col gap-4 pb-4 md:flex-row md:items-start md:justify-between">
-            <div className="min-w-0 flex-1">
+          <div className="grid grid-cols-1 gap-4 pb-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+            <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl md:text-2xl font-semibold">Nachrichten</h1>
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
@@ -147,14 +147,14 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
                   </span>
                 )}
               </div>
-              <div className="mt-1 text-sm text-gray-600 max-w-3xl break-words">
+              <div className="mt-1 text-sm text-gray-600 max-w-3xl whitespace-normal">
                 Hier siehst du alle Nachrichten deiner Interessenten – filtere nach Kategorie, Priorität oder Eskalation.
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
+            <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end md:shrink-0">
               {/* Desktop search */}
-              <div className="relative hidden md:block w-full md:w-72">
+              <div className="relative hidden md:block w-full md:w-72 md:min-w-[18rem]">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
@@ -263,7 +263,7 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
           </div>
 
           {/* Mobile search */}
-          <div className="md:hidden pb-4">
+          <div className="md:hidden pb-4 w-full">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
               <input
