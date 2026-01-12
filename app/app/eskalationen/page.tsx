@@ -13,6 +13,15 @@ export default async function EskalationenPage() {
     {
       cookies: {
         getAll: () => cookieStore.getAll(),
+        setAll: (cookiesToSet) => {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options);
+            });
+          } catch {
+            // In Server Components, setting cookies may throw. Safe to ignore.
+          }
+        },
       },
     }
   );
