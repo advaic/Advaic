@@ -26,14 +26,23 @@ export default async function NachrichtenPage() {
 
   if (!session || !session.user) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-500">
-        <p className="mb-4 text-lg">Nicht eingeloggt.</p>
-        <Link
-          href="/login"
-          className="px-4 py-2 text-white bg-black rounded hover:bg-gray-800"
-        >
-          Zum Login
-        </Link>
+      <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
+        <div className="max-w-6xl mx-auto px-4 md:px-6 py-10">
+          <div className="rounded-2xl border border-gray-200 bg-white p-8 text-center">
+            <p className="text-lg font-medium text-gray-900">Nicht eingeloggt.</p>
+            <p className="mt-2 text-sm text-gray-600">
+              Bitte logge dich ein, um deine Nachrichten zu sehen.
+            </p>
+            <div className="mt-6 flex justify-center">
+              <Link
+                href="/login"
+                className="px-4 py-2 text-sm rounded-lg bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800"
+              >
+                Zum Login
+              </Link>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -50,5 +59,11 @@ export default async function NachrichtenPage() {
     console.error("Fehler beim Laden der Leads:", error.message);
   }
 
-  return <NachrichtenPageClient leads={leads ?? []} userId={userId} />;
+  return (
+    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
+      <div className="max-w-6xl mx-auto px-4 md:px-6 py-6">
+        <NachrichtenPageClient leads={leads ?? []} userId={userId} />
+      </div>
+    </div>
+  );
 }
