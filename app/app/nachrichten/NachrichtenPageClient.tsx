@@ -119,9 +119,9 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
         <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
-          <div className="flex items-start justify-between gap-4 pb-4">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-col gap-4 pb-4 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap leading-none">
                 <h1 className="text-xl md:text-2xl font-semibold">Nachrichten</h1>
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
                   Advaic
@@ -147,14 +147,14 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
                   </span>
                 )}
               </div>
-              <div className="mt-1 text-sm text-gray-600">
+              <div className="mt-1 text-sm text-gray-600 max-w-3xl">
                 Hier siehst du alle Nachrichten deiner Interessenten – filtere nach Kategorie, Priorität oder Eskalation.
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end md:flex-nowrap">
               {/* Desktop search */}
-              <div className="relative hidden md:block">
+              <div className="relative hidden md:block md:w-72">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
