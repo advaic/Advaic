@@ -121,7 +121,7 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
         <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
           <div className="flex flex-col gap-4 pb-4 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap leading-none">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl md:text-2xl font-semibold">Nachrichten</h1>
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
                   Advaic
@@ -147,21 +147,21 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
                   </span>
                 )}
               </div>
-              <div className="mt-1 text-sm text-gray-600 max-w-3xl">
+              <div className="mt-1 text-sm text-gray-600 max-w-3xl break-words">
                 Hier siehst du alle Nachrichten deiner Interessenten – filtere nach Kategorie, Priorität oder Eskalation.
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end md:flex-nowrap">
+            <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
               {/* Desktop search */}
-              <div className="relative hidden md:block md:w-72">
+              <div className="relative hidden md:block w-full md:w-72">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Suche… (Name, E-Mail, Nachricht)"
-                  className="w-64 pl-9 pr-9 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                  className="w-full pl-9 pr-9 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                 />
                 {search.trim() && (
                   <button
