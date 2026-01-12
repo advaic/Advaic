@@ -6,7 +6,7 @@ import type { Database } from "@/types/supabase";
 import { toast } from "sonner";
 import Link from "next/link";
 import {
-  AlarmClock, // icon für Snooze
+  AlarmClock,
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -56,25 +56,18 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
   const supabase = useSupabaseClient<Database>();
   const [tab, setTab] = useState<TabKey>("due");
   const [loading, setLoading] = useState(true);
-  const [threshold, setThreshold] = useState<number>(24); // Stunden, ab wann „fällig“
-  const [soonWindow, setSoonWindow] = useState<number>(12); // „bald fällig“ Fenster
+  const [threshold, setThreshold] = useState<number>(24);
+  const [soonWindow, setSoonWindow] = useState<number>(12);
   const [search, setSearch] = useState("");
 
   const [metrics, setMetrics] = useState<LeadMetrics[]>([]);
   const [sent, setSent] = useState<SentFollowUp[]>([]);
   const [sentLeadMap, setSentLeadMap] = useState<Record<string, LeadMin>>({});
 
-  /** pro Lead: Draft-Text */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  /** pro Lead: Editor auf/zu */
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  /** pro Lead: busy-state (suggest/snooze/send) */
   const [busy, setBusy] = useState<Record<string, boolean>>({});
-
-  /** pro Lead: pending send state */
   const [sendPending, setSendPending] = useState<Record<string, boolean>>({});
-
-  /** pro Lead: last send error (shown in card) */
   const [sendError, setSendError] = useState<Record<string, string | null>>({});
 
   const setSendPendingFor = (id: string, v: boolean) =>
@@ -88,7 +81,6 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
       lead.name?.trim() || "Hallo"
     }, nur ein kurzes Follow-up: Haben Sie schon ein Update oder noch Fragen? Ich freue mich auf Ihre Rückmeldung.`;
 
-  // Laden
   const load = async (opts?: { silent?: boolean }) => {
     if (!userId) return;
     try {
@@ -110,7 +102,6 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
         setMetrics([]);
       } else {
         const rows = (mData ?? []) as LeadMetrics[];
-        // Drafts initialisieren, falls neu
         setDrafts((prev) => {
           const copy = { ...prev };
           for (const r of rows) {
@@ -121,7 +112,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
         setMetrics(rows);
       }
 
-      // 2) Gesendete Follow-ups (aus messages ableiten)
+      // 2) Gesendete Follow-ups
       const { data: sMsgs, error: sErr } = await supabase
         .from("messages")
         .select("id, lead_id, text, timestamp")
@@ -135,7 +126,6 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
       } else {
         const msgs = (sMsgs ?? []) as SentFollowUp[];
 
-        // Leads für diese Messages laden (Name/Email)
         const leadIds = Array.from(new Set(msgs.map((m) => m.lead_id)));
         let leadMap: Record<string, LeadMin> = {};
         if (leadIds.length > 0) {
@@ -169,7 +159,6 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  // Ableitungen
   const dueRows = useMemo(() => {
     return metrics.filter(
       (m) => (m.hours_since_last_reply ?? 0) >= Number(threshold)
@@ -177,7 +166,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
   }, [metrics, threshold]);
 
   const soonRows = useMemo(() => {
-    const min = Math.max(1, Number(threshold) - Number(soonWindow)); // z.B. 24 - 12 = 12h
+    const min = Math.max(1, Number(threshold) - Number(soonWindow));
     const max = Number(threshold);
     return metrics.filter((m) => {
       const h = Number(m.hours_since_last_reply ?? 0);
@@ -185,7 +174,6 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
     });
   }, [metrics, threshold, soonWindow]);
 
-  // Suche anwenden
   const applySearchLead = (rows: LeadMetrics[]) => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
@@ -195,6 +183,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
         .includes(q)
     );
   };
+
   const filteredDue = useMemo(
     () => applySearchLead(dueRows),
     [dueRows, search]
@@ -214,8 +203,6 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
     });
   }, [sent, sentLeadMap, search]);
 
-  /* ---------- Aktionen ---------- */
-
   const setBusyFor = (id: string, v: boolean) =>
     setBusy((p) => ({ ...p, [id]: v }));
 
@@ -229,7 +216,6 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
     try {
       setBusyFor(lead.id, true);
       const suggestion = await suggestFollowUpText(lead.id);
-      // Ensure editor is open and draft is filled
       setExpanded((p) => ({ ...p, [lead.id]: true }));
       setDrafts((p) => ({ ...p, [lead.id]: suggestion }));
       toast.success("Vorschlag eingefügt.");
@@ -242,32 +228,25 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
   };
 
   const onSend = async (lead: LeadMetrics) => {
-    // prevent double send
     if (sendPending[lead.id]) return;
 
     const leadId = lead.id;
     const text = (drafts[leadId] || "").trim() || buildDefaultText(lead);
 
     if (!lead.email) {
-      toast.error("Kein Empfänger gefunden (E-Mail fehlt beim Interessenten). ");
+      toast.error("Kein Empfänger gefunden (E-Mail fehlt beim Interessenten).");
       return;
     }
 
-    // optimistic UI
     const localSentId = `local-${leadId}-${Date.now()}`;
     setSendPendingFor(leadId, true);
     setSendErrorFor(leadId, null);
 
-    // Keep a snapshot for rollback
     const removedLeadSnapshot = lead;
 
-    // Remove from due/soon immediately
     setMetrics((prev) => prev.filter((x) => x.id !== leadId));
-
-    // Close editor + remove draft locally (keeps UI clean)
     setExpanded((prev) => ({ ...prev, [leadId]: false }));
 
-    // Add to sent immediately (visual)
     setSent((prev) => [
       {
         id: localSentId,
@@ -285,7 +264,6 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
     try {
       setBusyFor(leadId, true);
 
-      // Load gmail_thread_id from leads (view doesn't include it)
       const { data: leadRow, error: leadErr } = await supabase
         .from("leads")
         .select("id, gmail_thread_id, type")
@@ -319,18 +297,14 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
 
       toast.success("Follow-up gesendet.");
 
-      // Optionally: replace local sent row id with real gmail_message_id (keeps list consistent)
       if (data?.gmail_message_id) {
         setSent((prev) =>
           prev.map((m) =>
-            m.id === localSentId
-              ? { ...m, id: data.gmail_message_id }
-              : m
+            m.id === localSentId ? { ...m, id: data.gmail_message_id } : m
           )
         );
       }
 
-      // Remove draft now that it succeeded
       setDrafts((prev) => {
         const { [leadId]: _, ...rest } = prev;
         return rest;
@@ -343,14 +317,12 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
       toast.error(msg);
       setSendErrorFor(leadId, msg);
 
-      // rollback: put lead back into metrics list (top)
       setMetrics((prev) => {
         const exists = prev.some((x) => x.id === removedLeadSnapshot.id);
         if (exists) return prev;
         return [removedLeadSnapshot, ...prev];
       });
 
-      // rollback: remove optimistic sent entry
       setSent((prev) => prev.filter((m) => m.id !== localSentId));
     } finally {
       setBusyFor(leadId, false);
@@ -362,16 +334,13 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
     try {
       setBusyFor(lead.id, true);
 
-      // Call server action with (leadId, hours)
       await snoozeFollowUp(lead.id, 24);
 
-      // Compute target time locally for the toast
       const nextLocal = new Date(Date.now() + 24 * 60 * 60 * 1000);
       toast.success(
         `Follow-up verschoben auf ${nextLocal.toLocaleString("de-DE")}.`
       );
 
-      // Optimistically remove from the list (lead is no longer due)
       setMetrics((prev) => prev.filter((x) => x.id !== lead.id));
     } catch (e: any) {
       console.error(e);
@@ -381,167 +350,251 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
     }
   };
 
-  // UI
+  // ---------- UI ----------
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-40 gap-2 text-gray-600">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        <span>Lade Follow-Ups…</span>
+      <div className="min-h-[70vh] bg-[#f7f7f8] px-4 md:px-6 py-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="h-10 w-56 bg-white rounded-xl border border-gray-200 animate-pulse mb-3" />
+          <div className="h-4 w-[420px] bg-white rounded-xl border border-gray-200 animate-pulse mb-6" />
+
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+            <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc]">
+              <div className="h-9 w-80 bg-white rounded-xl border border-gray-200 animate-pulse" />
+            </div>
+            <div className="p-4 md:p-6 space-y-3">
+              <div className="h-24 bg-gray-100 rounded-2xl animate-pulse" />
+              <div className="h-24 bg-gray-100 rounded-2xl animate-pulse" />
+              <div className="h-24 bg-gray-100 rounded-2xl animate-pulse" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-4">
-      {/* Header / Controls */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold">Follow-Ups</h1>
-          <span className="text-xs text-gray-500 hidden sm:inline">
-            Zeigt fällige, bald fällige und bereits gesendete Follow-ups.
-          </span>
+    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
+      <div className="max-w-6xl mx-auto px-4 md:px-6">
+        {/* Sticky header */}
+        <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
+          <div className="flex items-start justify-between gap-4 pb-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-xl md:text-2xl font-semibold">
+                  Follow-Ups
+                </h1>
+                <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
+                  Advaic
+                </span>
+                <span className="text-xs text-gray-500 hidden sm:inline">
+                  Zeigt fällige, bald fällige und bereits gesendete Follow-ups.
+                </span>
+              </div>
+              <div className="mt-1 text-sm text-gray-600">
+                Arbeite deine fälligen Nachrichten wie eine Inbox ab – schnell,
+                sauber, nachvollziehbar.
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* Search (desktop) */}
+              <div className="hidden md:block relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Suche…"
+                  className="w-56 pl-9 pr-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                />
+              </div>
+
+              <select
+                value={threshold}
+                onChange={(e) => setThreshold(Number(e.target.value))}
+                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                title="Schwellwert (fällig ab … Stunden)"
+              >
+                <option value={12}>≥ 12h</option>
+                <option value={24}>≥ 24h</option>
+                <option value={36}>≥ 36h</option>
+                <option value={48}>≥ 48h</option>
+                <option value={72}>≥ 72h</option>
+              </select>
+
+              <select
+                value={soonWindow}
+                onChange={(e) => setSoonWindow(Number(e.target.value))}
+                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                title="Fenster für 'bald fällig' (Stunden vor Schwelle)"
+              >
+                <option value={6}>bald in ≤ 6h</option>
+                <option value={12}>bald in ≤ 12h</option>
+                <option value={18}>bald in ≤ 18h</option>
+                <option value={24}>bald in ≤ 24h</option>
+              </select>
+
+              <button
+                onClick={() => load({ silent: true })}
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                title="Neu laden"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Aktualisieren
+              </button>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="pb-4">
+            <div className="inline-flex gap-2 rounded-2xl border border-gray-200 bg-white p-1">
+              <button
+                onClick={() => setTab("due")}
+                className={`px-3 py-2 text-sm rounded-xl transition-colors inline-flex items-center gap-2 ${
+                  tab === "due"
+                    ? "bg-gray-900 text-amber-200"
+                    : "bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <AlertTriangle className="h-4 w-4" />
+                Fällig
+                <span
+                  className={`text-[11px] px-2 py-0.5 rounded-full border ${
+                    tab === "due"
+                      ? "border-amber-300/40 bg-gray-900 text-amber-200"
+                      : "border-gray-200 bg-gray-50 text-gray-700"
+                  }`}
+                >
+                  {filteredDue.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => setTab("soon")}
+                className={`px-3 py-2 text-sm rounded-xl transition-colors inline-flex items-center gap-2 ${
+                  tab === "soon"
+                    ? "bg-gray-900 text-amber-200"
+                    : "bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <Clock className="h-4 w-4" />
+                Bald
+                <span
+                  className={`text-[11px] px-2 py-0.5 rounded-full border ${
+                    tab === "soon"
+                      ? "border-amber-300/40 bg-gray-900 text-amber-200"
+                      : "border-gray-200 bg-gray-50 text-gray-700"
+                  }`}
+                >
+                  {filteredSoon.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => setTab("sent")}
+                className={`px-3 py-2 text-sm rounded-xl transition-colors inline-flex items-center gap-2 ${
+                  tab === "sent"
+                    ? "bg-gray-900 text-amber-200"
+                    : "bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <Send className="h-4 w-4" />
+                Gesendet
+                <span
+                  className={`text-[11px] px-2 py-0.5 rounded-full border ${
+                    tab === "sent"
+                      ? "border-amber-300/40 bg-gray-900 text-amber-200"
+                      : "border-gray-200 bg-gray-50 text-gray-700"
+                  }`}
+                >
+                  {filteredSent.length}
+                </span>
+              </button>
+            </div>
+
+            {/* Search (mobile) */}
+            <div className="md:hidden mt-3 relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Suchen (Name, E-Mail, Text)…"
+                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+              />
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Suche */}
-          <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Suchen (Name, E-Mail, Text)…"
-              className="pl-8 pr-3 py-2 border rounded-md text-sm w-64"
-            />
-          </div>
+        {/* Content card */}
+        <div className="py-6">
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+            <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between gap-3">
+              <div className="text-sm text-gray-600">
+                {tab === "due" && (
+                  <>
+                    Fällige Follow-ups ab{" "}
+                    <span className="font-medium">{threshold}h</span> ohne
+                    Antwort.
+                  </>
+                )}
+                {tab === "soon" && (
+                  <>
+                    Bald fällig:{" "}
+                    <span className="font-medium">{soonWindow}h</span> vor der
+                    Schwelle.
+                  </>
+                )}
+                {tab === "sent" && <>Bereits versendete Follow-ups.</>}
+              </div>
+              <div className="text-xs text-gray-500 hidden sm:block">
+                Tipp: „Vorschlag“ für KI-Text, „Snooze“ für später.
+              </div>
+            </div>
 
-          {/* Schwelle */}
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-gray-500" />
-            <select
-              value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value))}
-              className="border rounded-md text-sm px-2 py-2"
-              title="Schwellwert (fällig ab … Stunden)"
-            >
-              <option value={12}>≥ 12h</option>
-              <option value={24}>≥ 24h</option>
-              <option value={36}>≥ 36h</option>
-              <option value={48}>≥ 48h</option>
-              <option value={72}>≥ 72h</option>
-            </select>
+            <div className="p-4 md:p-6">
+              {tab === "due" && (
+                <SectionDue
+                  rows={filteredDue}
+                  emptyText={`Keine fälligen Follow-Ups ≥ ${threshold}h.`}
+                  drafts={drafts}
+                  expanded={expanded}
+                  busy={busy}
+                  sendPending={sendPending}
+                  sendError={sendError}
+                  onToggleEditor={onToggleEditor}
+                  onDraftChange={onDraftChange}
+                  onSend={onSend}
+                  onSnooze24h={onSnooze24h}
+                  onSuggest={onSuggest}
+                />
+              )}
+              {tab === "soon" && (
+                <SectionSoon
+                  rows={filteredSoon}
+                  emptyText="Aktuell keine bald fälligen Follow-Ups."
+                  drafts={drafts}
+                  expanded={expanded}
+                  busy={busy}
+                  sendPending={sendPending}
+                  sendError={sendError}
+                  onToggleEditor={onToggleEditor}
+                  onDraftChange={onDraftChange}
+                  onSend={onSend}
+                  onSnooze24h={onSnooze24h}
+                  onSuggest={onSuggest}
+                />
+              )}
+              {tab === "sent" && (
+                <SectionSent
+                  rows={filteredSent}
+                  leadMap={sentLeadMap}
+                  emptyText="Noch keine gesendeten Follow-Ups gefunden."
+                />
+              )}
+            </div>
           </div>
-
-          {/* Soon-Fenster */}
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-gray-500" />
-            <select
-              value={soonWindow}
-              onChange={(e) => setSoonWindow(Number(e.target.value))}
-              className="border rounded-md text-sm px-2 py-2"
-              title="Fenster für 'bald fällig' (Stunden vor Schwelle)"
-            >
-              <option value={6}>bald in ≤ 6h</option>
-              <option value={12}>bald in ≤ 12h</option>
-              <option value={18}>bald in ≤ 18h</option>
-              <option value={24}>bald in ≤ 24h</option>
-            </select>
-          </div>
-
-          {/* Manuell reload */}
-          <button
-            onClick={() => load({ silent: true })}
-            className="inline-flex items-center gap-2 border rounded-md px-3 py-2 text-sm hover:bg-gray-50"
-            title="Neu laden"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Aktualisieren
-          </button>
         </div>
       </div>
-
-      {/* Tabs */}
-      <div className="flex gap-2 border-b">
-        <button
-          onClick={() => setTab("due")}
-          className={`px-3 py-2 text-sm -mb-px border-b-2 ${
-            tab === "due"
-              ? "border-black font-medium"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          <span className="inline-flex items-center gap-1">
-            <AlertTriangle className="h-4 w-4" />
-            Fällig ({filteredDue.length})
-          </span>
-        </button>
-        <button
-          onClick={() => setTab("soon")}
-          className={`px-3 py-2 text-sm -mb-px border-b-2 ${
-            tab === "soon"
-              ? "border-black font-medium"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          <span className="inline-flex items-center gap-1">
-            <Clock className="h-4 w-4" />
-            Bald fällig ({filteredSoon.length})
-          </span>
-        </button>
-        <button
-          onClick={() => setTab("sent")}
-          className={`px-3 py-2 text-sm -mb-px border-b-2 ${
-            tab === "sent"
-              ? "border-black font-medium"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          <span className="inline-flex items-center gap-1">
-            <Send className="h-4 w-4" />
-            Gesendet ({filteredSent.length})
-          </span>
-        </button>
-      </div>
-
-      {/* Inhalt je Tab */}
-      {tab === "due" && (
-        <SectionDue
-          rows={filteredDue}
-          emptyText={`Keine fälligen Follow-Ups ≥ ${threshold}h.`}
-          drafts={drafts}
-          expanded={expanded}
-          busy={busy}
-          sendPending={sendPending}
-          sendError={sendError}
-          onToggleEditor={onToggleEditor}
-          onDraftChange={onDraftChange}
-          onSend={onSend}
-          onSnooze24h={onSnooze24h}
-          onSuggest={onSuggest}
-        />
-      )}
-      {tab === "soon" && (
-        <SectionSoon
-          rows={filteredSoon}
-          emptyText="Aktuell keine bald fälligen Follow-Ups."
-          drafts={drafts}
-          expanded={expanded}
-          busy={busy}
-          sendPending={sendPending}
-          sendError={sendError}
-          onToggleEditor={onToggleEditor}
-          onDraftChange={onDraftChange}
-          onSend={onSend}
-          onSnooze24h={onSnooze24h}
-          onSuggest={onSuggest}
-        />
-      )}
-      {tab === "sent" && (
-        <SectionSent
-          rows={filteredSent}
-          leadMap={sentLeadMap}
-          emptyText="Noch keine gesendeten Follow-Ups gefunden."
-        />
-      )}
     </div>
   );
 }
@@ -581,7 +634,7 @@ function SectionDue({
     );
   }
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {rows.map((lead) => (
         <LeadCardWithActions
           key={lead.id}
@@ -634,7 +687,7 @@ function SectionSoon({
     return <EmptyBox icon={<Clock className="h-4 w-4" />} text={emptyText} />;
   }
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {rows.map((lead) => (
         <LeadCardWithActions
           key={lead.id}
@@ -669,13 +722,13 @@ function SectionSent({
     return <EmptyBox icon={<Send className="h-4 w-4" />} text={emptyText} />;
   }
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {rows.map((m) => {
         const lead = leadMap[m.lead_id];
         return (
           <div
             key={m.id}
-            className="flex items-start justify-between gap-4 border rounded-lg p-4 hover:bg-gray-50"
+            className="flex items-start justify-between gap-4 border border-gray-200 rounded-2xl p-4 hover:bg-gray-50"
           >
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -691,7 +744,7 @@ function SectionSent({
                 {m.text ?? "—"}
               </p>
 
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="text-xs text-gray-500 mt-1">
                 Gesendet: {new Date(m.timestamp).toLocaleString("de-DE")}
               </p>
             </div>
@@ -699,7 +752,7 @@ function SectionSent({
             <div className="flex flex-col items-end gap-2">
               <Link
                 href={`/app/nachrichten/${m.lead_id}`}
-                className="text-xs border rounded px-3 py-1 hover:bg-gray-100"
+                className="text-xs inline-flex items-center gap-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2"
               >
                 Konversation öffnen
               </Link>
@@ -711,7 +764,6 @@ function SectionSent({
   );
 }
 
-/** Karte mit Follow-up Aktionen (Editor, Snooze, Senden) */
 function LeadCardWithActions({
   lead,
   badge,
@@ -739,8 +791,14 @@ function LeadCardWithActions({
   onSnooze24h: () => void;
   onSuggest: () => void;
 }) {
+  const isOverdue = badge.toLowerCase().includes("überfällig");
+
   return (
-    <div className="flex flex-col gap-3 border rounded-lg p-4 hover:bg-gray-50">
+    <div
+      className={`flex flex-col gap-3 border border-gray-200 rounded-2xl p-4 hover:bg-gray-50 ${
+        isOverdue ? "bg-amber-50/40 border-amber-200" : "bg-white"
+      }`}
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -760,24 +818,27 @@ function LeadCardWithActions({
               ? new Date(lead.updated_at).toLocaleString("de-DE")
               : "–"}
           </p>
+
           {sendError && (
             <p className="mt-2 text-xs text-red-600">{sendError}</p>
           )}
         </div>
 
         <div className="flex flex-col items-end gap-2 shrink-0">
-          <span className="text-xs font-medium rounded-full px-2 py-1 bg-amber-100 text-amber-800">
+          <span className="text-xs font-medium rounded-full px-2 py-1 border border-amber-200 bg-amber-50 text-amber-800">
             {badge}
           </span>
+
           {sendPending && (
-            <span className="text-xs font-medium rounded-full px-2 py-1 bg-blue-50 text-blue-700">
+            <span className="text-xs font-medium rounded-full px-2 py-1 border border-amber-200 bg-white text-gray-700">
               Wird gesendet…
             </span>
           )}
+
           <div className="flex items-center gap-2">
             <Link
               href={`/app/nachrichten/${lead.id}`}
-              className="text-xs border rounded px-3 py-1 hover:bg-gray-100"
+              className="text-xs inline-flex items-center gap-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2"
             >
               Konversation öffnen
             </Link>
@@ -785,7 +846,7 @@ function LeadCardWithActions({
             <button
               disabled={busy || sendPending}
               onClick={onToggleEditor}
-              className="text-xs inline-flex items-center gap-1 border rounded px-2 py-1 hover:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="text-xs inline-flex items-center gap-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2 disabled:opacity-60 disabled:cursor-not-allowed"
               title={expanded ? "Text-Editor schließen" : "Text editieren"}
             >
               {expanded ? (
@@ -800,10 +861,11 @@ function LeadCardWithActions({
                 </>
               )}
             </button>
+
             <button
               onClick={onSuggest}
               disabled={busy || sendPending}
-              className="text-xs inline-flex items-center gap-1 border rounded px-2 py-1 hover:bg-gray-100 disabled:opacity-60"
+              className="text-xs inline-flex items-center gap-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2 disabled:opacity-60"
               title="KI-Vorschlag einfügen"
             >
               {busy ? (
@@ -818,15 +880,15 @@ function LeadCardWithActions({
       </div>
 
       {expanded && (
-        <div className="mt-1">
+        <div className="mt-1 rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
           <textarea
             value={draft}
             onChange={(e) => onDraftChange(e.target.value)}
             rows={3}
-            className="w-full text-sm border rounded-md p-2"
+            className="w-full text-sm border border-gray-200 rounded-xl p-3 bg-white focus:outline-none focus:ring-2 focus:ring-amber-300/50"
             placeholder="Individuellen Follow-up-Text eingeben…"
           />
-          <div className="mt-1 text-xs text-gray-500">
+          <div className="mt-2 text-xs text-gray-500">
             Der Text wird direkt über Ihr verbundenes Gmail versendet.
           </div>
         </div>
@@ -836,7 +898,7 @@ function LeadCardWithActions({
         <button
           disabled={busy || sendPending}
           onClick={onSnooze24h}
-          className="inline-flex items-center gap-2 border rounded-md px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2 text-sm disabled:opacity-60"
           title="Follow-up um 24h verschieben"
         >
           {busy ? (
@@ -850,7 +912,7 @@ function LeadCardWithActions({
         <button
           disabled={busy || sendPending}
           onClick={onSend}
-          className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 disabled:opacity-60"
           title="Follow-up jetzt senden"
         >
           {busy ? (
@@ -867,9 +929,12 @@ function LeadCardWithActions({
 
 function EmptyBox({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
-    <div className="text-sm text-gray-500 border rounded-md p-4 inline-flex items-center gap-2">
-      {icon}
-      {text}
+    <div className="w-full rounded-2xl border border-gray-200 bg-[#fbfbfc] p-6 text-center">
+      <div className="inline-flex items-center gap-2 text-gray-900 font-medium">
+        {icon}
+        <span>Alles erledigt.</span>
+      </div>
+      <div className="text-sm text-gray-600 mt-2">{text}</div>
     </div>
   );
 }
