@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useSessionContext,
@@ -8,8 +8,10 @@ import {
 } from "@supabase/auth-helpers-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import Image from "next/image";
 import type { Database } from "@/types/supabase";
+
+const PROPERTY_IMAGES_BUCKET =
+  process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET || "property-images";
 
 type Property = {
   id: number;
@@ -20,30 +22,125 @@ type Property = {
   size_sqm: number | null;
   year_built: number | null;
   type: string | null;
-  image_urls: string[] | null; // storage paths (private)
+  image_urls: string[] | null;
   created_at?: string | null;
   agent_id?: string | null;
 };
 
 type SortKey =
-  | "updated_desc"
-  | "updated_asc"
+  | "created_desc"
+  | "created_asc"
   | "price_desc"
   | "price_asc"
   | "size_desc"
   | "size_asc";
 
-const PROPERTY_IMAGES_BUCKET =
-  process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET || "property-images";
+function safeStr(v: unknown) {
+  return String(v ?? "").trim();
+}
+
+function formatCurrency(v: number | null | undefined) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  return new Intl.NumberFormat("de-DE", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function formatNumber(v: number | null | undefined, suffix = "") {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  return `${new Intl.NumberFormat("de-DE").format(n)}${suffix}`;
+}
+
+function SignedThumb({
+  path,
+  title,
+  supabase,
+}: {
+  path: string;
+  title: string;
+  supabase: ReturnType<typeof useSupabaseClient<Database>>;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!path) return;
+      setErr(null);
+
+      // createSignedUrl -> benötigt Storage-Policy (die du bereits hast / haben solltest)
+      const { data, error } = await supabase.storage
+        .from(PROPERTY_IMAGES_BUCKET)
+        .createSignedUrl(path, 60 * 30); // 30 min
+
+      if (cancelled) return;
+
+      if (error || !data?.signedUrl) {
+        setErr(error?.message ?? "Signed URL fehlgeschlagen");
+        setUrl(null);
+        return;
+      }
+
+      setUrl(data.signedUrl);
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [path, supabase]);
+
+  if (!path) {
+    return (
+      <div className="w-full h-48 bg-[#fbfbfc] border-b border-gray-200 flex items-center justify-center text-gray-400">
+        <div className="text-sm">Kein Bild</div>
+      </div>
+    );
+  }
+
+  if (err) {
+    return (
+      <div className="w-full h-48 bg-[#fbfbfc] border-b border-gray-200 flex items-center justify-center text-gray-500 px-4 text-center">
+        <div className="text-xs">
+          Bild konnte nicht geladen werden.
+          <div className="mt-1 text-[11px] text-gray-400 break-all">{err}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!url) {
+    return (
+      <div className="w-full h-48 bg-[#fbfbfc] border-b border-gray-200 flex items-center justify-center text-gray-400">
+        <div className="text-sm">Lade Bild…</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full h-48">
+      {/* absichtlich <img> statt next/image => keine Domain/Loader-Probleme */}
+      <img
+        src={url}
+        alt={title}
+        className="absolute inset-0 h-full w-full object-cover"
+        loading="lazy"
+      />
+    </div>
+  );
+}
 
 export default function ImmobilienPage() {
   const [search, setSearch] = useState("");
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState<SortKey>("updated_desc");
-
-  // Cache: storagePath -> signedUrl
-  const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({});
+  const [sortBy, setSortBy] = useState<SortKey>("created_desc");
 
   const { session, isLoading } = useSessionContext();
   const user = session?.user;
@@ -60,41 +157,26 @@ export default function ImmobilienPage() {
         return;
       }
 
-      const { data: propertyData, error: propError } = await supabase
+      // WICHTIG: kein updated_at!
+      const { data, error } = await supabase
         .from("properties")
         .select(
           "id,title,street_address,city,price,size_sqm,year_built,type,image_urls,created_at,agent_id"
         )
-        .eq("agent_id", user.id)
-        .order("created_at", { ascending: false });
+        .eq("agent_id", user.id);
 
-      if (propError) {
-        console.error("Fehler beim Laden:", propError?.message);
+      if (error) {
+        console.error("Fehler beim Laden:", error.message);
         setProperties([]);
       } else {
-        setProperties(propertyData || []);
+        setProperties((data as any) || []);
       }
+
       setLoading(false);
     };
 
     void fetchProperties();
   }, [isLoading, user, router, supabase]);
-
-  const safeStr = (v: unknown) => String(v ?? "").trim();
-  const formatCurrency = (v: number | null | undefined) => {
-    const n = Number(v);
-    if (!Number.isFinite(n) || n <= 0) return "—";
-    return new Intl.NumberFormat("de-DE", {
-      style: "currency",
-      currency: "EUR",
-      maximumFractionDigits: 0,
-    }).format(n);
-  };
-  const formatNumber = (v: number | null | undefined, suffix = "") => {
-    const n = Number(v);
-    if (!Number.isFinite(n) || n <= 0) return "—";
-    return `${new Intl.NumberFormat("de-DE").format(n)}${suffix}`;
-  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -107,16 +189,16 @@ export default function ImmobilienPage() {
     });
 
     const sorted = [...base].sort((a, b) => {
-      const aUpd = new Date(a.created_at ?? 0).getTime();
-      const bUpd = new Date(b.created_at ?? 0).getTime();
+      const aCreated = new Date(a.created_at ?? 0).getTime();
+      const bCreated = new Date(b.created_at ?? 0).getTime();
       const aPrice = Number(a.price ?? 0);
       const bPrice = Number(b.price ?? 0);
       const aSize = Number(a.size_sqm ?? 0);
       const bSize = Number(b.size_sqm ?? 0);
 
       switch (sortBy) {
-        case "updated_asc":
-          return aUpd - bUpd;
+        case "created_asc":
+          return aCreated - bCreated;
         case "price_desc":
           return bPrice - aPrice;
         case "price_asc":
@@ -125,67 +207,14 @@ export default function ImmobilienPage() {
           return bSize - aSize;
         case "size_asc":
           return aSize - bSize;
-        case "updated_desc":
+        case "created_desc":
         default:
-          return bUpd - aUpd;
+          return bCreated - aCreated;
       }
     });
 
     return sorted;
   }, [properties, search, sortBy]);
-
-  const fetchSignedThumb = useCallback(
-    async (storagePath: string) => {
-      if (!storagePath) return;
-      if (thumbUrls[storagePath]) return;
-
-      try {
-        const res = await fetch("/api/storage/signed-url", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            bucket: PROPERTY_IMAGES_BUCKET,
-            path: storagePath,
-            expiresIn: 3600,
-          }),
-        });
-
-        const json = await res.json().catch(() => ({}));
-
-        // Tolerant parsing across possible response shapes
-        const url =
-          json?.signedUrl ||
-          json?.url ||
-          json?.signed_url ||
-          json?.data?.signedUrl ||
-          json?.data?.url ||
-          (Array.isArray(json?.signedUrls)
-            ? json.signedUrls?.[0]
-            : undefined) ||
-          (Array.isArray(json?.urls) ? json.urls?.[0] : undefined) ||
-          (Array.isArray(json?.data) ? json.data?.[0]?.signedUrl : undefined);
-
-        if (typeof url === "string" && url.startsWith("http")) {
-          setThumbUrls((m) => ({ ...m, [storagePath]: url }));
-        }
-      } catch (e) {
-        console.warn("Could not create signed url for thumb:", storagePath, e);
-      }
-    },
-    [thumbUrls]
-  );
-
-  // Pre-fetch thumbnails for all visible cards
-  useEffect(() => {
-    const firstPaths = filtered
-      .map((p) => p.image_urls?.[0])
-      .filter((v): v is string => typeof v === "string" && v.length > 0);
-
-    // fire & forget
-    firstPaths.forEach((p) => {
-      void fetchSignedThumb(p);
-    });
-  }, [filtered, fetchSignedThumb]);
 
   if (isLoading || loading) {
     return <p className="text-muted-foreground">Lade Immobilien…</p>;
@@ -231,8 +260,8 @@ export default function ImmobilienPage() {
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
                 title="Sortierung"
               >
-                <option value="updated_desc">Neueste zuerst</option>
-                <option value="updated_asc">Älteste zuerst</option>
+                <option value="created_desc">Neueste zuerst</option>
+                <option value="created_asc">Älteste zuerst</option>
                 <option value="price_desc">Preis: hoch → niedrig</option>
                 <option value="price_asc">Preis: niedrig → hoch</option>
                 <option value="size_desc">Fläche: groß → klein</option>
@@ -268,31 +297,19 @@ export default function ImmobilienPage() {
               ]
                 .filter(Boolean)
                 .join(", ");
-              const storagePath = property.image_urls?.[0] || "";
-              const signed = storagePath ? thumbUrls[storagePath] : "";
+
+              const firstPath = property.image_urls?.[0] || "";
 
               return (
                 <div
                   key={property.id}
                   className="rounded-2xl border border-gray-200 bg-white overflow-hidden hover:shadow-md transition-shadow"
                 >
-                  {signed ? (
-                    <div className="relative w-full h-48">
-                      <Image
-                        src={signed}
-                        alt={title}
-                        fill
-                        className="object-cover"
-                        unoptimized
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-full h-48 bg-[#fbfbfc] border-b border-gray-200 flex items-center justify-center text-gray-400">
-                      <div className="text-sm">
-                        {storagePath ? "Lade Bild…" : "Kein Bild"}
-                      </div>
-                    </div>
-                  )}
+                  <SignedThumb
+                    path={firstPath}
+                    title={title}
+                    supabase={supabase}
+                  />
 
                   <div className="p-4 space-y-3">
                     <div className="min-w-0">
