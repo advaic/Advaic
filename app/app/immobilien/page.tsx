@@ -9,7 +9,7 @@ import Image from "next/image";
 import type { Database } from "@/types/supabase";
 
 type Property = {
-  id: string;
+  id: number;
   title: string | null;
   street_address: string | null;
   city: string | null;
@@ -57,7 +57,7 @@ export default function ImmobilienPage() {
         .from("properties")
         .select("id,title,street_address,city,price,size_sqm,year_built,type,image_urls,created_at,updated_at,agent_id")
         .eq("agent_id", user.id)
-        .order("updated_at", { ascending: false });
+        .order("created_at", { ascending: false });
 
       console.log("Session user ID:", user?.id);
       console.log("Fetched properties:", propertyData);
@@ -158,7 +158,7 @@ export default function ImmobilienPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 className="border px-3 py-2 rounded-lg text-sm w-full md:w-72 bg-white border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
               />
-              <Link href="/immobilien/hinzufuegen">
+              <Link href="/app/immobilien/hinzufuegen">
                 <Button>+ Immobilie hinzufügen</Button>
               </Link>
             </div>
@@ -188,7 +188,7 @@ export default function ImmobilienPage() {
               {search.trim() ? "Keine Treffer für deine Suche." : "Füge deine erste Immobilie hinzu, um hier eine Übersicht zu sehen."}
             </div>
             <div className="mt-4 inline-flex">
-              <Link href="/immobilien/hinzufuegen">
+              <Link href="/app/immobilien/hinzufuegen">
                 <Button>+ Immobilie hinzufügen</Button>
               </Link>
             </div>
@@ -251,10 +251,10 @@ export default function ImmobilienPage() {
                     </div>
 
                     <div className="pt-1 flex gap-2">
-                      <Link href={`/immobilien/${property.id}`} className="w-full">
+                      <Link href={`/app/immobilien/${property.id}`} className="w-full">
                         <Button size="sm" className="w-full">Details</Button>
                       </Link>
-                      <Link href={`/immobilien/${property.id}/bearbeiten`} className="w-full">
+                      <Link href={`/app/immobilien/${property.id}/bearbeiten`} className="w-full">
                         <Button size="sm" variant="outline" className="w-full">Bearbeiten</Button>
                       </Link>
                     </div>
