@@ -3,7 +3,9 @@
   Purpose: Edit existing property (all fields + images), styled to match the modern Hinzufügen page.
   Notes:
   - Uses private storage paths in `properties.image_urls`.
+  - Uses signed URL previews for images (private bucket).
   - Uses SortablePreviewList for reordering, preview, deletion.
+  - API-based deletion of images (RLS-safe).
   - Adds support for new fields: listing_summary, highlights, requirements, internal_notes, contact_instructions, status.
 */
 
@@ -27,6 +29,87 @@ import { supabase } from "@/lib/supabaseClient";
 
 const PROPERTY_IMAGES_BUCKET =
   process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET || "property-images";
+
+/**
+ * Remove private storage objects via server route (RLS-safe)
+ * Expects /api/storage/remove to exist.
+ */
+async function removeStoragePathsViaApi(bucket: string, paths: string[]) {
+  const cleaned = (paths || [])
+    .filter(Boolean)
+    .filter((p) => typeof p === "string" && !p.startsWith("http"));
+
+  if (cleaned.length === 0) return;
+
+  const res = await fetch("/api/storage/remove", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bucket, paths: cleaned }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as any)?.error || "Konnte Dateien nicht löschen.");
+  }
+}
+
+/**
+ * Be tolerant to different signed-url response shapes and return a map {path -> signedUrl}
+ */
+function extractSignedUrlMap(
+  payload: any,
+  paths: string[]
+): Record<string, string> {
+  const root = payload ?? {};
+  const candidate =
+    root.signedUrls ??
+    root.signed_urls ??
+    root.urls ??
+    root.urlMap ??
+    root.data;
+
+  const map: Record<string, string> = {};
+  if (!candidate) return map;
+
+  // object map: { "path": "https://signed..." }
+  if (typeof candidate === "object" && !Array.isArray(candidate)) {
+    for (const [k, v] of Object.entries(candidate)) {
+      if (typeof v === "string" && v.startsWith("http")) map[String(k)] = v;
+    }
+    return map;
+  }
+
+  // list of {path,url} objects
+  if (
+    Array.isArray(candidate) &&
+    candidate.length > 0 &&
+    typeof candidate[0] === "object"
+  ) {
+    for (const item of candidate) {
+      const p = String(
+        (item as any)?.path ?? (item as any)?.filePath ?? ""
+      ).trim();
+      const u = String(
+        (item as any)?.url ??
+          (item as any)?.signedUrl ??
+          (item as any)?.signed_url ??
+          ""
+      ).trim();
+      if (p && u && u.startsWith("http")) map[p] = u;
+    }
+    return map;
+  }
+
+  // legacy array aligned with paths: ["https://...","https://..."]
+  if (Array.isArray(candidate)) {
+    for (let i = 0; i < paths.length; i++) {
+      const u = candidate[i];
+      if (typeof u === "string" && u.startsWith("http")) map[paths[i]] = u;
+    }
+  }
+
+  return map;
+}
 
 type PropertyEdit = {
   // id is numeric in your add page; here we keep it flexible (string|number) because route param is string
@@ -100,9 +183,44 @@ export default function EditPropertyPage() {
 
   const [property, setProperty] = useState<PropertyEdit | null>(null);
 
-  // Sortable list accepts (File | string)[]
-  // We store uploaded images as storage-path strings in this list.
+  /**
+   * IMPORTANT:
+   * - `files` is CANONICAL and should contain (File | storagePath)
+   * - The UI list uses signed URLs for preview, but we always convert back to storage paths for DB.
+   */
   const [files, setFiles] = useState<(File | string)[]>([]);
+
+  // For private buckets: resolve storage paths to signed preview URLs
+  const [signedUrlMap, setSignedUrlMap] = useState<Record<string, string>>({});
+
+  const signedUrlToPath = useMemo<Record<string, string>>(() => {
+    const rev: Record<string, string> = {};
+    for (const [path, url] of Object.entries(signedUrlMap)) {
+      if (url) rev[url] = path;
+    }
+    return rev;
+  }, [signedUrlMap]);
+
+  const uiFiles = useMemo<(File | string)[]>(() => {
+    return files.map((f) => {
+      if (typeof f !== "string") return f;
+      return signedUrlMap[f] ?? f;
+    });
+  }, [files, signedUrlMap]);
+
+  const setUiFiles = useCallback(
+    (next: (File | string)[]) => {
+      const canonical = next.map((item) => {
+        if (typeof item !== "string") return item;
+        return signedUrlToPath[item] ?? item;
+      });
+      setFiles(canonical);
+    },
+    [signedUrlToPath]
+  );
+
+  // Track previous canonical paths so we can delete removed images from storage
+  const prevImagePathsRef = useRef<string[]>([]);
   const authedUserIdRef = useRef<string | null>(null);
 
   const statusBadge = useMemo(() => {
@@ -185,6 +303,7 @@ export default function EditPropertyPage() {
 
       setProperty(normalized);
       setFiles((normalized.image_urls ?? []) as string[]);
+      prevImagePathsRef.current = (normalized.image_urls ?? []) as string[];
       setLoading(false);
     };
 
@@ -290,6 +409,53 @@ export default function EditPropertyPage() {
     []
   );
 
+  /**
+   * Fetch signed preview URLs for the current storage paths (private bucket)
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      const paths = files
+        .filter((f): f is string => typeof f === "string")
+        .filter((p) => !!p && !p.startsWith("http"));
+
+      if (paths.length === 0) {
+        setSignedUrlMap({});
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/storage/signed-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bucket: PROPERTY_IMAGES_BUCKET,
+            paths,
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          console.warn("signed-url failed", data);
+          return;
+        }
+
+        const map = extractSignedUrlMap(data, paths);
+        if (!cancelled) setSignedUrlMap(map);
+      } catch (e) {
+        console.warn("signed-url fetch error", e);
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files]);
+
   // Robust upload + sync (same approach as Hinzufügen)
   useEffect(() => {
     let cancelled = false;
@@ -325,8 +491,12 @@ export default function EditPropertyPage() {
 
       // Sync order to DB (strings only)
       const orderedPaths = nextFiles
-        .map((f) => (typeof f === "string" ? f : null))
-        .filter(Boolean) as string[];
+        .map((f) => {
+          if (typeof f !== "string") return null;
+          // Convert any signed preview URLs back to storage paths (defensive)
+          return signedUrlToPath[f] ?? f;
+        })
+        .filter((p): p is string => !!p && !p.startsWith("http"));
 
       const current = property.image_urls || [];
       const sameLen = current.length === orderedPaths.length;
@@ -336,7 +506,56 @@ export default function EditPropertyPage() {
 
       if (!same && !cancelled) {
         setProperty((p) => (p ? { ...p, image_urls: orderedPaths } : p));
+        prevImagePathsRef.current = orderedPaths;
         await persistUpdate({ image_urls: orderedPaths } as any);
+      }
+      else {
+        prevImagePathsRef.current = orderedPaths;
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files]);
+
+  /**
+   * Delete removed images from private storage via /api/storage/remove
+   * whenever the UI list changes (remove + reorder).
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      const currentPaths = files
+        .filter((f): f is string => typeof f === "string")
+        .map((s) => signedUrlToPath[s] ?? s)
+        .filter((p) => !!p && !p.startsWith("http"));
+
+      const prev = prevImagePathsRef.current || [];
+      const removed = prev.filter((p) => !currentPaths.includes(p));
+
+      // Update ref early to prevent double deletes
+      prevImagePathsRef.current = currentPaths;
+
+      if (removed.length === 0) return;
+
+      try {
+        await removeStoragePathsViaApi(PROPERTY_IMAGES_BUCKET, removed);
+
+        // Clean preview map as well
+        setSignedUrlMap((prevMap) => {
+          const next = { ...prevMap };
+          for (const p of removed) delete next[p];
+          return next;
+        });
+      } catch (e: any) {
+        console.error(e);
+        if (!cancelled)
+          toast.error(e?.message ?? "Bild löschen fehlgeschlagen.");
       }
     };
 
@@ -380,7 +599,10 @@ export default function EditPropertyPage() {
 
       status: property.status,
       image_urls:
-        (files.filter((f) => typeof f === "string") as string[]) || [],
+        (files
+          .filter((f) => typeof f === "string")
+          .map((s) => (typeof s === "string" ? signedUrlToPath[s] ?? s : s))
+          .filter((p) => typeof p === "string" && p && !p.startsWith("http")) as string[]) || [],
     } as any);
 
     toast.success("Änderungen gespeichert.");
@@ -405,6 +627,7 @@ export default function EditPropertyPage() {
 
     await persistUpdate({ status: "published" } as any);
     toast.success("Immobilie veröffentlicht.");
+    router.push("/app/immobilien");
   };
 
   const discardAndDelete = async () => {
@@ -417,12 +640,16 @@ export default function EditPropertyPage() {
 
     setDeleting(true);
     try {
-      const paths = (property.image_urls || []).filter(Boolean);
+      const paths = (property.image_urls || [])
+        .filter(Boolean)
+        .filter((p) => typeof p === "string" && !p.startsWith("http"));
+
       if (paths.length > 0) {
-        const { error: removeErr } = await supabase.storage
-          .from(PROPERTY_IMAGES_BUCKET)
-          .remove(paths);
-        if (removeErr) console.warn("⚠️ Could not remove images:", removeErr);
+        try {
+          await removeStoragePathsViaApi(PROPERTY_IMAGES_BUCKET, paths);
+        } catch (e) {
+          console.warn("⚠️ Could not remove images via API:", e);
+        }
       }
 
       const { error } = await supabase
@@ -878,7 +1105,7 @@ export default function EditPropertyPage() {
                     Du kannst Reihenfolge ändern und Bilder löschen.
                   </div>
 
-                  <SortablePreviewList files={files} setFiles={setFiles} />
+                  <SortablePreviewList files={uiFiles} setFiles={setUiFiles} />
 
                   <div className="mt-3 text-xs text-gray-500 inline-flex items-center gap-2">
                     <CloudUpload className="h-4 w-4" />

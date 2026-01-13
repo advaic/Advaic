@@ -7,26 +7,15 @@ export const runtime = "nodejs";
 
 type Body = {
   bucket?: string;
-  path?: string;
   paths?: string[];
-  expiresIn?: number;
 };
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
-function normalizePaths(body: Body | null) {
-  const single = String(body?.path ?? "").trim();
-  const many = Array.isArray(body?.paths) ? body!.paths : [];
-  const paths = (single ? [single] : many)
-    .map((p) => String(p ?? "").trim())
-    .filter(Boolean);
-  return paths;
-}
-
 function isSafePath(p: string) {
-  // basic traversal hardening
+  if (!p) return false;
   if (p.includes("..")) return false;
   if (p.startsWith("/")) return false;
   return true;
@@ -35,10 +24,15 @@ function isSafePath(p: string) {
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Body | null;
   const bucket = String(body?.bucket ?? "").trim();
-  const paths = normalizePaths(body);
+  const paths = Array.isArray(body?.paths)
+    ? body!.paths
+        .map(String)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
 
   if (!bucket || paths.length === 0)
-    return jsonError("Missing bucket/path(s)", 400);
+    return jsonError("Missing bucket/paths", 400);
   if (!paths.every(isSafePath)) return jsonError("Invalid path", 400);
 
   const ATTACHMENTS_BUCKET =
@@ -50,7 +44,6 @@ export async function POST(req: NextRequest) {
   const allowed = new Set([ATTACHMENTS_BUCKET, PROPERTY_IMAGES_BUCKET]);
   if (!allowed.has(bucket)) return jsonError("Invalid bucket", 400);
 
-  // Auth via cookie session
   const res = NextResponse.next();
   const supabaseAuth = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -81,17 +74,11 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // TTL: 1–60 minutes (default 10 min)
-  const requested = Number(body?.expiresIn);
-  const ttl = Number.isFinite(requested)
-    ? Math.max(60, Math.min(3600, requested))
-    : 600;
-
+  // minimal ownership checks for property images (covers legacy + new)
   async function assertAllowedPath(path: string) {
     const parts = path.split("/").filter(Boolean);
 
     if (bucket === ATTACHMENTS_BUCKET) {
-      // attachments MUST be in agents/<uid>/leads/<leadId>/...
       if (
         parts.length < 5 ||
         parts[0] !== "agents" ||
@@ -103,10 +90,6 @@ export async function POST(req: NextRequest) {
       return;
     }
 
-    // PROPERTY_IMAGES_BUCKET:
-    // allow BOTH:
-    // A) agents/<uid>/properties/<propertyId>/...
-    // B) <propertyId>/...  (legacy)
     if (bucket === PROPERTY_IMAGES_BUCKET) {
       let propertyId: number | null = null;
 
@@ -117,17 +100,13 @@ export async function POST(req: NextRequest) {
         parts[2] === "properties" &&
         Number.isFinite(Number(parts[3]));
 
-      if (isNew) {
-        propertyId = Number(parts[3]);
-      } else {
-        // legacy: first segment must be numeric propertyId
-        if (parts.length < 2 || !Number.isFinite(Number(parts[0]))) {
+      if (isNew) propertyId = Number(parts[3]);
+      else {
+        if (parts.length < 2 || !Number.isFinite(Number(parts[0])))
           throw new Error("Forbidden");
-        }
         propertyId = Number(parts[0]);
       }
 
-      // Strong ownership check
       const { data: prop, error: propErr } = await admin
         .from("properties")
         .select("id, agent_id")
@@ -137,31 +116,17 @@ export async function POST(req: NextRequest) {
       if (propErr || !prop) throw new Error("NotFound");
       if (String((prop as any).agent_id) !== String(user.id))
         throw new Error("Forbidden");
-
       return;
     }
   }
 
   try {
-    // Validate each path
     for (const p of paths) await assertAllowedPath(p);
 
-    // Create signed urls
-    const out: Record<string, string> = {};
-    for (const p of paths) {
-      const { data, error } = await admin.storage
-        .from(bucket)
-        .createSignedUrl(p, ttl);
-      if (error || !data?.signedUrl)
-        throw new Error(error?.message || "Could not create signed url");
-      out[p] = data.signedUrl;
-    }
+    const { error } = await admin.storage.from(bucket).remove(paths);
+    if (error) return jsonError(error.message, 400);
 
-    // return single or batch shape
-    if (paths.length === 1) {
-      return NextResponse.json({ signedUrl: out[paths[0]], expiresIn: ttl });
-    }
-    return NextResponse.json({ signedUrls: out, expiresIn: ttl });
+    return NextResponse.json({ ok: true, removed: paths.length });
   } catch (e: any) {
     const msg = String(e?.message || "Forbidden");
     if (msg === "NotFound") return jsonError("Property not found", 404);

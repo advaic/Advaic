@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useSessionContext, useSupabaseClient } from "@supabase/auth-helpers-react";
+import {
+  useSessionContext,
+  useSupabaseClient,
+} from "@supabase/auth-helpers-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import Image from "next/image";
@@ -17,7 +20,7 @@ type Property = {
   size_sqm: number | null;
   year_built: number | null;
   type: string | null;
-  image_urls: string[] | null;
+  image_urls: string[] | null; // storage paths (private)
   created_at?: string | null;
   agent_id?: string | null;
 };
@@ -30,11 +33,17 @@ type SortKey =
   | "size_desc"
   | "size_asc";
 
+const PROPERTY_IMAGES_BUCKET =
+  process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET || "property-images";
+
 export default function ImmobilienPage() {
   const [search, setSearch] = useState("");
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("updated_desc");
+
+  // Cache: storagePath -> signedUrl
+  const [thumbUrls, setThumbUrls] = useState<Record<string, string>>({});
 
   const { session, isLoading } = useSessionContext();
   const user = session?.user;
@@ -42,7 +51,6 @@ export default function ImmobilienPage() {
   const supabase = useSupabaseClient<Database>();
 
   useEffect(() => {
-    console.log("Inside useEffect → isLoading:", isLoading, "user:", user);
     const fetchProperties = async () => {
       if (isLoading) return;
 
@@ -54,13 +62,11 @@ export default function ImmobilienPage() {
 
       const { data: propertyData, error: propError } = await supabase
         .from("properties")
-        .select("id,title,street_address,city,price,size_sqm,year_built,type,image_urls,created_at,agent_id")
+        .select(
+          "id,title,street_address,city,price,size_sqm,year_built,type,image_urls,created_at,agent_id"
+        )
         .eq("agent_id", user.id)
         .order("created_at", { ascending: false });
-
-      console.log("Session user ID:", user?.id);
-      console.log("Fetched properties:", propertyData);
-      console.log("Fetch error:", propError);
 
       if (propError) {
         console.error("Fehler beim Laden:", propError?.message);
@@ -71,7 +77,7 @@ export default function ImmobilienPage() {
       setLoading(false);
     };
 
-    fetchProperties();
+    void fetchProperties();
   }, [isLoading, user, router, supabase]);
 
   const safeStr = (v: unknown) => String(v ?? "").trim();
@@ -94,7 +100,9 @@ export default function ImmobilienPage() {
     const q = search.trim().toLowerCase();
     const base = (properties ?? []).filter((p) => {
       if (!q) return true;
-      const hay = `${safeStr(p.title)} ${safeStr(p.street_address)} ${safeStr(p.city)}`.toLowerCase();
+      const hay = `${safeStr(p.title)} ${safeStr(p.street_address)} ${safeStr(
+        p.city
+      )}`.toLowerCase();
       return hay.includes(q);
     });
 
@@ -126,8 +134,60 @@ export default function ImmobilienPage() {
     return sorted;
   }, [properties, search, sortBy]);
 
+  const fetchSignedThumb = useCallback(
+    async (storagePath: string) => {
+      if (!storagePath) return;
+      if (thumbUrls[storagePath]) return;
+
+      try {
+        const res = await fetch("/api/storage/signed-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bucket: PROPERTY_IMAGES_BUCKET,
+            path: storagePath,
+            expiresIn: 3600,
+          }),
+        });
+
+        const json = await res.json().catch(() => ({}));
+
+        // Tolerant parsing across possible response shapes
+        const url =
+          json?.signedUrl ||
+          json?.url ||
+          json?.signed_url ||
+          json?.data?.signedUrl ||
+          json?.data?.url ||
+          (Array.isArray(json?.signedUrls)
+            ? json.signedUrls?.[0]
+            : undefined) ||
+          (Array.isArray(json?.urls) ? json.urls?.[0] : undefined) ||
+          (Array.isArray(json?.data) ? json.data?.[0]?.signedUrl : undefined);
+
+        if (typeof url === "string" && url.startsWith("http")) {
+          setThumbUrls((m) => ({ ...m, [storagePath]: url }));
+        }
+      } catch (e) {
+        console.warn("Could not create signed url for thumb:", storagePath, e);
+      }
+    },
+    [thumbUrls]
+  );
+
+  // Pre-fetch thumbnails for all visible cards
+  useEffect(() => {
+    const firstPaths = filtered
+      .map((p) => p.image_urls?.[0])
+      .filter((v): v is string => typeof v === "string" && v.length > 0);
+
+    // fire & forget
+    firstPaths.forEach((p) => {
+      void fetchSignedThumb(p);
+    });
+  }, [filtered, fetchSignedThumb]);
+
   if (isLoading || loading) {
-    console.log("Still loading. isLoading:", isLoading, "loading:", loading);
     return <p className="text-muted-foreground">Lade Immobilien…</p>;
   }
 
@@ -138,7 +198,9 @@ export default function ImmobilienPage() {
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl md:text-2xl font-semibold">Immobilien</h1>
-              <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">Advaic</span>
+              <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
+                Advaic
+              </span>
               <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700">
                 {filtered.length} angezeigt
               </span>
@@ -182,9 +244,13 @@ export default function ImmobilienPage() {
 
         {filtered.length === 0 ? (
           <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center">
-            <div className="text-gray-900 font-medium">Keine Immobilien gefunden.</div>
+            <div className="text-gray-900 font-medium">
+              Keine Immobilien gefunden.
+            </div>
             <div className="text-sm text-gray-600 mt-1">
-              {search.trim() ? "Keine Treffer für deine Suche." : "Füge deine erste Immobilie hinzu, um hier eine Übersicht zu sehen."}
+              {search.trim()
+                ? "Keine Treffer für deine Suche."
+                : "Füge deine erste Immobilie hinzu, um hier eine Übersicht zu sehen."}
             </div>
             <div className="mt-4 inline-flex">
               <Link href="/app/immobilien/hinzufuegen">
@@ -196,20 +262,24 @@ export default function ImmobilienPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {filtered.map((property) => {
               const title = safeStr(property.title) || "Ohne Titel";
-              const addr = [safeStr(property.street_address), safeStr(property.city)]
+              const addr = [
+                safeStr(property.street_address),
+                safeStr(property.city),
+              ]
                 .filter(Boolean)
                 .join(", ");
-              const img = property.image_urls?.[0] || "";
+              const storagePath = property.image_urls?.[0] || "";
+              const signed = storagePath ? thumbUrls[storagePath] : "";
 
               return (
                 <div
                   key={property.id}
                   className="rounded-2xl border border-gray-200 bg-white overflow-hidden hover:shadow-md transition-shadow"
                 >
-                  {img ? (
+                  {signed ? (
                     <div className="relative w-full h-48">
                       <Image
-                        src={img}
+                        src={signed}
                         alt={title}
                         fill
                         className="object-cover"
@@ -218,13 +288,17 @@ export default function ImmobilienPage() {
                     </div>
                   ) : (
                     <div className="w-full h-48 bg-[#fbfbfc] border-b border-gray-200 flex items-center justify-center text-gray-400">
-                      <div className="text-sm">Kein Bild</div>
+                      <div className="text-sm">
+                        {storagePath ? "Lade Bild…" : "Kein Bild"}
+                      </div>
                     </div>
                   )}
 
                   <div className="p-4 space-y-3">
                     <div className="min-w-0">
-                      <h2 className="text-base font-semibold truncate">{title}</h2>
+                      <h2 className="text-base font-semibold truncate">
+                        {title}
+                      </h2>
                       <p className="text-sm text-gray-600 truncate">
                         {addr || "Adresse fehlt"}
                       </p>
@@ -233,28 +307,46 @@ export default function ImmobilienPage() {
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] px-3 py-2">
                         <div className="text-[11px] text-gray-500">Preis</div>
-                        <div className="font-medium text-gray-900">{formatCurrency(property.price)}</div>
+                        <div className="font-medium text-gray-900">
+                          {formatCurrency(property.price)}
+                        </div>
                       </div>
                       <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] px-3 py-2">
                         <div className="text-[11px] text-gray-500">Fläche</div>
-                        <div className="font-medium text-gray-900">{formatNumber(property.size_sqm, " m²")}</div>
+                        <div className="font-medium text-gray-900">
+                          {formatNumber(property.size_sqm, " m²")}
+                        </div>
                       </div>
                       <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] px-3 py-2">
                         <div className="text-[11px] text-gray-500">Baujahr</div>
-                        <div className="font-medium text-gray-900">{property.year_built ?? "—"}</div>
+                        <div className="font-medium text-gray-900">
+                          {property.year_built ?? "—"}
+                        </div>
                       </div>
                       <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] px-3 py-2">
                         <div className="text-[11px] text-gray-500">Typ</div>
-                        <div className="font-medium text-gray-900 truncate">{safeStr(property.type) || "—"}</div>
+                        <div className="font-medium text-gray-900 truncate">
+                          {safeStr(property.type) || "—"}
+                        </div>
                       </div>
                     </div>
 
                     <div className="pt-1 flex gap-2">
-                      <Link href={`/app/immobilien/${property.id}`} className="w-full">
-                        <Button size="sm" className="w-full">Details</Button>
+                      <Link
+                        href={`/app/immobilien/${property.id}`}
+                        className="w-full"
+                      >
+                        <Button size="sm" className="w-full">
+                          Details
+                        </Button>
                       </Link>
-                      <Link href={`/app/immobilien/${property.id}/bearbeiten`} className="w-full">
-                        <Button size="sm" variant="outline" className="w-full">Bearbeiten</Button>
+                      <Link
+                        href={`/app/immobilien/${property.id}/bearbeiten`}
+                        className="w-full"
+                      >
+                        <Button size="sm" variant="outline" className="w-full">
+                          Bearbeiten
+                        </Button>
                       </Link>
                     </div>
                   </div>

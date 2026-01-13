@@ -119,7 +119,7 @@ export default function PropertyDetailClient({
       const storagePaths = rawImageUrls.filter((u) => !u.startsWith("http"));
 
       // Resolve private storage paths via signed-url endpoint
-      let signed: string[] = [];
+      let signedMap: Record<string, string> = {};
       if (storagePaths.length > 0) {
         try {
           const res = await fetch("/api/storage/signed-url", {
@@ -131,44 +131,49 @@ export default function PropertyDetailClient({
             }),
           });
 
-          const data = await res.json().catch(() => ({} as any));
+          const data = (await res.json().catch(() => ({}))) as any;
           if (!res.ok) {
-            throw new Error((data as any)?.error || "Konnte Bilder nicht laden.");
+            throw new Error(data?.error || "Konnte Bilder nicht laden.");
           }
 
-          // Be tolerant to different response shapes
-          const maybeUrls =
-            (data as any)?.urls ||
-            (data as any)?.signedUrls ||
-            (data as any)?.signed_urls ||
-            (data as any)?.data;
-
-          signed = Array.isArray(maybeUrls) ? maybeUrls : [];
+          // Expected (new) shape: { signedUrls: { [path]: url } }
+          if (data?.signedUrls && typeof data.signedUrls === "object") {
+            signedMap = data.signedUrls as Record<string, string>;
+          } else if (data?.signed_urls && typeof data.signed_urls === "object") {
+            signedMap = data.signed_urls as Record<string, string>;
+          } else if (typeof data?.signedUrl === "string" && storagePaths.length === 1) {
+            // Single-item convenience shape
+            signedMap = { [storagePaths[0]]: data.signedUrl };
+          } else if (Array.isArray(data?.urls) && data.urls.length === storagePaths.length) {
+            // Legacy array fallback
+            signedMap = Object.fromEntries(storagePaths.map((p: string, i: number) => [p, data.urls[i]]));
+          } else {
+            signedMap = {};
+          }
         } catch (e) {
           console.error(e);
           // If signing fails, don't pass raw storage paths to the UI
-          signed = [];
+          signedMap = {};
         }
       }
 
-      // Rebuild in original order
-      const byPath = new Map<string, string>();
-      for (let i = 0; i < storagePaths.length; i++) {
-        byPath.set(storagePaths[i], signed[i] ?? storagePaths[i]);
-      }
-
+      // Rebuild in original order (only keep resolvable http(s) urls)
       const ordered = rawImageUrls
-        .map((u) => (u.startsWith("http") ? u : byPath.get(u) ?? u))
-        .filter((u) => typeof u === "string" && u.startsWith("http"));
+        .map((u) => {
+          if (u.startsWith("http")) return u;
+          return signedMap[u];
+        })
+        .filter((u): u is string => typeof u === "string" && u.startsWith("http"));
 
       if (!cancelled) setResolvedImageUrls(ordered);
+      return;
     };
 
     void run();
     return () => {
       cancelled = true;
     };
-  }, [rawImageUrls]);
+  }, [rawImageUrls, PROPERTY_IMAGES_BUCKET]);
 
   const hasImages = resolvedImageUrls.length > 0;
 
