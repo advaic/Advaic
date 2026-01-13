@@ -3,7 +3,7 @@
 import { useKeenSlider } from "keen-slider/react";
 import "keen-slider/keen-slider.min.css";
 import Image from "next/image";
-import { useState, useEffect, useMemo, useCallback, useEffect as useEffectReact } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import clsx from "clsx";
 
 interface Property {
@@ -45,7 +45,9 @@ function formatCurrencyEUR(value: unknown): string {
     return value.toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 0 });
   }
   if (typeof value === "string") {
-    const num = Number(value);
+    const trimmed = value.trim();
+    if (!trimmed) return "—";
+    const num = Number(trimmed);
     if (!isNaN(num)) {
       return num.toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 0 });
     }
@@ -69,6 +71,17 @@ function firstNonEmpty(...vals: Array<string | null | undefined>): string {
     if (val && val.trim() !== "") return val.trim();
   }
   return "";
+}
+
+function normalizeVermarktung(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "—";
+  const v = raw.toLowerCase();
+  if (v === "rent" || v === "vermietung" || v === "miete") return "Vermietung";
+  if (v === "sale" || v === "verkauf" || v === "kauf") return "Verkauf";
+  // If stored already as proper label, keep it
+  if (raw === "Vermietung" || raw === "Verkauf") return raw;
+  return raw;
 }
 
 export default function PropertyDetailClient({
@@ -151,7 +164,7 @@ export default function PropertyDetailClient({
   const hasImages = resolvedImageUrls.length > 0;
 
   const [sliderRef, instanceRef] = useKeenSlider<HTMLDivElement>({
-    loop: hasImages,
+    loop: resolvedImageUrls.length > 1,
     slides: { perView: 1 },
     slideChanged(slider) {
       setCurrentSlide(slider.track.details.rel);
@@ -183,7 +196,7 @@ export default function PropertyDetailClient({
     }
   }, [currentSlide, resolvedImageUrls.length, instanceRef]);
 
-  useEffectReact(() => {
+  useEffect(() => {
     if (!lightboxOpen) return;
 
     function onKeyDown(e: KeyboardEvent) {
@@ -393,7 +406,7 @@ export default function PropertyDetailClient({
               {formatCurrencyEUR(property.price)}
             </div>
             <div className="text-sm font-medium uppercase text-gray-500 select-none">
-              {property.price_type === "rent" || property.price_type === "vermietung" ? "Vermietung" : property.price_type === "sale" || property.price_type === "verkauf" ? "Verkauf" : firstNonEmpty(property.price_type, "")}
+              {normalizeVermarktung(property.price_type)}
             </div>
             {property.status && (
               <span className="ml-auto inline-block rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800 select-none">
@@ -436,7 +449,7 @@ export default function PropertyDetailClient({
             <h2 className="mb-3 text-base font-semibold border-b border-gray-200 pb-2">Details</h2>
             <div className="grid grid-cols-2 gap-y-2 gap-x-4">
               <div className="font-semibold">Vermarktung:</div>
-              <div>{property.price_type === "rent" || property.price_type === "vermietung" ? "Vermietung" : property.price_type === "sale" || property.price_type === "verkauf" ? "Verkauf" : firstNonEmpty(property.price_type, "—")}</div>
+              <div>{normalizeVermarktung(property.price_type)}</div>
 
               <div className="font-semibold">Typ:</div>
               <div>{firstNonEmpty(property.type, "—")}</div>

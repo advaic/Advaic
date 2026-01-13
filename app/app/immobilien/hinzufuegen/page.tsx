@@ -367,7 +367,18 @@ export default function HinzufuegenPage() {
   const uploadImageToSupabase = useCallback(
     async (file: File, propertyId: number) => {
       const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-      const filePath = `${propertyId}/${Date.now()}-${safeName}`;
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error("Nicht eingeloggt. Bitte neu einloggen.");
+      }
+
+      // IMPORTANT: Path must match signed-url policy:
+      // agents/<uid>/properties/<propertyId>/...
+      const filePath = `agents/${user.id}/properties/${propertyId}/${Date.now()}-${safeName}`;
 
       const { error } = await supabase.storage
         .from(PROPERTY_IMAGES_BUCKET)

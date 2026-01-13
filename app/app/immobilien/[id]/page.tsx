@@ -22,8 +22,8 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     }
   );
 
-  const id = Number(params.id);
-  if (Number.isNaN(id)) return notFound();
+  const id = params.id; // UUID/string id
+  if (!id) return notFound();
 
   const { data: property, error: propertyError } = await supabase
     .from("properties")

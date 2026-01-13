@@ -103,6 +103,7 @@ export default function EditPropertyPage() {
   // Sortable list accepts (File | string)[]
   // We store uploaded images as storage-path strings in this list.
   const [files, setFiles] = useState<(File | string)[]>([]);
+  const authedUserIdRef = useRef<string | null>(null);
 
   const statusBadge = useMemo(() => {
     if (deleting)
@@ -253,7 +254,23 @@ export default function EditPropertyPage() {
   const uploadImageToSupabase = useCallback(
     async (file: File, propertyId: string | number) => {
       const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-      const filePath = `${propertyId}/${Date.now()}-${safeName}`;
+
+      // Cache authed user id (needed for secure folder structure)
+      if (!authedUserIdRef.current) {
+        const {
+          data: { user },
+          error: userErr,
+        } = await supabase.auth.getUser();
+
+        if (userErr || !user) {
+          throw new Error("Nicht eingeloggt. Bitte neu einloggen.");
+        }
+
+        authedUserIdRef.current = user.id;
+      }
+
+      const userId = authedUserIdRef.current;
+      const filePath = `agents/${userId}/properties/${propertyId}/${Date.now()}-${safeName}`;
 
       const { error } = await supabase.storage
         .from(PROPERTY_IMAGES_BUCKET)
