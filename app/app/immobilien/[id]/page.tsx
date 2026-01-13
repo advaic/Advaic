@@ -18,6 +18,13 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     {
       cookies: {
         getAll: () => cookieStore.getAll(),
+        setAll: (cookiesToSet) => {
+          // Next.js cookies() supports setting cookies on the server.
+          // Supabase uses this to persist refreshed auth sessions.
+          for (const { name, value, options } of cookiesToSet) {
+            cookieStore.set(name, value, options);
+          }
+        },
       },
     }
   );

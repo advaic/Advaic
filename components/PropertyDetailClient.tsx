@@ -97,6 +97,8 @@ export default function PropertyDetailClient({
   const [activeImage, setActiveImage] = useState(0);
 
   const [resolvedImageUrls, setResolvedImageUrls] = useState<string[]>([]);
+  const PROPERTY_IMAGES_BUCKET =
+    process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET || "property-images";
 
   const rawImageUrls = useMemo(() => {
     const arr = Array.isArray(image_urls) ? image_urls : [];
@@ -123,20 +125,29 @@ export default function PropertyDetailClient({
           const res = await fetch("/api/storage/signed-url", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ paths: storagePaths }),
+            body: JSON.stringify({
+              bucket: PROPERTY_IMAGES_BUCKET,
+              paths: storagePaths,
+            }),
           });
 
-          const data = await res.json().catch(() => ({}));
+          const data = await res.json().catch(() => ({} as any));
           if (!res.ok) {
-            throw new Error(data?.error || "Konnte Bilder nicht laden.");
+            throw new Error((data as any)?.error || "Konnte Bilder nicht laden.");
           }
 
-          // Endpoint should return { urls: string[] } matching order
-          signed = Array.isArray(data?.urls) ? data.urls : [];
+          // Be tolerant to different response shapes
+          const maybeUrls =
+            (data as any)?.urls ||
+            (data as any)?.signedUrls ||
+            (data as any)?.signed_urls ||
+            (data as any)?.data;
+
+          signed = Array.isArray(maybeUrls) ? maybeUrls : [];
         } catch (e) {
           console.error(e);
-          // Fallback: keep paths (will likely fail if bucket is private)
-          signed = storagePaths;
+          // If signing fails, don't pass raw storage paths to the UI
+          signed = [];
         }
       }
 
@@ -146,11 +157,9 @@ export default function PropertyDetailClient({
         byPath.set(storagePaths[i], signed[i] ?? storagePaths[i]);
       }
 
-      const ordered = rawImageUrls.map((u) =>
-        u.startsWith("http")
-          ? u
-          : byPath.get(u) ?? u
-      );
+      const ordered = rawImageUrls
+        .map((u) => (u.startsWith("http") ? u : byPath.get(u) ?? u))
+        .filter((u) => typeof u === "string" && u.startsWith("http"));
 
       if (!cancelled) setResolvedImageUrls(ordered);
     };
@@ -170,6 +179,21 @@ export default function PropertyDetailClient({
       setCurrentSlide(slider.track.details.rel);
     },
   });
+
+  useEffect(() => {
+    // keep indices valid when the image set changes
+    if (resolvedImageUrls.length === 0) {
+      setCurrentSlide(0);
+      setActiveImage(0);
+      return;
+    }
+
+    setCurrentSlide((i) => Math.min(i, resolvedImageUrls.length - 1));
+    setActiveImage((i) => Math.min(i, resolvedImageUrls.length - 1));
+
+    // keen-slider needs an explicit update when slides change
+    instanceRef.current?.update();
+  }, [resolvedImageUrls, instanceRef]);
 
   const openLightbox = (index: number) => {
     setActiveImage(index);
@@ -278,6 +302,7 @@ export default function PropertyDetailClient({
                         width={1200}
                         height={800}
                         className="object-cover h-full w-full rounded-md"
+                        unoptimized
                       />
                     </button>
                   </div>
@@ -319,14 +344,14 @@ export default function PropertyDetailClient({
                       width={120}
                       height={80}
                       className="object-cover rounded-lg"
-                      unoptimized={false}
+                      unoptimized
                     />
                   </button>
                 ))}
               </div>
 
               {/* LIGHTBOX OVERLAY */}
-              {lightboxOpen && (
+              {lightboxOpen && resolvedImageUrls[activeImage] && (
                 <div
                   className="fixed inset-0 z-50 bg-black bg-opacity-90 flex items-center justify-center"
                   onClick={closeLightbox}
@@ -344,6 +369,7 @@ export default function PropertyDetailClient({
                       fill
                       style={{ objectFit: "contain" }}
                       priority
+                      unoptimized
                     />
                     <button
                       className="absolute top-4 right-4 text-white text-3xl font-bold leading-none p-1 rounded hover:bg-black/40"
