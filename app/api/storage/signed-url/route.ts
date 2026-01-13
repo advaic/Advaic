@@ -34,7 +34,10 @@ function isSafePath(p: string) {
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Body | null;
-  const bucket = String(body?.bucket ?? "").trim();
+  const bucket =
+    String(body?.bucket ?? "").trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET ||
+    "property-images";
   const paths = normalizePaths(body);
 
   if (!bucket || paths.length === 0)

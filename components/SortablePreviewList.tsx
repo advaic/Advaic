@@ -28,6 +28,18 @@ type SortablePreviewListProps = {
   bucket?: string;
 
   /**
+   * Optional: called when a string-path image is deleted.
+   * Use this to remove the object from private storage via your API.
+   */
+  onDeletePath?: (path: string) => Promise<void>;
+
+  /**
+   * Optional: if true, the component will optimistically remove the item from UI before deleting.
+   * Default: false (delete first, then remove from UI).
+   */
+  optimisticDelete?: boolean;
+
+  /**
    * Optional UI labels
    */
   label?: string;
@@ -62,6 +74,8 @@ export default function SortablePreviewList({
   setFiles,
   resolveUrl,
   bucket,
+  onDeletePath,
+  optimisticDelete = false,
   label = "Ziehe Bilder hierher oder klicke zum Hochladen",
   helperText = "Reihenfolge per Drag & Drop ändern. Einzelne Bilder kannst du löschen.",
 }: SortablePreviewListProps) {
@@ -71,6 +85,7 @@ export default function SortablePreviewList({
   // For string paths, we resolve them to signed URLs (cached).
   const [signedUrlMap, setSignedUrlMap] = useState<Record<string, string>>({});
   const [loadingPaths, setLoadingPaths] = useState<Record<string, boolean>>({});
+  const [deletingMap, setDeletingMap] = useState<Record<string, boolean>>({});
 
   const resolver = useMemo(
     () => resolveUrl ?? defaultResolver(bucket),
@@ -199,10 +214,83 @@ export default function SortablePreviewList({
     setFiles([...(files || []), ...acceptedFiles]);
   };
 
-  const onDelete = (index: number) => {
+  const onDelete = async (index: number) => {
     if (!setFiles) return;
-    const updatedFiles = files.filter((_, i) => i !== index);
-    setFiles(updatedFiles);
+
+    const item = files[index];
+
+    // Fast path: local File object
+    if (item instanceof File) {
+      const updatedFiles = files.filter((_, i) => i !== index);
+      setFiles(updatedFiles);
+      return;
+    }
+
+    // String path (private storage path)
+    const path = String(item);
+
+    const removeFromUI = () => {
+      const updatedFiles = files.filter((_, i) => i !== index);
+      setFiles(updatedFiles);
+      // Purge caches for this path
+      setSignedUrlMap((prev) => {
+        const copy = { ...prev };
+        delete copy[path];
+        return copy;
+      });
+      setLoadingPaths((prev) => {
+        const copy = { ...prev };
+        delete copy[path];
+        return copy;
+      });
+      setDeletingMap((prev) => {
+        const copy = { ...prev };
+        delete copy[path];
+        return copy;
+      });
+    };
+
+    // If no delete handler provided, behave like before (UI-only)
+    if (!onDeletePath) {
+      removeFromUI();
+      return;
+    }
+
+    // Non-optimistic by default (safer)
+    let reverted = false;
+
+    const original = [...files];
+
+    if (optimisticDelete) {
+      removeFromUI();
+    }
+
+    try {
+      setDeletingMap((prev) => ({ ...prev, [path]: true }));
+      await onDeletePath(path);
+
+      if (!optimisticDelete) {
+        removeFromUI();
+      }
+    } catch (err) {
+      console.error("❌ Delete failed:", err);
+      // revert if optimistic
+      if (optimisticDelete) {
+        reverted = true;
+        setFiles(original);
+      }
+    } finally {
+      // If we reverted, ensure deleting flag cleared
+      setDeletingMap((prev) => {
+        const copy = { ...prev };
+        delete copy[path];
+        return copy;
+      });
+
+      // If we optimistically removed, and did not revert, caches were already purged.
+      // If we reverted, we keep caches as-is; they will re-resolve if needed.
+      void reverted;
+    }
   };
 
   const onDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
@@ -254,6 +342,7 @@ export default function SortablePreviewList({
           const item = files[index];
           const isPath = typeof item === "string";
           const isLoading = isPath && !!loadingPaths[item];
+          const isDeleting = isPath && !!deletingMap[item];
           const hasUrl = !!preview;
 
           return (
@@ -278,10 +367,15 @@ export default function SortablePreviewList({
                 <button
                   type="button"
                   onClick={() => onDelete(index)}
-                  className="absolute right-2 top-2 z-10 rounded-lg bg-white/90 border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                  disabled={isDeleting}
+                  className="absolute right-2 top-2 z-10 rounded-lg bg-white/90 border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-60"
                   title="Bild löschen"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  {isDeleting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
                 </button>
               )}
 

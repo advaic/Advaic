@@ -130,6 +130,8 @@ function toVermarktungKey(v: VermarktungUI): "rent" | "sale" | null {
 /**
  * Remove private storage objects via server route (RLS-safe)
  * Expects /api/storage/remove to exist.
+ * Supports both {bucket, paths} and legacy {bucket, path} payloads.
+ * Retries per-file deletion if batch fails.
  */
 async function removeStoragePathsViaApi(bucket: string, paths: string[]) {
   const cleaned = (paths || [])
@@ -138,16 +140,41 @@ async function removeStoragePathsViaApi(bucket: string, paths: string[]) {
 
   if (cleaned.length === 0) return;
 
-  const res = await fetch("/api/storage/remove", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ bucket, paths: cleaned }),
-  });
+  // Prefer batch delete: { bucket, paths }
+  const tryBatch = async () => {
+    const res = await fetch("/api/storage/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bucket, paths: cleaned }),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, data };
+  };
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error((data as any)?.error || "Konnte Dateien nicht löschen.");
+  const batch = await tryBatch();
+  if (batch.ok) return;
+
+  // Fallback: some implementations expect a single path: { bucket, path }
+  // We try per-file deletion so we work with either API shape.
+  const errors: string[] = [];
+  for (const path of cleaned) {
+    const res = await fetch("/api/storage/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bucket, path }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      errors.push(String((data as any)?.error || `Konnte Datei nicht löschen: ${path}`));
+    }
   }
+
+  if (errors.length > 0) {
+    // If batch failed but single deletes succeeded partially, still surface a clear message.
+    throw new Error(errors[0]);
+  }
+
+  // If we got here, batch failed but singles didn't report errors (unlikely). Just return.
 }
 
 /**
@@ -543,6 +570,8 @@ export default function HinzufuegenPage() {
           body: JSON.stringify({
             bucket: PROPERTY_IMAGES_BUCKET,
             paths,
+            // compatibility with APIs that expect a single path
+            path: paths[0],
           }),
         });
 
@@ -759,8 +788,9 @@ export default function HinzufuegenPage() {
       if (paths.length > 0) {
         try {
           await removeStoragePathsViaApi(PROPERTY_IMAGES_BUCKET, paths);
-        } catch (e) {
-          console.warn("⚠️ Could not remove images via API:", e);
+        } catch (e: any) {
+          console.warn("⚠️ Could not remove images via API:", e?.message ?? e);
+          // continue deleting DB row even if storage cleanup fails
         }
       }
 

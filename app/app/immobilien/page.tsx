@@ -8,13 +8,14 @@ import {
 } from "@supabase/auth-helpers-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import Image from "next/image";
 import type { Database } from "@/types/supabase";
 
 const PROPERTY_IMAGES_BUCKET =
   process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET || "property-images";
 
 type Property = {
-  id: number;
+  id: string; // ✅ UUID
   title: string | null;
   street_address: string | null;
   city: string | null;
@@ -22,125 +23,28 @@ type Property = {
   size_sqm: number | null;
   year_built: number | null;
   type: string | null;
-  image_urls: string[] | null;
+  image_urls: string[] | null; // ✅ storage paths, not URLs
   created_at?: string | null;
+  updated_at?: string | null;
   agent_id?: string | null;
 };
 
 type SortKey =
-  | "created_desc"
-  | "created_asc"
+  | "updated_desc"
+  | "updated_asc"
   | "price_desc"
   | "price_asc"
   | "size_desc"
   | "size_asc";
 
-function safeStr(v: unknown) {
-  return String(v ?? "").trim();
-}
-
-function formatCurrency(v: number | null | undefined) {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n <= 0) return "—";
-  return new Intl.NumberFormat("de-DE", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-function formatNumber(v: number | null | undefined, suffix = "") {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n <= 0) return "—";
-  return `${new Intl.NumberFormat("de-DE").format(n)}${suffix}`;
-}
-
-function SignedThumb({
-  path,
-  title,
-  supabase,
-}: {
-  path: string;
-  title: string;
-  supabase: ReturnType<typeof useSupabaseClient<Database>>;
-}) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      if (!path) return;
-      setErr(null);
-
-      // createSignedUrl -> benötigt Storage-Policy (die du bereits hast / haben solltest)
-      const { data, error } = await supabase.storage
-        .from(PROPERTY_IMAGES_BUCKET)
-        .createSignedUrl(path, 60 * 30); // 30 min
-
-      if (cancelled) return;
-
-      if (error || !data?.signedUrl) {
-        setErr(error?.message ?? "Signed URL fehlgeschlagen");
-        setUrl(null);
-        return;
-      }
-
-      setUrl(data.signedUrl);
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [path, supabase]);
-
-  if (!path) {
-    return (
-      <div className="w-full h-48 bg-[#fbfbfc] border-b border-gray-200 flex items-center justify-center text-gray-400">
-        <div className="text-sm">Kein Bild</div>
-      </div>
-    );
-  }
-
-  if (err) {
-    return (
-      <div className="w-full h-48 bg-[#fbfbfc] border-b border-gray-200 flex items-center justify-center text-gray-500 px-4 text-center">
-        <div className="text-xs">
-          Bild konnte nicht geladen werden.
-          <div className="mt-1 text-[11px] text-gray-400 break-all">{err}</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!url) {
-    return (
-      <div className="w-full h-48 bg-[#fbfbfc] border-b border-gray-200 flex items-center justify-center text-gray-400">
-        <div className="text-sm">Lade Bild…</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative w-full h-48">
-      {/* absichtlich <img> statt next/image => keine Domain/Loader-Probleme */}
-      <img
-        src={url}
-        alt={title}
-        className="absolute inset-0 h-full w-full object-cover"
-        loading="lazy"
-      />
-    </div>
-  );
-}
-
 export default function ImmobilienPage() {
   const [search, setSearch] = useState("");
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState<SortKey>("created_desc");
+  const [sortBy, setSortBy] = useState<SortKey>("updated_desc");
+
+  // ✅ store signed thumbnail URLs by propertyId
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
 
   const { session, isLoading } = useSessionContext();
   const user = session?.user;
@@ -157,26 +61,89 @@ export default function ImmobilienPage() {
         return;
       }
 
-      // WICHTIG: kein updated_at!
-      const { data, error } = await supabase
+      const { data: propertyData, error: propError } = await supabase
         .from("properties")
         .select(
-          "id,title,street_address,city,price,size_sqm,year_built,type,image_urls,created_at,agent_id"
+          "id,title,street_address,city,price,size_sqm,year_built,type,image_urls,created_at,updated_at,agent_id"
         )
-        .eq("agent_id", user.id);
+        .eq("agent_id", user.id)
+        // ✅ prefer updated_at if you have it, fallback to created_at if not
+        .order("updated_at", { ascending: false });
 
-      if (error) {
-        console.error("Fehler beim Laden:", error.message);
+      if (propError) {
+        console.error("Fehler beim Laden:", propError?.message, propError);
         setProperties([]);
       } else {
-        setProperties((data as any) || []);
+        setProperties((propertyData as any) || []);
       }
-
       setLoading(false);
     };
 
-    void fetchProperties();
+    fetchProperties();
   }, [isLoading, user, router, supabase]);
+
+  // ✅ Create signed thumbnail URLs for first image of each property
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!user) return;
+      if (!properties?.length) return;
+
+      const entries = await Promise.all(
+        properties.map(async (p) => {
+          const firstPath = p.image_urls?.[0];
+          if (!firstPath) return [p.id, ""] as const;
+
+          // If it’s already a URL (legacy), keep it
+          if (
+            firstPath.startsWith("http://") ||
+            firstPath.startsWith("https://")
+          ) {
+            return [p.id, firstPath] as const;
+          }
+
+          const { data, error } = await supabase.storage
+            .from(PROPERTY_IMAGES_BUCKET)
+            .createSignedUrl(firstPath, 60 * 30); // 30 min
+
+          if (error) {
+            console.warn("Could not sign thumbnail:", p.id, error.message);
+            return [p.id, ""] as const;
+          }
+          return [p.id, data?.signedUrl || ""] as const;
+        })
+      );
+
+      if (cancelled) return;
+
+      const next: Record<string, string> = {};
+      for (const [id, url] of entries) next[id] = url;
+      setThumbs(next);
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [properties, supabase, user]);
+
+  const safeStr = (v: unknown) => String(v ?? "").trim();
+  const formatCurrency = (v: number | null | undefined) => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return "—";
+    return new Intl.NumberFormat("de-DE", {
+      style: "currency",
+      currency: "EUR",
+      maximumFractionDigits: 0,
+    }).format(n);
+  };
+  const formatNumber = (v: number | null | undefined, suffix = "") => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return "—";
+    return `${new Intl.NumberFormat("de-DE").format(n)}${suffix}`;
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -189,16 +156,16 @@ export default function ImmobilienPage() {
     });
 
     const sorted = [...base].sort((a, b) => {
-      const aCreated = new Date(a.created_at ?? 0).getTime();
-      const bCreated = new Date(b.created_at ?? 0).getTime();
+      const aUpd = new Date(a.updated_at ?? a.created_at ?? 0).getTime();
+      const bUpd = new Date(b.updated_at ?? b.created_at ?? 0).getTime();
       const aPrice = Number(a.price ?? 0);
       const bPrice = Number(b.price ?? 0);
       const aSize = Number(a.size_sqm ?? 0);
       const bSize = Number(b.size_sqm ?? 0);
 
       switch (sortBy) {
-        case "created_asc":
-          return aCreated - bCreated;
+        case "updated_asc":
+          return aUpd - bUpd;
         case "price_desc":
           return bPrice - aPrice;
         case "price_asc":
@@ -207,9 +174,9 @@ export default function ImmobilienPage() {
           return bSize - aSize;
         case "size_asc":
           return aSize - bSize;
-        case "created_desc":
+        case "updated_desc":
         default:
-          return bCreated - aCreated;
+          return bUpd - aUpd;
       }
     });
 
@@ -260,8 +227,8 @@ export default function ImmobilienPage() {
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
                 title="Sortierung"
               >
-                <option value="created_desc">Neueste zuerst</option>
-                <option value="created_asc">Älteste zuerst</option>
+                <option value="updated_desc">Neueste zuerst</option>
+                <option value="updated_asc">Älteste zuerst</option>
                 <option value="price_desc">Preis: hoch → niedrig</option>
                 <option value="price_asc">Preis: niedrig → hoch</option>
                 <option value="size_desc">Fläche: groß → klein</option>
@@ -298,18 +265,28 @@ export default function ImmobilienPage() {
                 .filter(Boolean)
                 .join(", ");
 
-              const firstPath = property.image_urls?.[0] || "";
+              const imgSigned = thumbs[property.id] || "";
 
               return (
                 <div
                   key={property.id}
                   className="rounded-2xl border border-gray-200 bg-white overflow-hidden hover:shadow-md transition-shadow"
                 >
-                  <SignedThumb
-                    path={firstPath}
-                    title={title}
-                    supabase={supabase}
-                  />
+                  {imgSigned ? (
+                    <div className="relative w-full h-48">
+                      <Image
+                        src={imgSigned}
+                        alt={title}
+                        fill
+                        className="object-cover"
+                        unoptimized
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-full h-48 bg-[#fbfbfc] border-b border-gray-200 flex items-center justify-center text-gray-400">
+                      <div className="text-sm">Kein Bild</div>
+                    </div>
+                  )}
 
                   <div className="p-4 space-y-3">
                     <div className="min-w-0">
@@ -349,6 +326,7 @@ export default function ImmobilienPage() {
                     </div>
 
                     <div className="pt-1 flex gap-2">
+                      {/* ✅ details route will work once [id]/page.tsx exists */}
                       <Link
                         href={`/app/immobilien/${property.id}`}
                         className="w-full"

@@ -41,15 +41,35 @@ async function removeStoragePathsViaApi(bucket: string, paths: string[]) {
 
   if (cleaned.length === 0) return;
 
-  const res = await fetch("/api/storage/remove", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ bucket, paths: cleaned }),
-  });
+  // 1) Try batch delete first (preferred)
+  try {
+    const res = await fetch("/api/storage/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bucket, paths: cleaned }),
+    });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error((data as any)?.error || "Konnte Dateien nicht löschen.");
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) return;
+
+    // fall through to per-path retry
+    console.warn("/api/storage/remove batch failed, retrying per file", data);
+  } catch (e) {
+    console.warn("/api/storage/remove batch threw, retrying per file", e);
+  }
+
+  // 2) Retry per file (compat with `{ bucket, path }`)
+  for (const p of cleaned) {
+    const res = await fetch("/api/storage/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bucket, path: p }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error((data as any)?.error || "Konnte Dateien nicht löschen.");
+    }
   }
 }
 
@@ -225,7 +245,10 @@ export default function EditPropertyPage() {
 
   const statusBadge = useMemo(() => {
     if (deleting)
-      return { label: "Löschen…", cls: "bg-red-50 border-red-200 text-red-800" };
+      return {
+        label: "Löschen…",
+        cls: "bg-red-50 border-red-200 text-red-800",
+      };
     if (uploadingImages)
       return {
         label: "Bilder…",
@@ -432,6 +455,7 @@ export default function EditPropertyPage() {
           body: JSON.stringify({
             bucket: PROPERTY_IMAGES_BUCKET,
             paths,
+            path: paths[0],
           }),
         });
 
@@ -508,8 +532,7 @@ export default function EditPropertyPage() {
         setProperty((p) => (p ? { ...p, image_urls: orderedPaths } : p));
         prevImagePathsRef.current = orderedPaths;
         await persistUpdate({ image_urls: orderedPaths } as any);
-      }
-      else {
+      } else {
         prevImagePathsRef.current = orderedPaths;
       }
     };
@@ -602,7 +625,9 @@ export default function EditPropertyPage() {
         (files
           .filter((f) => typeof f === "string")
           .map((s) => (typeof s === "string" ? signedUrlToPath[s] ?? s : s))
-          .filter((p) => typeof p === "string" && p && !p.startsWith("http")) as string[]) || [],
+          .filter(
+            (p) => typeof p === "string" && p && !p.startsWith("http")
+          ) as string[]) || [],
     } as any);
 
     toast.success("Änderungen gespeichert.");

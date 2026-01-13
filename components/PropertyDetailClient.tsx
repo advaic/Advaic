@@ -73,6 +73,7 @@ function firstNonEmpty(...vals: Array<string | null | undefined>): string {
   return "";
 }
 
+
 function normalizeVermarktung(value: unknown): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "—";
@@ -82,6 +83,85 @@ function normalizeVermarktung(value: unknown): string {
   // If stored already as proper label, keep it
   if (raw === "Vermietung" || raw === "Verkauf") return raw;
   return raw;
+}
+
+async function fetchSignedUrlMap(params: {
+  bucket: string;
+  paths: string[];
+}): Promise<Record<string, string>> {
+  const bucket = String(params.bucket ?? "").trim();
+  const paths = Array.isArray(params.paths) ? params.paths.filter(Boolean) : [];
+  if (!paths.length) return {};
+
+  const candidates: Array<{ url: string; method: "POST" }> = [
+    { url: "/api/storage/signed-url", method: "POST" },
+    { url: "/api/storage/signed-urls", method: "POST" },
+    { url: "/api/storage/signedUrl", method: "POST" },
+  ];
+
+  const toMap = (data: any): Record<string, string> => {
+    // Common shapes
+    if (data?.signedUrls && typeof data.signedUrls === "object") return data.signedUrls;
+    if (data?.signed_urls && typeof data.signed_urls === "object") return data.signed_urls;
+    if (data?.signed_url_map && typeof data.signed_url_map === "object") return data.signed_url_map;
+    if (data?.data?.signedUrls && typeof data.data.signedUrls === "object") return data.data.signedUrls;
+    if (data?.data?.signed_urls && typeof data.data.signed_urls === "object") return data.data.signed_urls;
+
+    // Single
+    if (typeof data?.signedUrl === "string" && paths.length === 1) return { [paths[0]]: data.signedUrl };
+    if (typeof data?.signed_url === "string" && paths.length === 1) return { [paths[0]]: data.signed_url };
+
+    // Array
+    if (Array.isArray(data?.urls) && data.urls.length === paths.length) {
+      return Object.fromEntries(paths.map((p, i) => [p, data.urls[i]]));
+    }
+
+    return {};
+  };
+
+  // Try multiple payload shapes for backwards compatibility.
+  const payloadVariants = (b: string, ps: string[]) => {
+    const first = ps[0];
+    return [
+      { bucket: b, paths: ps },
+      { bucket: b, image_paths: ps },
+      { bucket: b, path: first },
+      { bucket: b, image_path: first },
+      { paths: ps },
+      { image_paths: ps },
+      { path: first },
+      { image_path: first },
+    ];
+  };
+
+  for (const c of candidates) {
+    for (const body of payloadVariants(bucket, paths)) {
+      try {
+        const res = await fetch(c.url, {
+          method: c.method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        const data = (await res.json().catch(() => ({}))) as any;
+
+        // If endpoint doesn't exist or method mismatch, try next endpoint.
+        if (!res.ok) {
+          if (res.status === 404 || res.status === 405) break;
+          // For other errors, try next payload variant.
+          continue;
+        }
+
+        const mapped = toMap(data);
+        if (mapped && Object.keys(mapped).length > 0) return mapped;
+      } catch {
+        // Network/parse errors: keep trying.
+        continue;
+      }
+    }
+  }
+
+  return {};
 }
 
 export default function PropertyDetailClient({
@@ -116,52 +196,27 @@ export default function PropertyDetailClient({
 
       // Already full URLs can be used as-is
       const httpUrls = rawImageUrls.filter((u) => u.startsWith("http"));
-      const storagePaths = rawImageUrls.filter((u) => !u.startsWith("http"));
+
+      // Storage paths may be stored with or without a leading slash. Normalize for signing.
+      const normalizePath = (p: string) => String(p || "").replace(/^\/+/, "");
+      const storagePathsRaw = rawImageUrls.filter((u) => !u.startsWith("http"));
+      const storagePaths = Array.from(new Set(storagePathsRaw.map(normalizePath))).filter(Boolean);
 
       // Resolve private storage paths via signed-url endpoint
       let signedMap: Record<string, string> = {};
       if (storagePaths.length > 0) {
-        try {
-          const res = await fetch("/api/storage/signed-url", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              bucket: PROPERTY_IMAGES_BUCKET,
-              paths: storagePaths,
-            }),
-          });
-
-          const data = (await res.json().catch(() => ({}))) as any;
-          if (!res.ok) {
-            throw new Error(data?.error || "Konnte Bilder nicht laden.");
-          }
-
-          // Expected (new) shape: { signedUrls: { [path]: url } }
-          if (data?.signedUrls && typeof data.signedUrls === "object") {
-            signedMap = data.signedUrls as Record<string, string>;
-          } else if (data?.signed_urls && typeof data.signed_urls === "object") {
-            signedMap = data.signed_urls as Record<string, string>;
-          } else if (typeof data?.signedUrl === "string" && storagePaths.length === 1) {
-            // Single-item convenience shape
-            signedMap = { [storagePaths[0]]: data.signedUrl };
-          } else if (Array.isArray(data?.urls) && data.urls.length === storagePaths.length) {
-            // Legacy array fallback
-            signedMap = Object.fromEntries(storagePaths.map((p: string, i: number) => [p, data.urls[i]]));
-          } else {
-            signedMap = {};
-          }
-        } catch (e) {
-          console.error(e);
-          // If signing fails, don't pass raw storage paths to the UI
-          signedMap = {};
-        }
+        signedMap = await fetchSignedUrlMap({
+          bucket: PROPERTY_IMAGES_BUCKET,
+          paths: storagePaths,
+        });
       }
 
-      // Rebuild in original order (only keep resolvable http(s) urls)
+      // Rebuild in original order. Try both raw and normalized keys.
       const ordered = rawImageUrls
         .map((u) => {
           if (u.startsWith("http")) return u;
-          return signedMap[u];
+          const norm = normalizePath(u);
+          return signedMap[u] || signedMap[norm];
         })
         .filter((u): u is string => typeof u === "string" && u.startsWith("http"));
 

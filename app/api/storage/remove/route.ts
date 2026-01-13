@@ -21,18 +21,66 @@ function isSafePath(p: string) {
   return true;
 }
 
+function stripQueryAndHash(s: string) {
+  return s.split("?")[0].split("#")[0];
+}
+
+function normalizeStoragePath(input: string, bucket: string): string {
+  const raw = stripQueryAndHash(String(input ?? "").trim());
+  if (!raw) return "";
+
+  // If a full URL is provided, extract the object path after `/object/`.
+  // Examples:
+  // - https://<project>.supabase.co/storage/v1/object/sign/<bucket>/<path>
+  // - https://<project>.supabase.co/storage/v1/object/public/<bucket>/<path>
+  try {
+    const u = new URL(raw);
+    const path = u.pathname; // no query
+    const marker = "/storage/v1/object/";
+    const idx = path.indexOf(marker);
+    if (idx >= 0) {
+      const after = path.slice(idx + marker.length); // e.g. sign/<bucket>/<path>
+      const parts = after.split("/").filter(Boolean);
+      if (parts.length >= 3) {
+        // parts[0] is scope (public|sign|authenticated|...) or sometimes "sign"
+        // parts[1] is bucket
+        const b = parts[1];
+        const rest = parts.slice(2).join("/");
+        if (b === bucket) return rest;
+      }
+      // Fallback: try to find `/<bucket>/` anywhere after marker
+      const bucketNeedle = `/${bucket}/`;
+      const bIdx = after.indexOf(bucketNeedle);
+      if (bIdx >= 0) return after.slice(bIdx + bucketNeedle.length);
+    }
+  } catch {
+    // not a URL
+  }
+
+  // If path is prefixed with bucket, strip it
+  if (raw.startsWith(`${bucket}/`)) return raw.slice(bucket.length + 1);
+
+  // If path starts with a leading slash, strip it
+  if (raw.startsWith("/")) return raw.slice(1);
+
+  return raw;
+}
+
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Body | null;
   const bucket = String(body?.bucket ?? "").trim();
-  const paths = Array.isArray(body?.paths)
-    ? body!.paths
-        .map(String)
-        .map((s) => s.trim())
-        .filter(Boolean)
+  const rawPaths = Array.isArray(body?.paths)
+    ? body!.paths.map(String).map((s) => s.trim()).filter(Boolean)
     : [];
 
-  if (!bucket || paths.length === 0)
+  if (!bucket || rawPaths.length === 0)
     return jsonError("Missing bucket/paths", 400);
+
+  const paths = rawPaths
+    .map((p) => normalizeStoragePath(p, bucket))
+    .filter(Boolean);
+
+  if (paths.length === 0) return jsonError("Invalid path", 400);
   if (!paths.every(isSafePath)) return jsonError("Invalid path", 400);
 
   const ATTACHMENTS_BUCKET =
@@ -91,26 +139,27 @@ export async function POST(req: NextRequest) {
     }
 
     if (bucket === PROPERTY_IMAGES_BUCKET) {
-      let propertyId: number | null = null;
+      let propertyId: string | null = null;
 
       const isNew =
         parts.length >= 5 &&
         parts[0] === "agents" &&
         parts[1] === user.id &&
         parts[2] === "properties" &&
-        Number.isFinite(Number(parts[3]));
+        Boolean(parts[3]);
 
-      if (isNew) propertyId = Number(parts[3]);
-      else {
-        if (parts.length < 2 || !Number.isFinite(Number(parts[0])))
-          throw new Error("Forbidden");
-        propertyId = Number(parts[0]);
+      if (isNew) {
+        propertyId = String(parts[3]);
+      } else {
+        // legacy: <propertyId>/<filename>
+        if (parts.length < 2 || !parts[0]) throw new Error("Forbidden");
+        propertyId = String(parts[0]);
       }
 
       const { data: prop, error: propErr } = await admin
         .from("properties")
         .select("id, agent_id")
-        .eq("id", propertyId)
+        .eq("id", propertyId as any)
         .single();
 
       if (propErr || !prop) throw new Error("NotFound");
@@ -126,7 +175,7 @@ export async function POST(req: NextRequest) {
     const { error } = await admin.storage.from(bucket).remove(paths);
     if (error) return jsonError(error.message, 400);
 
-    return NextResponse.json({ ok: true, removed: paths.length });
+    return NextResponse.json({ ok: true, removed: paths.length, bucket, paths });
   } catch (e: any) {
     const msg = String(e?.message || "Forbidden");
     if (msg === "NotFound") return jsonError("Property not found", 404);

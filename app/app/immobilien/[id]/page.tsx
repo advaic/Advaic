@@ -10,6 +10,8 @@ type PageProps = {
 };
 
 export default async function PropertyDetailPage({ params }: PageProps) {
+  // Next.js versions differ: `cookies()` may return the store or a Promise.
+  // Awaiting works in both cases and fixes TS when it is a Promise.
   const cookieStore = await cookies();
 
   const supabase = createServerClient<Database>(
@@ -17,12 +19,27 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll: () => cookieStore.getAll(),
+        getAll: () => {
+          const cs: any = cookieStore as any;
+          if (typeof cs.getAll === "function") return cs.getAll();
+          // Fallback: build an array from iterator if available
+          if (typeof cs[Symbol.iterator] === "function") {
+            const out: any[] = [];
+            for (const c of cs as any) out.push(c);
+            return out;
+          }
+          return [];
+        },
         setAll: (cookiesToSet) => {
-          // Next.js cookies() supports setting cookies on the server.
-          // Supabase uses this to persist refreshed auth sessions.
+          const cs: any = cookieStore as any;
+          // In Server Components, `cookies()` can be read-only (no `.set`).
+          // Supabase may try to set refreshed cookies; ignore if not supported.
           for (const { name, value, options } of cookiesToSet) {
-            cookieStore.set(name, value, options);
+            try {
+              cs.set?.(name, value, options);
+            } catch {
+              // no-op
+            }
           }
         },
       },
@@ -32,10 +49,19 @@ export default async function PropertyDetailPage({ params }: PageProps) {
   const id = params.id; // UUID/string id
   if (!id) return notFound();
 
+  // Ensure the user is authenticated and only allow access to their own properties.
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) return notFound();
+
   const { data: property, error: propertyError } = await supabase
     .from("properties")
     .select("*")
     .eq("id", id)
+    .eq("agent_id", user.id)
     .single();
 
   if (propertyError) {
