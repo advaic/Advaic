@@ -19,7 +19,6 @@ type Property = {
   type: string | null;
   image_urls: string[] | null;
   created_at?: string | null;
-  updated_at?: string | null;
   agent_id?: string | null;
 };
 
@@ -55,7 +54,7 @@ export default function ImmobilienPage() {
 
       const { data: propertyData, error: propError } = await supabase
         .from("properties")
-        .select("id,title,street_address,city,price,size_sqm,year_built,type,image_urls,created_at,updated_at,agent_id")
+        .select("id,title,street_address,city,price,size_sqm,year_built,type,image_urls,created_at,agent_id")
         .eq("agent_id", user.id)
         .order("created_at", { ascending: false });
 
@@ -91,11 +90,6 @@ export default function ImmobilienPage() {
     return `${new Intl.NumberFormat("de-DE").format(n)}${suffix}`;
   };
 
-  if (isLoading || loading) {
-    console.log("Still loading. isLoading:", isLoading, "loading:", loading);
-    return <p className="text-muted-foreground">Lade Immobilien…</p>;
-  }
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const base = (properties ?? []).filter((p) => {
@@ -105,8 +99,8 @@ export default function ImmobilienPage() {
     });
 
     const sorted = [...base].sort((a, b) => {
-      const aUpd = new Date(a.updated_at ?? a.created_at ?? 0).getTime();
-      const bUpd = new Date(b.updated_at ?? b.created_at ?? 0).getTime();
+      const aUpd = new Date(a.created_at ?? 0).getTime();
+      const bUpd = new Date(b.created_at ?? 0).getTime();
       const aPrice = Number(a.price ?? 0);
       const bPrice = Number(b.price ?? 0);
       const aSize = Number(a.size_sqm ?? 0);
@@ -131,6 +125,11 @@ export default function ImmobilienPage() {
 
     return sorted;
   }, [properties, search, sortBy]);
+
+  if (isLoading || loading) {
+    console.log("Still loading. isLoading:", isLoading, "loading:", loading);
+    return <p className="text-muted-foreground">Lade Immobilien…</p>;
+  }
 
   return (
     <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
