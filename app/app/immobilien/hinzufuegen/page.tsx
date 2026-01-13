@@ -491,7 +491,7 @@ export default function HinzufuegenPage() {
     try {
       await persistUpdate({ status: "published" });
       toast.success("Immobilie veröffentlicht.");
-      router.push("/immobilien");
+      router.push("/app/immobilien");
     } finally {
       setPublishing(false);
     }
@@ -499,7 +499,7 @@ export default function HinzufuegenPage() {
 
   const discardDraft = async () => {
     if (!property.id) {
-      router.push("/immobilien");
+      router.push("/app/immobilien");
       return;
     }
 
@@ -533,7 +533,7 @@ export default function HinzufuegenPage() {
       }
 
       toast.success("Entwurf gelöscht.");
-      router.push("/immobilien");
+      router.push("/app/immobilien");
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message ?? "Konnte Entwurf nicht löschen.");
@@ -581,7 +581,7 @@ export default function HinzufuegenPage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => router.push("/immobilien")}
+                onClick={() => router.push("/app/immobilien")}
                 disabled={deleting}
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
               >

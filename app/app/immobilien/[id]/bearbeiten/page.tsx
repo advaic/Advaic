@@ -106,7 +106,7 @@ export default function EditPropertyPage() {
 
   const statusBadge = useMemo(() => {
     if (deleting)
-      return { label: "Lösche…", cls: "bg-red-50 border-red-200 text-red-800" };
+      return { label: "Löschen…", cls: "bg-red-50 border-red-200 text-red-800" };
     if (uploadingImages)
       return {
         label: "Bilder…",
@@ -114,7 +114,7 @@ export default function EditPropertyPage() {
       };
     if (saving)
       return {
-        label: "Speichere…",
+        label: "Speichern…",
         cls: "bg-white border-gray-200 text-gray-700",
       };
     if (lastSavedAt)
@@ -419,7 +419,7 @@ export default function EditPropertyPage() {
       }
 
       toast.success("Immobilie gelöscht.");
-      router.push("/immobilien");
+      router.push("/app/immobilien");
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message ?? "Konnte Immobilie nicht löschen.");
@@ -478,7 +478,7 @@ export default function EditPropertyPage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => router.push("/immobilien")}
+                onClick={() => router.push("/app/immobilien")}
                 disabled={deleting}
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
               >
