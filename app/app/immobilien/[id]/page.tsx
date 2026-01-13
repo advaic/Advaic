@@ -46,8 +46,14 @@ export default async function PropertyDetailPage({ params }: PageProps) {
     }
   );
 
-  const id = params.id; // UUID/string id
-  if (!id) return notFound();
+  const rawId = params.id;
+  if (!rawId) return notFound();
+
+  // In our Supabase schema, `properties.id` is often a numeric/bigint.
+  // Next params are always strings, so we must coerce when it is numeric.
+  const id: number | string = /^\d+$/.test(rawId) ? Number(rawId) : rawId;
+
+  if (typeof id === "number" && Number.isNaN(id)) return notFound();
 
   // Ensure the user is authenticated and only allow access to their own properties.
   const {
@@ -60,12 +66,20 @@ export default async function PropertyDetailPage({ params }: PageProps) {
   const { data: property, error: propertyError } = await supabase
     .from("properties")
     .select("*")
-    .eq("id", id)
+    .eq("id", id as any)
     .eq("agent_id", user.id)
     .single();
 
   if (propertyError) {
-    console.error("Error loading property:", propertyError);
+    console.error("Error loading property:", {
+      message: propertyError.message,
+      code: (propertyError as any).code,
+      details: (propertyError as any).details,
+      hint: (propertyError as any).hint,
+      id,
+      rawId,
+      userId: user.id,
+    });
   }
 
   if (!property || propertyError) return notFound();

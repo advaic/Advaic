@@ -66,7 +66,7 @@ function normalizeStoragePath(input: string, bucket: string): string {
   return raw;
 }
 
-export async function POST(req: NextRequest) {
+async function handleRemove(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Body | null;
   const bucket = String(body?.bucket ?? "").trim();
   const rawPaths = Array.isArray(body?.paths)
@@ -92,7 +92,9 @@ export async function POST(req: NextRequest) {
   const allowed = new Set([ATTACHMENTS_BUCKET, PROPERTY_IMAGES_BUCKET]);
   if (!allowed.has(bucket)) return jsonError("Invalid bucket", 400);
 
-  const res = NextResponse.next();
+  // Create a mutable response for SSR auth cookie updates
+  const cookieRes = NextResponse.next();
+
   const supabaseAuth = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -102,10 +104,10 @@ export async function POST(req: NextRequest) {
           return req.cookies.get(name)?.value;
         },
         set(name, value, options) {
-          res.cookies.set({ name, value, ...options });
+          cookieRes.cookies.set({ name, value, ...options });
         },
         remove(name, options) {
-          res.cookies.set({ name, value: "", ...options, maxAge: 0 });
+          cookieRes.cookies.set({ name, value: "", ...options, maxAge: 0 });
         },
       },
     }
@@ -115,7 +117,16 @@ export async function POST(req: NextRequest) {
     data: { user },
     error: authErr,
   } = await supabaseAuth.auth.getUser();
-  if (authErr || !user) return jsonError("Unauthorized", 401);
+  if (authErr || !user) {
+    const out = jsonError("Unauthorized", 401);
+    // best-effort copy any cookies that might have been set
+    try {
+      (cookieRes.cookies.getAll?.() ?? []).forEach((c: any) =>
+        out.cookies.set(c)
+      );
+    } catch {}
+    return out;
+  }
 
   const admin = createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -173,13 +184,39 @@ export async function POST(req: NextRequest) {
     for (const p of paths) await assertAllowedPath(p);
 
     const { error } = await admin.storage.from(bucket).remove(paths);
-    if (error) return jsonError(error.message, 400);
+    if (error) {
+      const out = jsonError(error.message, 400);
+      try {
+        (cookieRes.cookies.getAll?.() ?? []).forEach((c: any) =>
+          out.cookies.set(c)
+        );
+      } catch {}
+      return out;
+    }
 
-    return NextResponse.json({ ok: true, removed: paths.length, bucket, paths });
+    const out = NextResponse.json({ ok: true, removed: paths.length, bucket, paths });
+    try {
+      (cookieRes.cookies.getAll?.() ?? []).forEach((c: any) => out.cookies.set(c));
+    } catch {}
+    return out;
   } catch (e: any) {
     const msg = String(e?.message || "Forbidden");
-    if (msg === "NotFound") return jsonError("Property not found", 404);
-    if (msg === "Forbidden") return jsonError("Forbidden", 403);
-    return jsonError(msg, 400);
+    let out: NextResponse;
+    if (msg === "NotFound") out = jsonError("Property not found", 404);
+    else if (msg === "Forbidden") out = jsonError("Forbidden", 403);
+    else out = jsonError(msg, 400);
+
+    try {
+      (cookieRes.cookies.getAll?.() ?? []).forEach((c: any) => out.cookies.set(c));
+    } catch {}
+    return out;
   }
+}
+
+export async function POST(req: NextRequest) {
+  return handleRemove(req);
+}
+
+export async function DELETE(req: NextRequest) {
+  return handleRemove(req);
 }
