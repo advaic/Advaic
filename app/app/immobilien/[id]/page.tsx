@@ -1,13 +1,29 @@
-import { supabase } from "@/lib/supabaseClient";
+import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
 import { notFound } from "next/navigation";
+
+import type { Database } from "@/types/supabase";
 import PropertyDetailClient from "@/components/PropertyDetailClient";
 
 type PageProps = {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 };
 
 export default async function PropertyDetailPage({ params }: PageProps) {
-  const { id } = await params;
+  const cookieStore = await cookies();
+
+  const supabase = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+      },
+    }
+  );
+
+  const id = Number(params.id);
+  if (Number.isNaN(id)) return notFound();
 
   const { data: property, error: propertyError } = await supabase
     .from("properties")
@@ -21,16 +37,15 @@ export default async function PropertyDetailPage({ params }: PageProps) {
 
   if (!property || propertyError) return notFound();
 
-  const { data: images } = await supabase
-    .from("property_images")
-    .select("*")
-    .eq("property_id", id)
-    .order("created_at", { ascending: true });
+  // We store private storage paths in `properties.image_urls`.
+  const imagePaths = Array.isArray((property as any).image_urls)
+    ? ((property as any).image_urls as string[]).filter(Boolean)
+    : [];
 
   return (
     <PropertyDetailClient
-      property={property}
-      image_urls={images?.map((img) => img.url) || []}
+      property={property as any}
+      image_urls={imagePaths}
     />
   );
 }

@@ -5,27 +5,37 @@ import type { Database } from "@/types/supabase";
 
 export const runtime = "nodejs";
 
-export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => null);
+type Body = {
+  bucket?: string;
+  path?: string;
+  expiresIn?: number;
+};
 
-  const { bucket, path, expiresIn } = (body || {}) as {
-    bucket?: string;
-    path?: string;
-    expiresIn?: number;
-  };
+function jsonError(message: string, status: number) {
+  return NextResponse.json({ error: message }, { status });
+}
+
+export async function POST(req: NextRequest) {
+  const body = (await req.json().catch(() => null)) as Body | null;
+  const bucket = String(body?.bucket ?? "").trim();
+  const path = String(body?.path ?? "").trim();
 
   if (!bucket || !path) {
-    return NextResponse.json({ error: "Missing bucket/path" }, { status: 400 });
+    return jsonError("Missing bucket/path", 400);
   }
 
-  // Must be signed previews for attachments bucket only
-  const allowedBucket =
+  // Buckets we allow signing for
+  const ATTACHMENTS_BUCKET =
     process.env.NEXT_PUBLIC_SUPABASE_ATTACHMENTS_BUCKET || "attachments";
-  if (bucket !== allowedBucket) {
-    return NextResponse.json({ error: "Invalid bucket" }, { status: 400 });
+  const PROPERTY_IMAGES_BUCKET =
+    process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET || "property-images";
+
+  const allowed = new Set([ATTACHMENTS_BUCKET, PROPERTY_IMAGES_BUCKET]);
+  if (!allowed.has(bucket)) {
+    return jsonError("Invalid bucket", 400);
   }
 
-  // Authenticate
+  // Authenticate via cookie session
   const res = NextResponse.next();
   const supabaseAuth = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -51,14 +61,14 @@ export async function POST(req: NextRequest) {
   } = await supabaseAuth.auth.getUser();
 
   if (authErr || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonError("Unauthorized", 401);
   }
 
   // Critical security check: only allow signed URLs for paths owned by this user.
-  // Your upload path is: agents/<uid>/leads/<leadId>/...
+  // All our storage paths must start with `agents/<uid>/...`
   const prefix = `agents/${user.id}/`;
   if (!path.startsWith(prefix)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return jsonError("Forbidden", 403);
   }
 
   const admin = createClient<Database>(
@@ -66,19 +76,55 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const ttl = Number.isFinite(expiresIn)
-    ? Math.max(30, Math.min(600, expiresIn!))
-    : 300;
+  // TTL: allow 1–60 minutes (default 10 min)
+  const requested = Number(body?.expiresIn);
+  const ttl = Number.isFinite(requested)
+    ? Math.max(60, Math.min(3600, requested))
+    : 600;
 
-  const { data, error } = await admin.storage
-    .from(bucket)
-    .createSignedUrl(path, ttl);
+  // Per-bucket structure + ownership checks
+  const parts = path.split("/").filter(Boolean);
+
+  if (bucket === ATTACHMENTS_BUCKET) {
+    // expected: agents/<uid>/leads/<leadId>/...
+    if (parts.length < 5 || parts[0] !== "agents" || parts[1] !== user.id || parts[2] !== "leads") {
+      return jsonError("Invalid path", 400);
+    }
+
+    // leadId is parts[3]; optional DB check could be added later
+  }
+
+  if (bucket === PROPERTY_IMAGES_BUCKET) {
+    // expected: agents/<uid>/properties/<propertyId>/...
+    if (parts.length < 5 || parts[0] !== "agents" || parts[1] !== user.id || parts[2] !== "properties") {
+      return jsonError("Invalid path", 400);
+    }
+
+    const propertyId = Number(parts[3]);
+    if (!Number.isFinite(propertyId)) {
+      return jsonError("Invalid propertyId", 400);
+    }
+
+    // Strong ownership check: property must belong to this agent
+    const { data: prop, error: propErr } = await admin
+      .from("properties")
+      .select("id, agent_id")
+      .eq("id", propertyId)
+      .single();
+
+    if (propErr || !prop) {
+      return jsonError("Property not found", 404);
+    }
+
+    if (String((prop as any).agent_id) !== String(user.id)) {
+      return jsonError("Forbidden", 403);
+    }
+  }
+
+  const { data, error } = await admin.storage.from(bucket).createSignedUrl(path, ttl);
 
   if (error || !data?.signedUrl) {
-    return NextResponse.json(
-      { error: error?.message || "Could not create signed url" },
-      { status: 400 }
-    );
+    return jsonError(error?.message || "Could not create signed url", 400);
   }
 
   return NextResponse.json({ signedUrl: data.signedUrl, expiresIn: ttl });
