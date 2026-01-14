@@ -32,38 +32,19 @@ function isSafePath(p: string) {
   return true;
 }
 
-export async function GET(req: NextRequest) {
-  const bucketParam = String(req.nextUrl.searchParams.get("bucket") ?? "").trim();
-  const pathParam = String(req.nextUrl.searchParams.get("path") ?? "").trim();
-  const expiresInParam = req.nextUrl.searchParams.get("expiresIn");
+function isUuid(v: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    v
+  );
+}
 
-  const body: Body = {
-    bucket: bucketParam || undefined,
-    path: pathParam || undefined,
-    expiresIn: expiresInParam ? Number(expiresInParam) : undefined,
-  };
+function isNumeric(v: string) {
+  return Number.isFinite(Number(v));
+}
 
-  const bucket =
-    String(body?.bucket ?? "").trim() ||
-    process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET ||
-    "property-images";
-  const paths = normalizePaths(body);
-
-  if (!bucket || paths.length === 0)
-    return jsonError("Missing bucket/path(s)", 400);
-  if (!paths.every(isSafePath)) return jsonError("Invalid path", 400);
-
-  const ATTACHMENTS_BUCKET =
-    process.env.NEXT_PUBLIC_SUPABASE_ATTACHMENTS_BUCKET || "attachments";
-  const PROPERTY_IMAGES_BUCKET =
-    process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET ||
-    "property-images";
-
-  const allowed = new Set([ATTACHMENTS_BUCKET, PROPERTY_IMAGES_BUCKET]);
-  if (!allowed.has(bucket)) return jsonError("Invalid bucket", 400);
-
-  // Auth via cookie session
+async function getUserFromCookieSession(req: NextRequest) {
   const res = NextResponse.next();
+
   const supabaseAuth = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -86,6 +67,129 @@ export async function GET(req: NextRequest) {
     data: { user },
     error: authErr,
   } = await supabaseAuth.auth.getUser();
+
+  return { user, authErr };
+}
+
+function getAllowedBuckets() {
+  const ATTACHMENTS_BUCKET =
+    process.env.NEXT_PUBLIC_SUPABASE_ATTACHMENTS_BUCKET || "attachments";
+  const PROPERTY_IMAGES_BUCKET =
+    process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET || "property-images";
+
+  return {
+    ATTACHMENTS_BUCKET,
+    PROPERTY_IMAGES_BUCKET,
+    allowed: new Set([ATTACHMENTS_BUCKET, PROPERTY_IMAGES_BUCKET]),
+  };
+}
+
+function clampTtl(expiresIn?: number) {
+  // TTL: 1–60 minutes (default 10 min)
+  const requested = Number(expiresIn);
+  const ttl = Number.isFinite(requested)
+    ? Math.max(60, Math.min(3600, requested))
+    : 600;
+  return ttl;
+}
+
+async function assertAllowedPath(params: {
+  bucket: string;
+  path: string;
+  userId: string;
+  admin: ReturnType<typeof createClient<Database>>;
+  ATTACHMENTS_BUCKET: string;
+  PROPERTY_IMAGES_BUCKET: string;
+}) {
+  const { bucket, path, userId, admin, ATTACHMENTS_BUCKET, PROPERTY_IMAGES_BUCKET } =
+    params;
+
+  const parts = path.split("/").filter(Boolean);
+
+  if (bucket === ATTACHMENTS_BUCKET) {
+    // attachments MUST be in agents/<uid>/leads/<leadId>/...
+    if (
+      parts.length < 5 ||
+      parts[0] !== "agents" ||
+      parts[1] !== userId ||
+      parts[2] !== "leads"
+    ) {
+      throw new Error("Forbidden");
+    }
+    return;
+  }
+
+  if (bucket === PROPERTY_IMAGES_BUCKET) {
+    // allow BOTH:
+    // A) agents/<uid>/properties/<propertyId>/...
+    // B) <propertyId>/... (legacy)
+    let propertyId: string | null = null;
+
+    const isNew =
+      parts.length >= 5 &&
+      parts[0] === "agents" &&
+      parts[1] === userId &&
+      parts[2] === "properties" &&
+      !!parts[3];
+
+    if (isNew) {
+      propertyId = String(parts[3]);
+    } else {
+      if (parts.length < 2 || !parts[0]) {
+        throw new Error("Forbidden");
+      }
+      propertyId = String(parts[0]);
+    }
+
+    // Only allow uuid OR numeric ids
+    if (!isUuid(propertyId) && !isNumeric(propertyId)) {
+      throw new Error("Forbidden");
+    }
+
+    // Strong ownership check (works for uuid AND numeric)
+    const { data: prop, error: propErr } = await admin
+      .from("properties")
+      .select("id, agent_id")
+      .eq("id", propertyId)
+      .single();
+
+    if (propErr || !prop) throw new Error("NotFound");
+    if (String((prop as any).agent_id) !== String(userId)) {
+      throw new Error("Forbidden");
+    }
+
+    return;
+  }
+
+  // Should never happen due to "allowed buckets" check
+  throw new Error("Invalid bucket");
+}
+
+export async function GET(req: NextRequest) {
+  const bucketParam = String(req.nextUrl.searchParams.get("bucket") ?? "").trim();
+  const pathParam = String(req.nextUrl.searchParams.get("path") ?? "").trim();
+  const expiresInParam = req.nextUrl.searchParams.get("expiresIn");
+
+  const body: Body = {
+    bucket: bucketParam || undefined,
+    path: pathParam || undefined,
+    expiresIn: expiresInParam ? Number(expiresInParam) : undefined,
+  };
+
+  const bucket =
+    String(body?.bucket ?? "").trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET ||
+    "property-images";
+  const paths = normalizePaths(body);
+
+  if (!bucket || paths.length === 0)
+    return jsonError("Missing bucket/path(s)", 400);
+  if (!paths.every(isSafePath)) return jsonError("Invalid path", 400);
+
+  const { ATTACHMENTS_BUCKET, PROPERTY_IMAGES_BUCKET, allowed } = getAllowedBuckets();
+  if (!allowed.has(bucket)) return jsonError("Invalid bucket", 400);
+
+  const { user, authErr } = await getUserFromCookieSession(req);
   if (authErr || !user) return jsonError("Unauthorized", 401);
 
   const admin = createClient<Database>(
@@ -93,80 +197,25 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // TTL: 1–60 minutes (default 10 min)
-  const requested = Number(body?.expiresIn);
-  const ttl = Number.isFinite(requested)
-    ? Math.max(60, Math.min(3600, requested))
-    : 600;
-
-  async function assertAllowedPath(path: string) {
-    const parts = path.split("/").filter(Boolean);
-
-    if (bucket === ATTACHMENTS_BUCKET) {
-      // attachments MUST be in agents/<uid>/leads/<leadId>/...
-      if (
-        parts.length < 5 ||
-        parts[0] !== "agents" ||
-        parts[1] !== user.id ||
-        parts[2] !== "leads"
-      ) {
-        throw new Error("Forbidden");
-      }
-      return;
-    }
-
-    // PROPERTY_IMAGES_BUCKET:
-    // allow BOTH:
-    // A) agents/<uid>/properties/<propertyId>/...
-    // B) <propertyId>/...  (legacy)
-    if (bucket === PROPERTY_IMAGES_BUCKET) {
-      let propertyId: number | null = null;
-
-      const isNew =
-        parts.length >= 5 &&
-        parts[0] === "agents" &&
-        parts[1] === user.id &&
-        parts[2] === "properties" &&
-        Number.isFinite(Number(parts[3]));
-
-      if (isNew) {
-        propertyId = Number(parts[3]);
-      } else {
-        // legacy: first segment must be numeric propertyId
-        if (parts.length < 2 || !Number.isFinite(Number(parts[0]))) {
-          throw new Error("Forbidden");
-        }
-        propertyId = Number(parts[0]);
-      }
-
-      // Strong ownership check
-      const { data: prop, error: propErr } = await admin
-        .from("properties")
-        .select("id, agent_id")
-        .eq("id", propertyId)
-        .single();
-
-      if (propErr || !prop) throw new Error("NotFound");
-      if (String((prop as any).agent_id) !== String(user.id))
-        throw new Error("Forbidden");
-
-      return;
-    }
-  }
+  const ttl = clampTtl(body?.expiresIn);
 
   try {
     const p = paths[0];
 
-    // Validate path
-    await assertAllowedPath(p);
+    await assertAllowedPath({
+      bucket,
+      path: p,
+      userId: user.id,
+      admin,
+      ATTACHMENTS_BUCKET,
+      PROPERTY_IMAGES_BUCKET,
+    });
 
-    // Create signed url
-    const { data, error } = await admin.storage
-      .from(bucket)
-      .createSignedUrl(p, ttl);
+    const { data, error } = await admin.storage.from(bucket).createSignedUrl(p, ttl);
 
-    if (error || !data?.signedUrl)
+    if (error || !data?.signedUrl) {
       throw new Error(error?.message || "Could not create signed url");
+    }
 
     // Redirect so <img src="/api/storage/signed-url?path=..."> works
     return NextResponse.redirect(data.signedUrl);
@@ -190,39 +239,10 @@ export async function POST(req: NextRequest) {
     return jsonError("Missing bucket/path(s)", 400);
   if (!paths.every(isSafePath)) return jsonError("Invalid path", 400);
 
-  const ATTACHMENTS_BUCKET =
-    process.env.NEXT_PUBLIC_SUPABASE_ATTACHMENTS_BUCKET || "attachments";
-  const PROPERTY_IMAGES_BUCKET =
-    process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET ||
-    "property-images";
-
-  const allowed = new Set([ATTACHMENTS_BUCKET, PROPERTY_IMAGES_BUCKET]);
+  const { ATTACHMENTS_BUCKET, PROPERTY_IMAGES_BUCKET, allowed } = getAllowedBuckets();
   if (!allowed.has(bucket)) return jsonError("Invalid bucket", 400);
 
-  // Auth via cookie session
-  const res = NextResponse.next();
-  const supabaseAuth = createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name) {
-          return req.cookies.get(name)?.value;
-        },
-        set(name, value, options) {
-          res.cookies.set({ name, value, ...options });
-        },
-        remove(name, options) {
-          res.cookies.set({ name, value: "", ...options, maxAge: 0 });
-        },
-      },
-    }
-  );
-
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabaseAuth.auth.getUser();
+  const { user, authErr } = await getUserFromCookieSession(req);
   if (authErr || !user) return jsonError("Unauthorized", 401);
 
   const admin = createClient<Database>(
@@ -230,79 +250,28 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // TTL: 1–60 minutes (default 10 min)
-  const requested = Number(body?.expiresIn);
-  const ttl = Number.isFinite(requested)
-    ? Math.max(60, Math.min(3600, requested))
-    : 600;
-
-  async function assertAllowedPath(path: string) {
-    const parts = path.split("/").filter(Boolean);
-
-    if (bucket === ATTACHMENTS_BUCKET) {
-      // attachments MUST be in agents/<uid>/leads/<leadId>/...
-      if (
-        parts.length < 5 ||
-        parts[0] !== "agents" ||
-        parts[1] !== user.id ||
-        parts[2] !== "leads"
-      ) {
-        throw new Error("Forbidden");
-      }
-      return;
-    }
-
-    // PROPERTY_IMAGES_BUCKET:
-    // allow BOTH:
-    // A) agents/<uid>/properties/<propertyId>/...
-    // B) <propertyId>/...  (legacy)
-    if (bucket === PROPERTY_IMAGES_BUCKET) {
-      let propertyId: number | null = null;
-
-      const isNew =
-        parts.length >= 5 &&
-        parts[0] === "agents" &&
-        parts[1] === user.id &&
-        parts[2] === "properties" &&
-        Number.isFinite(Number(parts[3]));
-
-      if (isNew) {
-        propertyId = Number(parts[3]);
-      } else {
-        // legacy: first segment must be numeric propertyId
-        if (parts.length < 2 || !Number.isFinite(Number(parts[0]))) {
-          throw new Error("Forbidden");
-        }
-        propertyId = Number(parts[0]);
-      }
-
-      // Strong ownership check
-      const { data: prop, error: propErr } = await admin
-        .from("properties")
-        .select("id, agent_id")
-        .eq("id", propertyId)
-        .single();
-
-      if (propErr || !prop) throw new Error("NotFound");
-      if (String((prop as any).agent_id) !== String(user.id))
-        throw new Error("Forbidden");
-
-      return;
-    }
-  }
+  const ttl = clampTtl(body?.expiresIn);
 
   try {
     // Validate each path
-    for (const p of paths) await assertAllowedPath(p);
+    for (const p of paths) {
+      await assertAllowedPath({
+        bucket,
+        path: p,
+        userId: user.id,
+        admin,
+        ATTACHMENTS_BUCKET,
+        PROPERTY_IMAGES_BUCKET,
+      });
+    }
 
     // Create signed urls
     const out: Record<string, string> = {};
     for (const p of paths) {
-      const { data, error } = await admin.storage
-        .from(bucket)
-        .createSignedUrl(p, ttl);
-      if (error || !data?.signedUrl)
+      const { data, error } = await admin.storage.from(bucket).createSignedUrl(p, ttl);
+      if (error || !data?.signedUrl) {
         throw new Error(error?.message || "Could not create signed url");
+      }
       out[p] = data.signedUrl;
     }
 

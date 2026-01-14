@@ -5,9 +5,10 @@ import "keen-slider/keen-slider.min.css";
 import Image from "next/image";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import clsx from "clsx";
+import { supabase } from "@/lib/supabaseClient";
 
 interface Property {
-  id: number;
+  id: string;
   city: string;
   neighbourhood?: string | null;
   neighborhood?: string | null;
@@ -38,6 +39,7 @@ interface Property {
   contact_instructions?: string | null;
   internal_notes?: string | null;
   status?: string | null;
+  image_urls?: string[] | null;
 }
 
 function formatCurrencyEUR(value: unknown): string {
@@ -94,9 +96,16 @@ async function fetchSignedUrlMap(params: {
   if (!paths.length) return {};
 
   const candidates: Array<{ url: string; method: "POST" }> = [
+    // Standard Next.js App Router routes (app/api -> /api)
     { url: "/api/storage/signed-url", method: "POST" },
     { url: "/api/storage/signed-urls", method: "POST" },
     { url: "/api/storage/signedUrl", method: "POST" },
+
+    // Some projects (like this one) use an `app/app/*` nested route group.
+    // In that case, `app/app/api/*` maps to `/app/api/*` at runtime.
+    { url: "/app/api/storage/signed-url", method: "POST" },
+    { url: "/app/api/storage/signed-urls", method: "POST" },
+    { url: "/app/api/storage/signedUrl", method: "POST" },
   ];
 
   const toMap = (data: any): Record<string, string> => {
@@ -165,12 +174,13 @@ async function fetchSignedUrlMap(params: {
 }
 
 export default function PropertyDetailClient({
-  property,
-  image_urls = [],
+  propertyId,
 }: {
-  property: Property;
-  image_urls?: string[] | null;
+  propertyId: string;
 }) {
+  const [property, setProperty] = useState<Property | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [currentSlide, setCurrentSlide] = useState(0);
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -180,10 +190,50 @@ export default function PropertyDetailClient({
   const PROPERTY_IMAGES_BUCKET =
     process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET || "property-images";
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        setLoading(true);
+        setLoadError(null);
+
+        const { data, error } = await supabase
+          .from("properties")
+          .select("*")
+          .eq("id", propertyId)
+          .single();
+
+        if (error) {
+          if (!cancelled) {
+            setLoadError(error.message || "Immobilie konnte nicht geladen werden.");
+            setProperty(null);
+          }
+          return;
+        }
+
+        if (!cancelled) setProperty(data as Property);
+      } catch (e: any) {
+        if (!cancelled) {
+          setLoadError(e?.message ?? "Immobilie konnte nicht geladen werden.");
+          setProperty(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId]);
+
   const rawImageUrls = useMemo(() => {
-    const arr = Array.isArray(image_urls) ? image_urls : [];
+    const arr = Array.isArray(property?.image_urls) ? (property?.image_urls as string[]) : [];
     return arr.filter(Boolean);
-  }, [image_urls]);
+  }, [property?.image_urls]);
 
   useEffect(() => {
     let cancelled = false;
@@ -327,6 +377,33 @@ export default function PropertyDetailClient({
       );
     }
     return <p>{text}</p>;
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
+        <div className="max-w-6xl mx-auto px-4 md:px-6 py-10">
+          <div className="rounded-2xl border border-gray-200 bg-white p-6">
+            <div className="text-sm text-gray-600">Lade Immobilie…</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!property) {
+    return (
+      <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
+        <div className="max-w-6xl mx-auto px-4 md:px-6 py-10">
+          <div className="rounded-2xl border border-gray-200 bg-white p-6 space-y-2">
+            <div className="text-sm font-medium text-gray-900">Immobilie nicht gefunden</div>
+            <div className="text-sm text-gray-600">
+              {loadError ?? "Diese Immobilie existiert nicht oder du hast keinen Zugriff."}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
