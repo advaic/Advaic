@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import { useDropzone } from "react-dropzone";
 import { arrayMoveImmutable } from "array-move";
 import { CloudUpload, GripVertical, Loader2, Trash2 } from "lucide-react";
@@ -52,20 +51,10 @@ function defaultResolver(bucket: string | undefined) {
     qs.set("path", path);
     if (bucket) qs.set("bucket", bucket);
 
-    const res = await fetch(`/api/storage/signed-url?${qs.toString()}`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data?.error || "Konnte Bild-URL nicht laden.");
-    }
-
-    // expected: { url: "https://..." }
-    if (!data?.url) throw new Error("Signed URL fehlt.");
-    return String(data.url);
+    // IMPORTANT: Our API route redirects to a signed URL.
+    // Using the same-origin endpoint as the image src ensures cookies are sent
+    // and avoids JSON-shape mismatches.
+    return `/api/storage/signed-url?${qs.toString()}`;
   };
 }
 
@@ -218,6 +207,7 @@ export default function SortablePreviewList({
     if (!setFiles) return;
 
     const item = files[index];
+    if (typeof item === "undefined") return;
 
     // Fast path: local File object
     if (item instanceof File) {
@@ -338,16 +328,24 @@ export default function SortablePreviewList({
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        {previews.map((preview, index) => {
-          const item = files[index];
+        {(files || []).map((item, index) => {
+          const preview = previews[index] || "";
           const isPath = typeof item === "string";
-          const isLoading = isPath && !!loadingPaths[item];
-          const isDeleting = isPath && !!deletingMap[item];
+          const isLoading = isPath && !!loadingPaths[String(item)];
+          const isDeleting = isPath && !!deletingMap[String(item)];
           const hasUrl = !!preview;
+
+          // Defensive key: item might be weird during rapid state transitions
+          const keyBase =
+            typeof item === "string"
+              ? item
+              : item instanceof File
+              ? item.name
+              : `item-${index}`;
 
           return (
             <div
-              key={`${isPath ? item : (item as File).name}-${index}`}
+              key={`${keyBase}-${index}`}
               className="relative group rounded-xl border border-gray-200 bg-white overflow-hidden"
               draggable={!!setFiles}
               onDragStart={(e) => onDragStart(e, index)}
@@ -386,12 +384,11 @@ export default function SortablePreviewList({
                     Lade…
                   </div>
                 ) : hasUrl ? (
-                  <Image
+                  <img
                     src={preview}
                     alt={`Vorschau ${index + 1}`}
-                    fill
-                    className="object-cover"
-                    sizes="(max-width: 768px) 50vw, 240px"
+                    className="h-full w-full object-cover"
+                    loading="lazy"
                   />
                 ) : (
                   <div className="text-xs text-gray-500">Kein Preview</div>
@@ -401,7 +398,11 @@ export default function SortablePreviewList({
               {/* Footer */}
               <div className="px-3 py-2 border-t border-gray-200">
                 <div className="text-[11px] text-gray-600 truncate">
-                  {isPath ? item : (item as File).name}
+                  {isPath
+                    ? String(item)
+                    : item instanceof File
+                    ? item.name
+                    : ""}
                 </div>
               </div>
             </div>

@@ -8,7 +8,6 @@ import {
 } from "@supabase/auth-helpers-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import Image from "next/image";
 import type { Database } from "@/types/supabase";
 
 const PROPERTY_IMAGES_BUCKET =
@@ -43,8 +42,7 @@ export default function ImmobilienPage() {
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("updated_desc");
 
-  // ✅ store signed thumbnail URLs by propertyId
-  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  // Removed thumbs state and effect as per instructions
 
   const { session, isLoading } = useSessionContext();
   const user = session?.user;
@@ -81,53 +79,6 @@ export default function ImmobilienPage() {
 
     fetchProperties();
   }, [isLoading, user, router, supabase]);
-
-  // ✅ Create signed thumbnail URLs for first image of each property
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      if (!user) return;
-      if (!properties?.length) return;
-
-      const entries = await Promise.all(
-        properties.map(async (p) => {
-          const firstPath = p.image_urls?.[0];
-          if (!firstPath) return [p.id, ""] as const;
-
-          // If it’s already a URL (legacy), keep it
-          if (
-            firstPath.startsWith("http://") ||
-            firstPath.startsWith("https://")
-          ) {
-            return [p.id, firstPath] as const;
-          }
-
-          const { data, error } = await supabase.storage
-            .from(PROPERTY_IMAGES_BUCKET)
-            .createSignedUrl(firstPath, 60 * 30); // 30 min
-
-          if (error) {
-            console.warn("Could not sign thumbnail:", p.id, error.message);
-            return [p.id, ""] as const;
-          }
-          return [p.id, data?.signedUrl || ""] as const;
-        })
-      );
-
-      if (cancelled) return;
-
-      const next: Record<string, string> = {};
-      for (const [id, url] of entries) next[id] = url;
-      setThumbs(next);
-    };
-
-    run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [properties, supabase, user]);
 
   const safeStr = (v: unknown) => String(v ?? "").trim();
   const formatCurrency = (v: number | null | undefined) => {
@@ -265,21 +216,27 @@ export default function ImmobilienPage() {
                 .filter(Boolean)
                 .join(", ");
 
-              const imgSigned = thumbs[property.id] || "";
+              const firstPath = property.image_urls?.[0];
+              // Compute imgSrc using API redirect for signed URL
+              const imgSrc =
+                firstPath && !firstPath.startsWith("http")
+                  ? `/api/storage/signed-url?bucket=${encodeURIComponent(
+                      PROPERTY_IMAGES_BUCKET
+                    )}&path=${encodeURIComponent(firstPath)}`
+                  : firstPath || "";
 
               return (
                 <div
                   key={property.id}
                   className="rounded-2xl border border-gray-200 bg-white overflow-hidden hover:shadow-md transition-shadow"
                 >
-                  {imgSigned ? (
+                  {imgSrc ? (
                     <div className="relative w-full h-48">
-                      <Image
-                        src={imgSigned}
+                      {/* Use regular img to avoid next/image issues */}
+                      <img
+                        src={imgSrc}
                         alt={title}
-                        fill
-                        className="object-cover"
-                        unoptimized
+                        className="object-cover w-full h-48"
                       />
                     </div>
                   ) : (
@@ -354,3 +311,11 @@ export default function ImmobilienPage() {
     </div>
   );
 }
+
+//Instructions:
+//- Removed the `thumbs` state and the related `useEffect` that created signed URLs via `supabase.storage.createSignedUrl`.
+//- In the render logic, replaced usage of `thumbs[property.id]` with a computed `imgSrc` variable.
+//- `imgSrc` is constructed as `/api/storage/signed-url?bucket=...&path=...` using URL-encoded bucket and image path.
+//- For legacy URLs starting with "http", `imgSrc` is just that URL.
+//- Used a standard `<img>` tag instead of `<Image>` to avoid next/image issues with signed URLs.
+//- This approach uses an API route to redirect to the signed URL, avoiding client-side signing and next/image problems.
