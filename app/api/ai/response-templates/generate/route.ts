@@ -4,47 +4,79 @@ import type { Database } from "@/types/supabase";
 
 export const runtime = "nodejs";
 
-type Body = { prompt?: string };
-
-function jsonError(message: string, status: number) {
+function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
-function safeTrim(v: unknown): string {
-  return String(v ?? "").trim();
+type Body = {
+  prompt?: string;
+};
+
+type AgentStyleRow = {
+  agent_id: string;
+  brand_name: string | null;
+  language: string | null;
+  tone: string | null;
+  formality: string | null;
+  length_pref: string | null;
+  emoji_level: string | null;
+  sign_off: string | null;
+  do_rules: string | null;
+  dont_rules: string | null;
+  example_phrases: string | null;
+};
+
+async function callAzureChat(args: { system: string; user: string }) {
+  const endpoint = process.env.AZURE_OPENAI_ENDPOINT!;
+  const apiKey = process.env.AZURE_OPENAI_API_KEY!;
+  const apiVersion =
+    process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview";
+  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT_CHAT_TEMPLATES!;
+
+  const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": apiKey,
+    },
+    body: JSON.stringify({
+      temperature: 0.4,
+      max_tokens: 450,
+      messages: [
+        { role: "system", content: args.system },
+        { role: "user", content: args.user },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Azure error ${res.status}: ${text}`);
+  }
+
+  const json = await res.json();
+  const content = json?.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Azure returned empty content");
+  return String(content);
 }
 
-function coerceTemplateJson(raw: string) {
-  const trimmed = raw.trim();
-
-  // direct JSON
+function safeJsonParse<T>(s: string): T | null {
   try {
-    return JSON.parse(trimmed);
-  } catch {}
-
-  // extract first {...}
-  const first = trimmed.indexOf("{");
-  const last = trimmed.lastIndexOf("}");
-  if (first !== -1 && last !== -1 && last > first) {
-    const slice = trimmed.slice(first, last + 1);
-    return JSON.parse(slice);
+    return JSON.parse(s) as T;
+  } catch {
+    return null;
   }
-
-  throw new Error("Model did not return valid JSON");
 }
 
-function renderTemplate(template: string, vars: Record<string, string>) {
-  let out = template;
-  for (const [k, v] of Object.entries(vars)) {
-    // replace {{key}} with value
-    out = out.replaceAll(`{{${k}}}`, v ?? "");
-  }
-  return out;
-}
+export async function POST(req: NextRequest) {
+  const body = (await req.json().catch(() => null)) as Body | null;
+  const prompt = String(body?.prompt ?? "").trim();
+  if (!prompt) return jsonError("Missing prompt", 400);
 
-async function getSupabaseAndUser(req: NextRequest) {
+  // Supabase auth via cookies
   const res = NextResponse.next();
-
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -63,161 +95,93 @@ async function getSupabaseAndUser(req: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
+  const { data: auth, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !auth?.user) return jsonError("Unauthorized", 401);
 
-  return { supabase, user: authErr ? null : user };
-}
+  const agentId = auth.user.id;
 
-async function loadAgentStyle(
-  supabase: ReturnType<typeof createServerClient<Database>>,
-  agentId: string
-) {
-  const { data } = await supabase
-    .from("agent_tone_style")
-    .select("style_instructions")
+  // Load agent_style (optional)
+  const { data: styleData } = await supabase
+    .from("agent_style")
+    .select(
+      "agent_id, brand_name, language, tone, formality, length_pref, emoji_level, sign_off, do_rules, dont_rules, example_phrases"
+    )
     .eq("agent_id", agentId)
     .maybeSingle();
 
-  return safeTrim((data as any)?.style_instructions);
-}
+  const style = (styleData as any as AgentStyleRow | null) ?? null;
 
-async function loadPrompt(
-  supabase: ReturnType<typeof createServerClient<Database>>,
-  key: string
-) {
-  const { data, error } = await supabase
-    .from("ai_prompts")
-    .select(
-      "key, name, description, system_prompt, user_prompt, response_format, temperature, max_tokens, is_active"
-    )
-    .eq("key", key)
-    .eq("is_active", true)
-    .maybeSingle();
+  // Optional: load prompt from ai_prompts (fallback to hardcoded)
+  // NOTE: If you keep ai_prompts readable only to service role, move this fetch to a service client.
+  let baseSystemPrompt = `
+Du bist ein Assistent für Immobilienmakler und erstellst "Antwortvorlagen".
+Output IMMER als reines JSON mit exakt diesen Keys:
+{ "title": string, "category": string, "content": string }
 
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error(`Prompt not found/active: ${key}`);
+Regeln:
+- Deutsch, klar, professionell.
+- Keine Halluzinationen. Keine Fakten erfinden.
+- "content" darf Platzhalter enthalten wie {{NAME}} oder {{TERMIN}}.
+- Kurze, umsetzbare Vorlage (nicht Roman).
+- Kein Markdown, nur JSON.
+`.trim();
 
-  return data as any;
-}
+  // If you want to load from ai_prompts by key (optional)
+  // const { data: p } = await supabase.from("ai_prompts").select("content").eq("key","chat_templates_generate").maybeSingle();
+  // if (p?.content) baseSystemPrompt = p.content;
 
-async function callAzureChat({
-  system,
-  user,
-  temperature,
-  max_tokens,
-}: {
-  system: string;
-  user: string;
-  temperature: number;
-  max_tokens: number;
-}) {
-  const endpoint = safeTrim(process.env.AZURE_OPENAI_ENDPOINT);
-  const apiKey = safeTrim(process.env.AZURE_OPENAI_API_KEY);
-  const deployment = safeTrim(
-    process.env.AZURE_OPENAI_DEPLOYMENT_CHAT_TEMPLATES
-  );
-  const apiVersion =
-    safeTrim(process.env.AZURE_OPENAI_API_VERSION) || "2024-02-15-preview";
+  const styleBlock = `
+Agent Style (falls vorhanden):
+- brand_name: ${style?.brand_name ?? "Advaic"}
+- language: ${style?.language ?? "de"}
+- tone: ${style?.tone ?? "professionell, freundlich"}
+- formality: ${style?.formality ?? "Sie-Form"}
+- length_pref: ${style?.length_pref ?? "kurz"}
+- emoji_level: ${style?.emoji_level ?? "keine"}
+- sign_off: ${style?.sign_off ?? "Viele Grüße"}
+- do_rules: ${style?.do_rules ?? ""}
+- dont_rules: ${style?.dont_rules ?? ""}
+- example_phrases: ${style?.example_phrases ?? ""}
+`.trim();
 
-  if (!endpoint || !apiKey || !deployment) {
-    throw new Error(
-      "Azure env missing. Need AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT_CHAT_TEMPLATES."
-    );
-  }
+  const system = `${baseSystemPrompt}\n\n${styleBlock}`;
 
-  const base = endpoint.replace(/\/+$/, "");
-  const url = `${base}/openai/deployments/${deployment}/chat/completions?api-version=${encodeURIComponent(
-    apiVersion
-  )}`;
+  const user = `
+Erstelle eine neue Antwortvorlage basierend auf dieser Beschreibung:
 
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "api-key": apiKey,
-    },
-    body: JSON.stringify({
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      temperature,
-      max_tokens,
-      // If your deployment supports JSON mode, you can try:
-      // response_format: { type: "json_object" },
-    }),
-  });
+"${prompt}"
 
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`Azure error (${resp.status}): ${text || resp.statusText}`);
-  }
-
-  const json = await resp.json();
-  const content =
-    json?.choices?.[0]?.message?.content?.toString?.() ??
-    json?.choices?.[0]?.message?.content ??
-    "";
-
-  return String(content ?? "");
-}
-
-export async function POST(req: NextRequest) {
-  const body = (await req.json().catch(() => null)) as Body | null;
-  const prompt = safeTrim(body?.prompt);
-  if (!prompt) return jsonError("Missing prompt", 400);
-
-  // Auth
-  const { supabase, user } = await getSupabaseAndUser(req);
-  if (!user) return jsonError("Unauthorized", 401);
-
-  // Load agent style
-  const style =
-    (await loadAgentStyle(supabase, user.id)) ||
-    "No custom tone & style provided. Default: neutral-professional, polite, clear.";
-
-  // Load prompt definition from registry
-  let promptRow: any;
-  try {
-    promptRow = await loadPrompt(supabase, "chat_templates.generate");
-  } catch (e: any) {
-    return jsonError(e?.message ?? "Could not load prompt", 500);
-  }
-
-  // Render templates with variables
-  const system = renderTemplate(safeTrim(promptRow.system_prompt), { style });
-  const userMsg = renderTemplate(safeTrim(promptRow.user_prompt), { prompt });
-
-  const temperature = Number.isFinite(Number(promptRow.temperature))
-    ? Number(promptRow.temperature)
-    : 0.4;
-
-  const max_tokens = Number.isFinite(Number(promptRow.max_tokens))
-    ? Number(promptRow.max_tokens)
-    : 400;
+Achte darauf, dass title + category sinnvoll sind.
+`.trim();
 
   try {
-    const raw = await callAzureChat({
-      system,
-      user: userMsg,
-      temperature,
-      max_tokens,
-    });
+    const raw = await callAzureChat({ system, user });
 
-    const obj = coerceTemplateJson(raw);
+    // The model might wrap JSON with text -> try to extract
+    const firstBrace = raw.indexOf("{");
+    const lastBrace = raw.lastIndexOf("}");
+    const jsonStr =
+      firstBrace >= 0 && lastBrace > firstBrace
+        ? raw.slice(firstBrace, lastBrace + 1)
+        : raw;
 
-    const title = safeTrim(obj?.title);
-    const content = safeTrim(obj?.content);
-    const category = safeTrim(obj?.category) || "Allgemein";
+    const parsed = safeJsonParse<{
+      title?: string;
+      category?: string;
+      content?: string;
+    }>(jsonStr);
 
-    if (!title || !content) return jsonError("AI output incomplete", 502);
+    const title = String(parsed?.title ?? "").trim();
+    const category = String(parsed?.category ?? "").trim();
+    const content = String(parsed?.content ?? "").trim();
 
-    return NextResponse.json({ title, content, category });
+    if (!title || !content) {
+      return jsonError("AI output invalid (missing title/content)", 502);
+    }
+
+    return NextResponse.json({ title, category, content });
   } catch (e: any) {
-    console.error("AI route error:", e);
-    return jsonError(e?.message ?? "AI generation failed", 500);
+    console.error("AI generate error:", e);
+    return jsonError("AI generation failed", 500);
   }
 }
