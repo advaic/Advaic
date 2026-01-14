@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { v4 as uuidv4 } from "uuid";
 import {
   CheckCircle2,
   Pencil,
@@ -101,6 +100,8 @@ export default function AntwortvorlagenPage() {
     setTitle(t.title);
     setContent(t.content);
     setCategory(t.category ?? "");
+    // bring form into view
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   async function requireUserId(): Promise<string | null> {
@@ -131,7 +132,8 @@ export default function AntwortvorlagenPage() {
           .select(
             "id, title, content, category, is_ai_generated, created_at, updated_at"
           )
-          .order("updated_at", { ascending: false });
+          .order("updated_at", { ascending: false })
+          .order("created_at", { ascending: false });
 
         if (error) {
           console.error("❌ response_templates select error:", error);
@@ -184,9 +186,11 @@ export default function AntwortvorlagenPage() {
           return;
         }
 
-        setTemplates((prev) =>
-          prev.map((t) => (t.id === editingId ? (data as any as Template) : t))
-        );
+        // Move updated template to top
+        setTemplates((prev) => {
+          const next = prev.filter((t) => t.id !== editingId);
+          return [data as any as Template, ...next];
+        });
 
         showToast("Vorlage aktualisiert.");
         resetForm();

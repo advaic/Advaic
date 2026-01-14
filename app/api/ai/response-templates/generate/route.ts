@@ -4,9 +4,7 @@ import type { Database } from "@/types/supabase";
 
 export const runtime = "nodejs";
 
-type Body = {
-  prompt?: string;
-};
+type Body = { prompt?: string };
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -16,31 +14,35 @@ function safeTrim(v: unknown): string {
   return String(v ?? "").trim();
 }
 
-function getAzureConfig() {
-  const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-  const apiKey = process.env.AZURE_OPENAI_API_KEY;
+function coerceTemplateJson(raw: string) {
+  const trimmed = raw.trim();
 
-  // Use task-scoped deployment name for this route
-  const deployment =
-    process.env.AZURE_OPENAI_DEPLOYMENT_CHAT_TEMPLATES ||
-    process.env.AZURE_OPENAI_DEPLOYMENT; // fallback for older setups
+  // direct JSON
+  try {
+    return JSON.parse(trimmed);
+  } catch {}
 
-  // Keep one shared API version across the project
-  const apiVersion =
-    process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview";
-
-  if (!endpoint || !apiKey || !deployment) {
-    throw new Error(
-      "Missing Azure env vars. Need AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, and AZURE_OPENAI_DEPLOYMENT_CHAT_TEMPLATES (or AZURE_OPENAI_DEPLOYMENT)."
-    );
+  // extract first {...}
+  const first = trimmed.indexOf("{");
+  const last = trimmed.lastIndexOf("}");
+  if (first !== -1 && last !== -1 && last > first) {
+    const slice = trimmed.slice(first, last + 1);
+    return JSON.parse(slice);
   }
 
-  const base = endpoint.replace(/\/+$/, "");
-
-  return { base, apiKey, deployment, apiVersion };
+  throw new Error("Model did not return valid JSON");
 }
 
-async function getUserAndToneStyle(req: NextRequest) {
+function renderTemplate(template: string, vars: Record<string, string>) {
+  let out = template;
+  for (const [k, v] of Object.entries(vars)) {
+    // replace {{key}} with value
+    out = out.replaceAll(`{{${k}}}`, v ?? "");
+  }
+  return out;
+}
+
+async function getSupabaseAndUser(req: NextRequest) {
   const res = NextResponse.next();
 
   const supabase = createServerClient<Database>(
@@ -66,146 +68,154 @@ async function getUserAndToneStyle(req: NextRequest) {
     error: authErr,
   } = await supabase.auth.getUser();
 
-  if (authErr || !user) return { user: null as any, style: "" };
+  return { supabase, user: authErr ? null : user };
+}
 
-  const { data: toneRow } = await supabase
+async function loadAgentStyle(
+  supabase: ReturnType<typeof createServerClient<Database>>,
+  agentId: string
+) {
+  const { data } = await supabase
     .from("agent_tone_style")
     .select("style_instructions")
-    .eq("agent_id", user.id)
+    .eq("agent_id", agentId)
     .maybeSingle();
 
-  const style = safeTrim((toneRow as any)?.style_instructions);
-  return { user, style };
+  return safeTrim((data as any)?.style_instructions);
 }
 
-function coerceTemplateJson(raw: string) {
-  const trimmed = raw.trim();
+async function loadPrompt(
+  supabase: ReturnType<typeof createServerClient<Database>>,
+  key: string
+) {
+  const { data, error } = await supabase
+    .from("ai_prompts")
+    .select(
+      "key, name, description, system_prompt, user_prompt, response_format, temperature, max_tokens, is_active"
+    )
+    .eq("key", key)
+    .eq("is_active", true)
+    .maybeSingle();
 
-  // direct JSON first
-  try {
-    return JSON.parse(trimmed);
-  } catch {}
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error(`Prompt not found/active: ${key}`);
 
-  // then extract the first JSON object
-  const firstBrace = trimmed.indexOf("{");
-  const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    const maybe = trimmed.slice(firstBrace, lastBrace + 1);
-    return JSON.parse(maybe);
-  }
-
-  throw new Error("Model did not return valid JSON");
+  return data as any;
 }
 
-async function callAzureChatCompletion(args: {
+async function callAzureChat({
+  system,
+  user,
+  temperature,
+  max_tokens,
+}: {
   system: string;
   user: string;
-  temperature?: number;
-  maxTokens?: number;
+  temperature: number;
+  max_tokens: number;
 }) {
-  const { base, apiKey, deployment, apiVersion } = getAzureConfig();
+  const endpoint = safeTrim(process.env.AZURE_OPENAI_ENDPOINT);
+  const apiKey = safeTrim(process.env.AZURE_OPENAI_API_KEY);
+  const deployment = safeTrim(
+    process.env.AZURE_OPENAI_DEPLOYMENT_CHAT_TEMPLATES
+  );
+  const apiVersion =
+    safeTrim(process.env.AZURE_OPENAI_API_VERSION) || "2024-02-15-preview";
 
-  // Azure OpenAI Chat Completions endpoint
-  const url = `${base}/openai/deployments/${encodeURIComponent(
-    deployment
-  )}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+  if (!endpoint || !apiKey || !deployment) {
+    throw new Error(
+      "Azure env missing. Need AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT_CHAT_TEMPLATES."
+    );
+  }
+
+  const base = endpoint.replace(/\/+$/, "");
+  const url = `${base}/openai/deployments/${deployment}/chat/completions?api-version=${encodeURIComponent(
+    apiVersion
+  )}`;
 
   const resp = await fetch(url, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "content-type": "application/json",
       "api-key": apiKey,
     },
     body: JSON.stringify({
       messages: [
-        { role: "system", content: args.system },
-        { role: "user", content: args.user },
+        { role: "system", content: system },
+        { role: "user", content: user },
       ],
-      temperature: args.temperature ?? 0.4,
-      max_tokens: args.maxTokens ?? 400,
-      // If your deployment supports it you can uncomment later:
+      temperature,
+      max_tokens,
+      // If your deployment supports JSON mode, you can try:
       // response_format: { type: "json_object" },
     }),
   });
 
-  // Azure returns JSON error bodies; include them for debugging
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
-    throw new Error(
-      `Azure OpenAI error (${resp.status}): ${text || resp.statusText}`
-    );
+    throw new Error(`Azure error (${resp.status}): ${text || resp.statusText}`);
   }
 
-  const data = (await resp.json()) as any;
+  const json = await resp.json();
   const content =
-    data?.choices?.[0]?.message?.content?.toString?.() ??
-    data?.choices?.[0]?.message?.content ??
+    json?.choices?.[0]?.message?.content?.toString?.() ??
+    json?.choices?.[0]?.message?.content ??
     "";
 
-  return String(content || "");
+  return String(content ?? "");
 }
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Body | null;
   const prompt = safeTrim(body?.prompt);
-
   if (!prompt) return jsonError("Missing prompt", 400);
 
-  // Auth + style
-  const { user, style } = await getUserAndToneStyle(req);
+  // Auth
+  const { supabase, user } = await getSupabaseAndUser(req);
   if (!user) return jsonError("Unauthorized", 401);
 
-  const system = `
-You are Advaic, an assistant that writes short response templates for real estate agents in German.
+  // Load agent style
+  const style =
+    (await loadAgentStyle(supabase, user.id)) ||
+    "No custom tone & style provided. Default: neutral-professional, polite, clear.";
 
-OUTPUT RULES:
-- Return ONLY valid JSON.
-- JSON schema:
-  {
-    "title": string,        // short and clear
-    "content": string,      // template text (no placeholders like {name} unless requested)
-    "category": string      // optional category label (e.g., "Besichtigung", "Nachfrage", "Absage", "Allgemein")
+  // Load prompt definition from registry
+  let promptRow: any;
+  try {
+    promptRow = await loadPrompt(supabase, "chat_templates.generate");
+  } catch (e: any) {
+    return jsonError(e?.message ?? "Could not load prompt", 500);
   }
-- The content must be professional, clear, and ready to send.
-- Keep it concise: typically 2–6 sentences.
-- If the user prompt is vague, still produce a sensible "Allgemein" template without asking questions.
 
-TONE & STYLE INSTRUCTIONS (agent-specific):
-${
-  style
-    ? style
-    : "No custom tone & style provided. Default: neutral-professional, polite, clear."
-}
-`.trim();
+  // Render templates with variables
+  const system = renderTemplate(safeTrim(promptRow.system_prompt), { style });
+  const userMsg = renderTemplate(safeTrim(promptRow.user_prompt), { prompt });
 
-  const userMsg = `
-Create one response template based on this description:
-"${prompt}"
-`.trim();
+  const temperature = Number.isFinite(Number(promptRow.temperature))
+    ? Number(promptRow.temperature)
+    : 0.4;
+
+  const max_tokens = Number.isFinite(Number(promptRow.max_tokens))
+    ? Number(promptRow.max_tokens)
+    : 400;
 
   try {
-    const text = await callAzureChatCompletion({
+    const raw = await callAzureChat({
       system,
       user: userMsg,
-      temperature: 0.4,
-      maxTokens: 400,
+      temperature,
+      max_tokens,
     });
 
-    const obj = coerceTemplateJson(text);
+    const obj = coerceTemplateJson(raw);
 
     const title = safeTrim(obj?.title);
     const content = safeTrim(obj?.content);
-    const category = safeTrim(obj?.category);
+    const category = safeTrim(obj?.category) || "Allgemein";
 
-    if (!title || !content) {
-      return jsonError("AI output incomplete", 502);
-    }
+    if (!title || !content) return jsonError("AI output incomplete", 502);
 
-    return NextResponse.json({
-      title,
-      content,
-      category: category || "Allgemein",
-    });
+    return NextResponse.json({ title, content, category });
   } catch (e: any) {
     console.error("AI route error:", e);
     return jsonError(e?.message ?? "AI generation failed", 500);
