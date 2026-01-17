@@ -163,11 +163,48 @@ export async function POST(req: NextRequest) {
     return jsonError(401, "Unauthorized");
   }
 
-  // 2️⃣ Load Gmail connection
+  // 2️⃣ Ensure lead belongs to the authenticated agent and lock recipient/thread defaults
   const supabaseAdmin = createClient<Database>(
     mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
     mustEnv("SUPABASE_SERVICE_ROLE_KEY")
   );
+
+  const { data: leadRow, error: leadErr } = await (supabaseAdmin
+    .from("leads") as any)
+    .select("id, agent_id, email, gmail_thread_id")
+    .eq("id", lead_id)
+    .maybeSingle();
+
+  if (leadErr) {
+    console.error("[gmail/send] lead lookup failed:", leadErr.message);
+    return jsonError(500, "Failed to load lead");
+  }
+
+  if (!leadRow) {
+    return jsonError(404, "Lead not found");
+  }
+
+  if (String(leadRow.agent_id) !== String(user.id)) {
+    return jsonError(403, "Forbidden");
+  }
+
+  // Prevent accidental mis-sends: only allow sending to the lead's stored email.
+  const leadEmail = String(leadRow.email || "").trim();
+  if (!leadEmail) {
+    return jsonError(400, "Lead has no email");
+  }
+
+  if (safeTo.toLowerCase() !== leadEmail.toLowerCase()) {
+    return jsonError(400, "Recipient does not match lead email", {
+      expected: leadEmail,
+      got: safeTo,
+    });
+  }
+
+  // If caller didn't pass a threadId, default to the one stored on the lead.
+  const effectiveThreadId = (gmail_thread_id ?? leadRow.gmail_thread_id ?? null) as
+    | string
+    | null;
 
   const { data: conn, error: connErr } = await supabaseAdmin
     .from("email_connections")
@@ -355,14 +392,14 @@ export async function POST(req: NextRequest) {
 
   // 5️⃣ Send email via Gmail API (capture Gmail message id/thread id)
   let sentMessageId: string | null = null;
-  let sentThreadId: string | null = gmail_thread_id ?? null;
+  let sentThreadId: string | null = effectiveThreadId ?? null;
 
   try {
     const sendRes = await gmail.users.messages.send({
       userId: "me",
       requestBody: {
         raw: encodedMessage,
-        ...(gmail_thread_id ? { threadId: gmail_thread_id } : {}),
+        ...(effectiveThreadId ? { threadId: effectiveThreadId } : {}),
       },
     });
 
@@ -462,7 +499,7 @@ export async function POST(req: NextRequest) {
   // 7️⃣ Persist threadId on lead so Gmail Push can map future events to the same lead
   if (sentThreadId) {
     const { error: leadUpdateErr } = await (supabaseAdmin.from("leads") as any)
-      .update({ gmail_thread_id: sentThreadId })
+      .update({ gmail_thread_id: sentThreadId, last_message_at: nowIso })
       .eq("id", lead_id);
 
     if (leadUpdateErr) {
