@@ -2,15 +2,42 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Database } from "@/types/supabase";
-// import { sendMessageToMake } from "@/lib/sendMessageToMake";
+// import { Database } from "@/types/supabase";
 import { supabase } from "@/lib/supabaseClient";
 import { rejectMessage } from "../../actions/rejectMessage";
-// import { approveMessage } from "@/actions/approveMessage";
 import { approveMessage } from "../../actions/approveMessage";
 import { editAndApproveMessage } from "../../actions/editAndApproveMessage";
 
-type Message = Database["public"]["Tables"]["messages"]["Row"];
+export type ApprovalMessage = {
+  id: string;
+  lead_id: string;
+  agent_id: string;
+
+  sender: "system" | "user" | "agent" | "assistant";
+  text: string;
+  timestamp: string;
+
+  visible_to_agent: boolean;
+  approval_required: boolean;
+
+  was_followup?: boolean | null;
+  gpt_score?: number | null;
+
+  // email / classification meta (optional)
+  gmail_message_id?: string | null;
+  gmail_thread_id?: string | null;
+  snippet?: string | null;
+  email_type?: string | null;
+  classification_confidence?: number | null;
+
+  // for UI label
+  lead_name?: string;
+
+  // attachments meta json
+  attachments_meta?: any;
+  attachments?: any;
+  attachmentsMeta?: any;
+};
 
 type AttachmentMeta = {
   bucket: string;
@@ -33,10 +60,17 @@ function formatBytes(n?: number) {
 }
 
 function normalizeAttachments(msg: any): AttachmentMeta[] {
-  const raw = msg?.attachments_meta ?? msg?.attachments ?? msg?.attachmentsMeta ?? null;
+  const raw =
+    msg?.attachments_meta ?? msg?.attachments ?? msg?.attachmentsMeta ?? null;
   if (!raw) return [];
+
   try {
-    const arr = Array.isArray(raw) ? raw : typeof raw === "string" ? JSON.parse(raw) : [];
+    const arr = Array.isArray(raw)
+      ? raw
+      : typeof raw === "string"
+      ? JSON.parse(raw)
+      : [];
+
     return (arr || [])
       .filter(Boolean)
       .map((a: any) => ({
@@ -66,20 +100,33 @@ function safeLineDiff(original: string, edited: string) {
 }
 
 interface ZurFreigabeUIProps {
-  messages: Message[];
+  messages: ApprovalMessage[];
 }
 
 export default function ZurFreigabeUI({
   messages: initialMessages,
 }: ZurFreigabeUIProps) {
   const router = useRouter();
-  const [messages, setMessages] = useState(initialMessages);
+  const [messages, setMessages] = useState<ApprovalMessage[]>(initialMessages);
+
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editedText, setEditedText] = useState<string>("");
 
   const [pendingIds, setPendingIds] = useState<Record<string, boolean>>({});
-  const [actionError, setActionError] = useState<Record<string, string | null>>({});
+  const [actionError, setActionError] = useState<Record<string, string | null>>(
+    {}
+  );
   const [search, setSearch] = useState<string>("");
+
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
+  const [selectAll, setSelectAll] = useState(false);
+
+  const [previewUrls, setPreviewUrls] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [previewOpen, setPreviewOpen] = useState<Record<string, boolean>>({});
+
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const setPending = (id: string, v: boolean) =>
     setPendingIds((prev) => ({ ...prev, [id]: v }));
@@ -87,32 +134,31 @@ export default function ZurFreigabeUI({
   const setErr = (id: string, msg: string | null) =>
     setActionError((prev) => ({ ...prev, [id]: msg }));
 
-  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
-  const [selectAll, setSelectAll] = useState(false);
-
-  const [previewUrls, setPreviewUrls] = useState<Record<string, Record<string, string>>>({});
-  const [previewOpen, setPreviewOpen] = useState<Record<string, boolean>>({});
-
-  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
   const approvalMessages = useMemo(() => {
     const base = messages.filter((msg) => msg.approval_required);
     const q = search.trim().toLowerCase();
     if (!q) return base;
-    return base.filter((m) => String(m.text ?? "").toLowerCase().includes(q));
+    return base.filter((m) =>
+      String(m.text ?? "")
+        .toLowerCase()
+        .includes(q)
+    );
   }, [messages, search]);
 
-  const approvalIds = useMemo(() => approvalMessages.map((m) => m.id), [approvalMessages]);
+  const approvalIds = useMemo(
+    () => approvalMessages.map((m) => m.id),
+    [approvalMessages]
+  );
 
   useEffect(() => {
-    // keep selection in sync when list changes
     setSelectedIds((prev) => {
       const next: Record<string, boolean> = {};
       for (const id of approvalIds) next[id] = !!prev[id];
       return next;
     });
     setSelectAll(false);
-  }, [approvalIds.join("|")]); // stable enough for our use
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approvalIds.join("|")]);
 
   const selectedCount = useMemo(() => {
     return Object.values(selectedIds).filter(Boolean).length;
@@ -131,13 +177,12 @@ export default function ZurFreigabeUI({
     setSelectedIds((prev) => ({ ...prev, [id]: v }));
   };
 
-  const ensurePreviews = async (message: Message) => {
+  const ensurePreviews = async (message: ApprovalMessage) => {
     const atts = normalizeAttachments(message as any);
     if (atts.length === 0) return;
 
     setPreviewOpen((prev) => ({ ...prev, [message.id]: true }));
 
-    // If already fetched, skip
     if (previewUrls[message.id]) return;
 
     const perPath: Record<string, string> = {};
@@ -145,12 +190,12 @@ export default function ZurFreigabeUI({
       try {
         const { data, error } = await supabase.storage
           .from(a.bucket || "attachments")
-          .createSignedUrl(a.path, 60); // 60s is enough for preview click-through
+          .createSignedUrl(a.path, 60);
         if (!error && data?.signedUrl) {
           perPath[a.path] = data.signedUrl;
         }
       } catch {
-        // ignore, show as "Preview nicht verfügbar"
+        // ignore
       }
     }
 
@@ -163,13 +208,11 @@ export default function ZurFreigabeUI({
     const message = messages.find((msg) => msg.id === id);
     if (!message) return;
 
-    // optimistic: remove immediately
     setPending(id, true);
     setErr(id, null);
     setMessages((prev) => prev.filter((msg) => msg.id !== id));
 
     try {
-      // Load lead data
       const { data: lead, error: leadErr } = await supabase
         .from("leads")
         .select("id, email, gmail_thread_id, type")
@@ -202,19 +245,20 @@ export default function ZurFreigabeUI({
       await approveMessage(id);
       setErr(id, null);
 
-      // Auto-focus next item for speed
       const idx = approvalIds.indexOf(id);
       const nextId = approvalIds[idx + 1] ?? approvalIds[idx - 1] ?? null;
       if (nextId) {
         setTimeout(() => {
-          cardRefs.current[nextId]?.scrollIntoView({ behavior: "smooth", block: "center" });
+          cardRefs.current[nextId]?.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
         }, 50);
       }
     } catch (e: any) {
       console.error("❌ Approve failed", e);
       setErr(id, e?.message ?? "Freigeben fehlgeschlagen.");
 
-      // rollback optimistic removal
       setMessages((prev) => {
         const exists = prev.some((m) => m.id === message.id);
         if (exists) return prev;
@@ -247,7 +291,6 @@ export default function ZurFreigabeUI({
       return;
     }
 
-    // optimistic: remove immediately
     setPending(id, true);
     setErr(id, null);
     setMessages((prev) => prev.filter((msg) => msg.id !== id));
@@ -288,7 +331,10 @@ export default function ZurFreigabeUI({
       const nextId = approvalIds[idx + 1] ?? approvalIds[idx - 1] ?? null;
       if (nextId) {
         setTimeout(() => {
-          cardRefs.current[nextId]?.scrollIntoView({ behavior: "smooth", block: "center" });
+          cardRefs.current[nextId]?.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
         }, 50);
       }
 
@@ -299,7 +345,6 @@ export default function ZurFreigabeUI({
       console.error("❌ Save+Approve failed", e);
       setErr(id, e?.message ?? "Speichern & Freigeben fehlgeschlagen.");
 
-      // rollback optimistic removal
       setMessages((prev) => {
         const exists = prev.some((m) => m.id === message.id);
         if (exists) return prev;
@@ -314,9 +359,7 @@ export default function ZurFreigabeUI({
     const ids = approvalIds.filter((id) => selectedIds[id]);
     if (ids.length === 0) return;
 
-    // run sequentially to avoid rate limits + keep logs clean
     for (const id of ids) {
-      // skip if currently editing something else
       if (editingMessageId && editingMessageId !== id) continue;
       await handleApprove(id);
     }
@@ -341,7 +384,9 @@ export default function ZurFreigabeUI({
         <div className="flex items-start justify-between gap-4 mb-6">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl md:text-3xl font-semibold">Zur Freigabe</h1>
+              <h1 className="text-2xl md:text-3xl font-semibold">
+                Zur Freigabe
+              </h1>
               <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
                 Advaic
               </span>
@@ -350,8 +395,8 @@ export default function ZurFreigabeUI({
               </span>
             </div>
             <p className="text-gray-700 mt-2 max-w-2xl">
-              Hier siehst du alle Nachrichten, die zur Freigabe bereitstehen. Du kannst sie sofort
-              senden, vorher bearbeiten oder ablehnen.
+              Hier siehst du alle Nachrichten, die zur Freigabe bereitstehen. Du
+              kannst sie sofort senden, vorher bearbeiten oder ablehnen.
             </p>
           </div>
 
@@ -407,12 +452,17 @@ export default function ZurFreigabeUI({
           {approvalMessages.map((message) => {
             const pending = !!pendingIds[message.id];
             const isEditing = editingMessageId === message.id;
+
             const senderLabel =
               message.sender === "user"
                 ? "Interessent"
                 : message.sender === "agent"
                 ? "Du"
+                : message.sender === "assistant"
+                ? "Advaic"
                 : "System";
+
+            const ts = message.timestamp ? new Date(message.timestamp) : null;
 
             return (
               <div
@@ -437,16 +487,23 @@ export default function ZurFreigabeUI({
                         <input
                           type="checkbox"
                           checked={!!selectedIds[message.id]}
-                          onChange={(e) => toggleSelected(message.id, e.target.checked)}
+                          onChange={(e) =>
+                            toggleSelected(message.id, e.target.checked)
+                          }
                           onClick={(e) => e.stopPropagation()}
                           disabled={pending}
                           className="h-4 w-4 rounded border-gray-300"
                         />
                       </label>
-                      <div className="text-sm font-semibold text-gray-900">{senderLabel}</div>
-                      <div className="text-xs px-2 py-1 rounded-full border border-gray-200 bg-gray-50 text-gray-700">
-                        {new Date(message.timestamp).toLocaleString()}
+
+                      <div className="text-sm font-semibold text-gray-900">
+                        {senderLabel}
                       </div>
+
+                      <div className="text-xs px-2 py-1 rounded-full border border-gray-200 bg-gray-50 text-gray-700">
+                        {ts ? ts.toLocaleString() : "—"}
+                      </div>
+
                       {pending && (
                         <div className="text-xs px-2 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-800">
                           Wird gesendet…
@@ -459,12 +516,14 @@ export default function ZurFreigabeUI({
                       {String(message.text ?? "").length > 240 ? "…" : ""}
                     </p>
 
+                    {/* Attachments preview */}
                     {(() => {
                       const atts = normalizeAttachments(message as any);
                       if (atts.length === 0) return null;
 
                       const open = !!previewOpen[message.id];
                       const map = previewUrls[message.id] || {};
+
                       return (
                         <div className="mt-3">
                           <button
@@ -472,18 +531,25 @@ export default function ZurFreigabeUI({
                             onClick={(e) => {
                               e.stopPropagation();
                               if (!open) ensurePreviews(message);
-                              else setPreviewOpen((prev) => ({ ...prev, [message.id]: false }));
+                              else
+                                setPreviewOpen((prev) => ({
+                                  ...prev,
+                                  [message.id]: false,
+                                }));
                             }}
                             className="text-sm px-3 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50"
                           >
-                            {open ? "Anhänge ausblenden" : `Anhänge anzeigen (${atts.length})`}
+                            {open
+                              ? "Anhänge ausblenden"
+                              : `Anhänge anzeigen (${atts.length})`}
                           </button>
 
                           {open && (
                             <div className="mt-2 grid gap-2">
                               {atts.map((a) => {
                                 const url = map[a.path];
-                                const label = a.name || a.path.split("/").pop() || "Anhang";
+                                const label =
+                                  a.name || a.path.split("/").pop() || "Anhang";
                                 return (
                                   <div
                                     key={a.path}
@@ -494,7 +560,10 @@ export default function ZurFreigabeUI({
                                         📎 {label}
                                       </div>
                                       <div className="text-xs text-gray-600 mt-1">
-                                        {a.mime ? a.mime : "Datei"} {a.size ? `· ${formatBytes(a.size)}` : ""}
+                                        {a.mime ? a.mime : "Datei"}{" "}
+                                        {a.size
+                                          ? `· ${formatBytes(a.size)}`
+                                          : ""}
                                       </div>
                                     </div>
 
@@ -533,11 +602,11 @@ export default function ZurFreigabeUI({
                       </div>
                     )}
 
+                    {/* Editor */}
                     {isEditing && (
                       <div
                         className="mt-4"
                         onClick={(e) => {
-                          // prevent card navigation while editing
                           e.stopPropagation();
                         }}
                       >
@@ -569,15 +638,24 @@ export default function ZurFreigabeUI({
                             Diff (Zeilen)
                           </div>
                           <div className="space-y-1">
-                            {safeLineDiff(String(message.text ?? ""), editedText).map((r, idx) => (
+                            {safeLineDiff(
+                              String(message.text ?? ""),
+                              editedText
+                            ).map((r, idx) => (
                               <div
                                 key={idx}
                                 className={`grid grid-cols-2 gap-3 rounded-xl px-3 py-2 text-xs ${
-                                  r.changed ? "bg-amber-50 border border-amber-200" : "bg-[#fbfbfc]"
+                                  r.changed
+                                    ? "bg-amber-50 border border-amber-200"
+                                    : "bg-[#fbfbfc]"
                                 }`}
                               >
-                                <div className="whitespace-pre-wrap text-gray-800">{r.left || " "}</div>
-                                <div className="whitespace-pre-wrap text-gray-900 font-medium">{r.right || " "}</div>
+                                <div className="whitespace-pre-wrap text-gray-800">
+                                  {r.left || " "}
+                                </div>
+                                <div className="whitespace-pre-wrap text-gray-900 font-medium">
+                                  {r.right || " "}
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -615,7 +693,6 @@ export default function ZurFreigabeUI({
                   <div
                     className="flex items-center gap-2"
                     onClick={(e) => {
-                      // prevent card navigation when clicking buttons
                       e.stopPropagation();
                     }}
                   >
@@ -660,7 +737,8 @@ export default function ZurFreigabeUI({
                 Keine Nachrichten zur Freigabe.
               </div>
               <div className="text-sm text-gray-600 mt-2">
-                Sobald Advaic eine Nachricht markiert, erscheint sie hier automatisch.
+                Sobald Advaic eine Nachricht markiert, erscheint sie hier
+                automatisch.
               </div>
             </div>
           )}
