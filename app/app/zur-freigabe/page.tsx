@@ -58,8 +58,8 @@ export default async function ZurFreigabePage() {
       snippet,
       email_type,
       classification_confidence,
-      attachments_meta,
-
+      attachments,
+      
       leads (
         name
       )
@@ -107,7 +107,7 @@ export default async function ZurFreigabePage() {
     email_type: msg.email_type ?? null,
     classification_confidence: msg.classification_confidence ?? null,
 
-    attachments_meta: msg.attachments_meta ?? null,
+    attachments_meta: msg.attachments ?? null,
 
     lead_name: (msg.leads as any)?.name ?? "Unbekannter Interessent",
   }));

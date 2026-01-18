@@ -105,6 +105,7 @@ export async function POST(req: NextRequest) {
   }
 
   const {
+    id,
     lead_id,
     gmail_thread_id,
     to,
@@ -113,6 +114,7 @@ export async function POST(req: NextRequest) {
     was_followup,
     attachments,
   } = (body || {}) as {
+    id?: string;
     lead_id?: string;
     gmail_thread_id?: string | null;
     to?: string;
@@ -122,9 +124,9 @@ export async function POST(req: NextRequest) {
     attachments?: AttachmentInput[];
   };
 
-  if (!lead_id || !to || !subject || !text) {
+  if (!id || !lead_id || !to || !subject || !text) {
     return jsonError(400, "Missing required fields", {
-      required: ["lead_id", "to", "subject", "text"],
+      required: ["id", "lead_id", "to", "subject", "text"],
     });
   }
 
@@ -199,6 +201,60 @@ export async function POST(req: NextRequest) {
       expected: leadEmail,
       got: safeTo,
     });
+  }
+
+  // 2b) Idempotency + send lock (prevents double-send)
+  const messageId = String(id).trim();
+
+  // If already sent, short-circuit
+  {
+    const { data: statusRow, error: statusErr } = await (supabaseAdmin
+      .from("messages") as any)
+      .select("id, send_status")
+      .eq("id", messageId)
+      .eq("agent_id", user.id)
+      .maybeSingle();
+
+    if (statusErr) {
+      console.error("[gmail/send] send_status lookup failed:", statusErr.message);
+      return jsonError(500, "Failed to load message status");
+    }
+
+    if (!statusRow) {
+      return jsonError(404, "Message not found");
+    }
+
+    if (String((statusRow as any).send_status || "").toLowerCase() === "sent") {
+      return NextResponse.json({ ok: true, status: "already_sent" }, { status: 200 });
+    }
+  }
+
+  // Acquire lock: allow retry from failed, but only when unlocked
+  const nowIsoLock = new Date().toISOString();
+  const { data: lockRows, error: lockErr } = await (supabaseAdmin
+    .from("messages") as any)
+    .update({
+      send_status: "sending",
+      send_locked_at: nowIsoLock,
+      send_error: null,
+    })
+    .eq("id", messageId)
+    .eq("agent_id", user.id)
+    .in("send_status", ["pending", "failed"])
+    .is("send_locked_at", null)
+    .select("id");
+
+  if (lockErr) {
+    console.error("[gmail/send] lock acquire failed:", lockErr.message);
+    return jsonError(500, "Failed to lock message");
+  }
+
+  if (!lockRows || lockRows.length === 0) {
+    // Someone else is sending or it was already handled
+    return NextResponse.json(
+      { ok: true, status: "locked_or_in_progress" },
+      { status: 200 }
+    );
   }
 
   // If caller didn't pass a threadId, default to the one stored on the lead.
@@ -405,6 +461,19 @@ export async function POST(req: NextRequest) {
 
     sentMessageId = sendRes.data.id ?? null;
     sentThreadId = sendRes.data.threadId ?? sentThreadId;
+
+    // 5b) Mark original approval message as sent (idempotency record)
+    await (supabaseAdmin.from("messages") as any)
+      .update({
+        send_status: "sent",
+        sent_at: new Date().toISOString(),
+        send_locked_at: null,
+        send_error: null,
+        approval_required: false,
+        status: "approved",
+      })
+      .eq("id", messageId)
+      .eq("agent_id", user.id);
   } catch (e: any) {
     const status = Number(e?.code) || Number(e?.response?.status) || 500;
     const details = {
@@ -415,6 +484,20 @@ export async function POST(req: NextRequest) {
       data: e?.response?.data,
     };
     console.error("[gmail/send] Gmail API error:", details);
+
+    // Mark original approval message as failed + release lock
+    try {
+      await (supabaseAdmin.from("messages") as any)
+        .update({
+          send_status: "failed",
+          send_error: String(details?.message || "Failed to send email").slice(0, 5000),
+          send_locked_at: null,
+        })
+        .eq("id", messageId)
+        .eq("agent_id", user.id);
+    } catch {
+      // ignore
+    }
 
     // Common: 429 quota / rate limit
     if (status === 429) {
@@ -517,5 +600,6 @@ export async function POST(req: NextRequest) {
       gmail_message_id: sentMessageId,
       gmail_thread_id: sentThreadId,
     },
+    status: "sent",
   });
 }

@@ -183,16 +183,44 @@ export default function ZurFreigabeUI({
 
     setPreviewOpen((prev) => ({ ...prev, [message.id]: true }));
 
+    // If already fetched, skip
     if (previewUrls[message.id]) return;
 
-    const perPath: Record<string, string> = {};
+    // Group by bucket (API supports one bucket per request; we can do multiple requests)
+    const byBucket: Record<string, string[]> = {};
     for (const a of atts) {
+      const b = String(a.bucket || "attachments");
+      if (!byBucket[b]) byBucket[b] = [];
+      byBucket[b].push(a.path);
+    }
+
+    const perPath: Record<string, string> = {};
+
+    for (const [bucket, paths] of Object.entries(byBucket)) {
       try {
-        const { data, error } = await supabase.storage
-          .from(a.bucket || "attachments")
-          .createSignedUrl(a.path, 60);
-        if (!error && data?.signedUrl) {
-          perPath[a.path] = data.signedUrl;
+        const res = await fetch("/api/storage/signed-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bucket, paths, expiresIn: 120 }),
+        });
+
+        if (!res.ok) continue;
+
+        const data = await res.json().catch(() => ({} as any));
+
+        // supports both single + batch shapes
+        if (
+          data?.signedUrl &&
+          typeof data.signedUrl === "string" &&
+          paths.length === 1
+        ) {
+          perPath[paths[0]] = data.signedUrl;
+        }
+
+        if (data?.signedUrls && typeof data.signedUrls === "object") {
+          for (const [p, url] of Object.entries(data.signedUrls)) {
+            if (typeof url === "string") perPath[p] = url;
+          }
         }
       } catch {
         // ignore
@@ -229,11 +257,13 @@ export default function ZurFreigabeUI({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: message.id,
           lead_id: lead.id,
           gmail_thread_id: lead.gmail_thread_id,
           to: lead.email,
           subject,
           text: message.text,
+          attachments: normalizeAttachments(message as any),
         }),
       });
 
@@ -270,8 +300,14 @@ export default function ZurFreigabeUI({
   };
 
   const handleReject = async (id: string) => {
-    await rejectMessage(id);
-    setMessages((prev) => prev.filter((msg) => msg.id !== id));
+    if (pendingIds[id]) return;
+    setPending(id, true);
+    try {
+      await rejectMessage(id);
+      setMessages((prev) => prev.filter((msg) => msg.id !== id));
+    } finally {
+      setPending(id, false);
+    }
   };
 
   const handleEdit = (id: string, text: string) => {
@@ -312,11 +348,13 @@ export default function ZurFreigabeUI({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: message.id,
           lead_id: lead.id,
           gmail_thread_id: lead.gmail_thread_id,
           to: lead.email,
           subject,
           text: nextText,
+          attachments: normalizeAttachments(message as any),
         }),
       });
 
