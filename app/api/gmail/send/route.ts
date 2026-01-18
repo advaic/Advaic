@@ -443,6 +443,21 @@ export async function POST(req: NextRequest) {
     encodedMessage = await buildEncodedEmail();
   } catch (e: any) {
     console.error("[gmail/send] Attachment build failed:", e?.message || e);
+
+    // Release lock + mark as failed so the agent can retry.
+    try {
+      await (supabaseAdmin.from("messages") as any)
+        .update({
+          send_status: "failed",
+          send_error: String(e?.message || "Attachment build failed").slice(0, 5000),
+          send_locked_at: null,
+        })
+        .eq("id", messageId)
+        .eq("agent_id", user.id);
+    } catch {
+      // ignore
+    }
+
     return jsonError(400, `Attachment failed: ${e?.message ?? "unknown"}`);
   }
 

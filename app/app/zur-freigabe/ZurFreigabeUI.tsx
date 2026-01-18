@@ -5,8 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 // import { Database } from "@/types/supabase";
 import { supabase } from "@/lib/supabaseClient";
 import { rejectMessage } from "../../actions/rejectMessage";
-import { approveMessage } from "../../actions/approveMessage";
-import { editAndApproveMessage } from "../../actions/editAndApproveMessage";
 
 export type ApprovalMessage = {
   id: string;
@@ -19,6 +17,12 @@ export type ApprovalMessage = {
 
   visible_to_agent: boolean;
   approval_required: boolean;
+
+  // sending state (optional)
+  send_status?: "pending" | "sending" | "sent" | "failed" | string | null;
+  send_locked_at?: string | null;
+  send_error?: string | null;
+  sent_at?: string | null;
 
   was_followup?: boolean | null;
   gpt_score?: number | null;
@@ -97,6 +101,22 @@ function safeLineDiff(original: string, edited: string) {
     rows.push({ left, right, changed: left !== right });
   }
   return rows;
+}
+
+async function readSendResponse(
+  res: Response
+): Promise<
+  { ok: boolean; status?: string; error?: string } & Record<string, any>
+> {
+  const data = await res.json().catch(() => ({} as any));
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: String((data as any)?.error || "Gmail Send fehlgeschlagen."),
+      ...data,
+    };
+  }
+  return { ok: true, status: String((data as any)?.status || "ok"), ...data };
 }
 
 interface ZurFreigabeUIProps {
@@ -236,8 +256,16 @@ export default function ZurFreigabeUI({
     const message = messages.find((msg) => msg.id === id);
     if (!message) return;
 
+    // If the message is already being sent (server-side lock), do not attempt again.
+    if (String(message.send_status || "").toLowerCase() === "sending") {
+      setErr(id, "Diese Nachricht wird bereits gesendet.");
+      return;
+    }
+
     setPending(id, true);
     setErr(id, null);
+
+    // optimistic: remove immediately
     setMessages((prev) => prev.filter((msg) => msg.id !== id));
 
     try {
@@ -267,13 +295,29 @@ export default function ZurFreigabeUI({
         }),
       });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || "Gmail Send fehlgeschlagen.");
+      const send = await readSendResponse(res);
+
+      // Idempotency outcomes
+      if (!send.ok) {
+        throw new Error(send.error || "Gmail Send fehlgeschlagen.");
       }
 
-      await approveMessage(id);
+      // If another worker/process is currently sending, rollback and surface a friendly note.
+      if (send.status === "locked_or_in_progress") {
+        throw new Error(
+          "Diese Nachricht wird bereits gesendet. Bitte warte kurz und aktualisiere die Seite."
+        );
+      }
+
+      if (send.status === "already_sent") {
+        // treat as success; server already handled it
+        router.refresh();
+        return;
+      }
+
+      // Send route handles idempotency + DB status updates (approval_required/send_status/etc.).
       setErr(id, null);
+      router.refresh();
 
       const idx = approvalIds.indexOf(id);
       const nextId = approvalIds[idx + 1] ?? approvalIds[idx - 1] ?? null;
@@ -289,6 +333,7 @@ export default function ZurFreigabeUI({
       console.error("❌ Approve failed", e);
       setErr(id, e?.message ?? "Freigeben fehlgeschlagen.");
 
+      // rollback optimistic removal
       setMessages((prev) => {
         const exists = prev.some((m) => m.id === message.id);
         if (exists) return prev;
@@ -307,6 +352,7 @@ export default function ZurFreigabeUI({
       setMessages((prev) => prev.filter((msg) => msg.id !== id));
     } finally {
       setPending(id, false);
+      router.refresh();
     }
   };
 
@@ -358,12 +404,24 @@ export default function ZurFreigabeUI({
         }),
       });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || "Gmail Send fehlgeschlagen.");
+      const send = await readSendResponse(res);
+      if (!send.ok) {
+        throw new Error(send.error || "Gmail Send fehlgeschlagen.");
+      }
+      if (send.status === "locked_or_in_progress") {
+        throw new Error(
+          "Diese Nachricht wird bereits gesendet. Bitte warte kurz und aktualisiere die Seite."
+        );
       }
 
-      await editAndApproveMessage(id, nextText);
+      if (send.status === "already_sent") {
+        // treat as success; server already handled it
+        router.refresh();
+        return;
+      }
+
+      // Send route handles DB status updates; we refresh to reflect the latest state.
+      router.refresh();
 
       const idx = approvalIds.indexOf(id);
       const nextId = approvalIds[idx + 1] ?? approvalIds[idx - 1] ?? null;
@@ -488,7 +546,9 @@ export default function ZurFreigabeUI({
         {/* List */}
         <div className="space-y-3">
           {approvalMessages.map((message) => {
-            const pending = !!pendingIds[message.id];
+            const pending =
+              !!pendingIds[message.id] ||
+              String(message.send_status || "").toLowerCase() === "sending";
             const isEditing = editingMessageId === message.id;
 
             const senderLabel =
@@ -536,6 +596,12 @@ export default function ZurFreigabeUI({
 
                       <div className="text-sm font-semibold text-gray-900">
                         {senderLabel}
+                        {message.lead_name ? (
+                          <span className="text-gray-500 font-medium">
+                            {" "}
+                            · {message.lead_name}
+                          </span>
+                        ) : null}
                       </div>
 
                       <div className="text-xs px-2 py-1 rounded-full border border-gray-200 bg-gray-50 text-gray-700">
@@ -634,9 +700,13 @@ export default function ZurFreigabeUI({
                       );
                     })()}
 
-                    {actionError[message.id] && (
+                    {(actionError[message.id] ||
+                      (message.send_status &&
+                        String(message.send_status).toLowerCase() ===
+                          "failed" &&
+                        message.send_error)) && (
                       <div className="mt-3 rounded-xl border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-sm">
-                        {actionError[message.id]}
+                        {actionError[message.id] || message.send_error}
                       </div>
                     )}
 
