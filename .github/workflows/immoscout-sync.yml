@@ -17,12 +17,13 @@ jobs:
       - name: Call sync endpoint
         env:
           PROD_URL: ${{ secrets.PROD_URL }}
-          SYNC_PATH: ${{ secrets.SYNC_PATH }}
           SECRET: ${{ secrets.IMMOSCOUT_SYNC_SECRET }}
         run: |
           set -euo pipefail
 
-          URL="${PROD_URL}${SYNC_PATH:-/api/pipeline/immoscout/sync/run}"
+          # PROD_URL should be the canonical host (avoid 307 redirects), e.g. https://www.advaic.com
+          PROD_URL_CLEAN="${PROD_URL%/}"
+          URL="${PROD_URL_CLEAN}/api/pipeline/immoscout/sync"
 
           echo "Calling: $URL"
 
@@ -38,7 +39,7 @@ jobs:
             cat resp.json || true
             echo ""
 
-            if [ "$code" = "200" ]; then
+            if [ "$code" -ge "200" ] && [ "$code" -lt "300" ]; then
               exit 0
             fi
 
