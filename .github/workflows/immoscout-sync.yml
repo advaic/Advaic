@@ -21,25 +21,31 @@ jobs:
         run: |
           set -euo pipefail
 
-          # PROD_URL should be the canonical host (avoid 307 redirects), e.g. https://www.advaic.com
-          PROD_URL_CLEAN="${PROD_URL%/}"
-          URL="${PROD_URL_CLEAN}/api/pipeline/immoscout/sync"
+          BASE="${PROD_URL%/}"
+          URL="${BASE}/api/pipeline/immoscout/sync"
 
           echo "Calling: $URL"
 
-          # 3 retries with short backoff
           for i in 1 2 3; do
-            code=$(curl -sS -o resp.json -w "%{http_code}" \
+            rm -f headers.txt resp.json || true
+
+            code=$(curl -sS -L --max-redirs 5 \
+              -D headers.txt \
+              -o resp.json \
+              -w "%{http_code}" \
               -X POST \
               -H "Authorization: Bearer ${SECRET}" \
               -H "Content-Type: application/json" \
               "$URL" || true)
 
             echo "HTTP $code"
+            echo "---- headers ----"
+            cat headers.txt || true
+            echo "---- body ----"
             cat resp.json || true
             echo ""
 
-            if [ "$code" -ge "200" ] && [ "$code" -lt "300" ]; then
+            if [[ "$code" =~ ^2 ]]; then
               exit 0
             fi
 
