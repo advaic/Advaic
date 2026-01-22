@@ -53,6 +53,11 @@ export default async function ZurFreigabePage() {
       visible_to_agent,
       approval_required,
 
+      send_status,
+      send_locked_at,
+      send_error,
+      sent_at,
+
       gmail_message_id,
       gmail_thread_id,
       snippet,
@@ -68,6 +73,8 @@ export default async function ZurFreigabePage() {
     .eq("agent_id", userId)
     .eq("visible_to_agent", true)
     .eq("approval_required", true)
+    .in("sender", ["assistant", "system"])
+    .in("send_status", ["pending", "failed"])
     .order("timestamp", { ascending: false });
 
   if (error) {
@@ -98,6 +105,11 @@ export default async function ZurFreigabePage() {
     visible_to_agent: !!msg.visible_to_agent,
     approval_required: !!msg.approval_required,
 
+    send_status: msg.send_status ?? null,
+    send_locked_at: msg.send_locked_at ?? null,
+    send_error: msg.send_error ?? null,
+    sent_at: msg.sent_at ?? null,
+
     was_followup: msg.was_followup ?? null,
     gpt_score: msg.gpt_score ?? null,
 
@@ -107,7 +119,7 @@ export default async function ZurFreigabePage() {
     email_type: msg.email_type ?? null,
     classification_confidence: msg.classification_confidence ?? null,
 
-    attachments_meta: msg.attachments ?? null,
+    attachments: msg.attachments ?? null,
 
     lead_name: (msg.leads as any)?.name ?? "Unbekannter Interessent",
   }));

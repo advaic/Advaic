@@ -896,12 +896,25 @@ export async function POST(req: Request) {
             gpt_score: null,
             was_followup: false,
             visible_to_agent: true,
-            approval_required: decision !== "auto_reply",
+
+            // IMPORTANT: Gmail Push is ingestion ONLY.
+            // Inbound emails must NEVER become sendable drafts.
+            // Drafts are created later by the pipeline (compose -> QA -> rewrite -> QA).
+            approval_required: false,
+
+            // Keep a simple, single status field for routing.
+            // - agent/outgoing messages are stored as sent
+            // - inbound messages are either ready for reply pipeline or just inbound
+            status:
+              sender === "agent"
+                ? "sent"
+                : decision === "auto_reply"
+                ? "ready"
+                : "inbound",
 
             snippet,
             history_id: String(h.id || historyId),
             email_address: emailAddress,
-            status: decision === "auto_reply" ? "ready" : "needs_approval",
 
             email_type,
             classification_confidence: confidence,

@@ -9,7 +9,11 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
 
-  function jsonError(status: number, error: string, extra?: Record<string, any>) {
+  function jsonError(
+    status: number,
+    error: string,
+    extra?: Record<string, any>
+  ) {
     return NextResponse.json({ error, ...(extra || {}) }, { status });
   }
 
@@ -17,6 +21,13 @@ export async function POST(req: NextRequest) {
     const v = process.env[name];
     if (!v) throw new Error(`Missing env var: ${name}`);
     return v;
+  }
+
+  function isInternal(req: NextRequest) {
+    const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
+    if (!secret) return false;
+    const got = req.headers.get("x-advaic-internal-secret");
+    return !!got && got === secret;
   }
 
   type AttachmentInput = {
@@ -130,6 +141,43 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  const internal = isInternal(req);
+
+  // Admin client for DB reads/writes (service role)
+  const supabaseAdmin = createClient<Database>(
+    mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    mustEnv("SUPABASE_SERVICE_ROLE_KEY")
+  );
+
+  // Resolve ownership from the message row (source of truth)
+  const messageId = String(id).trim();
+
+  const { data: msgRow, error: msgRowErr } = await (
+    supabaseAdmin.from("messages") as any
+  )
+    .select("id, agent_id, lead_id, send_status")
+    .eq("id", messageId)
+    .maybeSingle();
+
+  if (msgRowErr) {
+    console.error("[gmail/send] message lookup failed:", msgRowErr.message);
+    return jsonError(500, "Failed to load message");
+  }
+
+  if (!msgRow) {
+    return jsonError(404, "Message not found");
+  }
+
+  // Prevent mismatched payloads
+  if (String(msgRow.lead_id) !== String(lead_id)) {
+    return jsonError(400, "lead_id does not match message.lead_id");
+  }
+
+  const agentIdFromMessage = String(msgRow.agent_id);
+  if (!agentIdFromMessage) {
+    return jsonError(400, "Message has no agent_id");
+  }
+
   const safeTo = sanitizeHeaderValue(to);
   const safeSubject = sanitizeHeaderValue(subject);
   const safeText = String(text ?? "");
@@ -139,40 +187,51 @@ export async function POST(req: NextRequest) {
   }
 
   // 1️⃣ Authenticate agent
-  // IMPORTANT: this route returns JSON, so we do not attempt to mutate cookies on a NextResponse we don't return.
-  // We only need cookie reads here to authenticate the current user.
-  const supabaseAuth = createServerClient<Database>(
-    mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    mustEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
-    {
-      cookies: {
-        get(name) {
-          return req.cookies.get(name)?.value;
+  // UI calls authenticate via cookies. Pipeline calls authenticate via an internal secret header.
+  let user: { id: string } | null = null;
+
+  if (internal) {
+    // Internal pipeline: trust agentId resolved from message row
+    user = { id: agentIdFromMessage };
+  } else {
+    // Cookie-based auth (UI)
+    const supabaseAuth = createServerClient<Database>(
+      mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
+      mustEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+      {
+        cookies: {
+          get(name) {
+            return req.cookies.get(name)?.value;
+          },
+          // no-op (we're not refreshing sessions here)
+          set() {},
+          remove() {},
         },
-        // no-op (we're not refreshing sessions here)
-        set() {},
-        remove() {},
-      },
+      }
+    );
+
+    const {
+      data: { user: u },
+      error: authErr,
+    } = await supabaseAuth.auth.getUser();
+
+    if (authErr || !u) {
+      return jsonError(401, "Unauthorized");
     }
-  );
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabaseAuth.auth.getUser();
+    // Source of truth ownership check
+    if (String(u.id) !== agentIdFromMessage) {
+      return jsonError(403, "Forbidden");
+    }
 
-  if (authErr || !user) {
-    return jsonError(401, "Unauthorized");
+    user = { id: String(u.id) };
   }
 
   // 2️⃣ Ensure lead belongs to the authenticated agent and lock recipient/thread defaults
-  const supabaseAdmin = createClient<Database>(
-    mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    mustEnv("SUPABASE_SERVICE_ROLE_KEY")
-  );
 
-  const { data: leadRow, error: leadErr } = await (supabaseAdmin
-    .from("leads") as any)
+  const { data: leadRow, error: leadErr } = await (
+    supabaseAdmin.from("leads") as any
+  )
     .select("id, agent_id, email, gmail_thread_id")
     .eq("id", lead_id)
     .maybeSingle();
@@ -204,19 +263,22 @@ export async function POST(req: NextRequest) {
   }
 
   // 2b) Idempotency + send lock (prevents double-send)
-  const messageId = String(id).trim();
 
   // If already sent, short-circuit
   {
-    const { data: statusRow, error: statusErr } = await (supabaseAdmin
-      .from("messages") as any)
+    const { data: statusRow, error: statusErr } = await (
+      supabaseAdmin.from("messages") as any
+    )
       .select("id, send_status")
       .eq("id", messageId)
       .eq("agent_id", user.id)
       .maybeSingle();
 
     if (statusErr) {
-      console.error("[gmail/send] send_status lookup failed:", statusErr.message);
+      console.error(
+        "[gmail/send] send_status lookup failed:",
+        statusErr.message
+      );
       return jsonError(500, "Failed to load message status");
     }
 
@@ -225,14 +287,18 @@ export async function POST(req: NextRequest) {
     }
 
     if (String((statusRow as any).send_status || "").toLowerCase() === "sent") {
-      return NextResponse.json({ ok: true, status: "already_sent" }, { status: 200 });
+      return NextResponse.json(
+        { ok: true, status: "already_sent" },
+        { status: 200 }
+      );
     }
   }
 
   // Acquire lock: allow retry from failed, but only when unlocked
   const nowIsoLock = new Date().toISOString();
-  const { data: lockRows, error: lockErr } = await (supabaseAdmin
-    .from("messages") as any)
+  const { data: lockRows, error: lockErr } = await (
+    supabaseAdmin.from("messages") as any
+  )
     .update({
       send_status: "sending",
       send_locked_at: nowIsoLock,
@@ -258,9 +324,9 @@ export async function POST(req: NextRequest) {
   }
 
   // If caller didn't pass a threadId, default to the one stored on the lead.
-  const effectiveThreadId = (gmail_thread_id ?? leadRow.gmail_thread_id ?? null) as
-    | string
-    | null;
+  const effectiveThreadId = (gmail_thread_id ??
+    leadRow.gmail_thread_id ??
+    null) as string | null;
 
   const { data: conn, error: connErr } = await supabaseAdmin
     .from("email_connections")
@@ -449,7 +515,10 @@ export async function POST(req: NextRequest) {
       await (supabaseAdmin.from("messages") as any)
         .update({
           send_status: "failed",
-          send_error: String(e?.message || "Attachment build failed").slice(0, 5000),
+          send_error: String(e?.message || "Attachment build failed").slice(
+            0,
+            5000
+          ),
           send_locked_at: null,
         })
         .eq("id", messageId)
@@ -505,7 +574,10 @@ export async function POST(req: NextRequest) {
       await (supabaseAdmin.from("messages") as any)
         .update({
           send_status: "failed",
-          send_error: String(details?.message || "Failed to send email").slice(0, 5000),
+          send_error: String(details?.message || "Failed to send email").slice(
+            0,
+            5000
+          ),
           send_locked_at: null,
         })
         .eq("id", messageId)
@@ -525,12 +597,13 @@ export async function POST(req: NextRequest) {
   // 6️⃣ Persist message in Supabase (dedupe via gmail_message_id)
   const attachmentsMeta = Array.isArray(attachments)
     ? attachments
-        .filter((a): a is AttachmentInput =>
-          !!a &&
-          typeof a.bucket === "string" &&
-          typeof a.path === "string" &&
-          typeof a.name === "string" &&
-          typeof a.mime === "string"
+        .filter(
+          (a): a is AttachmentInput =>
+            !!a &&
+            typeof a.bucket === "string" &&
+            typeof a.path === "string" &&
+            typeof a.name === "string" &&
+            typeof a.mime === "string"
         )
         .slice(0, MAX_ATTACHMENTS)
         .map((a) => ({
@@ -566,9 +639,10 @@ export async function POST(req: NextRequest) {
   async function upsertMessageRow(row: Record<string, any>) {
     // Prefer returning the DB id so the UI can reconcile optimistic sends
     const hasGmailMessageId =
-      typeof row.gmail_message_id === "string" && row.gmail_message_id.length > 0;
+      typeof row.gmail_message_id === "string" &&
+      row.gmail_message_id.length > 0;
 
-    const qBase = (supabaseAdmin.from("messages") as any);
+    const qBase = supabaseAdmin.from("messages") as any;
 
     const q = hasGmailMessageId
       ? qBase.upsert(row, { onConflict: "gmail_message_id" })
@@ -580,17 +654,24 @@ export async function POST(req: NextRequest) {
   let upsertRes = await upsertMessageRow(baseRow);
 
   // If the `attachments` column doesn't exist, retry without it.
-  if (upsertRes?.error?.message?.toLowerCase?.().includes("column") &&
-      upsertRes.error.message.toLowerCase().includes("attachments")) {
+  if (
+    upsertRes?.error?.message?.toLowerCase?.().includes("column") &&
+    upsertRes.error.message.toLowerCase().includes("attachments")
+  ) {
     const retryRow = { ...baseRow };
     delete retryRow.attachments;
     upsertRes = await upsertMessageRow(retryRow);
   }
 
   if (upsertRes?.error) {
-    console.error("[gmail/send] Message upsert failed:", upsertRes.error.message);
+    console.error(
+      "[gmail/send] Message upsert failed:",
+      upsertRes.error.message
+    );
   } else {
-    const first = Array.isArray(upsertRes.data) ? upsertRes.data[0] : upsertRes.data;
+    const first = Array.isArray(upsertRes.data)
+      ? upsertRes.data[0]
+      : upsertRes.data;
     insertedMessageId = first?.id ?? null;
   }
 

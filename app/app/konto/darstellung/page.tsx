@@ -1,6 +1,7 @@
 "use client";
 
 import { SpracheDarstellungSection } from "@/components/settings/SpracheDarstellungSection";
+import AutoSendToggle from "./AutoSendToggle";
 
 export default function DarstellungPage() {
   return (
@@ -11,6 +12,8 @@ export default function DarstellungPage() {
       </p>
 
       <SpracheDarstellungSection />
+
+      <AutoSendToggle />
     </div>
   );
 }

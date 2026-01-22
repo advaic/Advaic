@@ -38,10 +38,6 @@ function isUuid(v: string) {
   );
 }
 
-function isNumeric(v: string) {
-  return Number.isFinite(Number(v));
-}
-
 async function getUserFromCookieSession(req: NextRequest) {
   const res = NextResponse.next();
 
@@ -141,8 +137,8 @@ async function assertAllowedPath(params: {
       propertyId = String(parts[0]);
     }
 
-    // Only allow uuid OR numeric ids
-    if (!isUuid(propertyId) && !isNumeric(propertyId)) {
+    // Only allow UUID property ids (matches `properties.id` type)
+    if (!isUuid(propertyId)) {
       throw new Error("Forbidden");
     }
 
@@ -218,7 +214,9 @@ export async function GET(req: NextRequest) {
     }
 
     // Redirect so <img src="/api/storage/signed-url?path=..."> works
-    return NextResponse.redirect(data.signedUrl);
+    const r = NextResponse.redirect(data.signedUrl);
+    r.headers.set("Cache-Control", "no-store");
+    return r;
   } catch (e: any) {
     const msg = String(e?.message || "Forbidden");
     if (msg === "NotFound") return jsonError("Property not found", 404);
@@ -265,21 +263,30 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Create signed urls
-    const out: Record<string, string> = {};
-    for (const p of paths) {
-      const { data, error } = await admin.storage.from(bucket).createSignedUrl(p, ttl);
-      if (error || !data?.signedUrl) {
-        throw new Error(error?.message || "Could not create signed url");
-      }
-      out[p] = data.signedUrl;
-    }
+    // Create signed urls (parallel)
+    const pairs = await Promise.all(
+      paths.map(async (p) => {
+        const { data, error } = await admin.storage
+          .from(bucket)
+          .createSignedUrl(p, ttl);
+        if (error || !data?.signedUrl) {
+          throw new Error(error?.message || "Could not create signed url");
+        }
+        return [p, data.signedUrl] as const;
+      })
+    );
+
+    const out: Record<string, string> = Object.fromEntries(pairs);
 
     // return single or batch shape
     if (paths.length === 1) {
-      return NextResponse.json({ signedUrl: out[paths[0]], expiresIn: ttl });
+      const r = NextResponse.json({ signedUrl: out[paths[0]], expiresIn: ttl });
+      r.headers.set("Cache-Control", "no-store");
+      return r;
     }
-    return NextResponse.json({ signedUrls: out, expiresIn: ttl });
+    const r = NextResponse.json({ signedUrls: out, expiresIn: ttl });
+    r.headers.set("Cache-Control", "no-store");
+    return r;
   } catch (e: any) {
     const msg = String(e?.message || "Forbidden");
     if (msg === "NotFound") return jsonError("Property not found", 404);

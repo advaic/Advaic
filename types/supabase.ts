@@ -74,6 +74,40 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["agent_style"]["Insert"]>;
       };
 
+      agent_settings: {
+        Row: {
+          id: string;
+          agent_id: string | null;
+          email_connected: boolean | null;
+          email_filter_active: boolean | null;
+          custom_tone: string | null;
+          text_library_enabled: boolean | null;
+          onboarding_completed: boolean | null;
+          calendar_connected: boolean | null;
+          created_at: string | null;
+
+          reply_mode: "approval" | "auto" | string;
+          auto_send_min_confidence: number | null;
+          autosend_enabled: boolean | null;
+        };
+        Insert: {
+          id?: string;
+          agent_id?: string | null;
+          email_connected?: boolean | null;
+          email_filter_active?: boolean | null;
+          custom_tone?: string | null;
+          text_library_enabled?: boolean | null;
+          onboarding_completed?: boolean | null;
+          calendar_connected?: boolean | null;
+          created_at?: string | null;
+
+          reply_mode?: "approval" | "auto" | string;
+          auto_send_min_confidence?: number | null;
+          autosend_enabled?: boolean | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["agent_settings"]["Insert"]>;
+      };
+
       // --------------------
       // CRM / LEADS + MESSAGES
       // --------------------
@@ -84,25 +118,20 @@ export type Database = {
           created_at: string | null;
           updated_at: string | null;
 
-          // Contact/profile fields
           name: string | null;
           email: string | null;
           phone: string | null;
 
-          // Sorting / inbox
           last_message_at: string | null;
           last_message: string | null;
 
-          // Gmail mapping
           gmail_thread_id: string | null;
 
-          // Anything else you might store
           status: string | null;
           priority: string | null;
           message_count: number | null;
           escalated: boolean | null;
 
-          // Free-form
           meta: Json | null;
         };
         Insert: {
@@ -139,13 +168,11 @@ export type Database = {
           text: string;
           timestamp: string | null;
 
-          // QA / flags
           gpt_score: number | null;
           was_followup: boolean | null;
           visible_to_agent: boolean | null;
           approval_required: boolean | null;
 
-          // Gmail metadata
           gmail_message_id: string | null;
           gmail_thread_id: string | null;
           snippet: string | null;
@@ -153,11 +180,15 @@ export type Database = {
           email_address: string | null;
           status: string | null;
 
-          // Classification (optional)
           email_type: string | null;
           classification_confidence: number | null;
+          classification_reason: string | null;
 
-          // Attachments
+          send_status: "pending" | "sending" | "sent" | "failed" | null;
+          send_locked_at: string | null;
+          send_error: string | null;
+          sent_at: string | null;
+
           attachments: Json | null;
         };
         Insert: {
@@ -182,10 +213,114 @@ export type Database = {
 
           email_type?: string | null;
           classification_confidence?: number | null;
+          classification_reason?: string | null;
+
+          send_status?: "pending" | "sending" | "sent" | "failed" | null;
+          send_locked_at?: string | null;
+          send_error?: string | null;
+          sent_at?: string | null;
 
           attachments?: Json | null;
         };
         Update: Partial<Database["public"]["Tables"]["messages"]["Insert"]>;
+      };
+
+      message_drafts: {
+        Row: {
+          id: string;
+          agent_id: string;
+          lead_id: string;
+          inbound_message_id: string;
+          draft_message_id: string;
+          prompt_key: string | null;
+          prompt_version: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          agent_id: string;
+          lead_id: string;
+          inbound_message_id: string;
+          draft_message_id: string;
+          prompt_key?: string | null;
+          prompt_version?: string | null;
+          created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["message_drafts"]["Insert"]>;
+      };
+
+      message_qas: {
+        Row: {
+          id: string;
+          agent_id: string;
+          lead_id: string;
+          inbound_message_id: string;
+          draft_message_id: string | null;
+
+          stage: string | null; // e.g. "qa_v1" | "recheck_v1"
+          verdict: "pass" | "warn" | "fail" | string;
+          reason: string | null;
+
+          model: string | null;
+          prompt_key: string | null;
+          prompt_version: string | null;
+
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          agent_id: string;
+          lead_id: string;
+          inbound_message_id: string;
+          draft_message_id?: string | null;
+
+          stage?: string | null;
+          verdict: "pass" | "warn" | "fail" | string;
+          reason?: string | null;
+
+          model?: string | null;
+          prompt_key?: string | null;
+          prompt_version?: string | null;
+
+          created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["message_qas"]["Insert"]>;
+      };
+
+      message_intents: {
+        Row: {
+          id: string;
+          agent_id: string;
+          lead_id: string;
+          message_id: string;
+
+          intent: string;
+          confidence: number;
+          reason: string | null;
+          entities: Json;
+
+          model: string | null;
+          prompt_version: string | null;
+
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          agent_id: string;
+          lead_id: string;
+          message_id: string;
+
+          intent: string;
+          confidence?: number;
+          reason?: string | null;
+          entities?: Json;
+
+          model?: string | null;
+          prompt_version?: string | null;
+
+          created_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["message_intents"]["Insert"]>;
       };
 
       // --------------------
@@ -198,7 +333,6 @@ export type Database = {
           created_at: string | null;
           updated_at: string | null;
 
-          // Main fields used across hinzufügen/bearbeiten/detail
           city: string | null;
           neighbourhood: string | null;
           street_address: string | null;
@@ -220,10 +354,8 @@ export type Database = {
           description: string | null;
           uri: string | null;
 
-          // Images are stored as storage paths/urls
           image_urls: string[] | null;
 
-          // Status/publishing
           status: string | null;
           published_at: string | null;
         };
@@ -295,7 +427,6 @@ export type Database = {
           id: string;
           name: string;
           description: string | null;
-          model: string | null;
           version: number | null;
           prompt: string;
           is_active: boolean | null;
@@ -306,7 +437,6 @@ export type Database = {
           id?: string;
           name: string;
           description?: string | null;
-          model?: string | null;
           version?: number | null;
           prompt: string;
           is_active?: boolean | null;
@@ -323,7 +453,7 @@ export type Database = {
         Row: {
           id: string;
           agent_id: string;
-          provider: string | null; // "gmail" etc
+          provider: string | null;
           email_address: string;
 
           access_token: string | null;
@@ -353,31 +483,229 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["email_connections"]["Insert"]>;
       };
 
-      // Optional: store classification decisions (so you can audit/undo)
       email_classifications: {
         Row: {
           id: string;
           agent_id: string;
+
           email_address: string | null;
           gmail_message_id: string | null;
           gmail_thread_id: string | null;
-          decision: string | null; // "lead" | "ignore" | "uncertain"
+
+          decision: "auto_reply" | "needs_approval" | "ignore" | null;
+          email_type:
+            | "LEAD"
+            | "PORTAL"
+            | "BUSINESS_CONTACT"
+            | "LEGAL"
+            | "VENDOR"
+            | "NEWSLETTER"
+            | "BILLING"
+            | "SYSTEM"
+            | "SPAM"
+            | "UNKNOWN"
+            | null;
           confidence: number | null;
-          reasons: Json | null;
+          reason: string | null;
+
+          subject: string | null;
+          from: string | null;
+          to: string | null;
+          reply_to: string | null;
+          has_list_unsubscribe: boolean | null;
+          is_bulk: boolean | null;
+          is_no_reply: boolean | null;
+          snippet: string | null;
+
           created_at: string | null;
         };
         Insert: {
           id?: string;
           agent_id: string;
+
           email_address?: string | null;
           gmail_message_id?: string | null;
           gmail_thread_id?: string | null;
-          decision?: string | null;
+
+          decision?: "auto_reply" | "needs_approval" | "ignore" | null;
+          email_type?:
+            | "LEAD"
+            | "PORTAL"
+            | "BUSINESS_CONTACT"
+            | "LEGAL"
+            | "VENDOR"
+            | "NEWSLETTER"
+            | "BILLING"
+            | "SYSTEM"
+            | "SPAM"
+            | "UNKNOWN"
+            | null;
           confidence?: number | null;
-          reasons?: Json | null;
+          reason?: string | null;
+
+          subject?: string | null;
+          from?: string | null;
+          to?: string | null;
+          reply_to?: string | null;
+          has_list_unsubscribe?: boolean | null;
+          is_bulk?: boolean | null;
+          is_no_reply?: boolean | null;
+          snippet?: string | null;
+
           created_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["email_classifications"]["Insert"]>;
+      };
+
+      email_message_bodies: {
+        Row: {
+          id: string;
+          agent_id: string;
+          lead_id: string | null;
+
+          gmail_message_id: string;
+          gmail_thread_id: string | null;
+          email_address: string | null;
+
+          subject: string | null;
+          from: string | null;
+          to: string | null;
+          reply_to: string | null;
+
+          body_text: string | null;
+          body_html: string | null;
+          headers_json: Json | null;
+
+          fetched_at: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+
+          status: string | null;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          agent_id: string;
+          lead_id?: string | null;
+
+          gmail_message_id: string;
+          gmail_thread_id?: string | null;
+          email_address?: string | null;
+
+          subject?: string | null;
+          from?: string | null;
+          to?: string | null;
+          reply_to?: string | null;
+
+          body_text?: string | null;
+          body_html?: string | null;
+          headers_json?: Json | null;
+
+          fetched_at?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+
+          status?: string | null;
+          deleted_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["email_message_bodies"]["Insert"]>;
+      };
+
+      email_attachments: {
+        Row: {
+          id: string;
+          agent_id: string;
+          lead_id: string | null;
+
+          gmail_message_id: string;
+          gmail_thread_id: string | null;
+          email_address: string | null;
+
+          filename: string | null;
+          mime: string | null;
+          size_bytes: number | null;
+
+          bucket: string | null;
+          path: string | null;
+          sha256: string | null;
+
+          created_at: string | null;
+          updated_at: string | null;
+
+          status: string | null;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          agent_id: string;
+          lead_id?: string | null;
+
+          gmail_message_id: string;
+          gmail_thread_id?: string | null;
+          email_address?: string | null;
+
+          filename?: string | null;
+          mime?: string | null;
+          size_bytes?: number | null;
+
+          bucket?: string | null;
+          path?: string | null;
+          sha256?: string | null;
+
+          created_at?: string | null;
+          updated_at?: string | null;
+
+          status?: string | null;
+          deleted_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["email_attachments"]["Insert"]>;
+      };
+
+      // --------------------
+      // IMMOSCOUT (OAUTH1 CONNECTIONS)
+      // --------------------
+      immoscout_connections: {
+        Row: {
+          id: string;
+          agent_id: string;
+
+          environment: "sandbox" | "prod" | string;
+          status: "disconnected" | "pending" | "connected" | "error" | string;
+
+          request_token: string | null;
+          request_token_secret: string | null;
+          request_token_created_at: string | null;
+
+          access_token: string | null;
+          access_token_secret: string | null;
+          access_token_created_at: string | null;
+
+          last_error: string | null;
+
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          agent_id: string;
+
+          environment?: "sandbox" | "prod" | string;
+          status?: "disconnected" | "pending" | "connected" | "error" | string;
+
+          request_token?: string | null;
+          request_token_secret?: string | null;
+          request_token_created_at?: string | null;
+
+          access_token?: string | null;
+          access_token_secret?: string | null;
+          access_token_created_at?: string | null;
+
+          last_error?: string | null;
+
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["immoscout_connections"]["Insert"]>;
       };
     };
   };
