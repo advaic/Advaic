@@ -6,7 +6,13 @@ import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import type { Database } from "@/types/supabase";
 
 import { FcGoogle } from "react-icons/fc";
-import { FaMicrosoft, FaSlack, FaCheckCircle, FaExclamationTriangle, FaHome } from "react-icons/fa";
+import {
+  FaMicrosoft,
+  FaSlack,
+  FaCheckCircle,
+  FaExclamationTriangle,
+  FaHome,
+} from "react-icons/fa";
 
 type Provider = "gmail" | "immoscout" | "outlook" | "slack";
 
@@ -19,6 +25,11 @@ type ServiceCard = {
 };
 
 type GmailConnectionRow = {
+  email_address: string | null;
+  status: string | null;
+} | null;
+
+type OutlookConnectionRow = {
   email_address: string | null;
   status: string | null;
 } | null;
@@ -37,6 +48,7 @@ export default function VerknuepfungenPage() {
   const searchParams = useSearchParams();
 
   const gmailParam = searchParams.get("gmail");
+  const outlookParam = searchParams.get("outlook");
   const immoscoutParam = searchParams.get("immoscout");
   const reasonParam = searchParams.get("reason");
 
@@ -44,6 +56,10 @@ export default function VerknuepfungenPage() {
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
   const [gmailStatus, setGmailStatus] = useState<string | null>(null);
+
+  const [outlookConnected, setOutlookConnected] = useState(false);
+  const [outlookEmail, setOutlookEmail] = useState<string | null>(null);
+  const [outlookStatus, setOutlookStatus] = useState<string | null>(null);
 
   const [immoscoutConnected, setImmoscoutConnected] = useState(false);
   const [immoscoutLabel, setImmoscoutLabel] = useState<string | null>(null);
@@ -70,9 +86,10 @@ export default function VerknuepfungenPage() {
       {
         id: "outlook",
         name: "Microsoft 365",
-        description: "Outlook/Exchange Verbindung (kommt bald).",
+        description:
+          "Verbinde dein Microsoft 365/Outlook-Postfach, damit Advaic E-Mails direkt in deinem Namen senden und eingehende Nachrichten lesen kann.",
         icon: <FaMicrosoft size={22} color="#0078D4" />,
-        enabled: false,
+        enabled: true,
       },
       {
         id: "slack",
@@ -86,14 +103,24 @@ export default function VerknuepfungenPage() {
   );
 
   const startGmailOAuth = useCallback(() => {
-    // Keep next as a plain path. The start route will encode via URLSearchParams.
     const next = "/app/konto/verknuepfungen";
-    window.location.assign(`/api/auth/gmail/start?next=${encodeURIComponent(next)}`);
+    window.location.assign(
+      `/api/auth/gmail/start?next=${encodeURIComponent(next)}`
+    );
+  }, []);
+
+  const startOutlookOAuth = useCallback(() => {
+    const next = "/app/konto/verknuepfungen";
+    window.location.assign(
+      `/api/auth/outlook/start?next=${encodeURIComponent(next)}`
+    );
   }, []);
 
   const startImmoScoutOAuth = useCallback(() => {
     const next = "/app/konto/verknuepfungen";
-    window.location.assign(`/api/auth/immoscout/start?next=${encodeURIComponent(next)}`);
+    window.location.assign(
+      `/api/auth/immoscout/start?next=${encodeURIComponent(next)}`
+    );
   }, []);
 
   const loadGmailConnection = useCallback(async () => {
@@ -141,6 +168,49 @@ export default function VerknuepfungenPage() {
     setLoading(false);
   }, [supabase]);
 
+  const loadOutlookConnection = useCallback(async () => {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      console.error("[verknuepfungen] error getting user:", userError);
+    }
+
+    if (!user) {
+      setOutlookConnected(false);
+      setOutlookEmail(null);
+      setOutlookStatus(null);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("email_connections")
+      .select("email_address,status")
+      .eq("agent_id", user.id)
+      .eq("provider", "outlook")
+      .maybeSingle<OutlookConnectionRow>();
+
+    if (error) {
+      console.error(
+        "[verknuepfungen] error loading outlook connection:",
+        error
+      );
+      setOutlookConnected(false);
+      setOutlookEmail(null);
+      setOutlookStatus(null);
+      return;
+    }
+
+    const status = data?.status ?? null;
+    const connected = status === "connected" || status === "active";
+
+    setOutlookConnected(connected);
+    setOutlookEmail(data?.email_address ?? null);
+    setOutlookStatus(status);
+  }, [supabase]);
+
   const loadImmoScoutConnection = useCallback(async () => {
     const {
       data: { user },
@@ -165,7 +235,10 @@ export default function VerknuepfungenPage() {
       .maybeSingle() as any);
 
     if (error) {
-      console.error("[verknuepfungen] error loading immoscout connection:", error);
+      console.error(
+        "[verknuepfungen] error loading immoscout connection:",
+        error
+      );
       setImmoscoutConnected(false);
       setImmoscoutLabel(null);
       setImmoscoutStatus(null);
@@ -180,22 +253,49 @@ export default function VerknuepfungenPage() {
     setImmoscoutStatus(status);
   }, [supabase]);
 
-  // Load on mount and re-check when returning from OAuth (`?gmail=...` or `?immoscout=...`).
   useEffect(() => {
     loadGmailConnection();
+    loadOutlookConnection();
     loadImmoScoutConnection();
-  }, [loadGmailConnection, loadImmoScoutConnection, gmailParam, immoscoutParam]);
+  }, [
+    loadGmailConnection,
+    loadOutlookConnection,
+    loadImmoScoutConnection,
+    gmailParam,
+    outlookParam,
+    immoscoutParam,
+  ]);
 
   const banner = useMemo(() => {
-    const which = gmailParam ? "gmail" : immoscoutParam ? "immoscout" : null;
-    const value = which === "gmail" ? gmailParam : which === "immoscout" ? immoscoutParam : null;
+    const which = gmailParam
+      ? "gmail"
+      : outlookParam
+      ? "outlook"
+      : immoscoutParam
+      ? "immoscout"
+      : null;
+
+    const value =
+      which === "gmail"
+        ? gmailParam
+        : which === "outlook"
+        ? outlookParam
+        : which === "immoscout"
+        ? immoscoutParam
+        : null;
 
     if (!which || !value) return null;
 
     if (value === "connected") {
       return {
         tone: "success" as const,
-        title: `${which === "gmail" ? "Gmail" : "ImmoScout24"} verbunden`,
+        title: `${
+          which === "gmail"
+            ? "Gmail"
+            : which === "outlook"
+            ? "Microsoft 365"
+            : "ImmoScout24"
+        } verbunden`,
         body: "Die Verbindung wurde erfolgreich gespeichert.",
       };
     }
@@ -219,7 +319,13 @@ export default function VerknuepfungenPage() {
     if (value === "error") {
       return {
         tone: "danger" as const,
-        title: `${which === "gmail" ? "Gmail" : "ImmoScout24"} Verbindung fehlgeschlagen`,
+        title: `${
+          which === "gmail"
+            ? "Gmail"
+            : which === "outlook"
+            ? "Microsoft 365"
+            : "ImmoScout24"
+        } Verbindung fehlgeschlagen`,
         body: reasonParam
           ? `Grund: ${reasonParam}`
           : "Bitte versuche es erneut. Wenn es weiter scheitert, prüfe die OAuth Einstellungen.",
@@ -227,14 +333,15 @@ export default function VerknuepfungenPage() {
     }
 
     return null;
-  }, [gmailParam, immoscoutParam, reasonParam]);
+  }, [gmailParam, outlookParam, immoscoutParam, reasonParam]);
 
   return (
     <div className="max-w-3xl mx-auto p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Verknüpfte Dienste</h1>
         <p className="mt-1 text-sm text-gray-600">
-          Verbinde deine Tools, damit Advaic automatisiert für dich arbeiten kann. Du kannst Verknüpfungen jederzeit erneuern.
+          Verbinde deine Tools, damit Advaic automatisiert für dich arbeiten
+          kann. Du kannst Verknüpfungen jederzeit erneuern.
         </p>
       </div>
 
@@ -242,8 +349,10 @@ export default function VerknuepfungenPage() {
         <div
           className={classNames(
             "mb-6 rounded-md border p-4 text-sm",
-            banner.tone === "success" && "border-green-200 bg-green-50 text-green-900",
-            banner.tone === "warning" && "border-amber-200 bg-amber-50 text-amber-900",
+            banner.tone === "success" &&
+              "border-green-200 bg-green-50 text-green-900",
+            banner.tone === "warning" &&
+              "border-amber-200 bg-amber-50 text-amber-900",
             banner.tone === "danger" && "border-red-200 bg-red-50 text-red-900"
           )}
         >
@@ -255,10 +364,11 @@ export default function VerknuepfungenPage() {
       <div className="space-y-4">
         {cards.map((service) => {
           const isGmail = service.id === "gmail";
+          const isOutlook = service.id === "outlook";
           const isImmoScout = service.id === "immoscout";
 
           const statusBadge = (() => {
-            if (!isGmail && !isImmoScout) return null;
+            if (!isGmail && !isImmoScout && !isOutlook) return null;
 
             if (loading && isGmail) {
               return (
@@ -278,6 +388,30 @@ export default function VerknuepfungenPage() {
               }
 
               if (gmailStatus === "needs_reconnect") {
+                return (
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
+                    <FaExclamationTriangle className="mr-1" /> Neu verbinden
+                  </span>
+                );
+              }
+
+              return (
+                <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+                  Nicht verbunden
+                </span>
+              );
+            }
+
+            if (isOutlook) {
+              if (outlookConnected) {
+                return (
+                  <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-800">
+                    <FaCheckCircle className="mr-1" /> Verbunden
+                  </span>
+                );
+              }
+
+              if (outlookStatus === "needs_reconnect") {
                 return (
                   <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
                     <FaExclamationTriangle className="mr-1" /> Neu verbinden
@@ -346,23 +480,46 @@ export default function VerknuepfungenPage() {
                     </div>
                   )}
 
-                  {isGmail && !loading && !gmailConnected && gmailStatus === "needs_reconnect" && (
-                    <div className="mt-3 text-sm text-amber-800">
-                      Verbindung abgelaufen – bitte neu verbinden.
+                  {isGmail &&
+                    !loading &&
+                    !gmailConnected &&
+                    gmailStatus === "needs_reconnect" && (
+                      <div className="mt-3 text-sm text-amber-800">
+                        Verbindung abgelaufen – bitte neu verbinden.
+                      </div>
+                    )}
+
+                  {isOutlook && outlookConnected && (
+                    <div className="mt-3 text-sm text-gray-900">
+                      <span className="text-gray-600">Verbunden als:</span>{" "}
+                      <span className="font-medium">{outlookEmail ?? "—"}</span>
                     </div>
                   )}
+
+                  {isOutlook &&
+                    !outlookConnected &&
+                    outlookStatus === "needs_reconnect" && (
+                      <div className="mt-3 text-sm text-amber-800">
+                        Verbindung abgelaufen – bitte neu verbinden.
+                      </div>
+                    )}
 
                   {isImmoScout && (
                     <div className="mt-3 text-sm text-gray-700">
                       {immoscoutConnected ? (
                         <>
                           <span className="text-gray-600">Verbunden als:</span>{" "}
-                          <span className="font-medium">{immoscoutLabel ?? "ImmoScout Account"}</span>
+                          <span className="font-medium">
+                            {immoscoutLabel ?? "ImmoScout Account"}
+                          </span>
                         </>
                       ) : (
                         <>
-                          <span className="font-medium">Noch nicht verbunden:</span>{" "}
-                          Hinterlege zuerst ImmoScout API Credentials (Consumer Key/Secret) im Backend.
+                          <span className="font-medium">
+                            Noch nicht verbunden:
+                          </span>{" "}
+                          Hinterlege zuerst ImmoScout API Credentials (Consumer
+                          Key/Secret) im Backend.
                         </>
                       )}
                     </div>
@@ -434,6 +591,34 @@ export default function VerknuepfungenPage() {
                         ImmoScout verbinden
                       </button>
                     )
+                  ) : isOutlook ? (
+                    outlookConnected ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={startOutlookOAuth}
+                          className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                          title="Falls du die Verbindung erneuern willst"
+                        >
+                          Neu verbinden
+                        </button>
+                        <button
+                          type="button"
+                          onClick={loadOutlookConnection}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          Status aktualisieren
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={startOutlookOAuth}
+                        className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        Microsoft 365 verbinden
+                      </button>
+                    )
                   ) : (
                     <button
                       type="button"
@@ -454,7 +639,9 @@ export default function VerknuepfungenPage() {
                         : undefined
                     }
                   >
-                    {service.id === "immoscout" ? "API-Zugang nötig" : "Bald verfügbar"}
+                    {service.id === "immoscout"
+                      ? "API-Zugang nötig"
+                      : "Bald verfügbar"}
                   </button>
                 )}
               </div>
@@ -466,8 +653,15 @@ export default function VerknuepfungenPage() {
       <div className="mt-8 rounded-lg border bg-gray-50 p-4 text-sm text-gray-700">
         <div className="font-medium">Hinweis</div>
         <ul className="mt-2 list-disc pl-5 space-y-1">
-          <li>Gmail ist verfügbar. ImmoScout24 ist vorbereitet (Sync alle 2 Minuten), benötigt aber API-Credentials (Consumer Key/Secret). Outlook und Slack folgen danach.</li>
-          <li>Advaic speichert die Verbindung, damit Antworten direkt aus deinem Postfach gesendet werden können.</li>
+          <li>
+            Gmail und Microsoft 365 sind verfügbar. ImmoScout24 ist vorbereitet
+            (Sync alle 2 Minuten), benötigt aber API-Credentials (Consumer
+            Key/Secret). Slack folgt danach.
+          </li>
+          <li>
+            Advaic speichert die Verbindung, damit Antworten direkt aus deinem
+            Postfach gesendet werden können.
+          </li>
         </ul>
       </div>
     </div>

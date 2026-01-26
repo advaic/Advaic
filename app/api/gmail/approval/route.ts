@@ -7,11 +7,14 @@ export const runtime = "nodejs";
 
 type Body = {
   action?: "approve" | "reject";
+  // New (preferred): our internal message row id
+  message_id?: string;
+  // Backward-compat (legacy): gmail_message_id
   gmail_message_id?: string;
 };
 
-function jsonError(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status });
+function jsonError(message: string, status: number, extra?: Record<string, any>) {
+  return NextResponse.json({ error: message, ...(extra || {}) }, { status });
 }
 
 function supabaseAdminDb() {
@@ -32,21 +35,34 @@ function supabaseAdminStorage() {
   );
 }
 
+function mustEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+function buildSubject(lead: any) {
+  const s = lead?.subject || lead?.type || "Anfrage";
+  return `Re: ${String(s).slice(0, 140)}`;
+}
+
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Body | null;
 
   const action = body?.action;
+  const messageId = String(body?.message_id || "").trim();
   const gmailMessageId = String(body?.gmail_message_id || "").trim();
 
   if (!action || (action !== "approve" && action !== "reject")) {
     return jsonError("Missing/invalid action", 400);
   }
-  if (!gmailMessageId) {
-    return jsonError("Missing gmail_message_id", 400);
+
+  // We support either message_id (preferred) or gmail_message_id (legacy)
+  if (!messageId && !gmailMessageId) {
+    return jsonError("Missing message_id or gmail_message_id", 400);
   }
 
   // Auth via cookie session (agent must be logged in)
-  const res = NextResponse.next();
   const supabaseAuth = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -55,12 +71,9 @@ export async function POST(req: NextRequest) {
         get(name) {
           return req.cookies.get(name)?.value;
         },
-        set(name, value, options) {
-          res.cookies.set({ name, value, ...options });
-        },
-        remove(name, options) {
-          res.cookies.set({ name, value: "", ...options, maxAge: 0 });
-        },
+        // No-op: this endpoint should not mutate auth cookies
+        set() {},
+        remove() {},
       },
     }
   );
@@ -76,13 +89,16 @@ export async function POST(req: NextRequest) {
   const adminStorage = supabaseAdminStorage();
 
   // Load message to verify ownership + get lead_id
-  const { data: msg, error: msgErr } = await admin
+  // Prefer message_id (current system); fallback to gmail_message_id (legacy)
+  const msgQuery = admin
     .from("messages")
     .select(
-      "id, agent_id, lead_id, gmail_message_id, status, approval_required"
-    )
-    .eq("gmail_message_id", gmailMessageId)
-    .maybeSingle();
+      "id, agent_id, lead_id, gmail_message_id, status, approval_required, send_status, text"
+    );
+
+  const { data: msg, error: msgErr } = messageId
+    ? await (msgQuery as any).eq("id", messageId).maybeSingle()
+    : await (msgQuery as any).eq("gmail_message_id", gmailMessageId).maybeSingle();
 
   if (msgErr) return jsonError(msgErr.message, 400);
   if (!msg) return jsonError("Message not found", 404);
@@ -95,28 +111,59 @@ export async function POST(req: NextRequest) {
   if (!leadId) return jsonError("Message has no lead_id", 400);
 
   if (action === "approve") {
-    // Mark as ready for sending pipeline (you will decide when to actually send)
-    const { error: updErr } = await (admin as any)
-      .from("messages")
-      .update({
-        status: "ready",
-        approval_required: false,
-      })
-      .eq("gmail_message_id", gmailMessageId);
+    // We approve by sending through the idempotent send route.
+    // This keeps all lock/idempotency rules centralized.
 
-    if (updErr) return jsonError(updErr.message, 400);
+    // Load lead data needed for send payload
+    const { data: lead, error: leadErr } = await (admin as any)
+      .from("leads")
+      .select("id, agent_id, email, gmail_thread_id, subject, type")
+      .eq("id", leadId)
+      .maybeSingle();
 
-    return NextResponse.json({ ok: true, action: "approve" }, { status: 200 });
+    if (leadErr) return jsonError(leadErr.message, 400);
+    if (!lead?.email) return jsonError("Lead has no email", 400);
+
+    const origin = req.nextUrl.origin;
+    const sendUrl = new URL("/api/gmail/send", origin).toString();
+
+    const res = await fetch(sendUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // Use cookie auth (same browser session) — do NOT use internal secret here.
+      },
+      body: JSON.stringify({
+        id: String((msg as any).id),
+        lead_id: String(lead.id),
+        gmail_thread_id: lead.gmail_thread_id ?? null,
+        to: String(lead.email),
+        subject: buildSubject(lead),
+        text: String((msg as any).text || "").trim(),
+      }),
+    });
+
+    const data = await res.json().catch(() => ({} as any));
+
+    if (!res.ok) {
+      return jsonError(String(data?.error || "Failed to send"), res.status, data);
+    }
+
+    return NextResponse.json({ ok: true, action: "approve", send: data }, { status: 200 });
   }
 
   // --- reject ---
+  const gmIdForCleanup = String((msg as any).gmail_message_id || "").trim();
+
   // 1) load attachments for storage cleanup
-  const { data: atts, error: attErr } = await admin
-    .from("email_attachments")
-    .select(
-      "id, storage_bucket, storage_path, agent_id, lead_id, gmail_message_id"
-    )
-    .eq("gmail_message_id", gmailMessageId);
+  const { data: atts, error: attErr } = gmIdForCleanup
+    ? await admin
+        .from("email_attachments")
+        .select(
+          "id, storage_bucket, storage_path, agent_id, lead_id, gmail_message_id"
+        )
+        .eq("gmail_message_id", gmIdForCleanup)
+    : ({ data: [], error: null } as any);
 
   if (attErr) return jsonError(attErr.message, 400);
 
@@ -144,31 +191,35 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 3) delete attachment rows
-  const { error: delAttRowsErr } = await (admin as any)
-    .from("email_attachments")
-    .delete()
-    .eq("gmail_message_id", gmailMessageId);
+  if (gmIdForCleanup) {
+    const { error: delAttRowsErr } = await (admin as any)
+      .from("email_attachments")
+      .delete()
+      .eq("gmail_message_id", gmIdForCleanup);
 
-  if (delAttRowsErr) return jsonError(delAttRowsErr.message, 400);
+    if (delAttRowsErr) return jsonError(delAttRowsErr.message, 400);
+  }
 
-  // 4) delete body row
-  const { error: delBodyErr } = await (admin as any)
-    .from("email_message_bodies")
-    .delete()
-    .eq("gmail_message_id", gmailMessageId);
+  if (gmIdForCleanup) {
+    const { error: delBodyErr } = await (admin as any)
+      .from("email_message_bodies")
+      .delete()
+      .eq("gmail_message_id", gmIdForCleanup);
 
-  if (delBodyErr) return jsonError(delBodyErr.message, 400);
+    if (delBodyErr) return jsonError(delBodyErr.message, 400);
+  }
 
-  // 5) mark message as rejected (so it never sends and you can hide it in UI)
   const { error: updErr } = await (admin as any)
     .from("messages")
     .update({
-      status: "rejected",
+      status: "ignored",
       approval_required: false,
+      // Ensure it won't ever send
+      send_status: "failed",
+      send_error: "rejected_by_agent",
       visible_to_agent: true,
     })
-    .eq("gmail_message_id", gmailMessageId);
+    .eq("id", String((msg as any).id));
 
   if (updErr) return jsonError(updErr.message, 400);
 

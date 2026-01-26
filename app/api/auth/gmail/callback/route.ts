@@ -4,6 +4,14 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import { google } from "googleapis";
 
+export const runtime = "nodejs";
+
+function mustEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
 function safeDecodeURIComponent(value: string) {
   try {
     return decodeURIComponent(value);
@@ -12,19 +20,41 @@ function safeDecodeURIComponent(value: string) {
   }
 }
 
+async function updateEmailConnectionSafe(
+  supabaseAdmin: any,
+  id: string | number,
+  payload: Record<string, any>
+) {
+  // Try once with full payload
+  let res = await (supabaseAdmin.from("email_connections") as any)
+    .update(payload)
+    .eq("id", id);
+
+  // If the DB rejects unknown columns (e.g., watch_topic), retry without them.
+  const msg = String(res?.error?.message || "").toLowerCase();
+  if (msg.includes("column") && msg.includes("watch_topic")) {
+    const retry = { ...payload };
+    delete retry.watch_topic;
+
+    res = await (supabaseAdmin.from("email_connections") as any)
+      .update(retry)
+      .eq("id", id);
+  }
+
+  return res;
+}
+
 async function exchangeCodeForTokens(code: string) {
-  const redirectUri = new URL(
-    "/api/auth/gmail/callback",
-    process.env.NEXT_PUBLIC_SITE_URL
-  ).toString();
+  const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL");
+  const redirectUri = new URL("/api/auth/gmail/callback", siteUrl).toString();
 
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code,
-      client_id: process.env.GOOGLE_CLIENT_ID!,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      client_id: mustEnv("GOOGLE_CLIENT_ID"),
+      client_secret: mustEnv("GOOGLE_CLIENT_SECRET"),
       redirect_uri: redirectUri,
       grant_type: "authorization_code",
     }),
@@ -32,7 +62,6 @@ async function exchangeCodeForTokens(code: string) {
 
   const text = await res.text();
   if (!res.ok) {
-    // Google often returns JSON in text; keep it readable but not too huge
     throw new Error(`Token exchange failed: ${text.slice(0, 300)}`);
   }
 
@@ -68,34 +97,34 @@ async function getGoogleEmail(accessToken: string) {
 }
 
 export async function GET(req: NextRequest) {
+  const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL");
   const url = new URL(req.url);
 
   const code = url.searchParams.get("code");
   const rawState = url.searchParams.get("state") || "";
   const decodedState = safeDecodeURIComponent(rawState);
+
+  // Only allow app-internal redirects
   const nextPath = decodedState.startsWith("/app")
     ? decodedState
     : "/app/konto/verknuepfungen";
 
   if (!code) {
-    const redirectUrl = new URL(
-      "/app/konto/verknuepfungen",
-      process.env.NEXT_PUBLIC_SITE_URL
-    );
+    const redirectUrl = new URL("/app/konto/verknuepfungen", siteUrl);
     redirectUrl.searchParams.set("gmail", "missing_code");
     return NextResponse.redirect(redirectUrl);
   }
 
   // Prepare final redirect response first (so Supabase can write refreshed cookies onto it)
-  const successRedirect = new URL(nextPath, process.env.NEXT_PUBLIC_SITE_URL);
+  const successRedirect = new URL(nextPath, siteUrl);
   successRedirect.searchParams.set("gmail", "connected");
   const res = NextResponse.redirect(successRedirect);
 
   try {
     // Verify current Supabase user using cookie-based server client
     const supabaseAuth = createServerClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
+      mustEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
       {
         cookies: {
           get(name: string) {
@@ -117,58 +146,71 @@ export async function GET(req: NextRequest) {
     } = await supabaseAuth.auth.getUser();
 
     if (userError || !user) {
-      const loginUrl = new URL("/login", process.env.NEXT_PUBLIC_SITE_URL);
+      const loginUrl = new URL("/login", siteUrl);
       loginUrl.searchParams.set("error", "not_authenticated");
       loginUrl.searchParams.set("next", nextPath);
       return NextResponse.redirect(loginUrl);
     }
 
+    // Service-role client for secure DB read/write
+    const supabaseAdmin = createClient<Database>(
+      mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
+      mustEnv("SUPABASE_SERVICE_ROLE_KEY")
+    );
+
+    // Fetch existing connection first so we NEVER wipe refresh_token when Google omits it
+    type EmailConnMinimal = { id: string; refresh_token: string | null };
+
+    const existingConnRes = await supabaseAdmin
+      .from("email_connections")
+      .select("id, refresh_token")
+      .eq("agent_id", user.id)
+      .eq("provider", "gmail")
+      .maybeSingle();
+
+    const existingConn = existingConnRes.data as EmailConnMinimal | null;
+
     // Exchange authorization code for tokens
     const tokens = await exchangeCodeForTokens(code);
     const email = await getGoogleEmail(tokens.access_token);
-    const expiresAt = new Date(
-      Date.now() + tokens.expires_in * 1000
-    ).toISOString();
+    const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+    // Choose refresh token safely: prefer new token, else keep existing
+    const refreshToken =
+      (tokens.refresh_token ?? undefined) || (existingConn?.refresh_token ?? undefined);
+
+    // Upsert connection WITHOUT wiping refresh_token
+    // - if Google sent refresh_token → persist it
+    // - if not → keep existing refresh_token
+    const upsertPayload: Record<string, any> = {
+      agent_id: user.id,
+      provider: "gmail",
+      email_address: email,
+      status: "connected",
+      access_token: tokens.access_token,
+      expires_at: expiresAt,
+    };
+
+    if (refreshToken) {
+      upsertPayload.refresh_token = refreshToken;
     }
 
-    // Service-role client for secure DB write
-    const supabaseAdmin = createClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    const { error } = await supabaseAdmin
+    const { error: upsertErr } = await supabaseAdmin
       .from("email_connections")
-      .upsert(
-        {
-          agent_id: user.id,
-          provider: "gmail",
-          email_address: email,
-          status: "connected",
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token ?? null,
-          expires_at: expiresAt,
-        } as any,
-        { onConflict: "agent_id,provider" as any }
-      );
+      .upsert(upsertPayload as any, { onConflict: "agent_id,provider" as any });
 
-    if (error) {
-      throw new Error(`DB upsert failed: ${error.message}`);
+    if (upsertErr) {
+      throw new Error(`DB upsert failed: ${upsertErr.message}`);
     }
 
     // --- Start Gmail watch immediately on connect (so push works without manual steps) ---
-    const projectNumber = process.env.GCP_PROJECT_NUMBER;
-    const topicId = process.env.GMAIL_PUBSUB_TOPIC_ID;
-    if (!projectNumber || !topicId) {
-      throw new Error("Missing env vars: GCP_PROJECT_NUMBER or GMAIL_PUBSUB_TOPIC_ID");
-    }
+    const topicName =
+      process.env.GMAIL_PUBSUB_TOPIC_NAME ||
+      `projects/${mustEnv("GCP_PROJECT_NUMBER")}/topics/${mustEnv(
+        "GMAIL_PUBSUB_TOPIC_ID"
+      )}`;
 
-    // Fetch the persisted connection to get the final refresh_token (Google may omit it on re-connect)
-    type EmailConnMinimal = { id: number; refresh_token: string | null };
-
+    // Fetch the persisted connection to get its id + final refresh_token
     const connRes = await supabaseAdmin
       .from("email_connections")
       .select("id, refresh_token")
@@ -185,32 +227,29 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const refreshToken =
-      (tokens.refresh_token ?? undefined) ||
-      (persistedConn.refresh_token ?? undefined);
+    const finalRefreshToken = persistedConn.refresh_token ?? refreshToken;
 
-    if (!refreshToken) {
+    if (!finalRefreshToken) {
       // Without a refresh token we cannot reliably renew watch or access Gmail long-term.
       // This usually means Google did not return it because the user previously consented.
+      // Fix: ensure the initial connect flow uses prompt=consent.
       throw new Error(
         "Missing refresh_token. Please disconnect/reconnect Gmail with consent (prompt=consent)."
       );
     }
 
     const oauth2 = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID!,
-      process.env.GOOGLE_CLIENT_SECRET!,
-      new URL("/api/auth/gmail/callback", process.env.NEXT_PUBLIC_SITE_URL).toString()
+      mustEnv("GOOGLE_CLIENT_ID"),
+      mustEnv("GOOGLE_CLIENT_SECRET"),
+      new URL("/api/auth/gmail/callback", siteUrl).toString()
     );
 
     oauth2.setCredentials({
-      refresh_token: refreshToken,
+      refresh_token: finalRefreshToken,
       access_token: tokens.access_token,
     });
 
     const gmail = google.gmail({ version: "v1", auth: oauth2 });
-
-    const topicName = `projects/${projectNumber}/topics/${topicId}`;
 
     let watchRes;
     try {
@@ -229,22 +268,41 @@ export async function GET(req: NextRequest) {
     const newHistoryId = watchRes.data.historyId;
     const expiration = watchRes.data.expiration; // string ms timestamp
 
+    // Gmail returns expiration as epoch milliseconds (string). Our DB column is timestamptz.
+    const expirationIso = expiration
+      ? new Date(Number(expiration)).toISOString()
+      : null;
+
     const watchUpdatePayload: Record<string, any> = {
       last_history_id: newHistoryId ? String(newHistoryId) : null,
-      watch_expiration: expiration ? String(expiration) : null,
+      watch_expiration: expirationIso,
+      watch_active: true,
+      last_error: null,
       status: "active",
       // ensure refresh_token is persisted even if Google omitted it this time
-      refresh_token: refreshToken,
+      refresh_token: finalRefreshToken,
+      // optional: persist the Pub/Sub topic if your table has the column
+      watch_topic: topicName,
     };
 
-    const { error: watchUpdErr } = await (supabaseAdmin
-      .from("email_connections") as any)
-      .update(watchUpdatePayload)
-      .eq("id", persistedConn.id);
+    const watchUpdRes = await updateEmailConnectionSafe(
+      supabaseAdmin,
+      persistedConn.id,
+      watchUpdatePayload
+    );
 
-    if (watchUpdErr) {
-      throw new Error(`Failed to persist watch state: ${watchUpdErr.message}`);
+    if (watchUpdRes.error) {
+      throw new Error(
+        `Failed to persist watch state: ${watchUpdRes.error.message}`
+      );
     }
+
+    console.log("[gmail/callback] watch active", {
+      agent_id: user.id,
+      provider: "gmail",
+      historyId: newHistoryId ? String(newHistoryId) : null,
+      watch_expiration: expirationIso,
+    });
 
     // Notify Make (optional)
     if (process.env.MAKE_GMAIL_CONNECTED_WEBHOOK_URL) {
@@ -270,14 +328,11 @@ export async function GET(req: NextRequest) {
   } catch (e) {
     console.error("[gmail/callback] error:", e);
 
-    const errUrl = new URL(
-      "/app/konto/verknuepfungen",
-      process.env.NEXT_PUBLIC_SITE_URL
-    );
+    // Do NOT leak raw error messages into a public URL query param.
+    // Keep it user-friendly + stable, and log details server-side only.
+    const errUrl = new URL("/app/konto/verknuepfungen", siteUrl);
     errUrl.searchParams.set("gmail", "error");
-
-    const msg = e instanceof Error ? e.message : String(e);
-    errUrl.searchParams.set("reason", msg.slice(0, 180));
+    errUrl.searchParams.set("reason", "connect_failed");
 
     return NextResponse.redirect(errUrl);
   }

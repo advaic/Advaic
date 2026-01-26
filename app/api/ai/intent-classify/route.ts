@@ -22,6 +22,191 @@ type Result = {
   reason: string;
 };
 
+function isSpammy(text: string): boolean {
+  const t = text.toLowerCase();
+  // Very conservative: only obvious bulk/newsletter/system stuff.
+  const obvious = [
+    // true system / bounce / non-human
+    "mailer-daemon",
+    "postmaster",
+    "delivery status notification",
+    "undeliverable",
+    "zustellfehler",
+
+    // unsubscribe-only system signals
+    "list-unsubscribe",
+  ];
+  if (obvious.some((k) => t.includes(k))) return true;
+
+  // Portal / system notifications that are NOT lead inquiries
+  // IMPORTANT: do NOT catch actual property inquiries here
+  const portalSystemOnly = [
+    "automatisch generiert",
+    "dies ist eine automatisch erstellte",
+    "systemnachricht",
+    "kontobenachrichtigung",
+    "passwort",
+    "zugriff",
+    "login",
+    "sicherheitswarnung",
+    "neue funktionen",
+    "produktupdate",
+    "feature update",
+    "release notes",
+    "wartung",
+    "maintenance",
+  ];
+
+  if (portalSystemOnly.some((k) => t.includes(k))) return true;
+
+  // Auto-generated marketing phrases that are extremely likely spam
+  const patterns: RegExp[] = [
+    /\bgewinnspiel\b/i,
+    /\bjetzt\s+anmelden\b/i,
+    /\bnewsletter\b/i,
+  ];
+
+  // Safety guard: never mark as spam if it clearly looks like a property inquiry
+  const propertyLeadSignals = [
+    "wohnung",
+    "apartment",
+    "immobilie",
+    "objekt",
+    "miete",
+    "kaltmiete",
+    "warmmiete",
+    "zimmer",
+    "qm",
+    "besichtigung",
+    "termin",
+    "adresse",
+    "verfügbar",
+    "available",
+  ];
+
+  if (propertyLeadSignals.some((k) => t.includes(k))) return false;
+
+  return patterns.some((re) => re.test(text));
+}
+
+function askedForAlternatives(text: string): boolean {
+  const t = text.toLowerCase();
+  const kws = [
+    "andere",
+    "alternativ",
+    "weitere",
+    "noch",
+    "zusätzlich",
+    "stattdessen",
+    "alternative",
+    "another",
+    "other",
+    "more options",
+    "mehr angebote",
+  ];
+  return kws.some((k) => t.includes(k));
+}
+
+function refersToPreviousProperty(text: string, ctx: Array<{ sender: string; text: string }>): boolean {
+  const t = text.toLowerCase();
+  const pronouns = [
+    "die wohnung",
+    "das objekt",
+    "die immobilie",
+    "diese immobilie",
+    "dieses objekt",
+    "dieses angebot",
+    "dazu",
+    "darüber",
+    "this apartment",
+    "this property",
+    "that one",
+    "the listing",
+  ];
+  if (!pronouns.some((k) => t.includes(k))) return false;
+  // Only treat as a strong signal if there IS context at all
+  return Array.isArray(ctx) && ctx.length > 0;
+}
+
+function hardClassify(text: string, ctx: Array<{ sender: string; text: string }>): Result | null {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) {
+    return {
+      intent: "OTHER",
+      confidence: 0,
+      entities: {},
+      reason: "empty_text",
+    };
+  }
+
+  if (isSpammy(trimmed)) {
+    return {
+      intent: "SPAM_OR_IRRELEVANT",
+      confidence: 0.995,
+      entities: {},
+      reason: "obvious_spam_or_system",
+    };
+  }
+
+  // Deterministic fast-paths for very clear intents (keep conservative)
+  const t = trimmed.toLowerCase();
+
+  const viewingRe = /(besichtigung|termin|uhrzeit|verf[üu]gbarkeit|viewing|appointment|besichtigen)/i;
+  if (viewingRe.test(trimmed)) {
+    return {
+      intent: "VIEWING_REQUEST",
+      confidence: 0.92,
+      entities: {
+        wants_alternatives: askedForAlternatives(trimmed),
+        refers_to_previous_property: refersToPreviousProperty(trimmed, ctx),
+      },
+      reason: "viewing_keywords",
+    };
+  }
+
+  const appRe = /(unterlagen|gehaltsnachweis|schufa|selbstauskunft|bewerb|application|documents|deposit|kaution|vertrag)/i;
+  if (appRe.test(trimmed)) {
+    return {
+      intent: "APPLICATION_PROCESS",
+      confidence: 0.9,
+      entities: {
+        wants_alternatives: askedForAlternatives(trimmed),
+        refers_to_previous_property: refersToPreviousProperty(trimmed, ctx),
+      },
+      reason: "application_keywords",
+    };
+  }
+
+  const statusRe = /(hast du|haben sie).*?(gesehen|erhalten)|update|status|r[üu]ckmeldung|nochmal|follow\s*up|did you see/i;
+  if (statusRe.test(trimmed) && Array.isArray(ctx) && ctx.length > 0) {
+    return {
+      intent: "STATUS_FOLLOWUP",
+      confidence: 0.88,
+      entities: {
+        wants_alternatives: askedForAlternatives(trimmed),
+        refers_to_previous_property: refersToPreviousProperty(trimmed, ctx),
+      },
+      reason: "status_followup_keywords",
+    };
+  }
+
+  return null;
+}
+
+function withTimeout(ms: number) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), ms);
+  return { controller, cleanup: () => clearTimeout(id) };
+}
+
+function safeJsonParse(s: string): any | null {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -54,6 +239,9 @@ export async function POST(req: Request) {
 
   const text = String(body.text).slice(0, 1200);
   const ctx = Array.isArray(body.context) ? body.context.slice(0, 10) : [];
+
+  const hard = hardClassify(text, ctx);
+  if (hard) return NextResponse.json(hard);
 
   const system = `
 You are an intent classifier for a real-estate agent assistant.
@@ -94,6 +282,7 @@ ${ctx
 
   const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
 
+  const { controller, cleanup } = withTimeout(12_000);
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "api-key": apiKey },
@@ -105,7 +294,9 @@ ${ctx
         { role: "user", content: user },
       ],
     }),
+    signal: controller.signal,
   }).catch(() => null);
+  cleanup();
 
   if (!resp || !resp.ok) {
     return NextResponse.json({
@@ -127,12 +318,7 @@ ${ctx
     } satisfies Result);
   }
 
-  let parsed: any = null;
-  try {
-    parsed = JSON.parse(out);
-  } catch {
-    parsed = null;
-  }
+  const parsed = safeJsonParse(out);
 
   const allowed = new Set([
     "PROPERTY_SEARCH",
@@ -168,6 +354,11 @@ ${ctx
     finalIntent = "OTHER";
     reason = "low_confidence_guard";
   }
+
+  const wantsAlt = askedForAlternatives(text);
+  const refersPrev = refersToPreviousProperty(text, ctx);
+  (entities as any).wants_alternatives = typeof (entities as any).wants_alternatives === "boolean" ? (entities as any).wants_alternatives : wantsAlt;
+  (entities as any).refers_to_previous_property = typeof (entities as any).refers_to_previous_property === "boolean" ? (entities as any).refers_to_previous_property : refersPrev;
 
   return NextResponse.json({
     intent: finalIntent,

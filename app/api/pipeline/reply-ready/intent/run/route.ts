@@ -6,6 +6,21 @@ export const runtime = "nodejs";
 
 const NEXT_STATUS_AFTER_INTENT = "intent_done";
 
+// Treat these as inbound-ish states. If your Gmail push currently writes inbound mail to
+// `needs_approval`, we still want to classify intent — but we will move it forward to `intent_done`
+// so downstream routing can proceed deterministically.
+const INBOUND_STATUSES = ["needs_approval", "ready", "inbound", "pending"] as const;
+
+// Hard guard: if a message is already beyond intent, do not touch it.
+const TERMINAL_OR_LATER_STATUSES = [
+  "intent_done",
+  "route_resolved",
+  "draft_created",
+  "qa_done",
+  "ready_to_send",
+  "sent",
+] as const;
+
 function mustEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
@@ -28,9 +43,9 @@ export async function POST(req: Request) {
   const { data: msgs, error } = await (supabase.from("messages") as any)
     .select("id, agent_id, lead_id, text, sender, status, timestamp")
     .eq("sender", "user")
-    // Gmail push often sets inbound user emails to `needs_approval` when approval_required is true, so the intent pipeline must include it.
-    .in("status", ["needs_approval", "ready", "inbound", "pending"]) // include common inbound states
-    .neq("status", NEXT_STATUS_AFTER_INTENT)
+    .in("status", [...INBOUND_STATUSES])
+    // extra safety: never touch messages that are already in later pipeline stages
+    .not("status", "in", `(${TERMINAL_OR_LATER_STATUSES.map((s) => `"${s}"`).join(",")})`)
     .order("timestamp", { ascending: true })
     .limit(25);
 
@@ -45,6 +60,10 @@ export async function POST(req: Request) {
 
   for (const m of msgs || []) {
     const messageId = String(m.id);
+    if (!m.agent_id || !m.lead_id) {
+      results.push({ messageId, error: "missing_agent_or_lead" });
+      continue;
+    }
     try {
       // Skip if already has intent v1
       const { data: existing } = await (supabase.from("message_intents") as any)
@@ -123,11 +142,12 @@ export async function POST(req: Request) {
         continue;
       }
 
-      // Mark message as intent-complete so this pipeline doesn't keep re-scanning it.
-      // Downstream stages should filter on this status (or just read the message_intents artifact).
+      // Race-safe status advance: only advance if the row is still in an inbound-ish state.
+      // If another worker advanced it already, this becomes a no-op.
       await (supabase.from("messages") as any)
         .update({ status: NEXT_STATUS_AFTER_INTENT })
-        .eq("id", messageId);
+        .eq("id", messageId)
+        .in("status", [...INBOUND_STATUSES]);
 
       // Routing happens in the next pipeline stage (route-resolve).
       results.push({ messageId, intent, confidence });

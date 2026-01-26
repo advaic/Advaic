@@ -534,6 +534,70 @@ export async function POST(req: NextRequest) {
   let sentMessageId: string | null = null;
   let sentThreadId: string | null = effectiveThreadId ?? null;
 
+  // Build attachment metadata once (used for DB storage). Actual attachment bytes are built in buildEncodedEmail().
+  const attachmentsMeta = Array.isArray(attachments)
+    ? attachments
+        .filter(
+          (a): a is AttachmentInput =>
+            !!a &&
+            typeof a.bucket === "string" &&
+            typeof a.path === "string" &&
+            typeof a.name === "string" &&
+            typeof a.mime === "string"
+        )
+        .slice(0, MAX_ATTACHMENTS)
+        .map((a) => ({
+          bucket: ATTACHMENTS_BUCKET,
+          path: a.path,
+          name: sanitizeFilename(a.name),
+          mime: String(a.mime || "").toLowerCase(),
+          // optional fields (ignored by DB if not stored)
+          size: (a as any).size ?? null,
+        }))
+    : [];
+
+  async function markDraftAsSentOnMessageRow(args: {
+    gmailMessageId: string | null;
+    gmailThreadId: string | null;
+  }) {
+    const nowIso = new Date().toISOString();
+
+    const updateWithAttachments: Record<string, any> = {
+      send_status: "sent",
+      sent_at: nowIso,
+      send_locked_at: null,
+      send_error: null,
+      approval_required: false,
+      status: "sent",
+      visible_to_agent: true,
+      email_address: safeTo,
+      gmail_thread_id: args.gmailThreadId,
+      gmail_message_id: args.gmailMessageId,
+      was_followup: !!was_followup,
+      attachments: attachmentsMeta,
+    };
+
+    // Try updating with attachments. If the column doesn't exist, retry without it.
+    let upd = await (supabaseAdmin.from("messages") as any)
+      .update(updateWithAttachments)
+      .eq("id", messageId)
+      .eq("agent_id", user.id);
+
+    if (
+      upd?.error?.message?.toLowerCase?.().includes("column") &&
+      upd.error.message.toLowerCase().includes("attachments")
+    ) {
+      const retry = { ...updateWithAttachments };
+      delete retry.attachments;
+      upd = await (supabaseAdmin.from("messages") as any)
+        .update(retry)
+        .eq("id", messageId)
+        .eq("agent_id", user.id);
+    }
+
+    return { nowIso };
+  }
+
   try {
     const sendRes = await gmail.users.messages.send({
       userId: "me",
@@ -546,18 +610,11 @@ export async function POST(req: NextRequest) {
     sentMessageId = sendRes.data.id ?? null;
     sentThreadId = sendRes.data.threadId ?? sentThreadId;
 
-    // 5b) Mark original approval message as sent (idempotency record)
-    await (supabaseAdmin.from("messages") as any)
-      .update({
-        send_status: "sent",
-        sent_at: new Date().toISOString(),
-        send_locked_at: null,
-        send_error: null,
-        approval_required: false,
-        status: "approved",
-      })
-      .eq("id", messageId)
-      .eq("agent_id", user.id);
+    // 5b) Mark THIS draft message row as sent (idempotent audit on the same row)
+    await markDraftAsSentOnMessageRow({
+      gmailMessageId: sentMessageId,
+      gmailThreadId: sentThreadId,
+    });
   } catch (e: any) {
     const status = Number(e?.code) || Number(e?.response?.status) || 500;
     const details = {
@@ -595,87 +652,10 @@ export async function POST(req: NextRequest) {
   }
 
   // 6️⃣ Persist message in Supabase (dedupe via gmail_message_id)
-  const attachmentsMeta = Array.isArray(attachments)
-    ? attachments
-        .filter(
-          (a): a is AttachmentInput =>
-            !!a &&
-            typeof a.bucket === "string" &&
-            typeof a.path === "string" &&
-            typeof a.name === "string" &&
-            typeof a.mime === "string"
-        )
-        .slice(0, MAX_ATTACHMENTS)
-        .map((a) => ({
-          bucket: ATTACHMENTS_BUCKET,
-          path: a.path,
-          name: sanitizeFilename(a.name),
-          mime: String(a.mime || "").toLowerCase(),
-          // optional fields (ignored by DB if not stored)
-          size: (a as any).size ?? null,
-        }))
-    : [];
-
-  const nowIso = new Date().toISOString();
-
-  const baseRow: Record<string, any> = {
-    lead_id,
-    agent_id: user.id,
-    sender: "agent",
-    text: safeText,
-    timestamp: nowIso,
-    email_address: safeTo, // recipient
-    gmail_thread_id: sentThreadId,
-    gmail_message_id: sentMessageId,
-    was_followup: !!was_followup,
-    visible_to_agent: true,
-    status: "sent",
-    // best-effort: store attachment references (requires a json/jsonb column named `attachments`)
-    attachments: attachmentsMeta,
-  };
-
-  let insertedMessageId: string | null = null;
-
-  async function upsertMessageRow(row: Record<string, any>) {
-    // Prefer returning the DB id so the UI can reconcile optimistic sends
-    const hasGmailMessageId =
-      typeof row.gmail_message_id === "string" &&
-      row.gmail_message_id.length > 0;
-
-    const qBase = supabaseAdmin.from("messages") as any;
-
-    const q = hasGmailMessageId
-      ? qBase.upsert(row, { onConflict: "gmail_message_id" })
-      : qBase.insert(row);
-
-    return await q.select("id,gmail_message_id,gmail_thread_id,timestamp");
-  }
-
-  let upsertRes = await upsertMessageRow(baseRow);
-
-  // If the `attachments` column doesn't exist, retry without it.
-  if (
-    upsertRes?.error?.message?.toLowerCase?.().includes("column") &&
-    upsertRes.error.message.toLowerCase().includes("attachments")
-  ) {
-    const retryRow = { ...baseRow };
-    delete retryRow.attachments;
-    upsertRes = await upsertMessageRow(retryRow);
-  }
-
-  if (upsertRes?.error) {
-    console.error(
-      "[gmail/send] Message upsert failed:",
-      upsertRes.error.message
-    );
-  } else {
-    const first = Array.isArray(upsertRes.data)
-      ? upsertRes.data[0]
-      : upsertRes.data;
-    insertedMessageId = first?.id ?? null;
-  }
+  // (Removed: message row creation/duplication. Only update original row.)
 
   // 7️⃣ Persist threadId on lead so Gmail Push can map future events to the same lead
+  const nowIso = new Date().toISOString();
   if (sentThreadId) {
     const { error: leadUpdateErr } = await (supabaseAdmin.from("leads") as any)
       .update({ gmail_thread_id: sentThreadId, last_message_at: nowIso })
@@ -691,7 +671,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    inserted_id: insertedMessageId,
+    inserted_id: messageId,
     message: {
       gmail_message_id: sentMessageId,
       gmail_thread_id: sentThreadId,

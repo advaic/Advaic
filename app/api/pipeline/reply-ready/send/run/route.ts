@@ -28,7 +28,8 @@ async function readSendResponse(res: Response) {
       data,
     };
   }
-  return { ok: true, status: String(data?.status || "ok"), data };
+  const status = String(data?.status || data?.message?.status || "ok");
+  return { ok: true, status, data };
 }
 
 function buildSubject(lead: any) {
@@ -49,7 +50,7 @@ export async function POST() {
     .select(
       "id, agent_id, lead_id, text, status, approval_required, send_status, timestamp"
     )
-    .eq("sender", "assistant")
+    .in("sender", ["agent", "assistant"]) // be backward-compatible
     .eq("status", "ready_to_send")
     .eq("approval_required", false)
     .in("send_status", ["pending", "failed"])
@@ -71,9 +72,19 @@ export async function POST() {
   }
 
   // 2) Preload agent_settings for autosend gate
-  const agentIds = Array.from(
-    new Set(drafts.map((d: any) => String(d.agent_id)))
+  // Supabase `.in()` expects `string[]` here; drafts can be `any/unknown`, so we normalize explicitly.
+  const agentIds: string[] = Array.from(
+    new Set(
+      (drafts as any[])
+        .map((d) => (d?.agent_id ? String(d.agent_id).trim() : ""))
+        .filter((v) => v.length > 0)
+    )
   );
+
+  if (agentIds.length === 0) {
+    return NextResponse.json({ ok: true, processed: 0, results: [] });
+  }
+
   const { data: settingsRows } = await (supabase.from("agent_settings") as any)
     .select("agent_id, autosend_enabled")
     .in("agent_id", agentIds);
@@ -90,6 +101,18 @@ export async function POST() {
     const agentId = String(d.agent_id);
     const leadId = String(d.lead_id);
 
+    const markFailed = async (send_error: string, extra?: Record<string, any>) => {
+      await (supabase.from("messages") as any)
+        .update({
+          status: "needs_human",
+          approval_required: true,
+          send_status: "failed",
+          send_error,
+          ...(extra || {}),
+        })
+        .eq("id", messageId);
+    };
+
     // Safety: only send if autosend_enabled is still true
     if (!autosendMap.get(agentId)) {
       // downgrade to approval so it doesn't get stuck
@@ -103,61 +126,74 @@ export async function POST() {
 
     // 3) Load lead (to, thread_id, subject)
     const { data: lead } = await (supabase.from("leads") as any)
-      .select("id, agent_id, email, gmail_thread_id, subject, type")
+      .select(
+        "id, agent_id, email, gmail_thread_id, outlook_conversation_id, email_provider, subject, type"
+      )
       .eq("id", leadId)
       .maybeSingle();
 
     if (!lead?.email) {
-      await (supabase.from("messages") as any)
-        .update({
-          status: "needs_human",
-          approval_required: true,
-          send_status: "failed",
-          send_error: "missing_lead_email",
-        })
-        .eq("id", messageId);
-
+      await markFailed("missing_lead_email");
       results.push({ messageId, leadId, status: "failed_missing_lead_email" });
       continue;
     }
 
-    const subject = buildSubject(lead);
+    const provider = String(
+      lead?.email_provider || (lead?.outlook_conversation_id ? "outlook" : "gmail")
+    )
+      .toLowerCase()
+      .trim();
+
+    if (provider !== "gmail" && provider !== "outlook") {
+      await markFailed(`invalid_email_provider:${provider}`);
+      results.push({ messageId, leadId, status: "failed_invalid_provider", provider });
+      continue;
+    }
+
     const text = String(d.text || "").trim();
 
     if (!text) {
-      await (supabase.from("messages") as any)
-        .update({
-          status: "needs_human",
-          approval_required: true,
-          send_status: "failed",
-          send_error: "empty_draft_text",
-        })
-        .eq("id", messageId);
-
+      await markFailed("empty_draft_text");
       results.push({ messageId, leadId, status: "failed_empty_text" });
       continue;
     }
 
-    // 4) Call your idempotent send route
-    const res = await fetch(new URL("/api/gmail/send", siteUrl).toString(), {
+    // 4) Call provider send route (idempotent + locked)
+    const subject = buildSubject(lead);
+
+    const sendPath = provider === "outlook" ? "/api/outlook/send" : "/api/gmail/send";
+
+    const payload: Record<string, any> =
+      provider === "outlook"
+        ? {
+            id: messageId,
+            lead_id: leadId,
+            to: lead.email,
+            subject, // may be ignored by Outlook reply, but safe to include
+            text,
+            outlook_conversation_id: lead.outlook_conversation_id ?? null,
+          }
+        : {
+            id: messageId,
+            lead_id: leadId,
+            gmail_thread_id: lead.gmail_thread_id,
+            to: lead.email,
+            subject,
+            text,
+          };
+
+    const res = await fetch(new URL(sendPath, siteUrl).toString(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-advaic-internal-secret": secret,
       },
-      body: JSON.stringify({
-        id: messageId,
-        lead_id: leadId,
-        gmail_thread_id: lead.gmail_thread_id,
-        to: lead.email,
-        subject,
-        text,
-        // attachments: optional – send route already reads attachments from message row if you designed it that way
-      }),
-    }).catch(() => null);
+      body: JSON.stringify(payload),
+    }).catch((e) => ({ __err: e } as any));
 
-    if (!res) {
-      results.push({ messageId, leadId, status: "network_error" });
+    if (!res || (res as any).__err) {
+      await markFailed("network_error");
+      results.push({ messageId, leadId, status: "network_error", provider });
       continue;
     }
 
@@ -168,18 +204,29 @@ export async function POST() {
       send.ok &&
       (send.status === "already_sent" ||
         send.status === "locked_or_in_progress" ||
-        send.status === "ok")
+        send.status === "ok" ||
+        send.status === "sent")
     ) {
-      results.push({ messageId, leadId, status: send.status });
+      results.push({ messageId, leadId, status: send.status, provider });
       continue;
     }
 
-    // else: mark failed (send route likely did already, but safe)
+    // else: mark failed (send route likely did already, but we persist fail-closed here too)
+    await (supabase.from("messages") as any)
+      .update({
+        send_status: "failed",
+        send_error: send.error || "unknown",
+        status: "needs_human",
+        approval_required: true,
+      })
+      .eq("id", messageId);
+
     results.push({
       messageId,
       leadId,
       status: "failed",
       error: send.error || "unknown",
+      provider,
     });
   }
 

@@ -4,6 +4,12 @@ import type { Database } from "@/types/supabase";
 
 export const runtime = "nodejs";
 
+/**
+ * =========================
+ * Helpers / Infra
+ * =========================
+ */
+
 function mustEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
@@ -31,7 +37,6 @@ function asText(v: any, max = 4000) {
 
 function normalizeTemplates(rows: any[]) {
   if (!Array.isArray(rows) || rows.length === 0) return "";
-  // Keep it compact: title + content
   return rows
     .slice(0, 12)
     .map((t) => {
@@ -48,18 +53,19 @@ function formatThreadContext(ctx: any[]) {
     .map((m) => {
       const sender = String(m.sender || "");
       const text = String(m.text || "");
-      return `- ${sender}: ${text}`.trim();
+      const ts = m.timestamp ? String(m.timestamp) : "";
+      return `- [${ts}] ${sender}: ${text}`.trim();
     })
     .join("\n");
 }
 
 function formatProperty(p: any) {
   if (!p) return "";
-  // Use only safe columns you have in types: keep it generic.
   const o: Record<string, any> = {
     id: p.id,
+    title: p.title,
     city: p.city,
-    neighbourhood: p.neighbourhood,
+    neighborhood: p.neighborhood,
     street_address: p.street_address,
     type: p.type,
     price: p.price,
@@ -71,66 +77,24 @@ function formatProperty(p: any) {
     pets_allowed: p.pets_allowed,
     available_from: p.available_from,
     listing_summary: p.listing_summary,
-    uri: p.uri,
+    url: p.url,
+    image_urls: p.image_urls, // safe even if undefined
   };
   return JSON.stringify(o, null, 2);
 }
 
-async function callAzureWriter(args: {
-  system: string;
-  user: string;
-  temperature: number;
-  maxTokens: number;
-}) {
-  const endpoint = mustEnv("AZURE_OPENAI_ENDPOINT");
-  const apiKey = mustEnv("AZURE_OPENAI_API_KEY");
-
-  // Writer deployment (separate from classifier deployments)
-  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_WRITER;
-  if (!deployment) {
-    return { ok: false as const, text: "", reason: "writer_not_configured" };
-  }
-
-  const apiVersion =
-    process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview";
-
-  const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
-
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "api-key": apiKey },
-    body: JSON.stringify({
-      temperature: args.temperature,
-      max_tokens: args.maxTokens,
-      // Keep as plain text (your ai_prompts has response_format="text")
-      messages: [
-        { role: "system", content: args.system },
-        { role: "user", content: args.user },
-      ],
-    }),
-  }).catch(() => null);
-
-  if (!resp || !resp.ok) {
-    return { ok: false as const, text: "", reason: "writer_failed" };
-  }
-
-  const data = (await resp.json().catch(() => null)) as any;
-  const out = data?.choices?.[0]?.message?.content;
-  const text = typeof out === "string" ? out.trim() : "";
-  if (!text) return { ok: false as const, text: "", reason: "no_output" };
-
-  return { ok: true as const, text, reason: "ok" };
-}
-
 function mapRouteToTemplateCategory(route: string) {
-  // keep it simple for now; you can rename categories later
   switch (route) {
     case "PROPERTY_SPECIFIC":
       return "property_specific_answer";
     case "PROPERTY_SEARCH":
       return "property_search_suggestions";
     case "QNA":
+    case "QNA_GENERAL":
+    case "APPLICATION_PROCESS":
+    case "VIEWING_REQUEST":
       return "general_qna";
+    case "STATUS_FOLLOWUP":
     case "FOLLOWUP_STATUS":
       return "status_followup";
     default:
@@ -138,17 +102,132 @@ function mapRouteToTemplateCategory(route: string) {
   }
 }
 
+/**
+ * Writer Call mit Timeout + Retry
+ */
+async function fetchJsonWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, { ...init, signal: ctrl.signal });
+    return resp;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+async function callAzureWriter(args: {
+  system: string;
+  user: string;
+  temperature: number;
+  maxTokens: number;
+  timeoutMs?: number;
+  retries?: number;
+}) {
+  const endpoint = mustEnv("AZURE_OPENAI_ENDPOINT");
+  const apiKey = mustEnv("AZURE_OPENAI_API_KEY");
+  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_WRITER;
+
+  if (!deployment) {
+    return { ok: false as const, text: "", reason: "writer_not_configured" };
+  }
+
+  const apiVersion =
+    process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview";
+  const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+
+  const timeoutMs = Number.isFinite(Number(args.timeoutMs))
+    ? Number(args.timeoutMs)
+    : 25_000;
+  const retries = Number.isFinite(Number(args.retries))
+    ? Number(args.retries)
+    : 2;
+
+  const body = JSON.stringify({
+    temperature: args.temperature,
+    max_tokens: args.maxTokens,
+    messages: [
+      { role: "system", content: args.system },
+      { role: "user", content: args.user },
+    ],
+  });
+
+  let lastErr = "unknown";
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const resp = await fetchJsonWithTimeout(
+        url,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "api-key": apiKey },
+          body,
+        },
+        timeoutMs
+      );
+
+      if (!resp.ok) {
+        lastErr = `http_${resp.status}`;
+        // Retry on 429 / 5xx
+        if (resp.status === 429 || (resp.status >= 500 && resp.status <= 599)) {
+          continue;
+        }
+        return { ok: false as const, text: "", reason: lastErr };
+      }
+
+      const data = (await resp.json().catch(() => null)) as any;
+      const out = data?.choices?.[0]?.message?.content;
+      const text = typeof out === "string" ? out.trim() : "";
+      if (!text) return { ok: false as const, text: "", reason: "no_output" };
+
+      return { ok: true as const, text, reason: "ok" };
+    } catch (e: any) {
+      lastErr = e?.name === "AbortError" ? "timeout" : "fetch_failed";
+      continue;
+    }
+  }
+
+  return { ok: false as const, text: "", reason: lastErr };
+}
+
+/**
+ * Best-effort Updates, damit wir niemals die ganze Batch killen,
+ * nur weil ein optionales Feld nicht existiert.
+ */
+async function safeUpdate(
+  supabase: any,
+  table: string,
+  values: Record<string, any>,
+  match: Record<string, any>
+) {
+  try {
+    let q = supabase.from(table).update(values);
+    for (const [k, v] of Object.entries(match)) q = q.eq(k, v);
+    await q;
+  } catch {
+    // swallow
+  }
+}
+
+/**
+ * =========================
+ * Handler
+ * =========================
+ */
 export async function POST() {
   const supabase = supabaseAdmin();
 
-  // 0) Load active writer prompt from DB (schema-flexible)
-  // Supported schemas:
-  // A) ai_prompts has columns: name, prompt (JSON string)
-  // B) ai_prompts has columns: key, system_prompt, user_prompt, temperature, max_tokens
   const PROMPT_KEY = "reply_writer_v1";
 
-  const { data: promptRow, error: promptErr } = await (supabase
-    .from("ai_prompts") as any)
+  /**
+   * 0) Load active writer prompt from DB (schema-flexible)
+   */
+  const { data: promptRow, error: promptErr } = await (
+    supabase.from("ai_prompts") as any
+  )
     .select("*")
     .eq("is_active", true)
     .or(`name.eq.${PROMPT_KEY},key.eq.${PROMPT_KEY}`)
@@ -163,8 +242,6 @@ export async function POST() {
     );
   }
 
-  // Extract system/user prompt + settings.
-  // Prefer explicit columns, fallback to JSON in `prompt`.
   let systemPromptFromDb =
     typeof promptRow.system_prompt === "string" ? promptRow.system_prompt : "";
   let userPromptTemplateFromDb =
@@ -184,18 +261,19 @@ export async function POST() {
         if (!systemPromptFromDb && typeof parsed.system_prompt === "string") {
           systemPromptFromDb = parsed.system_prompt;
         }
-        if (!userPromptTemplateFromDb && typeof parsed.user_prompt === "string") {
+        if (
+          !userPromptTemplateFromDb &&
+          typeof parsed.user_prompt === "string"
+        ) {
           userPromptTemplateFromDb = parsed.user_prompt;
         }
-        if (Number.isFinite(Number(parsed.temperature))) {
+        if (Number.isFinite(Number(parsed.temperature)))
           temperature = Number(parsed.temperature);
-        }
-        if (Number.isFinite(Number(parsed.max_tokens))) {
+        if (Number.isFinite(Number(parsed.max_tokens)))
           maxTokens = Number(parsed.max_tokens);
-        }
       }
     } catch {
-      // ignore parse errors; we'll fail below
+      // ignore parse errors
     }
   }
 
@@ -203,28 +281,25 @@ export async function POST() {
     return NextResponse.json(
       {
         error: `Active ${PROMPT_KEY} prompt is missing system_prompt/user_prompt`,
-        hint:
-          "Either add system_prompt + user_prompt columns, or store JSON in ai_prompts.prompt with {system_prompt,user_prompt,temperature,max_tokens}.",
+        hint: "Either add system_prompt + user_prompt columns, or store JSON in ai_prompts.prompt with {system_prompt,user_prompt,temperature,max_tokens}.",
       },
       { status: 500 }
     );
   }
 
-  // sanity clamp
   if (!Number.isFinite(temperature)) temperature = 0.2;
   if (!Number.isFinite(maxTokens) || maxTokens <= 0) maxTokens = 420;
 
-  // 1) Pull a batch of message_routes where the inbound message is ready to be drafted.
-  // We join `messages` to enforce: sender=user AND status=route_resolved.
-  // (If the join/filter fails due to missing FK, we still guard later when loading the inbound message.)
-  const { data: routes, error: routesErr } = await (supabase
-    .from("message_routes") as any)
+  /**
+   * 1) Pull a batch of message_routes (we will stage-gate by loading the inbound message)
+   */
+  const { data: routes, error: routesErr } = await (
+    supabase.from("message_routes") as any
+  )
     .select(
-      "id, agent_id, lead_id, message_id, route, confidence, reason, payload, prompt_version, created_at, messages!inner(status, sender)"
+      "id, agent_id, lead_id, message_id, route, confidence, reason, payload, prompt_version, created_at"
     )
     .eq("prompt_version", "v1")
-    .eq("messages.sender", "user")
-    .eq("messages.status", "route_resolved")
     .order("created_at", { ascending: true })
     .limit(25);
 
@@ -236,19 +311,48 @@ export async function POST() {
   }
 
   const processed: any[] = [];
+  const nowIso = new Date().toISOString();
 
   for (const r of routes || []) {
+    const routeRowId = String(r.id);
     const agentId = String(r.agent_id);
     const leadId = String(r.lead_id);
     const inboundMessageId = String(r.message_id);
     const route = String(r.route || "OTHER");
+    const baseConfidence = clamp01(r.confidence);
+    const baseReason = typeof r.reason === "string" ? r.reason : "";
+
     const routePayload =
       r.payload && typeof r.payload === "object" ? r.payload : {};
 
-    // 1.1) Acquire idempotency lock via message_drafts row.
-    // This prevents two workers from drafting the same inbound message concurrently.
-    const { data: lockRow, error: lockErr } = await (supabase
-      .from("message_drafts") as any)
+
+    /**
+     * 1.0) Quick pre-check: if message_drafts already exists for inbound, skip fast.
+     * This prevents loops even if your insert unique isn't perfect.
+     */
+    const { data: existingDraft } = await (
+      supabase.from("message_drafts") as any
+    )
+      .select("id, inbound_message_id, draft_message_id")
+      .eq("inbound_message_id", inboundMessageId)
+      .maybeSingle();
+
+    if (existingDraft?.id) {
+      processed.push({
+        inboundMessageId,
+        route,
+        draftStatus: "already_locked",
+        draftMessageId: existingDraft.draft_message_id ?? null,
+      });
+      continue;
+    }
+
+    /**
+     * 1.1) Acquire idempotency lock via message_drafts insert
+     */
+    const { data: lockRow, error: lockErr } = await (
+      supabase.from("message_drafts") as any
+    )
       .insert(
         {
           agent_id: agentId,
@@ -264,19 +368,37 @@ export async function POST() {
       .maybeSingle();
 
     if (lockErr) {
-      // If unique constraint hit, another worker already created a lock/draft.
-      // Supabase often returns 23505 for unique violations.
       const code = (lockErr as any).code;
-      if (String(code) === "23505") continue;
-      // Any other error: skip this item but continue batch.
-      processed.push({ inboundMessageId, route, draftStatus: "lock_failed", error: lockErr.message });
+      if (String(code) === "23505") {
+        processed.push({
+          inboundMessageId,
+          route,
+          draftStatus: "already_locked",
+        });
+        continue;
+      }
+
+      processed.push({
+        inboundMessageId,
+        route,
+        draftStatus: "lock_failed",
+        error: lockErr.message,
+      });
       continue;
     }
 
-    // If insert returned no row, be safe and skip.
-    if (!lockRow?.id) continue;
+    if (!lockRow?.id) {
+      processed.push({
+        inboundMessageId,
+        route,
+        draftStatus: "lock_missing_row",
+      });
+      continue;
+    }
 
-    // 2) Load inbound message (authoritative)
+    /**
+     * 2) Load inbound message (authoritative)
+     */
     const { data: inbound, error: inboundErr } = await (
       supabase.from("messages") as any
     )
@@ -284,29 +406,57 @@ export async function POST() {
       .eq("id", inboundMessageId)
       .maybeSingle();
 
-    if (inboundErr || !inbound) continue;
+    if (inboundErr || !inbound) {
+      processed.push({
+        inboundMessageId,
+        route,
+        draftStatus: "missing_inbound",
+      });
+      continue;
+    }
 
-    // Only draft replies for inbound user messages that reached route_resolved.
-    // This prevents drafting on messages that are still in earlier pipeline stages.
-    if (String(inbound.sender) !== "user") continue;
-    if (String(inbound.status || "") !== "route_resolved") continue;
+    if (
+      String(inbound.sender) !== "user" ||
+      String(inbound.status || "") !== "route_resolved"
+    ) {
+      processed.push({
+        inboundMessageId,
+        route,
+        draftStatus: "inbound_not_ready",
+      });
+      continue;
+    }
 
-    // 3) Load lead
+    /**
+     * 3) Load lead (ensure agent ownership)
+     */
     const { data: lead } = await (supabase.from("leads") as any)
       .select("id, agent_id, name, email, gmail_thread_id, meta")
       .eq("id", leadId)
       .maybeSingle();
 
-    if (!lead || String(lead.agent_id) !== agentId) continue;
+    if (!lead || String(lead.agent_id) !== agentId) {
+      // Fail closed: needs human
+      await (supabase.from("messages") as any)
+        .update({ status: "needs_human", visible_to_agent: true })
+        .eq("id", inboundMessageId);
 
-    // 4) Load last 10 thread messages (most recent first)
+      processed.push({ inboundMessageId, route, draftStatus: "lead_mismatch" });
+      continue;
+    }
+
+    /**
+     * 4) Load context
+     */
     const { data: ctx } = await (supabase.from("messages") as any)
       .select("sender, text, timestamp")
       .eq("lead_id", leadId)
       .order("timestamp", { ascending: false })
       .limit(10);
 
-    // 5) Load agent brand + style
+    /**
+     * 5) Agent brand + style
+     */
     const { data: agent } = await (supabase.from("agents") as any)
       .select("id, name, company, email")
       .eq("id", agentId)
@@ -343,7 +493,9 @@ export async function POST() {
       .filter(Boolean)
       .join("\n\n");
 
-    // 6) Load templates for this route category
+    /**
+     * 6) Templates
+     */
     const category = mapRouteToTemplateCategory(route);
     const { data: templates } = await (
       supabase.from("response_templates") as any
@@ -356,9 +508,20 @@ export async function POST() {
 
     const templatesBlock = normalizeTemplates(templates || []);
 
-    // 7) Load properties if referenced in payload
+    /**
+     * 7) Lead property state + properties
+     */
+    const { data: leadPropState } = await (
+      supabase.from("lead_property_state") as any
+    )
+      .select("active_property_id")
+      .eq("lead_id", leadId)
+      .maybeSingle();
+
     const activePropertyId = routePayload?.active_property_id
       ? String(routePayload.active_property_id)
+      : leadPropState?.active_property_id
+      ? String(leadPropState.active_property_id)
       : null;
 
     const suggestedPropertyIds: string[] = Array.isArray(
@@ -373,7 +536,7 @@ export async function POST() {
     if (activePropertyId) {
       const { data: p } = await (supabase.from("properties") as any)
         .select(
-          "id, city, neighbourhood, street_address, type, price, price_type, rooms, size_sqm, floor, furnished, pets_allowed, available_from, listing_summary, uri"
+          "id, title, city, neighborhood, street_address, type, price, price_type, rooms, size_sqm, floor, furnished, pets_allowed, available_from, listing_summary, url, image_urls"
         )
         .eq("agent_id", agentId)
         .eq("id", activePropertyId)
@@ -385,7 +548,7 @@ export async function POST() {
     if (suggestedPropertyIds.length > 0) {
       const { data: ps } = await (supabase.from("properties") as any)
         .select(
-          "id, city, neighbourhood, street_address, type, price, price_type, rooms, size_sqm, floor, furnished, pets_allowed, available_from, listing_summary, uri"
+          "id, title, city, neighborhood, street_address, type, price, price_type, rooms, size_sqm, floor, furnished, pets_allowed, available_from, listing_summary, url, image_urls"
         )
         .eq("agent_id", agentId)
         .in("id", suggestedPropertyIds)
@@ -396,9 +559,9 @@ export async function POST() {
       }
     }
 
-    // 8) Optional: load autosend setting (if you have it)
-    // If autosend is enabled, we generate an outbound message with approval_required=false
-    // and mark it ready for send in a later pipeline step.
+    /**
+     * 8) Settings (autosend) – nur als Info in result, behavior bleibt approval_required=true
+     */
     const { data: settings } = await (supabase.from("agent_settings") as any)
       .select("agent_id, autosend_enabled")
       .eq("agent_id", agentId)
@@ -406,7 +569,9 @@ export async function POST() {
 
     const autosendEnabled = !!settings?.autosend_enabled;
 
-    // 9) Assemble user prompt with placeholders
+    /**
+     * 9) Assemble prompt
+     */
     const inboundText = String(inbound.text || inbound.snippet || "").slice(
       0,
       2000
@@ -414,11 +579,9 @@ export async function POST() {
     const threadContext = formatThreadContext(ctx || []);
     const clientName = lead?.name ? String(lead.name) : "";
     const clientEmail = lead?.email ? String(lead.email) : "";
+    const languageHint = style?.language ? String(style.language) : "auto";
 
-    const systemPrompt = String(systemPromptFromDb);
-    const userPromptTemplate = String(userPromptTemplateFromDb);
-
-    const userPrompt = userPromptTemplate
+    const userPrompt = String(userPromptTemplateFromDb)
       .replaceAll("{{ROUTE}}", route)
       .replaceAll("{{AGENT_BRAND}}", agentBrandBlock)
       .replaceAll("{{AGENT_STYLE}}", agentStyleBlock || "")
@@ -429,31 +592,40 @@ export async function POST() {
       .replaceAll("{{THREAD_CONTEXT}}", threadContext || "")
       .replaceAll("{{ACTIVE_PROPERTY}}", activePropertyBlock || "")
       .replaceAll("{{SUGGESTED_PROPERTIES}}", suggestedPropertiesBlock || "")
-      .replaceAll("{{FAQ_CONTEXT}}", ""); // later
+      .replaceAll(
+        "{{FAQ_CONTEXT}}",
+        typeof routePayload?.faq_context === "string"
+          ? routePayload.faq_context
+          : ""
+      )
+      .replaceAll("{{LANGUAGE_HINT}}", languageHint);
 
-    // 10) Call writer
+    /**
+     * 10) Call writer
+     */
     const writer = await callAzureWriter({
-      system: systemPrompt,
+      system: String(systemPromptFromDb),
       user: userPrompt,
       temperature,
       maxTokens,
+      timeoutMs: 25_000,
+      retries: 2,
     });
 
     const rawDraft = writer.ok ? writer.text.trim() : "{escalate}";
+    const cleanedDraft = rawDraft.replace(/^"|"$/g, "").trim();
+    const isEscalate = cleanedDraft === "{escalate}";
 
-    const isEscalate = rawDraft === "{escalate}";
-
-    // 11) Persist draft linkage + create outbound draft message
-    const now = new Date().toISOString();
-
+    /**
+     * 11) Persist results
+     */
     if (isEscalate) {
       // Mark inbound for manual attention
       await (supabase.from("messages") as any)
         .update({ status: "needs_human", visible_to_agent: true })
         .eq("id", inboundMessageId);
 
-      // Lock row already exists; keep draft_message_id null to prevent re-processing.
-      // (No-op update to ensure row is present)
+      // Keep lock row and prevent reprocessing
       await (supabase.from("message_drafts") as any)
         .update({ draft_message_id: null })
         .eq("inbound_message_id", inboundMessageId);
@@ -463,22 +635,25 @@ export async function POST() {
         route,
         autosendEnabled,
         draftStatus: "escalate",
+        writerReason: writer.reason,
       });
 
       continue;
     }
 
-    // Insert outbound assistant draft message and capture its id
-    const { data: outMsg, error: outErr } = await (supabase.from("messages") as any)
+    // Create outbound draft message
+    const { data: outMsg, error: outErr } = await (
+      supabase.from("messages") as any
+    )
       .insert({
         lead_id: leadId,
         agent_id: agentId,
         sender: "assistant",
-        text: rawDraft,
-        timestamp: now,
+        text: cleanedDraft,
+        timestamp: nowIso,
         visible_to_agent: true,
         // Always run QA first; approval/auto-send happens after QA passes.
-        approval_required: false,
+        approval_required: true,
         status: "qa_pending",
         send_status: "pending",
       })
@@ -486,9 +661,9 @@ export async function POST() {
       .single();
 
     if (outErr || !outMsg?.id) {
-      // Fail-closed: require manual handling
+      // Fail-closed
       await (supabase.from("messages") as any)
-        .update({ status: "needs_human" })
+        .update({ status: "needs_human", visible_to_agent: true })
         .eq("id", inboundMessageId);
 
       processed.push({
@@ -496,6 +671,7 @@ export async function POST() {
         route,
         autosendEnabled,
         draftStatus: "failed_insert_outbound",
+        error: outErr?.message ?? "no_outbound_id",
       });
 
       continue;
@@ -503,20 +679,21 @@ export async function POST() {
 
     const draftMessageId = String(outMsg.id);
 
-    // Link inbound -> draft (update existing lock row)
+    // Link inbound -> draft
     await (supabase.from("message_drafts") as any)
       .update({ draft_message_id: draftMessageId })
       .eq("inbound_message_id", inboundMessageId);
 
+    // Advance inbound message status
     await (supabase.from("messages") as any)
-      .update({ status: "drafted", visible_to_agent: true })
+      .update({ status: "draft_created", visible_to_agent: true })
       .eq("id", inboundMessageId);
 
     // Update lead last_message fields (optional)
     await (supabase.from("leads") as any)
       .update({
-        last_message_at: now,
-        last_message: rawDraft.slice(0, 240),
+        last_message_at: nowIso,
+        last_message: cleanedDraft.slice(0, 240),
       })
       .eq("id", leadId);
 
@@ -526,7 +703,10 @@ export async function POST() {
       autosendEnabled,
       draftMessageId,
       draftStatus: "qa_pending",
+      confidence: baseConfidence,
+      reason: baseReason,
     });
+
   }
 
   return NextResponse.json({

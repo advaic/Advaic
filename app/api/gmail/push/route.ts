@@ -10,14 +10,15 @@ export const runtime = "nodejs";
 // Using local row-shapes prevents the "type never" cascade in TS.
 
 type EmailConnectionRow = {
-  id: string;
+  id: number; // bigint identity
   agent_id: string;
   email_address: string;
   refresh_token: string;
   access_token: string | null;
   last_history_id: string | null;
+  status: string | null;
+  watch_active: boolean;
 };
-
 
 type LeadIdRow = { id: string };
 
@@ -127,7 +128,9 @@ function safeFileName(name: string) {
 }
 
 function b64urlToBuffer(data: string) {
-  const s = String(data || "").replace(/-/g, "+").replace(/_/g, "/");
+  const s = String(data || "")
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
   const pad = s.length % 4;
   const padded = pad ? s + "=".repeat(4 - pad) : s;
   return Buffer.from(padded, "base64");
@@ -196,7 +199,9 @@ type AttachmentMeta = {
   size: number;
 };
 
-function collectAttachments(payload: GmailPart | null | undefined): AttachmentMeta[] {
+function collectAttachments(
+  payload: GmailPart | null | undefined
+): AttachmentMeta[] {
   const all: GmailPart[] = [];
   walkParts(payload, all);
 
@@ -404,6 +409,325 @@ function ok200() {
   return NextResponse.json({ ok: true }, { status: 200 });
 }
 
+// --- Backfill/catch-up helpers ---
+function nowIso() {
+  return new Date().toISOString();
+}
+
+async function markConnError(
+  supabase: any,
+  connectionId: number,
+  message: string
+) {
+  try {
+    await supabase
+      .from("email_connections")
+      .update({
+        last_error: String(message || "unknown").slice(0, 2000),
+        status: "active",
+        watch_active: true,
+      })
+      .eq("id", connectionId);
+  } catch {
+    // ignore
+  }
+}
+
+async function backfillRecentMessages(args: {
+  gmail: any;
+  supabase: any;
+  connection: EmailConnectionRow;
+  emailAddress: string;
+  historyId: string;
+}) {
+  // Conservative backfill: pull a small window of recent inbox messages.
+  // This prevents the system from “going dead” when historyId becomes too old.
+  const { gmail, supabase, connection, emailAddress, historyId } = args;
+
+  let listRes: any;
+  try {
+    listRes = await gmail.users.messages.list({
+      userId: "me",
+      maxResults: 15,
+      q: "newer_than:3d", // small window to avoid heavy scans
+    });
+  } catch (e: any) {
+    await markConnError(
+      supabase,
+      connection.id,
+      `backfill_list_failed: ${String(e?.message || e)}`
+    );
+    return;
+  }
+
+  const ids: string[] = Array.isArray(listRes?.data?.messages)
+    ? listRes.data.messages.map((x: any) => String(x?.id || "")).filter(Boolean)
+    : [];
+
+  if (ids.length === 0) return;
+
+  // Reuse the same ingestion logic by simulating a single history batch.
+  // We call the same inner loop by inlining a tiny adapter.
+  for (const id of ids) {
+    try {
+      // Fetch message metadata (same headers we use in push)
+      const msgRes = await gmail.users.messages.get({
+        userId: "me",
+        id,
+        format: "metadata",
+        metadataHeaders: [
+          "From",
+          "To",
+          "Subject",
+          "Date",
+          "Reply-To",
+          "List-Unsubscribe",
+          "List-Id",
+          "Precedence",
+          "Auto-Submitted",
+        ],
+      });
+
+      const gmailMessageId = msgRes.data.id;
+      const threadId = msgRes.data.threadId;
+      if (!gmailMessageId || !threadId) continue;
+
+      const headers = msgRes.data.payload?.headers || [];
+      const from = extractHeader(headers, "From");
+      const subject = extractHeader(headers, "Subject");
+      const toHeader = extractHeader(headers, "To");
+      const replyTo = extractHeader(headers, "Reply-To");
+      const snippet = msgRes.data.snippet || "";
+
+      const signalListUnsub = hasListUnsubscribe(headers);
+      const signalBulk = isBulkMail(headers);
+      const signalNoReply = looksNoReply(from, replyTo);
+
+      const internalDateMs = msgRes.data.internalDate
+        ? Number(msgRes.data.internalDate)
+        : Date.now();
+      const timestampIso = new Date(internalDateMs).toISOString();
+
+      function extractEmailAddress(h: string) {
+        const s = String(h || "");
+        const m = s.match(/<([^>]+)>/);
+        const addr = (m ? m[1] : s).trim();
+        return addr.toLowerCase();
+      }
+
+      const isFromAgent =
+        extractEmailAddress(from) === String(emailAddress || "").toLowerCase();
+      const sender = isFromAgent ? "agent" : "user";
+
+      const hardBlocked =
+        hardBlockBySubject(subject) &&
+        (signalNoReply || signalBulk || signalListUnsub);
+
+      let decision: ClassifyResult["decision"] = hardBlocked
+        ? "ignore"
+        : "needs_approval";
+      let email_type: ClassifyResult["email_type"] = hardBlocked
+        ? "SYSTEM"
+        : "UNKNOWN";
+      let confidence = hardBlocked ? 0.99 : 0.5;
+      let reason = hardBlocked ? "hard_block" : "default_needs_approval";
+
+      if (!hardBlocked && sender !== "agent") {
+        const r = await classifyEmailAzure({
+          subject,
+          from,
+          to: toHeader,
+          replyTo,
+          snippet,
+          hasListUnsub: signalListUnsub,
+          isBulk: signalBulk,
+          isNoReply: signalNoReply,
+        });
+        decision = r.decision;
+        email_type = r.email_type;
+        confidence = r.confidence;
+        reason = r.reason;
+      }
+
+      // Audit classification (best-effort)
+      try {
+        await supabase.from("email_classifications").upsert(
+          {
+            agent_id: connection.agent_id,
+            email_address: emailAddress,
+            gmail_thread_id: threadId,
+            gmail_message_id: gmailMessageId,
+            decision,
+            email_type,
+            confidence,
+            reason,
+            subject,
+            from_email: from,
+            to_email: toHeader,
+            has_list_unsubscribe: signalListUnsub,
+            is_bulk: signalBulk,
+            is_no_reply: signalNoReply,
+            model: "azure",
+            prompt_version: "v1",
+          } as any,
+          { onConflict: "gmail_message_id" }
+        );
+      } catch {
+        // ignore
+      }
+
+      if (decision === "ignore") continue;
+
+      // Find or create lead by thread
+      let leadId: string | null = null;
+
+      const { data: existingLead } = await supabase
+        .from("leads")
+        .select("id")
+        .eq("agent_id", connection.agent_id)
+        .eq("gmail_thread_id", threadId)
+        .maybeSingle();
+
+      if (existingLead && (existingLead as any).id) {
+        leadId = (existingLead as any).id as string;
+        await supabase
+          .from("leads")
+          .update({ last_message_at: timestampIso } as any)
+          .eq("id", leadId);
+      } else {
+        if (sender === "agent") continue;
+        const { data: newLead, error: leadInsErr } = await supabase
+          .from("leads")
+          .insert({
+            agent_id: connection.agent_id,
+            gmail_thread_id: threadId,
+            last_message_at: timestampIso,
+          } as any)
+          .select("id")
+          .single();
+        if (leadInsErr) continue;
+        leadId = (newLead as any)?.id || null;
+        if (!leadId) continue;
+      }
+
+      // Phase B: full fetch for needs_approval (same as push)
+      if (decision === "needs_approval" && sender !== "agent" && leadId) {
+        try {
+          const fullRes = await gmail.users.messages.get({
+            userId: "me",
+            id: gmailMessageId,
+            format: "full",
+          });
+
+          const fullPayload = (fullRes.data.payload || null) as any;
+          const bodies = extractBodiesFromPayload(fullPayload);
+
+          const bodyRow: EmailMessageBodyRow = {
+            agent_id: connection.agent_id,
+            email_address: emailAddress,
+            gmail_message_id: gmailMessageId,
+            gmail_thread_id: threadId,
+            subject,
+            from_email: from,
+            to_email: toHeader,
+            reply_to: replyTo,
+            snippet,
+            internal_date: timestampIso,
+            body_text: bodies.body_text,
+            body_html: bodies.body_html,
+            status: "pending",
+          };
+
+          await supabase
+            .from("email_message_bodies")
+            .upsert(bodyRow as any, { onConflict: "gmail_message_id" });
+
+          const atts = collectAttachments(fullPayload);
+          for (const att of atts) {
+            try {
+              const attRes = await gmail.users.messages.attachments.get({
+                userId: "me",
+                messageId: gmailMessageId,
+                id: att.attachmentId,
+              });
+
+              const data = String(attRes.data.data || "");
+              if (!data) continue;
+
+              const bytes = b64urlToBuffer(data);
+
+              const storagePath = `agents/${
+                connection.agent_id
+              }/leads/${leadId}/emails/${gmailMessageId}/${
+                att.attachmentId
+              }-${safeFileName(att.filename)}`;
+
+              const { error: upErr } = await supabase.storage
+                .from(ATTACHMENTS_BUCKET)
+                .upload(storagePath, bytes, {
+                  upsert: true,
+                  contentType: att.mimeType || "application/octet-stream",
+                  cacheControl: "3600",
+                });
+
+              if (upErr) continue;
+
+              const attRow: EmailAttachmentInsert = {
+                agent_id: connection.agent_id,
+                email_address: emailAddress,
+                gmail_message_id: gmailMessageId,
+                gmail_thread_id: threadId,
+                attachment_id: att.attachmentId,
+                filename: att.filename,
+                mime_type: att.mimeType || "application/octet-stream",
+                size_bytes: Number.isFinite(att.size) ? att.size : bytes.length,
+                storage_bucket: ATTACHMENTS_BUCKET,
+                storage_path: storagePath,
+                status: "pending",
+              };
+
+              await supabase.from("email_attachments").upsert(attRow as any, {
+                onConflict: "gmail_message_id,attachment_id",
+              });
+            } catch {
+              // ignore per-attachment
+            }
+          }
+        } catch {
+          // ignore phase B failures
+        }
+      }
+
+      // Upsert message (dedupe)
+      await supabase.from("messages").upsert(
+        {
+          lead_id: leadId,
+          agent_id: connection.agent_id,
+          sender,
+          text: snippet,
+          timestamp: timestampIso,
+          gpt_score: null,
+          was_followup: false,
+          visible_to_agent: true,
+          approval_required: false,
+          status: sender === "agent" ? "sent" : "intent_pending",
+          snippet,
+          history_id: String(historyId),
+          email_address: emailAddress,
+          email_type,
+          classification_confidence: confidence,
+          gmail_message_id: gmailMessageId,
+          gmail_thread_id: threadId,
+        } as any,
+        { onConflict: "gmail_message_id" }
+      );
+    } catch {
+      // ignore per-message
+      continue;
+    }
+  }
+}
+
 export async function POST(req: Request) {
   const startedAt = Date.now();
 
@@ -485,10 +809,12 @@ export async function POST(req: Request) {
     const { data: conn, error: connErr } = await supabase
       .from("email_connections")
       .select(
-        "id, agent_id, email_address, refresh_token, access_token, last_history_id"
+        "id, agent_id, email_address, refresh_token, access_token, last_history_id, status, watch_active, provider"
       )
+      .eq("provider", "gmail")
       .eq("email_address", emailAddress)
-      .single();
+      .in("status", ["connected", "active"])
+      .maybeSingle();
 
     const connection = conn as unknown as EmailConnectionRow | null;
 
@@ -500,16 +826,29 @@ export async function POST(req: Request) {
       return ok200();
     }
 
-    if (!connection) {
-      console.error("❌ Gmail Push: connection cast failed", { emailAddress });
+    // --- 5) Gmail API client with refresh token ---
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+    const redirectUri =
+      process.env.GOOGLE_REDIRECT_URI ||
+      (siteUrl ? new URL("/api/auth/gmail/callback", siteUrl).toString() : "");
+
+    if (
+      !process.env.GOOGLE_CLIENT_ID ||
+      !process.env.GOOGLE_CLIENT_SECRET ||
+      !redirectUri
+    ) {
+      console.error("❌ Gmail Push: Missing Google OAuth env", {
+        hasClientId: !!process.env.GOOGLE_CLIENT_ID,
+        hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
+        hasRedirectUri: !!redirectUri,
+      });
       return ok200();
     }
 
-    // --- 5) Gmail API client with refresh token ---
     const oauth2 = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID!,
-      process.env.GOOGLE_CLIENT_SECRET!,
-      process.env.GOOGLE_REDIRECT_URI!
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      redirectUri
     );
 
     oauth2.setCredentials({
@@ -531,6 +870,8 @@ export async function POST(req: Request) {
         .update({
           last_history_id: String(historyId),
           status: "active",
+          watch_active: true,
+          last_error: null,
         })
         .eq("id", connection.id);
 
@@ -551,23 +892,87 @@ export async function POST(req: Request) {
 
     const startHistoryId = String(prevHistoryId);
 
-    let historyRes;
+    // --- 5b) Fetch history with pagination ---
+    const allHistory: any[] = [];
+    let pageToken: string | undefined = undefined;
+
     try {
-      historyRes = await gmail.users.history.list({
-        userId: "me",
-        startHistoryId: String(startHistoryId),
-        historyTypes: ["messageAdded"],
-      });
+      do {
+        const res = await gmail.users.history.list({
+          userId: "me",
+          startHistoryId: String(startHistoryId),
+          historyTypes: ["messageAdded"],
+          pageToken,
+        });
+
+        const items = res.data.history || [];
+        allHistory.push(...items);
+        pageToken = res.data.nextPageToken || undefined;
+      } while (pageToken);
     } catch (e: any) {
+      const msg = String(e?.message || "").toLowerCase();
+      const code = Number(e?.code) || Number(e?.response?.status) || 0;
+
+      // If startHistoryId is too old/invalid, reset baseline so the watch doesn't "die".
+      // Optional backfill can be done by a separate runner.
+      const staleHistory =
+        code === 404 ||
+        (msg.includes("start") &&
+          msg.includes("history") &&
+          (msg.includes("too old") || msg.includes("invalid"))) ||
+        msg.includes("requested entity was not found");
+
       console.error("❌ Gmail Push: gmail.history.list failed", {
         emailAddress,
         startHistoryId,
+        code,
         err: e?.message || String(e),
       });
+
+      await markConnError(
+        supabase,
+        connection.id,
+        `history_list_failed: ${String(e?.message || e)}`
+      );
+
+      if (staleHistory) {
+        const { error: baselineErr } = await supabase
+          .from("email_connections")
+          .update({
+            last_history_id: String(historyId),
+            status: "active",
+            watch_active: true,
+          })
+          .eq("id", connection.id);
+
+        if (baselineErr) {
+          console.error(
+            "⚠️ Gmail Push: failed resetting baseline last_history_id",
+            baselineErr.message
+          );
+        } else {
+          console.log(
+            "🧷 Reset baseline last_history_id after stale/invalid startHistoryId",
+            {
+              emailAddress,
+              historyId,
+            }
+          );
+        }
+        // Best-effort: backfill recent messages so we don't miss leads while resetting baseline.
+        await backfillRecentMessages({
+          gmail,
+          supabase,
+          connection: connection as any,
+          emailAddress,
+          historyId: String(historyId),
+        });
+      }
+
       return ok200();
     }
 
-    const history = historyRes.data.history || [];
+    const history = allHistory;
     console.log("📚 Gmail history items", { count: history.length });
 
     // --- 6) Insert/update Leads + Messages using Gmail threadId mapping ---
@@ -583,6 +988,8 @@ export async function POST(req: Request) {
       for (const m of msgs) {
         if (!m.id) continue;
 
+        // IMPORTANT: Gmail `format: "metadata"` only returns headers listed in `metadataHeaders`.
+        // We must request Reply-To + List/Precedence headers because we use them for safety signals.
         // Fetch message metadata so we get threadId + snippet + headers
         let msgRes;
         try {
@@ -590,7 +997,17 @@ export async function POST(req: Request) {
             userId: "me",
             id: m.id,
             format: "metadata",
-            metadataHeaders: ["From", "To", "Subject", "Date"],
+            metadataHeaders: [
+              "From",
+              "To",
+              "Subject",
+              "Date",
+              "Reply-To",
+              "List-Unsubscribe",
+              "List-Id",
+              "Precedence",
+              "Auto-Submitted",
+            ],
           });
         } catch (e: any) {
           console.error("❌ Gmail Push: gmail.messages.get failed", {
@@ -622,9 +1039,16 @@ export async function POST(req: Request) {
         const timestampIso = new Date(internalDateMs).toISOString();
 
         // Determine sender: agent if message is from the connected Gmail account, else user
-        const isFromAgent = from
-          .toLowerCase()
-          .includes(emailAddress.toLowerCase());
+        function extractEmailAddress(h: string) {
+          const s = String(h || "");
+          const m = s.match(/<([^>]+)>/);
+          const addr = (m ? m[1] : s).trim();
+          return addr.toLowerCase();
+        }
+
+        const isFromAgent =
+          extractEmailAddress(from) ===
+          String(emailAddress || "").toLowerCase();
 
         const sender = isFromAgent ? "agent" : "user";
 
@@ -693,105 +1117,6 @@ export async function POST(req: Request) {
             "⚠️ Gmail Push: could not upsert email_classifications",
             e?.message || e
           );
-        }
-
-        // --- Phase B: For needs_approval, fetch full body + attachments and persist for review ---
-        if (decision === "needs_approval" && sender !== "agent") {
-          try {
-            const fullRes = await gmail.users.messages.get({
-              userId: "me",
-              id: gmailMessageId,
-              format: "full",
-            });
-
-            const fullPayload = (fullRes.data.payload || null) as any;
-            const bodies = extractBodiesFromPayload(fullPayload);
-
-            const bodyRow: EmailMessageBodyRow = {
-              agent_id: connection.agent_id,
-              email_address: emailAddress,
-              gmail_message_id: gmailMessageId,
-              gmail_thread_id: threadId,
-              subject,
-              from_email: from,
-              to_email: toHeader,
-              reply_to: replyTo,
-              snippet,
-              internal_date: timestampIso,
-              body_text: bodies.body_text,
-              body_html: bodies.body_html,
-              status: "pending",
-            };
-
-            await supabase
-              .from("email_message_bodies")
-              .upsert(bodyRow as any, { onConflict: "gmail_message_id" });
-
-            const atts = collectAttachments(fullPayload);
-            for (const att of atts) {
-              try {
-                const attRes = await gmail.users.messages.attachments.get({
-                  userId: "me",
-                  messageId: gmailMessageId,
-                  id: att.attachmentId,
-                });
-
-                const data = String(attRes.data.data || "");
-                if (!data) continue;
-
-                const bytes = b64urlToBuffer(data);
-
-                const storagePath = `agents/${connection.agent_id}/emails/${gmailMessageId}/${att.attachmentId}-${safeFileName(att.filename)}`;
-
-                const { error: upErr } = await supabase.storage
-                  .from(ATTACHMENTS_BUCKET)
-                  .upload(storagePath, bytes, {
-                    upsert: true,
-                    contentType: att.mimeType || "application/octet-stream",
-                    cacheControl: "3600",
-                  });
-
-                if (upErr) {
-                  console.warn("⚠️ Gmail Push: attachment upload failed", {
-                    gmailMessageId,
-                    attachmentId: att.attachmentId,
-                    err: upErr.message,
-                  });
-                  continue;
-                }
-
-                const attRow: EmailAttachmentInsert = {
-                  agent_id: connection.agent_id,
-                  email_address: emailAddress,
-                  gmail_message_id: gmailMessageId,
-                  gmail_thread_id: threadId,
-                  attachment_id: att.attachmentId,
-                  filename: att.filename,
-                  mime_type: att.mimeType || "application/octet-stream",
-                  size_bytes: Number.isFinite(att.size) ? att.size : bytes.length,
-                  storage_bucket: ATTACHMENTS_BUCKET,
-                  storage_path: storagePath,
-                  status: "pending",
-                };
-
-                await supabase
-                  .from("email_attachments")
-                  .upsert(attRow as any, {
-                    onConflict: "gmail_message_id,attachment_id",
-                  });
-              } catch (e: any) {
-                console.warn("⚠️ Gmail Push: attachment processing failed", {
-                  gmailMessageId,
-                  err: e?.message || String(e),
-                });
-              }
-            }
-          } catch (e: any) {
-            console.warn("⚠️ Gmail Push: Phase B full-fetch failed", {
-              gmailMessageId,
-              err: e?.message || String(e),
-            });
-          }
         }
 
         // If classifier says ignore, we do not store lead/message.
@@ -870,6 +1195,109 @@ export async function POST(req: Request) {
           }
         }
 
+        // --- Phase B: For needs_approval, fetch full body + attachments and persist for review ---
+        if (decision === "needs_approval" && sender !== "agent" && leadId) {
+          try {
+            const fullRes = await gmail.users.messages.get({
+              userId: "me",
+              id: gmailMessageId,
+              format: "full",
+            });
+
+            const fullPayload = (fullRes.data.payload || null) as any;
+            const bodies = extractBodiesFromPayload(fullPayload);
+
+            const bodyRow: EmailMessageBodyRow = {
+              agent_id: connection.agent_id,
+              email_address: emailAddress,
+              gmail_message_id: gmailMessageId,
+              gmail_thread_id: threadId,
+              subject,
+              from_email: from,
+              to_email: toHeader,
+              reply_to: replyTo,
+              snippet,
+              internal_date: timestampIso,
+              body_text: bodies.body_text,
+              body_html: bodies.body_html,
+              status: "pending",
+            };
+
+            await supabase
+              .from("email_message_bodies")
+              .upsert(bodyRow as any, { onConflict: "gmail_message_id" });
+
+            const atts = collectAttachments(fullPayload);
+            for (const att of atts) {
+              try {
+                const attRes = await gmail.users.messages.attachments.get({
+                  userId: "me",
+                  messageId: gmailMessageId,
+                  id: att.attachmentId,
+                });
+
+                const data = String(attRes.data.data || "");
+                if (!data) continue;
+
+                const bytes = b64urlToBuffer(data);
+
+                const storagePath = `agents/${
+                  connection.agent_id
+                }/leads/${leadId}/emails/${gmailMessageId}/${
+                  att.attachmentId
+                }-${safeFileName(att.filename)}`;
+
+                const { error: upErr } = await supabase.storage
+                  .from(ATTACHMENTS_BUCKET)
+                  .upload(storagePath, bytes, {
+                    upsert: true,
+                    contentType: att.mimeType || "application/octet-stream",
+                    cacheControl: "3600",
+                  });
+
+                if (upErr) {
+                  console.warn("⚠️ Gmail Push: attachment upload failed", {
+                    gmailMessageId,
+                    attachmentId: att.attachmentId,
+                    err: upErr.message,
+                  });
+                  continue;
+                }
+
+                const attRow: EmailAttachmentInsert = {
+                  agent_id: connection.agent_id,
+                  email_address: emailAddress,
+                  gmail_message_id: gmailMessageId,
+                  gmail_thread_id: threadId,
+                  attachment_id: att.attachmentId,
+                  filename: att.filename,
+                  mime_type: att.mimeType || "application/octet-stream",
+                  size_bytes: Number.isFinite(att.size)
+                    ? att.size
+                    : bytes.length,
+                  storage_bucket: ATTACHMENTS_BUCKET,
+                  storage_path: storagePath,
+                  status: "pending",
+                };
+
+                await supabase.from("email_attachments").upsert(attRow as any, {
+                  onConflict: "gmail_message_id,attachment_id",
+                });
+              } catch (e: any) {
+                console.warn("⚠️ Gmail Push: attachment processing failed", {
+                  gmailMessageId,
+                  err: e?.message || String(e),
+                });
+              }
+            }
+          } catch (e: any) {
+            console.warn("⚠️ Gmail Push: Phase B full-fetch failed", {
+              gmailMessageId,
+              err: e?.message || String(e),
+            });
+          }
+        }
+
         // If this is an outgoing message and it already exists, skip early
         if (sender === "agent") {
           const { data: existingMsg } = await supabase
@@ -902,15 +1330,11 @@ export async function POST(req: Request) {
             // Drafts are created later by the pipeline (compose -> QA -> rewrite -> QA).
             approval_required: false,
 
-            // Keep a simple, single status field for routing.
-            // - agent/outgoing messages are stored as sent
-            // - inbound messages are either ready for reply pipeline or just inbound
-            status:
-              sender === "agent"
-                ? "sent"
-                : decision === "auto_reply"
-                ? "ready"
-                : "inbound",
+            // Pipeline alignment:
+            // - Gmail push only ingests.
+            // - Inbound user emails should start at `intent_pending` so the intent runner can process them.
+            // - Outgoing agent emails are stored as `sent`.
+            status: sender === "agent" ? "sent" : "intent_pending",
 
             snippet,
             history_id: String(h.id || historyId),
@@ -948,6 +1372,8 @@ export async function POST(req: Request) {
       .update({
         last_history_id: String(historyId),
         status: "active",
+        watch_active: true,
+        last_error: null,
       })
       .eq("id", connection.id);
 
