@@ -61,8 +61,8 @@ function safeReturnTo(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL"); // e.g. https://advaic.com
-  const clientId = mustEnv("OUTLOOK_CLIENT_ID"); // Azure app client id
+  const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL").trim(); // e.g. https://advaic.com
+  const clientId = mustEnv("OUTLOOK_CLIENT_ID").trim(); // Azure app client id
   const tenant =
     process.env.OUTLOOK_TENANT_ID && process.env.OUTLOOK_TENANT_ID.trim()
       ? process.env.OUTLOOK_TENANT_ID.trim()
@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
   // - Mail.Read: fetch mail
   // - Mail.Send: send mail
   // IMPORTANT: You can start with less and expand later, but for your product these are typical.
-  const scope = [
+  const defaultScope = [
     "offline_access",
     "openid",
     "profile",
@@ -93,6 +93,11 @@ export async function GET(req: NextRequest) {
     "Mail.Read",
     "Mail.Send",
   ].join(" ");
+
+  // Optional override (space-separated). Keep this aligned with your Azure app delegated permissions.
+  const scope = (process.env.OUTLOOK_SCOPES && process.env.OUTLOOK_SCOPES.trim())
+    ? process.env.OUTLOOK_SCOPES.trim()
+    : defaultScope;
 
   const authorizeUrl = new URL(
     `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`
@@ -112,6 +117,7 @@ export async function GET(req: NextRequest) {
   authorizeUrl.searchParams.set("prompt", "select_account");
 
   const res = NextResponse.redirect(authorizeUrl.toString());
+  res.headers.set("Cache-Control", "no-store");
 
   // Cookies (httpOnly) for CSRF + PKCE
   // Keep TTL short (10 minutes)

@@ -1,0 +1,33 @@
+name: Advaic Cron Pipelines
+
+on:
+  schedule:
+    # Outlook fetch/delta runner every 5 minutes
+    - cron: "*/5 * * * *"
+    # Outlook subscription renew every 6 hours
+    - cron: "0 */6 * * *"
+    # (Optional) Gmail watch renew once daily
+    # - cron: "15 3 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: advaic-cron-pipelines
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Outlook fetch/delta runner
+        run: |
+          curl -sS -X POST "${{ secrets.ADVAIC_BASE_URL }}/api/pipeline/outlook/fetch/run" \
+            -H "Content-Type: application/json" \
+            -H "x-advaic-internal-secret: ${{ secrets.ADVAIC_INTERNAL_PIPELINE_SECRET }}" \
+            --data "{}"
+
+      - name: Outlook subscriptions renew
+        run: |
+          curl -sS -X POST "${{ secrets.ADVAIC_BASE_URL }}/api/pipeline/outlook/subscriptions/renew" \
+            -H "Content-Type: application/json" \
+            -H "x-advaic-internal-secret: ${{ secrets.ADVAIC_INTERNAL_PIPELINE_SECRET }}" \
+            --data "{}"

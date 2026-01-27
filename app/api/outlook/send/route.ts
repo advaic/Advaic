@@ -593,10 +593,6 @@ export async function POST(req: NextRequest) {
       ],
     };
 
-    if (graphAttachments.length > 0) {
-      patchBody.attachments = graphAttachments;
-    }
-
     const patchRes = await graphFetch(accessToken, patchUrl, {
       method: "PATCH",
       body: JSON.stringify(patchBody),
@@ -605,6 +601,25 @@ export async function POST(req: NextRequest) {
     if (!patchRes.ok) {
       const txt = await patchRes.text().catch(() => "");
       throw new Error(`patchReply_failed_${patchRes.status}: ${txt.slice(0, 800)}`);
+    }
+
+    // 2.5) Add attachments (Graph: POST /attachments)
+    if (graphAttachments.length > 0) {
+      for (const att of graphAttachments) {
+        const attUrl = `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(
+          replyId
+        )}/attachments`;
+
+        const attRes = await graphFetch(accessToken, attUrl, {
+          method: "POST",
+          body: JSON.stringify(att),
+        });
+
+        if (!attRes.ok) {
+          const txt = await attRes.text().catch(() => "");
+          throw new Error(`addAttachment_failed_${attRes.status}: ${txt.slice(0, 800)}`);
+        }
+      }
     }
 
     // 3) send the reply draft
@@ -635,7 +650,7 @@ export async function POST(req: NextRequest) {
         send_locked_at: null,
         send_error: null,
         approval_required: false,
-        status: "sent",
+        status: "approved",
         email_provider: "outlook",
         outlook_message_id: sentGraphMessageId,
         outlook_conversation_id: finalConversationId,
@@ -644,47 +659,6 @@ export async function POST(req: NextRequest) {
       .eq("id", messageId)
       .eq("agent_id", user.id);
 
-    // Upsert a separate agent message row for inbox history (dedupe by outlook_message_id)
-    const agentRow: Record<string, any> = {
-      lead_id: leadId,
-      agent_id: user.id,
-      sender: "agent",
-      text: safeText,
-      timestamp: nowIso,
-      email_address: leadEmail,
-      outlook_message_id: sentGraphMessageId,
-      outlook_conversation_id: finalConversationId,
-      email_provider: "outlook",
-      was_followup: !!was_followup,
-      visible_to_agent: true,
-      status: "sent",
-      attachments: attachmentsMeta,
-    };
-
-    async function upsertAgentMessageRow(row: Record<string, any>) {
-      const qBase = supabaseAdmin.from("messages") as any;
-      const q = qBase.upsert(row, { onConflict: "outlook_message_id" });
-      return await q.select("id,outlook_message_id,outlook_conversation_id,timestamp");
-    }
-
-    let upsertRes = await upsertAgentMessageRow(agentRow);
-
-    // If the `attachments` column doesn't exist, retry without it.
-    if (
-      upsertRes?.error?.message?.toLowerCase?.().includes("column") &&
-      upsertRes.error.message.toLowerCase().includes("attachments")
-    ) {
-      const retryRow = { ...agentRow };
-      delete (retryRow as any).attachments;
-      upsertRes = await upsertAgentMessageRow(retryRow);
-    }
-
-    if (upsertRes?.error) {
-      console.error(
-        "[outlook/send] agent message upsert failed:",
-        upsertRes.error.message
-      );
-    }
 
     // Persist conversation mapping on lead (thread-equivalent)
     await (supabaseAdmin.from("leads") as any)
@@ -700,7 +674,7 @@ export async function POST(req: NextRequest) {
       status: "sent",
       message: {
         outlook_message_id: sentGraphMessageId,
-        outlook_conversation_id: sentConversationId,
+        outlook_conversation_id: sentConversationId ?? (leadRow as any).outlook_conversation_id ?? null,
       },
     });
   } catch (e: any) {

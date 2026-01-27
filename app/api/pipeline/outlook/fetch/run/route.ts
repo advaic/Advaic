@@ -216,6 +216,12 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function sameEmail(a: string | null, b: string | null) {
+  const aa = a ? normalizeEmail(a) : "";
+  const bb = b ? normalizeEmail(b) : "";
+  return !!aa && !!bb && aa === bb;
+}
+
 function safePreview(text: unknown, max = 2400) {
   // bodyPreview already text-ish, but be defensive
   const t = safeString(text, max);
@@ -286,7 +292,7 @@ async function upsertInboundMessage(args: {
   const { supabase } = args;
 
   // We store inbound mails as sender="user"
-  // status: "inbox_new" is a good start signal for your pipeline (classify -> intent -> route -> draft).
+  // status: "inbox_new" is the start signal for your pipeline (classify -> intent -> route -> draft).
   const row: Record<string, any> = {
     agent_id: args.agentId,
     lead_id: args.leadId,
@@ -297,7 +303,6 @@ async function upsertInboundMessage(args: {
     outlook_internet_message_id: args.internetMessageId,
     outlook_conversation_id: args.conversationId,
 
-    // Store subject/snippet/text where your downstream expects it
     subject: args.subject ? safeString(args.subject, 200) : null,
     snippet: safeString(args.snippet, 800),
     text: safeString(args.snippet, 2400),
@@ -309,17 +314,22 @@ async function upsertInboundMessage(args: {
 
     visible_to_agent: true,
 
-    // Pipeline stage start
     status: "inbox_new",
     approval_required: false,
   };
 
-  // Dedupe by outlook_message_id (unique index exists)
-  const { error } = await (supabase.from("messages") as any).upsert(row, {
-    onConflict: "outlook_message_id",
-  });
+  // IMPORTANT:
+  // Using upsert(onConflict: outlook_message_id) can fail if the DB only has a *partial* unique index.
+  // So we do a normal insert and treat duplicate-key as success (idempotent).
+  const { error } = await (supabase.from("messages") as any).insert(row);
 
-  if (error) throw new Error(`message upsert failed: ${error.message}`);
+  if (!error) return;
+
+  const code = String((error as any).code || "");
+  // Postgres unique_violation
+  if (code === "23505") return;
+
+  throw new Error(`message insert failed: ${(error as any).message || "unknown"}`);
 }
 
 export async function POST() {
@@ -400,7 +410,7 @@ export async function POST() {
       }
 
       // Delta loop
-      let url = c.outlook_delta_link || buildInitialInboxDeltaUrl(50);
+      let url = c.outlook_delta_link || buildInitialInboxDeltaUrl(100);
       let pageCount = 0;
       let itemCount = 0;
       let deltaLink: string | null = null;
@@ -430,6 +440,9 @@ export async function POST() {
           // from email
           const fromEmail = extractEmailAddress(it?.from);
           if (!fromEmail) continue;
+
+          // Skip self-sent/outbound copies (prevents drafting replies to the agent's own messages)
+          if (sameEmail(fromEmail, c.email_address)) continue;
 
           // only process inbound-ish
           // (We’re pulling Inbox delta, so this is already mostly inbound.)
@@ -502,6 +515,11 @@ export async function POST() {
         last_error: null,
       };
       if (deltaLink) patch.outlook_delta_link = deltaLink;
+
+      // Keep a mirror in watch_expiration for unified monitoring dashboards (optional field)
+      if (c.outlook_subscription_expiration) {
+        patch.watch_expiration = c.outlook_subscription_expiration;
+      }
 
       await (supabase.from("email_connections") as any)
         .update(patch)

@@ -119,7 +119,14 @@ async function refreshOutlookAccessToken(args: {
   };
 }
 
-async function getValidOutlookAccessToken(supabase: any, conn: any) {
+type AccessTokenResult =
+  | { ok: true; accessToken: string }
+  | { ok: false; error: string };
+
+async function getValidOutlookAccessToken(
+  supabase: any,
+  conn: any
+): Promise<AccessTokenResult> {
   const accessToken =
     typeof conn?.access_token === "string" ? conn.access_token : "";
   const refreshToken =
@@ -132,16 +139,16 @@ async function getValidOutlookAccessToken(supabase: any, conn: any) {
     expiresAt &&
     expiresAt.getTime() - Date.now() > 2 * 60 * 1000
   ) {
-    return { ok: true as const, accessToken };
+    return { ok: true, accessToken };
   }
 
   if (!refreshToken) {
-    return { ok: false as const, error: "missing_refresh_token" };
+    return { ok: false, error: "missing_refresh_token" };
   }
 
   const refreshed = await refreshOutlookAccessToken({ refreshToken });
   if (refreshed.ok === false) {
-    return { ok: false as const, error: refreshed.error };
+    return { ok: false, error: refreshed.error };
   }
 
   // Persist new tokens
@@ -159,7 +166,7 @@ async function getValidOutlookAccessToken(supabase: any, conn: any) {
     // ignore – we can still use the new access token for this run
   }
 
-  return { ok: true as const, accessToken: refreshed.accessToken };
+  return { ok: true, accessToken: refreshed.accessToken };
 }
 
 async function graphPatchSubscription(args: {

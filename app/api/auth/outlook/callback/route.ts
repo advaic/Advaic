@@ -70,86 +70,6 @@ async function upsertEmailConnection(
   });
 }
 
-type GraphSubscription = {
-  id: string;
-  resource: string;
-  expirationDateTime: string;
-};
-
-async function createGraphSubscription(args: {
-  accessToken: string;
-  notificationUrl: string;
-  clientState: string;
-  resource: string;
-}) {
-  const resp = await fetchJson("https://graph.microsoft.com/v1.0/subscriptions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${args.accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      changeType: "created,updated",
-      notificationUrl: args.notificationUrl,
-      resource: args.resource,
-      expirationDateTime: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 60min (safe default)
-      clientState: args.clientState,
-      latestSupportedTlsVersion: "v1_2",
-    }),
-  });
-
-  if (!resp.ok) {
-    console.error("[outlook/callback] subscription create failed:", {
-      status: resp.status,
-      json: resp.json,
-      text: resp.text?.slice(0, 800),
-    });
-    return null;
-  }
-
-  const id = String(resp.json?.id || "");
-  const expirationDateTime = String(resp.json?.expirationDateTime || "");
-  const resource = String(resp.json?.resource || "");
-  if (!id || !expirationDateTime) return null;
-  return { id, expirationDateTime, resource } as GraphSubscription;
-}
-
-async function renewGraphSubscription(args: {
-  accessToken: string;
-  subscriptionId: string;
-}) {
-  // Extend by +60min (safe default)
-  const newExp = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-  const url = `https://graph.microsoft.com/v1.0/subscriptions/${encodeURIComponent(
-    args.subscriptionId
-  )}`;
-
-  const resp = await fetchJson(url, {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${args.accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ expirationDateTime: newExp }),
-  });
-
-  if (!resp.ok) {
-    console.error("[outlook/callback] subscription renew failed:", {
-      status: resp.status,
-      json: resp.json,
-      text: resp.text?.slice(0, 800),
-    });
-    return null;
-  }
-
-  const expirationDateTime = String(resp.json?.expirationDateTime || newExp);
-  return {
-    id: String(resp.json?.id || args.subscriptionId),
-    expirationDateTime,
-    resource: String(resp.json?.resource || ""),
-  } as GraphSubscription;
-}
-
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
 
@@ -339,70 +259,49 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // 6) Ensure subscription exists (create/renew)
-  // We store: outlook_subscription_id + outlook_subscription_expiration + watch_topic (resource marker)
-  const notificationUrl = new URL(
-    "/api/outlook/webhook",
-    mustEnv("NEXT_PUBLIC_SITE_URL")
-  ).toString();
+  // 6) Trigger subscription creation/renew via the dedicated internal route
+  // Keep subscription logic centralized (idempotent + shared with renew cron).
+  const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL");
+  const pipelineSecret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET || "";
 
-  const clientState = mustEnv("OUTLOOK_WEBHOOK_CLIENT_STATE");
+  // Best-effort trigger: connection is already stored. If this fails,
+  // renew cron / manual retry can fix it.
+  if (pipelineSecret) {
+    const subUrl = new URL("/api/outlook/subscribe", siteUrl).toString();
 
-  // Default: Inbox only (safer, less noise)
-  const resource = "me/mailFolders('Inbox')/messages";
-
-  const { data: existingConn } = await (supabaseAdmin.from("email_connections") as any)
-    .select("outlook_subscription_id, outlook_subscription_expiration, watch_topic")
-    .eq("agent_id", agentId)
-    .eq("provider", "outlook")
-    .maybeSingle();
-
-  let sub: GraphSubscription | null = null;
-
-  const existingId = String(existingConn?.outlook_subscription_id || "").trim();
-  const existingExp = parseIso(existingConn?.outlook_subscription_expiration);
-
-  // If subscription exists and is still healthy (>20min left), keep it.
-  if (existingId && existingExp && minutesFromNow(existingExp) > 20) {
-    sub = {
-      id: existingId,
-      expirationDateTime: existingExp.toISOString(),
-      resource: String(existingConn?.watch_topic || resource),
-    };
-  } else if (existingId) {
-    // Try renew first (best effort)
-    sub = await renewGraphSubscription({ accessToken, subscriptionId: existingId });
-  }
-
-  if (!sub) {
-    sub = await createGraphSubscription({
-      accessToken,
-      notificationUrl,
-      clientState,
-      resource,
+    const subResp = await fetchJson(subUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-advaic-internal-secret": pipelineSecret,
+      },
+      body: JSON.stringify({ agentId }),
     });
-  }
 
-  if (sub) {
-    await (supabaseAdmin.from("email_connections") as any)
-      .update({
-        outlook_subscription_id: sub.id,
-        outlook_subscription_expiration: sub.expirationDateTime,
-        watch_active: true,
-        watch_topic: sub.resource || resource,
-        watch_last_renewed_at: nowIso(),
-        last_error: null,
-        needs_backfill: true,
-      })
-      .eq("agent_id", agentId)
-      .eq("provider", "outlook");
+    if (!subResp.ok) {
+      console.error("[outlook/callback] subscribe trigger failed:", {
+        status: subResp.status,
+        json: subResp.json,
+        text: subResp.text?.slice(0, 800),
+      });
+
+      // Fail-soft: keep connection usable, mark for renew/backfill.
+      await (supabaseAdmin.from("email_connections") as any)
+        .update({
+          watch_active: false,
+          needs_backfill: true,
+          last_error: "subscribe_trigger_failed",
+        })
+        .eq("agent_id", agentId)
+        .eq("provider", "outlook");
+    }
   } else {
-    // Fail-soft: connection is stored; webhook can be created later by cron/manual
+    // If secret missing, we can't trigger internally. Mark for renew/backfill.
     await (supabaseAdmin.from("email_connections") as any)
       .update({
         watch_active: false,
-        last_error: "subscription_create_failed",
         needs_backfill: true,
+        last_error: "missing_pipeline_secret",
       })
       .eq("agent_id", agentId)
       .eq("provider", "outlook");

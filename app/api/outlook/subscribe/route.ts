@@ -45,17 +45,23 @@ function tokenIsValid(expiresAtIso: string | null) {
 
 async function refreshOutlookAccessToken(args: { refreshToken: string }) {
   const clientId =
-    process.env.MICROSOFT_CLIENT_ID || process.env.AZURE_AD_CLIENT_ID;
+    process.env.OUTLOOK_CLIENT_ID ||
+    process.env.MICROSOFT_CLIENT_ID ||
+    process.env.AZURE_AD_CLIENT_ID;
+
   const clientSecret =
-    process.env.MICROSOFT_CLIENT_SECRET || process.env.AZURE_AD_CLIENT_SECRET;
+    process.env.OUTLOOK_CLIENT_SECRET ||
+    process.env.MICROSOFT_CLIENT_SECRET ||
+    process.env.AZURE_AD_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
     throw new Error(
-      "Missing MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET env vars"
+      "Missing OUTLOOK_CLIENT_ID / OUTLOOK_CLIENT_SECRET env vars"
     );
   }
 
   const tenant =
+    process.env.OUTLOOK_TENANT_ID ||
     process.env.MICROSOFT_TENANT_ID ||
     process.env.AZURE_AD_TENANT_ID ||
     "common";
@@ -68,10 +74,12 @@ async function refreshOutlookAccessToken(args: { refreshToken: string }) {
   body.set("grant_type", "refresh_token");
   body.set("refresh_token", args.refreshToken);
 
-  // IMPORTANT:
-  // For refresh token, scope must be compatible with what you consented.
-  // Using ".default" is fine if your app has delegated permissions configured.
-  body.set("scope", "https://graph.microsoft.com/.default");
+  // Refresh token calls must use a scope compatible with what the user consented.
+  // Allow override via env to avoid tenant-specific issues.
+  body.set(
+    "scope",
+    process.env.OUTLOOK_REFRESH_SCOPE || "https://graph.microsoft.com/.default"
+  );
 
   const resp = await fetch(tokenUrl, {
     method: "POST",
@@ -263,9 +271,8 @@ export async function POST(req: NextRequest) {
 
     const expMs = existingExp ? Date.parse(existingExp) : NaN;
     const shouldRenew =
-      existingSubId &&
-      Number.isFinite(expMs) &&
-      expMs - Date.now() < 24 * 60 * 60 * 1000; // renew if < 24h remaining
+      !!existingSubId &&
+      (!Number.isFinite(expMs) || expMs - Date.now() < 24 * 60 * 60 * 1000); // renew if missing/invalid exp or < 24h remaining
 
     if (existingSubId && shouldRenew) {
       const updated = await graphPatch(
@@ -283,6 +290,7 @@ export async function POST(req: NextRequest) {
         .update({
           outlook_subscription_id: existingSubId,
           outlook_subscription_expiration: newExp,
+          watch_expiration: newExp,
           watch_active: true,
           watch_topic: clientState,
           watch_last_renewed_at: nowIso(),
@@ -327,6 +335,7 @@ export async function POST(req: NextRequest) {
       .update({
         outlook_subscription_id: subId,
         outlook_subscription_expiration: subExp,
+        watch_expiration: subExp,
         watch_active: true,
         watch_topic: clientState, // used as clientState for webhook validation
         watch_last_renewed_at: nowIso(),

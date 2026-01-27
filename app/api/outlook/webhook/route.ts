@@ -115,14 +115,6 @@ export async function POST(req: NextRequest) {
 
   const supabase = supabaseAdmin();
 
-  // Anti-spoof: clientState must match what we set at subscription creation.
-  // Strongly recommended to set this in production.
-  const expectedClientState =
-    process.env.OUTLOOK_WEBHOOK_CLIENT_STATE ||
-    process.env.MS_GRAPH_WEBHOOK_CLIENT_STATE ||
-    "";
-  const enforceClientState = Boolean(expectedClientState);
-
   // Dedupe by subscriptionId and collect best-effort patch intentions.
   const bySub = new Map<
     string,
@@ -130,6 +122,7 @@ export async function POST(req: NextRequest) {
       subscriptionId: string;
       expiration?: string | null;
       mailboxId?: string | null;
+      clientState?: string | null;
       invalidClientState?: boolean;
       lifecycleEvent?: string | null;
     }
@@ -139,9 +132,7 @@ export async function POST(req: NextRequest) {
     const subId = safeString(n?.subscriptionId, 200).trim();
     if (!subId) continue;
 
-    const gotClientState = safeString(n?.clientState, 200);
-    const invalidClientState =
-      enforceClientState && gotClientState !== expectedClientState;
+    const gotClientState = n?.clientState ? safeString(n.clientState, 200) : "";
 
     const resource = safeString(n?.resource, 500);
     const mailboxId = resource ? extractMailboxIdFromResource(resource) : null;
@@ -158,11 +149,12 @@ export async function POST(req: NextRequest) {
           ? safeString(n.subscriptionExpirationDateTime, 120)
           : null,
         mailboxId,
-        invalidClientState,
+        clientState: gotClientState || null,
+        invalidClientState: false,
         lifecycleEvent,
       });
     } else {
-      prev.invalidClientState = prev.invalidClientState || invalidClientState;
+      if (!prev.clientState && gotClientState) prev.clientState = gotClientState;
       if (n?.subscriptionExpirationDateTime) {
         prev.expiration = safeString(n.subscriptionExpirationDateTime, 120);
       }
@@ -177,14 +169,23 @@ export async function POST(req: NextRequest) {
 
   // Fetch all matching connections in one query (reduces DB roundtrips).
   const { data: conns } = await (supabase.from("email_connections") as any)
-    .select("id, outlook_subscription_id")
+    .select("id, outlook_subscription_id, watch_topic")
     .eq("provider", "outlook")
     .in("outlook_subscription_id", subIds);
 
-  const idBySubId = new Map<string, string>();
+  const connBySubId = new Map<
+    string,
+    { id: string; expectedClientState: string | null }
+  >();
   for (const c of conns || []) {
     if (c?.outlook_subscription_id && c?.id) {
-      idBySubId.set(String(c.outlook_subscription_id), String(c.id));
+      connBySubId.set(String(c.outlook_subscription_id), {
+        id: String(c.id),
+        expectedClientState:
+          typeof c.watch_topic === "string" && c.watch_topic.trim()
+            ? c.watch_topic.trim()
+            : null,
+      });
     }
   }
 
@@ -196,15 +197,28 @@ export async function POST(req: NextRequest) {
   // - lifecycle removed: mark watch_active=false
   // - normal notification: needs_backfill=true, clear last_error
   for (const item of bySub.values()) {
-    const rowId = idBySubId.get(item.subscriptionId);
+    const conn = connBySubId.get(item.subscriptionId);
+    const rowId = conn?.id;
     if (!rowId) continue; // unknown subscription id
 
+    const expectedClientState = conn?.expectedClientState;
+    const gotClientState = item.clientState;
+
+    const invalidClientState =
+      !!expectedClientState &&
+      !!gotClientState &&
+      gotClientState !== expectedClientState;
+
+    const missingClientState = !!expectedClientState && !gotClientState;
+
     try {
-      // Invalid clientState: anti-spoof fail-closed
-      if (item.invalidClientState) {
+      // Invalid or missing clientState: anti-spoof fail-closed
+      if (invalidClientState || missingClientState) {
         await (supabase.from("email_connections") as any)
           .update({
-            last_error: "webhook_invalid_client_state",
+            last_error: missingClientState
+              ? "webhook_missing_client_state"
+              : "webhook_invalid_client_state",
             watch_active: true,
             watch_last_renewed_at: nowIso,
           })
@@ -235,8 +249,10 @@ export async function POST(req: NextRequest) {
           watch_active: true,
           watch_last_renewed_at: nowIso,
         };
-        if (item.expiration)
+        if (item.expiration) {
           patch.outlook_subscription_expiration = item.expiration;
+          patch.watch_expiration = item.expiration;
+        }
         if (item.mailboxId) patch.outlook_mailbox_id = item.mailboxId;
 
         await (supabase.from("email_connections") as any)
@@ -255,6 +271,7 @@ export async function POST(req: NextRequest) {
 
       if (item.expiration) {
         patch.outlook_subscription_expiration = item.expiration;
+        patch.watch_expiration = item.expiration;
       }
       if (item.mailboxId) {
         patch.outlook_mailbox_id = item.mailboxId;
