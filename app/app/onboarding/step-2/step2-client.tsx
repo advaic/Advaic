@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 type OnboardingRow = {
   agent_id: string;
@@ -31,6 +32,28 @@ async function fetchStatus(): Promise<StatusResponse> {
     };
   }
   return json as StatusResponse;
+}
+
+async function fetchEmailConnectedFlag(): Promise<boolean> {
+  try {
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
+
+    if (userErr || !user) return false;
+
+    const { data, error } = await supabase
+      .from("agent_settings")
+      .select("email_connected")
+      .eq("agent_id", user.id)
+      .maybeSingle();
+
+    if (error) return false;
+    return !!data?.email_connected;
+  } catch {
+    return false;
+  }
 }
 
 async function bootstrap(): Promise<boolean> {
@@ -332,12 +355,17 @@ export default function Step2Client() {
   const [error, setError] = useState<string | null>(null);
   const [oauthError, setOauthError] = useState<string | null>(null);
 
+  const [emailConnectedFlag, setEmailConnectedFlag] = useState(false);
+
   const [disclaimerOpen, setDisclaimerOpen] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<
     "gmail" | "outlook" | null
   >(null);
 
-  const emailConnected = useMemo(() => !!row?.step_email_connected_done, [row]);
+  const emailConnected = useMemo(
+    () => !!row?.step_email_connected_done || !!emailConnectedFlag,
+    [row, emailConnectedFlag]
+  );
 
   // 👉 passe diese URLs an, falls deine Routes anders heißen:
   const OAUTH_START = useMemo(
@@ -377,6 +405,11 @@ export default function Step2Client() {
 
       if ("ok" in st && st.ok === true) {
         setRow(st.onboarding);
+
+        // Also check the real connection flag (agent_settings.email_connected)
+        const flag = await fetchEmailConnectedFlag();
+        if (!cancelled) setEmailConnectedFlag(flag);
+
         setLoading(false);
         return;
       }
@@ -393,7 +426,6 @@ export default function Step2Client() {
 
   async function onContinue() {
     try {
-      // Step 2 als done markieren + next step
       await updateOnboarding({
         step_email_connected_done: true,
         current_step: 3,
