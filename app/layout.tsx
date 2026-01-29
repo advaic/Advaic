@@ -6,7 +6,7 @@ import SupabaseProvider from "./supabase-provider";
 import ClientRootLayout from "@/app/ClientRootLayout";
 
 export const metadata = {
-  title: "Advaic Dashboard",
+  title: "Advaic",
   description: "Dein AI-gestützter Maklerassistent",
 };
 

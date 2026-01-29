@@ -160,9 +160,16 @@ async function graphGet(url: string, accessToken: string) {
   }).catch(() => null);
 
   if (!resp) throw new Error("Graph request failed (network)");
+
   if (!resp.ok) {
     const t = await resp.text().catch(() => "");
-    throw new Error(`Graph request failed: ${resp.status} ${t}`);
+    const err = new Error(`Graph request failed: ${resp.status} ${t}`) as Error & {
+      status?: number;
+      body?: string;
+    };
+    err.status = resp.status;
+    err.body = t;
+    throw err;
   }
 
   const json = (await resp.json().catch(() => null)) as any;
@@ -170,6 +177,17 @@ async function graphGet(url: string, accessToken: string) {
     throw new Error("Graph response invalid JSON");
   }
   return json as GraphDeltaResponse;
+}
+
+function isDeltaGoneError(e: any) {
+  const status = Number(e?.status);
+  if (status === 410) return true;
+  const body = String(e?.body || e?.message || "").toLowerCase();
+  return (
+    body.includes("syncstatenotfound") ||
+    body.includes("deltatoken") ||
+    body.includes("invalid") && body.includes("delta")
+  );
 }
 
 /**
@@ -212,8 +230,57 @@ function extractEmailAddress(addrObj: any): string | null {
   return e;
 }
 
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function looksLikeNoReply(email: string | null) {
+  const e = (email || "").toLowerCase();
+  if (!e) return false;
+  const patterns = ["no-reply", "noreply", "do-not-reply", "donotreply"];
+  return patterns.some((p) => e.includes(p));
+}
+
+function looksLikePortalSender(email: string | null) {
+  const e = (email || "").toLowerCase();
+  if (!e) return false;
+  // Add only the portals we actually expect. Conservative list.
+  const portals = [
+    "immoscout",
+    "immowelt",
+    "immonet",
+    "funda",
+    "pararius",
+    "rightmove",
+    "zoopla",
+    "idealista",
+  ];
+  return portals.some((p) => e.includes(p));
+}
+
+function pickLeadEmail(args: {
+  fromEmail: string;
+  replyToEmail: string | null;
+  agentMailboxEmail: string | null;
+}) {
+  const from = normalizeEmail(args.fromEmail);
+  const replyTo = args.replyToEmail ? normalizeEmail(args.replyToEmail) : null;
+
+  // Never use the agent mailbox as lead email.
+  const agent = args.agentMailboxEmail
+    ? normalizeEmail(args.agentMailboxEmail)
+    : null;
+
+  const fromIsBad = looksLikeNoReply(from) || looksLikePortalSender(from);
+  const replyToIsUs = !!agent && !!replyTo && replyTo === agent;
+  const replyToIsBad = !replyTo || looksLikeNoReply(replyTo) || replyToIsUs;
+
+  // If sender looks like portal/no-reply, prefer replyTo if it looks usable.
+  if (fromIsBad && !replyToIsBad) return replyTo;
+
+  // Otherwise, default to from.
+  return from;
 }
 
 function sameEmail(a: string | null, b: string | null) {
@@ -232,18 +299,64 @@ async function findOrCreateLead(args: {
   supabase: any;
   agentId: string;
   email: string;
+  replyToEmail: string | null;
+  agentMailboxEmail: string | null;
   outlookConversationId: string | null;
   subject: string | null;
 }) {
   const { supabase, agentId } = args;
-  const email = normalizeEmail(args.email);
 
-  // Try find lead by exact email (case-insensitive)
+  const chosenEmail = pickLeadEmail({
+    fromEmail: args.email,
+    replyToEmail: args.replyToEmail,
+    agentMailboxEmail: args.agentMailboxEmail,
+  });
+
+  // 0) Prefer conversationId mapping (thread-equivalent) to avoid creating duplicates
+  if (args.outlookConversationId) {
+    const { data: byConv } = await (supabase.from("leads") as any)
+      .select("id, email, outlook_conversation_id")
+      .eq("agent_id", agentId)
+      .eq("outlook_conversation_id", args.outlookConversationId)
+      .limit(1)
+      .maybeSingle();
+
+    if (byConv?.id) {
+      const existingEmail = typeof byConv.email === "string" ? byConv.email : "";
+      const existingNorm = existingEmail ? normalizeEmail(existingEmail) : "";
+      const chosenNorm = chosenEmail ? normalizeEmail(chosenEmail) : "";
+
+      const existingIsBad = !existingNorm || looksLikeNoReply(existingNorm);
+      const chosenLooksGood = !!chosenNorm && !looksLikeNoReply(chosenNorm);
+
+      // Upgrade lead email if we currently have empty/no-reply and we now have a better one
+      if (existingIsBad && chosenLooksGood) {
+        await (supabase.from("leads") as any)
+          .update({
+            email: chosenNorm,
+            email_provider: "outlook",
+          })
+          .eq("id", byConv.id)
+          .eq("agent_id", agentId);
+      } else {
+        // still ensure provider is set
+        await (supabase.from("leads") as any)
+          .update({ email_provider: "outlook" })
+          .eq("id", byConv.id)
+          .eq("agent_id", agentId);
+      }
+
+      return String(byConv.id);
+    }
+  }
+
+  // 1) Fallback: try find lead by exact email
+  const emailNorm = normalizeEmail(chosenEmail);
+
   const { data: existing } = await (supabase.from("leads") as any)
     .select("id, email, outlook_conversation_id")
     .eq("agent_id", agentId)
-    // NOTE: we store emails lowercased in practice; if not, this still works if DB collation is case-sensitive.
-    .ilike("email", email)
+    .ilike("email", emailNorm)
     .limit(1)
     .maybeSingle();
 
@@ -261,11 +374,11 @@ async function findOrCreateLead(args: {
     return String(existing.id);
   }
 
-  // Create new lead
+  // 2) Create new lead
   const { data: created } = await (supabase.from("leads") as any)
     .insert({
       agent_id: agentId,
-      email,
+      email: emailNorm,
       email_provider: "outlook",
       outlook_conversation_id: args.outlookConversationId,
       subject: args.subject ? safeString(args.subject, 180) : null,
@@ -307,7 +420,7 @@ async function upsertInboundMessage(args: {
     snippet: safeString(args.snippet, 800),
     text: safeString(args.snippet, 2400),
 
-    email_address: args.fromEmail, // inbound sender
+    email_address: normalizeEmail(args.fromEmail), // inbound sender
     timestamp: args.receivedAt
       ? new Date(args.receivedAt).toISOString()
       : nowIso(),
@@ -343,9 +456,9 @@ export async function POST() {
       "id, agent_id, provider, status, email_address, access_token, refresh_token, expires_at, needs_backfill, outlook_delta_link, outlook_subscription_id, outlook_subscription_expiration, watch_active, last_error"
     )
     .eq("provider", "outlook")
-    // Process those flagged OR never initialized delta yet
-    .or("needs_backfill.eq.true,outlook_delta_link.is.null")
     .in("status", ["connected", "active"])
+    // Run for ALL active Outlook connections so delta polling keeps working.
+    // needs_backfill=true just means we might need to reset/initialize state.
     .order("id", { ascending: true })
     .limit(20);
 
@@ -441,8 +554,13 @@ export async function POST() {
           const fromEmail = extractEmailAddress(it?.from);
           if (!fromEmail) continue;
 
+          // reply-to (portal systems often put the real lead here)
+          const replyToEmail = Array.isArray(it?.replyTo) && it.replyTo.length > 0
+            ? extractEmailAddress(it.replyTo[0])
+            : null;
+
           // Skip self-sent/outbound copies (prevents drafting replies to the agent's own messages)
-          if (sameEmail(fromEmail, c.email_address)) continue;
+          if (c.email_address && sameEmail(fromEmail, c.email_address)) continue;
 
           // only process inbound-ish
           // (We’re pulling Inbox delta, so this is already mostly inbound.)
@@ -464,6 +582,8 @@ export async function POST() {
             supabase,
             agentId,
             email: fromEmail,
+            replyToEmail,
+            agentMailboxEmail: c.email_address || null,
             outlookConversationId: conversationId,
             subject,
           });
@@ -479,7 +599,7 @@ export async function POST() {
             conversationId,
             receivedAt,
             subject,
-            fromEmail: normalizeEmail(fromEmail),
+            fromEmail: fromEmail,
             snippet: bodyPreview || subject || "Neue Nachricht",
           });
 
@@ -536,15 +656,24 @@ export async function POST() {
     } catch (e: any) {
       const msg = safeString(e?.message || e, 5000);
 
-      // Fail-closed but keep needs_backfill true so it retries next run
+      // If delta state is gone/expired, reset the delta link so the next run re-initializes.
+      const resetDelta = isDeltaGoneError(e);
+
       await (supabase.from("email_connections") as any)
         .update({
           last_error: msg,
           needs_backfill: true,
+          ...(resetDelta ? { outlook_delta_link: null } : {}),
         })
         .eq("id", c.id);
 
-      results.push({ connId, agentId, ok: false, error: msg });
+      results.push({
+        connId,
+        agentId,
+        ok: false,
+        error: msg,
+        resetDelta,
+      });
       continue;
     }
   }

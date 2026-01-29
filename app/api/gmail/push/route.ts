@@ -122,6 +122,48 @@ function looksNoReply(from: string, replyTo: string) {
   );
 }
 
+// --- Lead email helpers ---
+function extractPrimaryEmail(headerValue: string) {
+  const s = String(headerValue || "").trim();
+  if (!s) return "";
+  const m = s.match(/<([^>]+)>/);
+  const addr = (m ? m[1] : s).trim();
+  return addr.toLowerCase();
+}
+
+function isProbablyNoReplyAddress(addr: string) {
+  const a = String(addr || "").toLowerCase();
+  return (
+    a.includes("no-reply") ||
+    a.includes("noreply") ||
+    a.includes("do-not-reply") ||
+    a.includes("donotreply")
+  );
+}
+
+function pickLeadEmail(args: {
+  fromHeader: string;
+  replyToHeader: string;
+  emailType: ClassifyResult["email_type"];
+}) {
+  const fromEmail = extractPrimaryEmail(args.fromHeader);
+  const replyEmail = extractPrimaryEmail(args.replyToHeader);
+
+  // Portal/relay best practice:
+  // - If emailType is PORTAL and Reply-To is present and not no-reply, prefer Reply-To.
+  // - Otherwise prefer From.
+  if (args.emailType === "PORTAL") {
+    if (replyEmail && !isProbablyNoReplyAddress(replyEmail)) return replyEmail;
+  }
+
+  // Generic safeguard: if From is no-reply but Reply-To is usable, prefer Reply-To.
+  if (fromEmail && isProbablyNoReplyAddress(fromEmail)) {
+    if (replyEmail && !isProbablyNoReplyAddress(replyEmail)) return replyEmail;
+  }
+
+  return fromEmail || replyEmail || "";
+}
+
 function safeFileName(name: string) {
   const base = String(name || "file").trim() || "file";
   return base.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
@@ -508,15 +550,8 @@ async function backfillRecentMessages(args: {
         : Date.now();
       const timestampIso = new Date(internalDateMs).toISOString();
 
-      function extractEmailAddress(h: string) {
-        const s = String(h || "");
-        const m = s.match(/<([^>]+)>/);
-        const addr = (m ? m[1] : s).trim();
-        return addr.toLowerCase();
-      }
-
       const isFromAgent =
-        extractEmailAddress(from) === String(emailAddress || "").toLowerCase();
+        extractPrimaryEmail(from) === String(emailAddress || "").toLowerCase();
       const sender = isFromAgent ? "agent" : "user";
 
       const hardBlocked =
@@ -548,6 +583,16 @@ async function backfillRecentMessages(args: {
         confidence = r.confidence;
         reason = r.reason;
       }
+
+      // Compute leadContactEmail (for inbound only)
+      const leadContactEmail =
+        sender !== "agent"
+          ? pickLeadEmail({
+              fromHeader: from,
+              replyToHeader: replyTo,
+              emailType: email_type,
+            })
+          : "";
 
       // Audit classification (best-effort)
       try {
@@ -583,17 +628,38 @@ async function backfillRecentMessages(args: {
 
       const { data: existingLead } = await supabase
         .from("leads")
-        .select("id")
+        .select("id,email")
         .eq("agent_id", connection.agent_id)
         .eq("gmail_thread_id", threadId)
         .maybeSingle();
 
       if (existingLead && (existingLead as any).id) {
         leadId = (existingLead as any).id as string;
-        await supabase
+        // Best-effort update: update last_message_at and leads.email if needed
+        const existingLeadEmail = String((existingLead as any)?.email || "").toLowerCase();
+        const shouldUpdateEmail =
+          leadContactEmail &&
+          (!existingLeadEmail || isProbablyNoReplyAddress(existingLeadEmail));
+
+        const leadUpdatePayload: any = { last_message_at: timestampIso };
+        if (shouldUpdateEmail) leadUpdatePayload.email = leadContactEmail;
+
+        const { error: leadUpdErr } = await supabase
           .from("leads")
-          .update({ last_message_at: timestampIso } as any)
+          .update(leadUpdatePayload)
           .eq("id", leadId);
+
+        // If the column doesn't exist in some environments, fail open (do not break ingestion)
+        if (
+          leadUpdErr &&
+          String(leadUpdErr.message || "").toLowerCase().includes("column") &&
+          String(leadUpdErr.message || "").toLowerCase().includes("email")
+        ) {
+          await supabase
+            .from("leads")
+            .update({ last_message_at: timestampIso } as any)
+            .eq("id", leadId);
+        }
       } else {
         if (sender === "agent") continue;
         const { data: newLead, error: leadInsErr } = await supabase
@@ -602,6 +668,7 @@ async function backfillRecentMessages(args: {
             agent_id: connection.agent_id,
             gmail_thread_id: threadId,
             last_message_at: timestampIso,
+            ...(leadContactEmail ? { email: leadContactEmail } : {}),
           } as any)
           .select("id")
           .single();
@@ -1039,17 +1106,9 @@ export async function POST(req: Request) {
         const timestampIso = new Date(internalDateMs).toISOString();
 
         // Determine sender: agent if message is from the connected Gmail account, else user
-        function extractEmailAddress(h: string) {
-          const s = String(h || "");
-          const m = s.match(/<([^>]+)>/);
-          const addr = (m ? m[1] : s).trim();
-          return addr.toLowerCase();
-        }
-
         const isFromAgent =
-          extractEmailAddress(from) ===
+          extractPrimaryEmail(from) ===
           String(emailAddress || "").toLowerCase();
-
         const sender = isFromAgent ? "agent" : "user";
 
         // --- Classification (bombensicher / fail-closed) ---
@@ -1084,6 +1143,16 @@ export async function POST(req: Request) {
           confidence = r.confidence;
           reason = r.reason;
         }
+
+        // Compute leadContactEmail (for inbound only)
+        const leadContactEmail =
+          sender !== "agent"
+            ? pickLeadEmail({
+                fromHeader: from,
+                replyToHeader: replyTo,
+                emailType: email_type,
+              })
+            : "";
 
         // Audit record (service role). This does NOT trigger any sending.
         // If you haven't created this table yet, create `email_classifications` per our earlier SQL.
@@ -1129,7 +1198,7 @@ export async function POST(req: Request) {
 
         const { data: existingLead, error: leadSelErr } = await supabase
           .from("leads")
-          .select("id")
+          .select("id,email")
           .eq("agent_id", connection.agent_id)
           .eq("gmail_thread_id", threadId)
           .maybeSingle();
@@ -1145,17 +1214,30 @@ export async function POST(req: Request) {
         if (existingLead && (existingLead as any).id) {
           leadId = (existingLead as any).id as string;
 
-          // keep last_message_at current
+          // Best-effort update: update last_message_at and leads.email if needed
+          const existingLeadEmail = String((existingLead as any)?.email || "").toLowerCase();
+          const shouldUpdateEmail =
+            leadContactEmail &&
+            (!existingLeadEmail || isProbablyNoReplyAddress(existingLeadEmail));
+
+          const leadUpdatePayload: any = { last_message_at: timestampIso };
+          if (shouldUpdateEmail) leadUpdatePayload.email = leadContactEmail;
+
           const { error: leadUpdErr } = await supabase
             .from("leads")
-            .update({ last_message_at: timestampIso } as any)
+            .update(leadUpdatePayload)
             .eq("id", leadId);
 
-          if (leadUpdErr) {
-            console.error(
-              "⚠️ Gmail Push: failed updating lead last_message_at",
-              leadUpdErr.message
-            );
+          // If the column doesn't exist in some environments, fail open (do not break ingestion)
+          if (
+            leadUpdErr &&
+            String(leadUpdErr.message || "").toLowerCase().includes("column") &&
+            String(leadUpdErr.message || "").toLowerCase().includes("email")
+          ) {
+            await supabase
+              .from("leads")
+              .update({ last_message_at: timestampIso } as any)
+              .eq("id", leadId);
           }
         } else {
           // Never create a lead from an outgoing (agent) email.
@@ -1176,6 +1258,7 @@ export async function POST(req: Request) {
               agent_id: connection.agent_id,
               gmail_thread_id: threadId,
               last_message_at: timestampIso,
+              ...(leadContactEmail ? { email: leadContactEmail } : {}),
             } as any)
             .select("id")
             .single();

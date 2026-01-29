@@ -101,7 +101,10 @@ export async function POST() {
     const agentId = String(d.agent_id);
     const leadId = String(d.lead_id);
 
-    const markFailed = async (send_error: string, extra?: Record<string, any>) => {
+    const markFailed = async (
+      send_error: string,
+      extra?: Record<string, any>
+    ) => {
       await (supabase.from("messages") as any)
         .update({
           status: "needs_human",
@@ -139,14 +142,20 @@ export async function POST() {
     }
 
     const provider = String(
-      lead?.email_provider || (lead?.outlook_conversation_id ? "outlook" : "gmail")
+      lead?.email_provider ||
+        (lead?.outlook_conversation_id ? "outlook" : "gmail")
     )
       .toLowerCase()
       .trim();
 
     if (provider !== "gmail" && provider !== "outlook") {
       await markFailed(`invalid_email_provider:${provider}`);
-      results.push({ messageId, leadId, status: "failed_invalid_provider", provider });
+      results.push({
+        messageId,
+        leadId,
+        status: "failed_invalid_provider",
+        provider,
+      });
       continue;
     }
 
@@ -161,7 +170,8 @@ export async function POST() {
     // 4) Call provider send route (idempotent + locked)
     const subject = buildSubject(lead);
 
-    const sendPath = provider === "outlook" ? "/api/outlook/send" : "/api/gmail/send";
+    const sendPath =
+      provider === "outlook" ? "/api/outlook/send" : "/api/gmail/send";
 
     const payload: Record<string, any> =
       provider === "outlook"

@@ -406,32 +406,82 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Acquire send lock
-  const nowIsoLock = new Date().toISOString();
-  const { data: lockRows, error: lockErr } = await (
-    supabaseAdmin.from("messages") as any
-  )
-    .update({
-      send_status: "sending",
-      send_locked_at: nowIsoLock,
-      send_error: null,
-    })
-    .eq("id", messageId)
-    .eq("agent_id", user.id)
-    .in("send_status", ["pending", "failed"])
-    .is("send_locked_at", null)
-    .select("id");
+  // --- Send lock helpers (global, self-healing) ---
+  const LOCK_STALE_MS = 10 * 60 * 1000; // 10 minutes
 
-  if (lockErr) {
-    console.error("[outlook/send] lock acquire failed:", lockErr.message);
-    return jsonError(500, "Failed to lock message");
+  async function acquireSendLock() {
+    const nowIsoLock = new Date().toISOString();
+
+    // First attempt: normal lock acquire (unlocked)
+    const { data: lockRows, error: lockErr } = await (
+      supabaseAdmin.from("messages") as any
+    )
+      .update({
+        send_status: "sending",
+        send_locked_at: nowIsoLock,
+        send_error: null,
+      })
+      .eq("id", messageId)
+      .eq("agent_id", user.id)
+      .in("send_status", ["pending", "failed"])
+      .is("send_locked_at", null)
+      .select("id");
+
+    if (lockErr) {
+      console.error("[outlook/send] lock acquire failed:", lockErr.message);
+      return { ok: false as const, error: "lock_acquire_failed" as const };
+    }
+
+    if (lockRows && lockRows.length > 0) {
+      return { ok: true as const, nowIsoLock };
+    }
+
+    // Second attempt: reclaim stale lock (self-heal)
+    // This covers:
+    // - send_status = "sending" with an old lock timestamp
+    // - send_status = "pending"/"failed" but still locked due to a previous crash
+    const staleBeforeIso = new Date(Date.now() - LOCK_STALE_MS).toISOString();
+
+    const { data: reclaimRows, error: reclaimErr } = await (
+      supabaseAdmin.from("messages") as any
+    )
+      .update({
+        send_status: "sending",
+        send_locked_at: nowIsoLock,
+        send_error: null,
+      })
+      .eq("id", messageId)
+      .eq("agent_id", user.id)
+      .in("send_status", ["pending", "failed", "sending"])
+      .not("send_locked_at", "is", null)
+      .lt("send_locked_at", staleBeforeIso)
+      .select("id");
+
+    if (reclaimErr) {
+      console.error("[outlook/send] lock reclaim failed:", reclaimErr.message);
+      return { ok: false as const, error: "lock_reclaim_failed" as const };
+    }
+
+    if (reclaimRows && reclaimRows.length > 0) {
+      return { ok: true as const, nowIsoLock, reclaimed: true };
+    }
+
+    // Not lockable and not stale => someone else is sending.
+    return { ok: false as const, error: "locked_or_in_progress" as const };
   }
 
-  if (!lockRows || lockRows.length === 0) {
-    return NextResponse.json(
-      { ok: true, status: "locked_or_in_progress" },
-      { status: 200 }
-    );
+  // Acquire send lock (idempotent + self-healing)
+  const lock = await acquireSendLock();
+
+  if (!lock.ok) {
+    if (lock.error === "locked_or_in_progress") {
+      return NextResponse.json(
+        { ok: true, status: "locked_or_in_progress" },
+        { status: 200 }
+      );
+    }
+
+    return jsonError(500, "Failed to lock message", { reason: lock.error });
   }
 
   // Get Graph access token

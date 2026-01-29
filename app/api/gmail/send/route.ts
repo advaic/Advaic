@@ -143,6 +143,18 @@ export async function POST(req: NextRequest) {
 
   const internal = isInternal(req);
 
+  const SEND_LOCK_STALE_MS = Number(
+    process.env.ADVAIC_SEND_LOCK_STALE_MS || 10 * 60 * 1000
+  ); // default 10 minutes
+
+  function isFiniteMs(n: number) {
+    return Number.isFinite(n) && n > 0;
+  }
+
+  function isoNow() {
+    return new Date().toISOString();
+  }
+
   // Admin client for DB reads/writes (service role)
   const supabaseAdmin = createClient<Database>(
     mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
@@ -264,6 +276,34 @@ export async function POST(req: NextRequest) {
 
   // 2b) Idempotency + send lock (prevents double-send)
 
+  // 2b.1) Reclaim stale send locks (self-heal)
+  // If a previous send attempt set send_status='sending' but never cleared the lock
+  // (e.g., function crash/timeout), allow recovery after a short TTL.
+  if (isFiniteMs(SEND_LOCK_STALE_MS)) {
+    const cutoffIso = new Date(Date.now() - SEND_LOCK_STALE_MS).toISOString();
+
+    // If the row is stuck in `sending` with an old lock timestamp, mark as failed and clear lock.
+    // This is safe because we still have the `already_sent` short-circuit above.
+    await (supabaseAdmin.from("messages") as any)
+      .update({
+        send_status: "failed",
+        send_error: "stale_lock_reclaimed",
+        send_locked_at: null,
+      })
+      .eq("id", messageId)
+      .eq("agent_id", user.id)
+      .eq("send_status", "sending")
+      .lt("send_locked_at", cutoffIso);
+
+    // Also clear any old lock timestamp if status is pending/failed but lock wasn't cleared.
+    await (supabaseAdmin.from("messages") as any)
+      .update({ send_locked_at: null })
+      .eq("id", messageId)
+      .eq("agent_id", user.id)
+      .in("send_status", ["pending", "failed"])
+      .lt("send_locked_at", cutoffIso);
+  }
+
   // If already sent, short-circuit
   {
     const { data: statusRow, error: statusErr } = await (
@@ -295,7 +335,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Acquire lock: allow retry from failed, but only when unlocked
-  const nowIsoLock = new Date().toISOString();
+  const nowIsoLock = isoNow();
   const { data: lockRows, error: lockErr } = await (
     supabaseAdmin.from("messages") as any
   )

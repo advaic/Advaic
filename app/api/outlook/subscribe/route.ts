@@ -35,6 +35,28 @@ function safeString(x: unknown, max = 5000) {
   return String(x ?? "").slice(0, max);
 }
 
+function isLikelyHttpsUrl(u: string) {
+  try {
+    const url = new URL(u);
+    return url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function safeClientState(x: unknown) {
+  // Graph requires clientState <= 128 chars
+  const v = String(x ?? "").trim();
+  if (!v) return "";
+  return v.slice(0, 128);
+}
+
+function isGraphNotFound(e: any): boolean {
+  const msg = String(e?.message || "");
+  // Graph errors often include 404/NotFound in the message text
+  return msg.includes(" 404 ") || msg.toLowerCase().includes("notfound") || msg.toLowerCase().includes("resource not found");
+}
+
 function tokenIsValid(expiresAtIso: string | null) {
   if (!expiresAtIso) return false;
   const t = Date.parse(expiresAtIso);
@@ -185,6 +207,16 @@ export async function POST(req: NextRequest) {
   const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL");
   const notificationUrl = new URL("/api/outlook/webhook", siteUrl).toString();
 
+  if (!isLikelyHttpsUrl(notificationUrl)) {
+    return NextResponse.json(
+      {
+        error: "Invalid notificationUrl (must be https)",
+        notificationUrl,
+      },
+      { status: 500 }
+    );
+  }
+
   // Load connection
   const { data: conn, error: connErr } = await (
     supabase.from("email_connections") as any
@@ -253,10 +285,8 @@ export async function POST(req: NextRequest) {
     const desiredExpiration = computeExpirationIso();
 
     // Ensure we have a stable clientState (store in watch_topic)
-    const clientState =
-      typeof conn.watch_topic === "string" && conn.watch_topic.trim()
-        ? conn.watch_topic.trim()
-        : genClientState();
+    const existingClientState = safeClientState(conn.watch_topic);
+    const clientState = existingClientState || genClientState();
 
     // 1) Try renew existing subscription if it exists and not too close to expiration
     const existingSubId =
@@ -275,36 +305,42 @@ export async function POST(req: NextRequest) {
       (!Number.isFinite(expMs) || expMs - Date.now() < 24 * 60 * 60 * 1000); // renew if missing/invalid exp or < 24h remaining
 
     if (existingSubId && shouldRenew) {
-      const updated = await graphPatch(
-        `https://graph.microsoft.com/v1.0/subscriptions/${encodeURIComponent(
-          existingSubId
-        )}`,
-        accessToken!,
-        { expirationDateTime: desiredExpiration }
-      );
+      try {
+        const updated = await graphPatch(
+          `https://graph.microsoft.com/v1.0/subscriptions/${encodeURIComponent(
+            existingSubId
+          )}`,
+          accessToken!,
+          { expirationDateTime: desiredExpiration }
+        );
 
-      const newExp =
-        safeString(updated?.expirationDateTime, 64) || desiredExpiration;
+        const newExp =
+          safeString(updated?.expirationDateTime, 64) || desiredExpiration;
 
-      await (supabase.from("email_connections") as any)
-        .update({
+        await (supabase.from("email_connections") as any)
+          .update({
+            outlook_subscription_id: existingSubId,
+            outlook_subscription_expiration: newExp,
+            watch_expiration: newExp,
+            watch_active: true,
+            watch_topic: clientState,
+            watch_last_renewed_at: nowIso(),
+            last_error: null,
+          })
+          .eq("id", connId);
+
+        return NextResponse.json({
+          ok: true,
+          action: "renewed",
+          connection_id: connId,
           outlook_subscription_id: existingSubId,
           outlook_subscription_expiration: newExp,
-          watch_expiration: newExp,
-          watch_active: true,
-          watch_topic: clientState,
-          watch_last_renewed_at: nowIso(),
-          last_error: null,
-        })
-        .eq("id", connId);
-
-      return NextResponse.json({
-        ok: true,
-        action: "renewed",
-        connection_id: connId,
-        outlook_subscription_id: existingSubId,
-        outlook_subscription_expiration: newExp,
-      });
+        });
+      } catch (e: any) {
+        // If subscription was deleted/expired server-side, recreate.
+        if (!isGraphNotFound(e)) throw e;
+      }
+      // fallthrough to create
     }
 
     // 2) If no subscription or not renewable, create a new one (safe path)
@@ -316,7 +352,9 @@ export async function POST(req: NextRequest) {
         notificationUrl,
         // For mailbox events, Graph typically supports this resource:
         // IMPORTANT: This is per-user /me subscription (works with delegated token).
-        resource: "/me/mailFolders('Inbox')/messages",
+        resource:
+          process.env.OUTLOOK_SUBSCRIPTION_RESOURCE ||
+          "/me/mailFolders('Inbox')/messages",
         expirationDateTime: desiredExpiration,
         clientState,
         latestSupportedTlsVersion: "v1_2",
@@ -354,10 +392,19 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     const msg = safeString(e?.message || e, 5000);
 
+    const shouldClearSub = isGraphNotFound(e);
+
     await (supabase.from("email_connections") as any)
       .update({
         last_error: msg,
         watch_active: false,
+        ...(shouldClearSub
+          ? {
+              outlook_subscription_id: null,
+              outlook_subscription_expiration: null,
+              watch_expiration: null,
+            }
+          : {}),
       })
       .eq("id", connId);
 

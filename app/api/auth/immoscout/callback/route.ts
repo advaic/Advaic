@@ -48,6 +48,32 @@ function parseOAuthResponse(body: string): Record<string, string> {
   return out;
 }
 
+const IMMOSCOUT_RETURN_TO_COOKIE = "advaic_immoscout_return_to";
+
+function safeReturnTo(v: string | null | undefined): string {
+  const s = String(v ?? "").trim();
+  if (!s) return "/app/konto/verknuepfungen";
+
+  // only allow internal paths
+  if (!s.startsWith("/")) return "/app/konto/verknuepfungen";
+
+  // allowlist prefixes (avoid open redirects)
+  const ok = s.startsWith("/app/") || s.startsWith("/onboarding") || s.startsWith("/app/onboarding");
+  if (!ok) return "/app/konto/verknuepfungen";
+
+  // very defensive: strip protocol-like patterns
+  if (s.startsWith("//")) return "/app/konto/verknuepfungen";
+
+  return s;
+}
+
+function redirectWithCookieClear(req: NextRequest, nextPath: string) {
+  const url = new URL(nextPath, req.url);
+  const res = NextResponse.redirect(url);
+  res.cookies.set({ name: IMMOSCOUT_RETURN_TO_COOKIE, value: "", path: "/", maxAge: 0 });
+  return res;
+}
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const oauthToken = url.searchParams.get("oauth_token");
@@ -71,7 +97,7 @@ export async function GET(req: NextRequest) {
   const {
     data: { user },
   } = await supabaseAuth.auth.getUser();
-  if (!user) return NextResponse.redirect(new URL("/login", req.url));
+  if (!user) return redirectWithCookieClear(req, "/login");
 
   // NOTE: We intentionally type this client as `any` so we can access tables
   // that may not yet exist in `types/supabase.ts` without TS inferring `never`.
@@ -81,12 +107,14 @@ export async function GET(req: NextRequest) {
     { auth: { persistSession: false, autoRefreshToken: false } }
   );
 
-  const next = new URL("/app/konto/verknuepfungen", req.url);
+  const returnToCookie = req.cookies.get(IMMOSCOUT_RETURN_TO_COOKIE)?.value;
+  const returnTo = safeReturnTo(returnToCookie);
+  const next = new URL(returnTo, req.url);
 
   if (!oauthToken || !oauthVerifier) {
     next.searchParams.set("immoscout", "error");
     next.searchParams.set("reason", "missing_oauth_params");
-    return NextResponse.redirect(next);
+    return redirectWithCookieClear(req, next.toString());
   }
 
   // Load pending request token secret from DB
@@ -103,7 +131,7 @@ export async function GET(req: NextRequest) {
   ) {
     next.searchParams.set("immoscout", "error");
     next.searchParams.set("reason", "no_pending_request_token");
-    return NextResponse.redirect(next);
+    return redirectWithCookieClear(req, next.toString());
   }
 
   const { env, baseUrl, consumerKey, consumerSecret } = getImmoScoutEnv();
@@ -147,7 +175,7 @@ export async function GET(req: NextRequest) {
 
     next.searchParams.set("immoscout", "error");
     next.searchParams.set("reason", "access_token_failed");
-    return NextResponse.redirect(next);
+    return redirectWithCookieClear(req, next.toString());
   }
 
   const parsed = parseOAuthResponse(txt);
@@ -157,7 +185,7 @@ export async function GET(req: NextRequest) {
   if (!accessToken || !accessTokenSecret) {
     next.searchParams.set("immoscout", "error");
     next.searchParams.set("reason", "missing_access_token");
-    return NextResponse.redirect(next);
+    return redirectWithCookieClear(req, next.toString());
   }
 
   await supabaseAdmin
@@ -178,5 +206,5 @@ export async function GET(req: NextRequest) {
     .eq("agent_id", user.id);
 
   next.searchParams.set("immoscout", "connected");
-  return NextResponse.redirect(next);
+  return redirectWithCookieClear(req, next.toString());
 }

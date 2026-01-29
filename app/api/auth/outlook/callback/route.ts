@@ -78,12 +78,18 @@ export async function GET(req: NextRequest) {
   const error = url.searchParams.get("error");
   const errorDescription = url.searchParams.get("error_description");
 
+  const returnToCookie = sanitizeReturnTo(
+    req.cookies.get("advaic_outlook_return_to")?.value || null
+  );
+
   // 0) Provider error -> redirect back with error, clear transient cookies
   if (error) {
     const redirectBase = mustEnv("NEXT_PUBLIC_SITE_URL");
+    const target = returnToCookie || "/konto";
+    const joiner = target.includes("?") ? "&" : "?";
     const res = NextResponse.redirect(
       new URL(
-        `/konto?outlook=error&reason=${encodeURIComponent(
+        `${target}${joiner}outlook=error&reason=${encodeURIComponent(
           String(error).slice(0, 200)
         )}`,
         redirectBase
@@ -122,9 +128,6 @@ export async function GET(req: NextRequest) {
     req.cookies.get("advaic_outlook_oauth_state")?.value || "";
   const verifierCookie =
     req.cookies.get("advaic_outlook_pkce_verifier")?.value || "";
-  const returnToCookie = sanitizeReturnTo(
-    req.cookies.get("advaic_outlook_return_to")?.value || null
-  );
 
   if (!stateCookie || stateCookie !== state) {
     return NextResponse.json({ error: "Invalid state" }, { status: 400 });

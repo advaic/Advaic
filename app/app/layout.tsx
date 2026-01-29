@@ -1,7 +1,7 @@
 // app/app/layout.tsx
 
 export const metadata = {
-  title: "Advaic Dashboard",
+  title: "Advaic",
   description: "Dein AI-gestützter Maklerassistent",
 };
 

@@ -14,6 +14,7 @@ export const runtime = "nodejs";
  *
  * Webhooks MUST respond fast (<10s). We only do minimal DB updates here.
  * Actual fetching should happen in a separate runner (delta query).
+ * This handler intentionally batches DB writes to avoid per-notification round-trips.
  */
 
 function mustEnv(name: string): string {
@@ -191,15 +192,16 @@ export async function POST(req: NextRequest) {
 
   const nowIso = new Date().toISOString();
 
-  // Apply minimal updates per known subscription.
-  // - invalid clientState: mark error, do NOT set needs_backfill
-  // - lifecycle reauth: mark last_error + needs_backfill (so runner can renew)
-  // - lifecycle removed: mark watch_active=false
-  // - normal notification: needs_backfill=true, clear last_error
+  // Batch updates to keep webhook latency low.
+  const invalidIds: string[] = [];
+  const removedIds: string[] = [];
+  const reauthIds: string[] = [];
+  const normalIds: string[] = [];
+
   for (const item of bySub.values()) {
     const conn = connBySubId.get(item.subscriptionId);
     const rowId = conn?.id;
-    if (!rowId) continue; // unknown subscription id
+    if (!rowId) continue;
 
     const expectedClientState = conn?.expectedClientState;
     const gotClientState = item.clientState;
@@ -211,78 +213,85 @@ export async function POST(req: NextRequest) {
 
     const missingClientState = !!expectedClientState && !gotClientState;
 
+    if (invalidClientState || missingClientState) {
+      invalidIds.push(rowId);
+      continue;
+    }
+
+    const lifecycle = item.lifecycleEvent ? String(item.lifecycleEvent) : null;
+
+    if (isLifecycleEventRemoved(lifecycle)) {
+      removedIds.push(rowId);
+      continue;
+    }
+
+    if (isLifecycleEventReauth(lifecycle)) {
+      reauthIds.push(rowId);
+      continue;
+    }
+
+    normalIds.push(rowId);
+  }
+
+  // 1) Invalid/missing clientState: anti-spoof fail-closed
+  if (invalidIds.length > 0) {
     try {
-      // Invalid or missing clientState: anti-spoof fail-closed
-      if (invalidClientState || missingClientState) {
-        await (supabase.from("email_connections") as any)
-          .update({
-            last_error: missingClientState
-              ? "webhook_missing_client_state"
-              : "webhook_invalid_client_state",
-            watch_active: true,
-            watch_last_renewed_at: nowIso,
-          })
-          .eq("id", rowId);
-        continue;
-      }
+      await (supabase.from("email_connections") as any)
+        .update({
+          last_error: "webhook_invalid_or_missing_client_state",
+          watch_active: true,
+          watch_last_renewed_at: nowIso,
+        })
+        .in("id", invalidIds);
+    } catch {
+      // swallow
+    }
+  }
 
-      const lifecycle = item.lifecycleEvent
-        ? String(item.lifecycleEvent)
-        : null;
+  // 2) Subscription removed
+  if (removedIds.length > 0) {
+    try {
+      await (supabase.from("email_connections") as any)
+        .update({
+          watch_active: false,
+          last_error: "outlook_subscription_removed",
+          watch_last_renewed_at: nowIso,
+        })
+        .in("id", removedIds);
+    } catch {
+      // swallow
+    }
+  }
 
-      if (isLifecycleEventRemoved(lifecycle)) {
-        await (supabase.from("email_connections") as any)
-          .update({
-            watch_active: false,
-            last_error: "outlook_subscription_removed",
-            watch_last_renewed_at: nowIso,
-          })
-          .eq("id", rowId);
-        continue;
-      }
-
-      if (isLifecycleEventReauth(lifecycle)) {
-        // Graph asks us to renew; set flag so your renew runner prioritizes it.
-        const patch: Record<string, any> = {
+  // 3) Reauth required
+  if (reauthIds.length > 0) {
+    try {
+      await (supabase.from("email_connections") as any)
+        .update({
           needs_backfill: true,
           last_error: "outlook_reauth_required",
           watch_active: true,
           watch_last_renewed_at: nowIso,
-        };
-        if (item.expiration) {
-          patch.outlook_subscription_expiration = item.expiration;
-          patch.watch_expiration = item.expiration;
-        }
-        if (item.mailboxId) patch.outlook_mailbox_id = item.mailboxId;
-
-        await (supabase.from("email_connections") as any)
-          .update(patch)
-          .eq("id", rowId);
-        continue;
-      }
-
-      // Normal notification
-      const patch: Record<string, any> = {
-        needs_backfill: true,
-        last_error: null,
-        watch_active: true,
-        watch_last_renewed_at: nowIso,
-      };
-
-      if (item.expiration) {
-        patch.outlook_subscription_expiration = item.expiration;
-        patch.watch_expiration = item.expiration;
-      }
-      if (item.mailboxId) {
-        patch.outlook_mailbox_id = item.mailboxId;
-      }
-
-      await (supabase.from("email_connections") as any)
-        .update(patch)
-        .eq("id", rowId);
+        })
+        .in("id", reauthIds);
     } catch {
-      // swallow errors; webhook must always ack quickly
-      continue;
+      // swallow
+    }
+  }
+
+  // 4) Normal notification => needs_backfill
+  if (normalIds.length > 0) {
+    try {
+      await (supabase.from("email_connections") as any)
+        .update({
+          needs_backfill: true,
+          last_error: null,
+          watch_active: true,
+          watch_last_renewed_at: nowIso,
+        })
+        .in("id", normalIds);
+    } catch {
+      // swallow
     }
   }
 

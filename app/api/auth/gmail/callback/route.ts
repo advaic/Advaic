@@ -104,13 +104,22 @@ export async function GET(req: NextRequest) {
   const rawState = url.searchParams.get("state") || "";
   const decodedState = safeDecodeURIComponent(rawState);
 
-  // Only allow app-internal redirects
-  const nextPath = decodedState.startsWith("/app")
-    ? decodedState
+  // Only allow internal redirects (we use `state` as a return path).
+  // Our app routes live under `/app/...` (including onboarding).
+  // Older callers might send `/onboarding/...` without the `/app` prefix — normalize it.
+  const normalizedState = decodedState.startsWith("/onboarding")
+    ? `/app${decodedState}`
+    : decodedState;
+
+  const isAllowedReturnPath =
+    normalizedState.startsWith("/app/") || normalizedState === "/app";
+
+  const nextPath = isAllowedReturnPath
+    ? normalizedState
     : "/app/konto/verknuepfungen";
 
   if (!code) {
-    const redirectUrl = new URL("/app/konto/verknuepfungen", siteUrl);
+    const redirectUrl = new URL(nextPath, siteUrl);
     redirectUrl.searchParams.set("gmail", "missing_code");
     return NextResponse.redirect(redirectUrl);
   }
@@ -330,7 +339,7 @@ export async function GET(req: NextRequest) {
 
     // Do NOT leak raw error messages into a public URL query param.
     // Keep it user-friendly + stable, and log details server-side only.
-    const errUrl = new URL("/app/konto/verknuepfungen", siteUrl);
+    const errUrl = new URL(nextPath, siteUrl);
     errUrl.searchParams.set("gmail", "error");
     errUrl.searchParams.set("reason", "connect_failed");
 

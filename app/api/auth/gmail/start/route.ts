@@ -35,7 +35,10 @@ export async function GET(req: NextRequest) {
 
   const base = "https://accounts.google.com/o/oauth2/v2/auth";
 
-  const redirectUri = new URL("/api/auth/gmail/callback", mustEnv("NEXT_PUBLIC_SITE_URL")).toString();
+  const redirectUri = new URL(
+    "/api/auth/gmail/callback",
+    mustEnv("NEXT_PUBLIC_SITE_URL")
+  ).toString();
 
   const params = new URLSearchParams({
     client_id: mustEnv("GOOGLE_CLIENT_ID"),

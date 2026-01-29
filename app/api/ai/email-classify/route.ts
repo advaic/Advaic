@@ -73,6 +73,37 @@ function s(v: any, max: number) {
   return String(v ?? "").slice(0, max);
 }
 
+function extractEmails(raw: string): string[] {
+  const t = String(raw || "");
+  const matches = t.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi);
+  return Array.from(new Set((matches || []).map((m) => m.trim())));
+}
+
+function getEmailDomain(email: string): string {
+  const e = String(email || "")
+    .trim()
+    .toLowerCase();
+  const at = e.lastIndexOf("@");
+  if (at < 0) return "";
+  return e.slice(at + 1).replace(/[^a-z0-9.-]/g, "");
+}
+
+function isProbablyValidEmail(email: string): boolean {
+  const e = String(email || "").trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+
+function parsePrimaryEmail(raw: string): string {
+  const emails = extractEmails(raw);
+  return emails[0] || "";
+}
+
+function domainIsOneOf(domain: string, allow: string[]): boolean {
+  const d = String(domain || "").toLowerCase();
+  if (!d) return false;
+  return allow.some((a) => d === a || d.endsWith(`.${a}`));
+}
+
 function looksLikeMailerDaemon(from: string, subject: string) {
   const f = from.toLowerCase();
   const sub = subject.toLowerCase();
@@ -115,10 +146,21 @@ function isNoReplyAddress(from: string, replyTo: string) {
   return patterns.some((p) => f.includes(p) || r.includes(p));
 }
 
+function normalizeHaystack(...parts: string[]) {
+  return parts
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .replace(/[<>]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function looksLikePortalSender(from: string, replyTo: string, to: string) {
-  const hay = `${from} ${replyTo} ${to}`.toLowerCase();
-  // Add/extend as you onboard more portals
-  const portalDomains = [
+  const hay = normalizeHaystack(from, replyTo, to);
+
+  // Sender-side portal fingerprints (used for routing confidence)
+  const portalNeedles = [
     "immobilienscout24",
     "immoscout24",
     "immowelt",
@@ -128,8 +170,10 @@ function looksLikePortalSender(from: string, replyTo: string, to: string) {
     "idealista",
     "rightmove",
     "zoopla",
+    "scout24",
   ];
-  return portalDomains.some((d) => hay.includes(d));
+
+  return portalNeedles.some((d) => hay.includes(d));
 }
 
 function looksLikePropertyInquiry(subject: string, snippet: string) {
@@ -156,12 +200,104 @@ function looksLikePropertyInquiry(subject: string, snippet: string) {
   return kw.some((k) => t.includes(k));
 }
 
+function looksLikePortalInquiry(subject: string, snippet: string) {
+  const t = `${subject}\n${snippet}`.toLowerCase();
+  // Phrases that frequently appear in portal contact requests
+  const kw = [
+    "kontaktanfrage",
+    "neue anfrage",
+    "neue kontaktanfrage",
+    "interessent",
+    "nachricht von",
+    "kontaktformular",
+    "exposé angefordert",
+    "expose angefordert",
+    "besichtigung anfragen",
+    "besichtigungstermin",
+    "anfrage zur immobilie",
+  ];
+  return kw.some((k) => t.includes(k));
+}
+
 function hasUsableReplyTarget(from: string, replyTo: string) {
-  const r = String(replyTo || "").trim();
-  if (!r) return false;
+  const fRaw = String(from || "").trim();
+  const rRaw = String(replyTo || "").trim();
+
+  const f = parsePrimaryEmail(fRaw);
+  const r = parsePrimaryEmail(rRaw);
+
+  if (!r || !isProbablyValidEmail(r)) return false;
+
   // If reply-to is also a no-reply address, it's not usable.
-  if (isNoReplyAddress(from, r)) return false;
+  if (isNoReplyAddress(fRaw, rRaw)) return false;
+
+  // If From is a no-reply address, we require Reply-To to be different.
+  if (f && r && f.toLowerCase() === r.toLowerCase()) return false;
+
   return true;
+}
+
+function isPortalReplyRelayAllowed(from: string, replyTo: string, to: string) {
+  const f = parsePrimaryEmail(from);
+  const r = parsePrimaryEmail(replyTo);
+
+  if (!hasUsableReplyTarget(from, replyTo)) return false;
+
+  const fromDomain = getEmailDomain(f);
+  const replyDomain = getEmailDomain(r);
+
+  // Adjustable allowlists (keep short + expand as you see real data)
+  const PORTAL_SENDER_DOMAINS = [
+    "immobilienscout24.de",
+    "immoscout24.de",
+    "scout24.com",
+    "immowelt.de",
+    "immonet.de",
+    "funda.nl",
+    "pararius.com",
+    "idealista.com",
+    "rightmove.co.uk",
+    "zoopla.co.uk",
+  ];
+
+  // Reply relays frequently used by portals.
+  // We allow subdomains as well (domainIsOneOf handles that).
+  const PORTAL_REPLY_RELAY_DOMAINS = [
+    "reply.immobilienscout24.de",
+    "reply.immoscout24.de",
+    "reply.scout24.com",
+    "reply.immowelt.de",
+    "reply.immonet.de",
+  ];
+
+  const portalLike = looksLikePortalSender(from, replyTo, to);
+
+  // If the From domain is a known portal domain, we accept a relay that is either:
+  // - in explicit relay allowlist OR
+  // - different from From and looks like a relay (starts with reply.*)
+  const fromIsPortal = domainIsOneOf(fromDomain, PORTAL_SENDER_DOMAINS);
+  const replyIsKnownRelay = domainIsOneOf(
+    replyDomain,
+    PORTAL_REPLY_RELAY_DOMAINS
+  );
+
+  const replyLooksLikeRelay =
+    !!replyDomain &&
+    (replyDomain.startsWith("reply.") || replyDomain.includes("reply"));
+
+  // Strict mode: if From is clearly no-reply and portal-like, require reply relay allow.
+  // This prevents accidental auto-replies to random newsletters that happen to include keywords.
+  if (portalLike) {
+    if (fromIsPortal) {
+      return replyIsKnownRelay || replyLooksLikeRelay;
+    }
+    // If we don't recognize the sender domain as portal but it still looks portal-like,
+    // allow only if reply domain looks like a relay (conservative).
+    return replyLooksLikeRelay;
+  }
+
+  // Non-portal senders should not pass this portal relay check.
+  return false;
 }
 
 function isBulkOrNewsletterSignal(
@@ -184,7 +320,6 @@ function isBulkOrNewsletterSignal(
     "promotion",
     "angebot",
     "sale",
-    "%",
   ];
   return kw.some((k) => t.includes(k));
 }
@@ -207,11 +342,31 @@ function enforceHardRules(
 
   const portalLike = looksLikePortalSender(from, replyTo, body.to || "");
   const inquiryLike = looksLikePropertyInquiry(subject, snippet);
+  const portalInquiryLike = looksLikePortalInquiry(subject, snippet);
+
+  // 1.5) Deterministic fast-path: portal inquiry that we can safely reply to.
+  // Many portals send from no-reply but set Reply-To to a relay that forwards to the requester.
+  if (
+    portalLike &&
+    (inquiryLike || portalInquiryLike) &&
+    isPortalReplyRelayAllowed(from, replyTo, body.to || "")
+  ) {
+    return {
+      decision: "auto_reply",
+      email_type: "PORTAL",
+      confidence: 1,
+      reason: "portal_inquiry_replyto_relay_allowed",
+    };
+  }
 
   // 2) no-reply => never auto-reply UNLESS this is a portal inquiry and we have a usable Reply-To.
   // Many portals send from no-reply but set Reply-To to a relay address that accepts replies.
   if (body.isNoReply || isNoReplyAddress(from, replyTo)) {
-    if (portalLike && inquiryLike && hasUsableReplyTarget(from, replyTo)) {
+    if (
+      portalLike &&
+      inquiryLike &&
+      isPortalReplyRelayAllowed(from, replyTo, body.to || "")
+    ) {
       // Let the model decide (could be PORTAL lead). Do not hard-block.
       return null;
     }
@@ -397,22 +552,31 @@ ${snippet}
   };
 
   // Extra safety: never auto-reply if caller marked isNoReply
+  // EXCEPT: portal inquiries where Reply-To is an allowed relay.
   if (
     final.decision === "auto_reply" &&
     (body.isNoReply || isNoReplyAddress(from, replyTo))
   ) {
-    final.decision = "needs_approval";
-    final.reason = "no_reply_guard";
+    const portalLike = looksLikePortalSender(from, replyTo, to);
+    const inquiryLike =
+      looksLikePropertyInquiry(subject, snippet) ||
+      looksLikePortalInquiry(subject, snippet);
+    const relayOk = isPortalReplyRelayAllowed(from, replyTo, to);
+
+    if (!(portalLike && inquiryLike && relayOk)) {
+      final.decision = "needs_approval";
+      final.reason = "no_reply_guard";
+    }
   }
 
-  // Extra safety: if From is no-reply and Reply-To is missing/empty, never auto-reply.
+  // Extra safety: if From is no-reply and Reply-To relay is not allowed, never auto-reply.
   if (
     final.decision === "auto_reply" &&
     isNoReplyAddress(from, replyTo) &&
-    !hasUsableReplyTarget(from, replyTo)
+    !isPortalReplyRelayAllowed(from, replyTo, to)
   ) {
     final.decision = "needs_approval";
-    final.reason = "no_reply_missing_replyto_guard";
+    final.reason = "no_reply_missing_or_untrusted_replyto_guard";
   }
 
   return NextResponse.json(final);

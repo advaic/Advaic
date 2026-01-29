@@ -7,6 +7,34 @@ import type { Database } from "@/types/supabase";
 
 export const runtime = "nodejs";
 
+const RETURN_TO_COOKIE = "advaic_immoscout_return_to";
+
+function safeReturnTo(raw: string | null | undefined): string {
+  const v = String(raw ?? "").trim();
+  if (!v) return "/app/konto/verknuepfungen";
+
+  // only allow internal paths
+  if (!v.startsWith("/")) return "/app/konto/verknuepfungen";
+
+  // allowlist: account integrations + onboarding steps
+  if (v.startsWith("/app/konto/verknuepfungen")) return v;
+  if (v.startsWith("/app/onboarding")) return v;
+
+  return "/app/konto/verknuepfungen";
+}
+
+function setReturnToCookie(res: NextResponse, returnTo: string) {
+  res.cookies.set({
+    name: RETURN_TO_COOKIE,
+    value: returnTo,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 10, // 10 minutes
+  });
+}
+
 function mustEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
@@ -56,6 +84,9 @@ function parseOAuthResponse(body: string): Record<string, string> {
 }
 
 export async function GET(req: NextRequest) {
+  const url = req.nextUrl;
+  const returnTo = safeReturnTo(url.searchParams.get("returnTo") || url.searchParams.get("next"));
+
   // 1) cookie auth
   const supabaseAuth = createServerClient<Database>(
     mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
@@ -74,7 +105,12 @@ export async function GET(req: NextRequest) {
   const {
     data: { user },
   } = await supabaseAuth.auth.getUser();
-  if (!user) return NextResponse.redirect(new URL("/login", req.url));
+  if (!user) {
+    const loginUrl = new URL("/login", req.url);
+    // keep where the user wanted to go after login
+    loginUrl.searchParams.set("next", returnTo);
+    return NextResponse.redirect(loginUrl);
+  }
 
   // 2) admin client (write tokens)
   const supabaseAdmin = createClient<Database>(
@@ -126,10 +162,14 @@ export async function GET(req: NextRequest) {
       { onConflict: "agent_id" }
     );
 
-    const next = new URL("/app/konto/verknuepfungen", req.url);
+    const next = new URL(returnTo, req.url);
     next.searchParams.set("immoscout", "error");
     next.searchParams.set("reason", "request_token_failed");
-    return NextResponse.redirect(next);
+
+    const res = NextResponse.redirect(next);
+    // store returnTo so callback/error flows can return consistently
+    setReturnToCookie(res, returnTo);
+    return res;
   }
 
   const parsed = parseOAuthResponse(txt);
@@ -137,10 +177,13 @@ export async function GET(req: NextRequest) {
   const oauthTokenSecret = parsed["oauth_token_secret"];
 
   if (!oauthToken || !oauthTokenSecret) {
-    const next = new URL("/app/konto/verknuepfungen", req.url);
+    const next = new URL(returnTo, req.url);
     next.searchParams.set("immoscout", "error");
     next.searchParams.set("reason", "missing_request_token");
-    return NextResponse.redirect(next);
+
+    const res = NextResponse.redirect(next);
+    setReturnToCookie(res, returnTo);
+    return res;
   }
 
   await supabaseAdmin.from("immoscout_connections").upsert(
@@ -161,5 +204,7 @@ export async function GET(req: NextRequest) {
   const redirectUrl = `${confirmAccessUrl}?oauth_token=${encodeURIComponent(
     oauthToken
   )}`;
-  return NextResponse.redirect(redirectUrl);
+  const res = NextResponse.redirect(redirectUrl);
+  setReturnToCookie(res, returnTo);
+  return res;
 }
