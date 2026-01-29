@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 /**
@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
  * Set this to your real settings endpoint.
  * You previously mentioned you have /api/agent/settings (NOT agent-settings).
  */
-const SETTINGS_ENDPOINT = "/api/agent/settings";
+const SETTINGS_ENDPOINT = "/api/agent/settings/autosend";
 
 type OnboardingRow = {
   current_step: number;
@@ -86,31 +86,21 @@ async function fetchSettings(): Promise<any> {
 }
 
 async function saveSettings(patch: Record<string, any>) {
-  // Try PATCH first, fallback to POST (some APIs use POST).
-  const tryReq = async (method: "PATCH" | "POST") => {
-    const res = await fetch(SETTINGS_ENDPOINT, {
-      method,
-      credentials: "include",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    }).catch(() => null);
+  // This endpoint supports GET/POST (no PATCH).
+  const res = await fetch(SETTINGS_ENDPOINT, {
+    method: "POST",
+    credentials: "include",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  }).catch(() => null);
 
-    const json = await res?.json().catch(() => null);
-    if (!res || !res.ok) {
-      const msg = String(
-        json?.error || json?.message || "settings_update_failed"
-      );
-      throw new Error(msg);
-    }
-    return json;
-  };
-
-  try {
-    return await tryReq("PATCH");
-  } catch {
-    return await tryReq("POST");
+  const json = await res?.json().catch(() => null);
+  if (!res || !res.ok) {
+    const msg = String(json?.error || json?.message || "settings_update_failed");
+    throw new Error(msg);
   }
+  return json;
 }
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -298,10 +288,12 @@ export default function Step3Client() {
         }
 
         // Try to prefill from settings (best effort)
-        const settings = await fetchSettings().catch(() => null);
+        const settingsResp = await fetchSettings().catch(() => null);
+        // /api/agent/settings/autosend returns { ok: true, settings: { autosend_enabled: boolean } }
+        const settings = settingsResp?.settings ?? settingsResp;
         const autosendOn =
-          Boolean(settings?.auto_send_enabled) ||
           Boolean(settings?.autosend_enabled) ||
+          Boolean(settings?.auto_send_enabled) ||
           Boolean(settings?.autosend) ||
           Boolean(settings?.auto_send);
 
@@ -331,10 +323,8 @@ export default function Step3Client() {
       const autosendEnabled = mode === "autosend";
 
       await saveSettings({
-        auto_send_enabled: autosendEnabled,
-        // also include a more explicit "approval_required" switch as redundancy,
-        // if your backend supports it.
-        approval_required: !autosendEnabled,
+        // API expects exactly this key
+        autosend_enabled: autosendEnabled,
       });
 
       await updateOnboarding({
@@ -453,7 +443,7 @@ export default function Step3Client() {
           Fehler: {error}
           <div className="mt-2" style={{ color: "rgba(14,14,17,0.65)" }}>
             Falls das ein Endpoint-Problem ist: prüfe{" "}
-            <code>{SETTINGS_ENDPOINT}</code> (GET + PATCH/POST).
+            <code>{SETTINGS_ENDPOINT}</code> (GET + POST).
           </div>
         </div>
       )}
