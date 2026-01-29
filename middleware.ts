@@ -123,7 +123,7 @@ export async function middleware(req: NextRequest) {
 
     if (!completed && !isOnboardingPath) {
       const redirectUrl = req.nextUrl.clone();
-      redirectUrl.pathname = "/onboarding";
+      redirectUrl.pathname = "/app/onboarding";
 
       const nextPath = pathname + (search || "");
       redirectUrl.searchParams.set("next", nextPath);

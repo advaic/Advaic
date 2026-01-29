@@ -105,18 +105,35 @@ export async function GET(req: NextRequest) {
   const decodedState = safeDecodeURIComponent(rawState);
 
   // Only allow internal redirects (we use `state` as a return path).
-  // Our app routes live under `/app/...` (including onboarding).
-  // Older callers might send `/onboarding/...` without the `/app` prefix — normalize it.
-  const normalizedState = decodedState.startsWith("/onboarding")
-    ? `/app${decodedState}`
-    : decodedState;
+  // NOTE: In Next.js, the first `app/` is just the folder. The URL for `app/app/...` is `/app/...`.
+  // We support callers that send:
+  // - `/app/...` (already correct)
+  // - `/onboarding/...` (legacy)  -> normalize to `/app/onboarding/...`
+  // - `/konto/...` (legacy)       -> normalize to `/app/konto/...`
+  // Everything else falls back to the connections page.
+  const normalizeReturnPath = (raw: string) => {
+    const s = (raw || "").trim();
+    if (!s) return "";
 
-  const isAllowedReturnPath =
-    normalizedState.startsWith("/app/") || normalizedState === "/app";
+    // Block absolute URLs and protocol-relative URLs
+    const lower = s.toLowerCase();
+    if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("//")) {
+      return "";
+    }
 
-  const nextPath = isAllowedReturnPath
-    ? normalizedState
-    : "/app/konto/verknuepfungen";
+    // Ensure it starts with `/`
+    const path = s.startsWith("/") ? s : `/${s}`;
+
+    if (path === "/app" || path.startsWith("/app/")) return path;
+    if (path.startsWith("/onboarding")) return `/app${path}`;
+    if (path.startsWith("/konto")) return `/app${path}`;
+
+    return "";
+  };
+
+  const normalizedState = normalizeReturnPath(decodedState);
+
+  const nextPath = normalizedState || "/app/konto/verknuepfungen";
 
   if (!code) {
     const redirectUrl = new URL(nextPath, siteUrl);

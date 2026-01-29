@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
   // 0) Provider error -> redirect back with error, clear transient cookies
   if (error) {
     const redirectBase = mustEnv("NEXT_PUBLIC_SITE_URL");
-    const target = returnToCookie || "/konto";
+    const target = returnToCookie || "/app/konto";
     const joiner = target.includes("?") ? "&" : "?";
     const res = NextResponse.redirect(
       new URL(
@@ -312,7 +312,7 @@ export async function GET(req: NextRequest) {
 
   // 7) Redirect back to UI and clear transient cookies
   const redirectBase = mustEnv("NEXT_PUBLIC_SITE_URL");
-  const target = returnToCookie || "/konto?outlook=connected";
+  const target = returnToCookie || "/app/konto?outlook=connected";
 
   const res = NextResponse.redirect(new URL(target, redirectBase));
 
