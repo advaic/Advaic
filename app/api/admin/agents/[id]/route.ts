@@ -3,13 +3,17 @@ import { requireAdmin, supabaseAdmin } from "../../_guard";
 
 export const runtime = "nodejs";
 
-export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
+export async function GET(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+) {
   const gate = await requireAdmin(req);
   if (!gate.ok)
     return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   const supa = supabaseAdmin();
-  const agentId = String(ctx.params.id || "").trim();
+  const { id } = await ctx.params;
+  const agentId = String(id || "").trim();
   if (!agentId)
     return NextResponse.json({ error: "Missing agent id" }, { status: 400 });
 

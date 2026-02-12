@@ -22,16 +22,17 @@ function supabaseAdmin() {
 }
 
 export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
 ) {
   // Admin gate (cookie-based auth)
-  const guard = await requireAdmin(_req);
+  const guard = await requireAdmin(req);
   if (!guard.ok) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const id = String(params?.id || "").trim();
+  const { id: rawId } = await ctx.params;
+  const id = String(rawId || "").trim();
   if (!id) {
     return NextResponse.json({ error: "missing_id" }, { status: 400 });
   }
