@@ -139,16 +139,25 @@ export default function ImmobilienPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
+    <div
+      className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900"
+      data-tour="properties-page"
+    >
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 space-y-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div
+          className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"
+          data-tour="properties-header"
+        >
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl md:text-2xl font-semibold">Immobilien</h1>
               <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
                 Advaic
               </span>
-              <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700">
+              <span
+                className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700"
+                data-tour="properties-count"
+              >
                 {filtered.length} angezeigt
               </span>
             </div>
@@ -162,11 +171,12 @@ export default function ImmobilienPage() {
               <input
                 type="text"
                 placeholder="Suche nach Titel oder Adresse"
+                data-tour="properties-search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="border px-3 py-2 rounded-lg text-sm w-full md:w-72 bg-white border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
               />
-              <Link href="/app/immobilien/hinzufuegen">
+              <Link href="/app/immobilien/hinzufuegen" data-tour="properties-add">
                 <Button>+ Immobilie hinzufügen</Button>
               </Link>
             </div>
@@ -174,6 +184,7 @@ export default function ImmobilienPage() {
             <div className="flex items-center gap-2">
               <select
                 value={sortBy}
+                data-tour="properties-sort"
                 onChange={(e) => setSortBy(e.target.value as SortKey)}
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
                 title="Sortierung"
@@ -190,7 +201,10 @@ export default function ImmobilienPage() {
         </div>
 
         {filtered.length === 0 ? (
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center">
+          <div
+            className="rounded-2xl border border-gray-200 bg-white p-6 text-center"
+            data-tour="properties-empty"
+          >
             <div className="text-gray-900 font-medium">
               Keine Immobilien gefunden.
             </div>
@@ -206,7 +220,10 @@ export default function ImmobilienPage() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div
+            className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
+            data-tour="properties-grid"
+          >
             {filtered.map((property) => {
               const title = safeStr(property.title) || "Ohne Titel";
               const addr = [
@@ -229,6 +246,7 @@ export default function ImmobilienPage() {
                 <div
                   key={property.id}
                   className="rounded-2xl border border-gray-200 bg-white overflow-hidden hover:shadow-md transition-shadow"
+                  data-tour="property-card"
                 >
                   {imgSrc ? (
                     <div className="relative w-full h-48">
@@ -287,6 +305,7 @@ export default function ImmobilienPage() {
                       <Link
                         href={`/app/immobilien/${property.id}`}
                         className="w-full"
+                        data-tour="property-details"
                       >
                         <Button size="sm" className="w-full">
                           Details
@@ -295,6 +314,7 @@ export default function ImmobilienPage() {
                       <Link
                         href={`/app/immobilien/${property.id}/bearbeiten`}
                         className="w-full"
+                        data-tour="property-edit"
                       >
                         <Button size="sm" variant="outline" className="w-full">
                           Bearbeiten
@@ -311,11 +331,3 @@ export default function ImmobilienPage() {
     </div>
   );
 }
-
-//Instructions:
-//- Removed the `thumbs` state and the related `useEffect` that created signed URLs via `supabase.storage.createSignedUrl`.
-//- In the render logic, replaced usage of `thumbs[property.id]` with a computed `imgSrc` variable.
-//- `imgSrc` is constructed as `/api/storage/signed-url?bucket=...&path=...` using URL-encoded bucket and image path.
-//- For legacy URLs starting with "http", `imgSrc` is just that URL.
-//- Used a standard `<img>` tag instead of `<Image>` to avoid next/image issues with signed URLs.
-//- This approach uses an API route to redirect to the signed URL, avoiding client-side signing and next/image problems.

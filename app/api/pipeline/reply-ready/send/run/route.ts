@@ -48,7 +48,7 @@ export async function POST() {
     supabase.from("messages") as any
   )
     .select(
-      "id, agent_id, lead_id, text, status, approval_required, send_status, timestamp"
+      "id, agent_id, lead_id, text, status, approval_required, send_status, timestamp, was_followup"
     )
     .in("sender", ["agent", "assistant"]) // be backward-compatible
     .eq("status", "ready_to_send")
@@ -100,6 +100,7 @@ export async function POST() {
     const messageId = String(d.id);
     const agentId = String(d.agent_id);
     const leadId = String(d.lead_id);
+    const isFollowup = !!(d as any).was_followup;
 
     const markFailed = async (
       send_error: string,
@@ -130,7 +131,7 @@ export async function POST() {
     // 3) Load lead (to, thread_id, subject)
     const { data: lead } = await (supabase.from("leads") as any)
       .select(
-        "id, agent_id, email, gmail_thread_id, outlook_conversation_id, email_provider, subject, type"
+        "id, agent_id, email, gmail_thread_id, outlook_conversation_id, email_provider, subject, type, followups_enabled"
       )
       .eq("id", leadId)
       .maybeSingle();
@@ -138,6 +139,25 @@ export async function POST() {
     if (!lead?.email) {
       await markFailed("missing_lead_email");
       results.push({ messageId, leadId, status: "failed_missing_lead_email" });
+      continue;
+    }
+
+    // Follow-up safety: never auto-send follow-ups if the lead disabled them
+    if (isFollowup && !lead?.followups_enabled) {
+      await (supabase.from("messages") as any)
+        .update({ status: "needs_approval", approval_required: true })
+        .eq("id", messageId);
+
+      results.push({
+        messageId,
+        leadId,
+        status: "skipped_followups_disabled",
+        provider: String(
+          lead?.email_provider || (lead?.outlook_conversation_id ? "outlook" : "gmail")
+        )
+          .toLowerCase()
+          .trim(),
+      });
       continue;
     }
 
@@ -182,6 +202,7 @@ export async function POST() {
             subject, // may be ignored by Outlook reply, but safe to include
             text,
             outlook_conversation_id: lead.outlook_conversation_id ?? null,
+            was_followup: isFollowup,
           }
         : {
             id: messageId,
@@ -190,6 +211,7 @@ export async function POST() {
             to: lead.email,
             subject,
             text,
+            was_followup: isFollowup,
           };
 
     const res = await fetch(new URL(sendPath, siteUrl).toString(), {

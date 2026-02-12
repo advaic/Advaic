@@ -195,6 +195,7 @@ export default function InboxItem({ lead, userId }: InboxItemProps) {
 
   return (
     <div
+      data-tour="conversation-card"
       onClick={handleClick}
       role="button"
       tabIndex={0}
@@ -214,6 +215,7 @@ export default function InboxItem({ lead, userId }: InboxItemProps) {
               </h2>
               {isEscalated && (
                 <span
+                  data-tour="conversation-escalated-badge"
                   className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-xs font-medium text-red-700"
                   title="Eskalation aktiv – automatische Antworten pausiert"
                 >
@@ -224,7 +226,7 @@ export default function InboxItem({ lead, userId }: InboxItemProps) {
             </div>
 
             {/* Right badges (desktop) */}
-            <div className="hidden md:flex items-center gap-3 shrink-0">
+            <div data-tour="conversation-card-badges" className="hidden md:flex items-center gap-3 shrink-0">
               <div className="text-right">
                 <div className="text-[11px] text-gray-500 font-medium">Kategorie</div>
                 <Badge className={getTypeBadgeClass(display.typeLabel)}>{display.typeLabel}</Badge>
@@ -271,6 +273,7 @@ export default function InboxItem({ lead, userId }: InboxItemProps) {
         {/* Actions */}
         <div className="shrink-0 flex md:flex-col items-stretch md:items-end gap-2">
           <button
+            data-tour="conversation-open"
             onClick={(e) => {
               e.stopPropagation();
               handleClick();
@@ -285,6 +288,7 @@ export default function InboxItem({ lead, userId }: InboxItemProps) {
 
           {isEscalated ? (
             <button
+              data-tour="conversation-deescalate"
               onClick={(e) => {
                 e.stopPropagation();
                 handleDeescalate();
@@ -298,6 +302,7 @@ export default function InboxItem({ lead, userId }: InboxItemProps) {
             </button>
           ) : (
             <button
+              data-tour="conversation-escalate"
               onClick={(e) => {
                 e.stopPropagation();
                 handleEscalate();
@@ -311,7 +316,7 @@ export default function InboxItem({ lead, userId }: InboxItemProps) {
             </button>
           )}
 
-          <div className="text-[11px] text-gray-500 text-right">
+          <div data-tour="conversation-card-hint" className="text-[11px] text-gray-500 text-right">
             Enter öffnet Konversation
           </div>
 

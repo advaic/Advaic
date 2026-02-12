@@ -41,6 +41,36 @@ const navSections = [
   },
 ];
 
+function tourKeyForPath(path: string) {
+  // keep this deterministic + stable for tour targeting
+  switch (path) {
+    case "/app/startseite":
+      return "nav-startseite";
+    case "/app/nachrichten":
+      return "nav-nachrichten";
+    case "/app/eskalationen":
+      return "nav-eskalationen";
+    case "/app/zur-freigabe":
+      return "nav-zur-freigabe";
+    case "/app/follow-ups":
+      return "nav-follow-ups";
+    case "/app/immobilien":
+      return "nav-immobilien";
+    case "/app/archiv":
+      return "nav-archiv";
+    case "/app/antwortvorlagen":
+      return "nav-antwortvorlagen";
+    case "/app/ton-und-stil":
+      return "nav-ton-und-stil";
+    case "/app/benachrichtigungen":
+      return "nav-benachrichtigungen";
+    case "/app/konto":
+      return "nav-konto";
+    default:
+      return null;
+  }
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -52,12 +82,16 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="h-screen w-64 bg-white border-r px-4 py-6 shadow-sm">
+    <aside
+      className="h-screen w-64 bg-white border-r px-4 py-6 shadow-sm"
+      data-tour="sidebar"
+    >
       {/* Logo and logout */}
       <div className="mb-8 flex flex-col space-y-2">
         <div className="text-2xl font-bold text-gray-800">Advaic</div>
         <button
           onClick={handleLogout}
+          data-tour="logout"
           className="text-sm bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded"
         >
           Logout
@@ -75,6 +109,7 @@ export default function Sidebar() {
             <ul className="space-y-1">
               {section.items.map((item) => {
                 const isActive = pathname.startsWith(item.path);
+                const tourKey = tourKeyForPath(item.path);
                 return (
                   <li key={item.path}>
                     <Link
@@ -84,6 +119,7 @@ export default function Sidebar() {
                           ? "bg-gray-100 text-blue-600"
                           : "text-gray-700 hover:bg-gray-50"
                       }`}
+                      data-tour={tourKey ?? undefined}
                     >
                       <span className="text-lg">{item.icon}</span>
                       {item.label}

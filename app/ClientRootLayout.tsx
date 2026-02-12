@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect, createContext } from "react";
-import { usePathname } from "next/navigation";
 import type { SupabaseClient, Session } from "@supabase/supabase-js";
 import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import { Database } from "@/types/supabase";
 import Sidebar from "@/components/Sidebar";
+import { TourProvider } from "@/components/tour/Tour-Provider";
+import TourOverlay from "@/components/tour/Tour-Overlay";
+import { TourLauncherIcon } from "@/components/tour/TourLauncherIcon";
 
 export const SupabaseContext = createContext<{
   supabase: SupabaseClient<Database>;
@@ -53,21 +55,26 @@ export default function ClientRootLayout({
     setHydrated(true);
   }, []);
 
-  const pathname = usePathname();
-  const isDashboard = pathname.startsWith("/app");
-
   if (!hydrated) return null;
 
   return (
-    <SupabaseContext.Provider value={{ supabase, session }}>
-      {isDashboard ? (
+    <TourProvider>
+      <SupabaseContext.Provider value={{ supabase, session }}>
         <div className="flex h-screen">
           <Sidebar />
-          <main className="flex-1 p-6 overflow-y-auto">{children}</main>
+          <main className="flex-1 p-6 overflow-y-auto relative">
+            {/* Tour overlay (global, multi-page) */}
+            <TourOverlay />
+
+            {children}
+
+            {/* Global Tour launcher (always available) */}
+            <div className="fixed bottom-6 right-6 z-[1000]">
+              <TourLauncherIcon />
+            </div>
+          </main>
         </div>
-      ) : (
-        <main className="min-h-screen">{children}</main>
-      )}
-    </SupabaseContext.Provider>
+      </SupabaseContext.Provider>
+    </TourProvider>
   );
 }

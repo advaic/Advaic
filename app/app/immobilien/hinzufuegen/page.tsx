@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   CheckCircle2,
@@ -63,7 +63,7 @@ function defaultChecklist(): RequirementsChecklist {
 }
 
 type PropertyDraft = {
-  id: number | null;
+  id: string | null;
   title: string;
   city: string;
   neighborhood: string;
@@ -108,6 +108,42 @@ type PropertyDraft = {
   image_urls: string[];
 };
 
+type TriState = "standard" | "enabled" | "disabled";
+
+type FollowupPolicyDraft = {
+  enabled: TriState;
+  max_stage_rent: number | null;
+  max_stage_buy: number | null;
+  stage1_delay_hours: number | null;
+  stage2_delay_hours: number | null;
+};
+
+function defaultFollowupPolicyDraft(): FollowupPolicyDraft {
+  return {
+    enabled: "standard",
+    max_stage_rent: null,
+    max_stage_buy: null,
+    stage1_delay_hours: null,
+    stage2_delay_hours: null,
+  };
+}
+
+function dbBoolToTriState(v: boolean | null): TriState {
+  if (v === null || typeof v === "undefined") return "standard";
+  return v ? "enabled" : "disabled";
+}
+
+function triStateToDbBool(v: TriState): boolean | null {
+  if (v === "standard") return null;
+  return v === "enabled";
+}
+
+function clampInt(v: number, min: number, max: number): number {
+  const n = Math.trunc(Number(v));
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
+}
+
 function safeTrim(v: unknown): string {
   return String(v ?? "").trim();
 }
@@ -125,6 +161,62 @@ function toVermarktungKey(v: VermarktungUI): "rent" | "sale" | null {
   if (v === "Vermietung") return "rent";
   if (v === "Verkauf") return "sale";
   return null;
+}
+
+// --- DB PATCH HELPERS ---
+function toNumberOrNull(v: unknown): number | null {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toIntOrNull(v: unknown): number | null {
+  const n = toNumberOrNull(v);
+  if (n === null) return null;
+  const i = Math.trunc(n);
+  return Number.isFinite(i) ? i : null;
+}
+
+function toDbPetsAllowed(v: boolean): string | null {
+  // DB column is text; keep it simple for now
+  return v ? "allowed" : "not_allowed";
+}
+
+function toDbPatch(patch: Partial<PropertyDraft>): Record<string, any> {
+  const out: Record<string, any> = { ...patch };
+
+  // id is not updatable via patch helper
+  delete out.id;
+
+  // Convert numeric columns
+  if ("price" in out) out.price = toNumberOrNull(out.price);
+  if ("size_sqm" in out) out.size_sqm = toIntOrNull(out.size_sqm);
+  if ("year_built" in out) out.year_built = toIntOrNull(out.year_built);
+
+  // url has a UNIQUE index in DB; multiple empty strings would violate it.
+  // Use NULL for empty/whitespace, and store trimmed value otherwise.
+  if ("url" in out) {
+    const u = String((out as any).url ?? "").trim();
+    out.url = u ? u : null;
+  }
+
+  // pets_allowed column is TEXT in DB
+  if ("pets_allowed" in out) out.pets_allowed = toDbPetsAllowed(!!(out as any).pets_allowed);
+
+  // image_urls must always be string[] of storage paths
+  if ("image_urls" in out) {
+    out.image_urls = Array.isArray(out.image_urls)
+      ? out.image_urls.filter((x: any) => typeof x === "string" && x && !String(x).startsWith("http"))
+      : [];
+  }
+
+  // requirements_checklist should be jsonb (object)
+  if ("requirements_checklist" in out) {
+    out.requirements_checklist = out.requirements_checklist || {};
+  }
+
+  return out;
 }
 
 /**
@@ -237,6 +329,23 @@ function extractSignedUrlMap(
 
 export default function HinzufuegenPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Optional: when this page is opened from onboarding, we want to return back there.
+  // Example: /app/immobilien/hinzufuegen?returnTo=%2Fapp%2Fonboarding%3Fstep%3D5
+  const returnTo = useMemo(() => {
+    const raw = searchParams.get("returnTo") || searchParams.get("next") || "";
+    const fallback = "/app/immobilien";
+    if (!raw) return fallback;
+
+    // Only allow internal paths to avoid open redirects
+    if (!raw.startsWith("/")) return fallback;
+
+    // Prevent protocol-relative / absolute URLs
+    if (raw.startsWith("//")) return fallback;
+
+    return raw;
+  }, [searchParams]);
 
   const [property, setProperty] = useState<PropertyDraft>({
     id: null,
@@ -323,6 +432,12 @@ export default function HinzufuegenPage() {
   const [deleting, setDeleting] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
+  const [followupPolicy, setFollowupPolicy] = useState<FollowupPolicyDraft>(
+    defaultFollowupPolicyDraft()
+  );
+  const [followupPolicyLoading, setFollowupPolicyLoading] = useState(false);
+  const [followupPolicySaving, setFollowupPolicySaving] = useState(false);
+
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const statusBadge = useMemo(() => {
@@ -358,7 +473,7 @@ export default function HinzufuegenPage() {
     deleting,
   ]);
 
-  const createDraftIfNeeded = useCallback(async (): Promise<number | null> => {
+  const createDraftIfNeeded = useCallback(async (): Promise<string | null> => {
     if (property.id) return property.id;
     if (creatingDraft) return null;
 
@@ -374,60 +489,60 @@ export default function HinzufuegenPage() {
         return null;
       }
 
+      const insertRow = {
+        agent_id: user.id,
+        status: "draft",
+        ...toDbPatch({
+          title: property.title || "",
+          city: property.city || "",
+          neighborhood: property.neighborhood || "",
+          street_address: property.street_address || "",
+          type: property.type || "",
+          price: property.price || "",
+          price_type: property.price_type || "",
+
+          size_sqm: property.size_sqm || "",
+          rooms: property.rooms || "",
+          floor: property.floor || "",
+          year_built: property.year_built || "",
+          pets_allowed: property.pets_allowed,
+          heating: property.heating || "",
+          energy_label: property.energy_label || "",
+          available_from: property.available_from || "",
+          parking: property.parking || "",
+          url: property.url ? property.url : null,
+          furnished: property.furnished,
+          elevator: property.elevator,
+          listing_summary: property.listing_summary || "",
+          description: property.description || "",
+
+          requirements: property.requirements || "",
+          highlights: property.highlights || "",
+          internal_notes: property.internal_notes || "",
+          contact_instructions: property.contact_instructions || "",
+
+          requirements_checklist: property.requirements_checklist || defaultChecklist(),
+          requirements_notes: property.requirements_notes || "",
+
+          image_urls: [],
+        }),
+      };
+
       const { data, error } = await supabase
         .from("properties")
-        .insert([
-          {
-            agent_id: user.id,
-            status: "draft",
-
-            title: property.title || "",
-            city: property.city || "",
-            neighborhood: property.neighborhood || "",
-            street_address: property.street_address || "",
-            type: property.type || "",
-            price: property.price || "",
-            price_type: property.price_type || "",
-
-            size_sqm: property.size_sqm || "",
-            rooms: property.rooms || "",
-            floor: property.floor || "",
-            year_built: property.year_built || "",
-            pets_allowed: property.pets_allowed,
-            heating: property.heating || "",
-            energy_label: property.energy_label || "",
-            available_from: property.available_from || "",
-            parking: property.parking || "",
-            url: property.url || "",
-            furnished: property.furnished,
-            elevator: property.elevator,
-            listing_summary: property.listing_summary || "",
-            description: property.description || "",
-
-            requirements: property.requirements || "",
-            highlights: property.highlights || "",
-            internal_notes: property.internal_notes || "",
-            contact_instructions: property.contact_instructions || "",
-
-            requirements_checklist:
-              property.requirements_checklist || defaultChecklist(),
-            requirements_notes: property.requirements_notes || "",
-
-            image_urls: [],
-          },
-        ])
-        .select("*")
+        .insert([insertRow])
+        .select("id")
         .single();
 
       if (error || !data?.id) {
-        console.error("❌ Draft insert error:", error);
+        console.error("❌ Draft insert error:", error?.message, error);
         toast.error("Entwurf konnte nicht erstellt werden.");
         return null;
       }
 
-      setProperty((p) => ({ ...p, id: data.id, status: "draft" }));
+      setProperty((p) => ({ ...p, id: data.id as string, status: "draft" }));
       setLastSavedAt(new Date().toISOString());
-      return data.id as number;
+      return data.id as string;
     } finally {
       setCreatingDraft(false);
     }
@@ -440,9 +555,10 @@ export default function HinzufuegenPage() {
 
       setSaving(true);
       try {
+        const dbPatch = toDbPatch(updatedFields);
         const { error } = await supabase
           .from("properties")
-          .update(updatedFields as any)
+          .update(dbPatch as any)
           .eq("id", id);
 
         if (error) {
@@ -466,6 +582,131 @@ export default function HinzufuegenPage() {
       }, 500);
     },
     [persistUpdate]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!property.id) {
+        setFollowupPolicy(defaultFollowupPolicyDraft());
+        return;
+      }
+
+      setFollowupPolicyLoading(true);
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) return;
+
+        const { data, error } = await supabase
+          .from("property_followup_policies")
+          .select(
+            "enabled, max_stage_rent, max_stage_buy, stage1_delay_hours, stage2_delay_hours"
+          )
+          .eq("agent_id", user.id)
+          .eq("property_id", property.id)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (error) {
+          console.warn("followup policy load failed", error);
+          return;
+        }
+
+        if (!data) {
+          setFollowupPolicy(defaultFollowupPolicyDraft());
+          return;
+        }
+
+        setFollowupPolicy({
+          enabled: dbBoolToTriState((data as any).enabled ?? null),
+          max_stage_rent:
+            typeof (data as any).max_stage_rent === "number"
+              ? (data as any).max_stage_rent
+              : null,
+          max_stage_buy:
+            typeof (data as any).max_stage_buy === "number"
+              ? (data as any).max_stage_buy
+              : null,
+          stage1_delay_hours:
+            typeof (data as any).stage1_delay_hours === "number"
+              ? (data as any).stage1_delay_hours
+              : null,
+          stage2_delay_hours:
+            typeof (data as any).stage2_delay_hours === "number"
+              ? (data as any).stage2_delay_hours
+              : null,
+        });
+      } finally {
+        if (!cancelled) setFollowupPolicyLoading(false);
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [property.id]);
+
+  const upsertFollowupPolicy = useCallback(
+    async (next?: Partial<FollowupPolicyDraft>) => {
+      setFollowupPolicySaving(true);
+      try {
+        let propertyId = property.id;
+        if (!propertyId) {
+          const created = await createDraftIfNeeded();
+          if (!created) return;
+          propertyId = created;
+        }
+
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          toast.error("Nicht eingeloggt. Bitte neu einloggen.");
+          return;
+        }
+
+        const merged: FollowupPolicyDraft = {
+          ...followupPolicy,
+          ...(next || {}),
+        };
+
+        const payload = {
+          agent_id: user.id,
+          property_id: propertyId,
+          enabled: triStateToDbBool(merged.enabled),
+          max_stage_rent: merged.max_stage_rent,
+          max_stage_buy: merged.max_stage_buy,
+          stage1_delay_hours: merged.stage1_delay_hours,
+          stage2_delay_hours: merged.stage2_delay_hours,
+        } as any;
+
+        const { error } = await supabase
+          .from("property_followup_policies")
+          .upsert(payload, { onConflict: "agent_id,property_id" });
+
+        if (error) {
+          console.error("followup policy upsert error", error);
+          toast.error("Follow-up Einstellungen konnten nicht gespeichert werden.");
+          return;
+        }
+
+        setFollowupPolicy(merged);
+        toast.success("Follow-up Einstellungen gespeichert.");
+      } finally {
+        setFollowupPolicySaving(false);
+      }
+    },
+    [property.id, createDraftIfNeeded, followupPolicy]
   );
 
   const handleChange = (
@@ -512,7 +753,7 @@ export default function HinzufuegenPage() {
   };
 
   const uploadImageToSupabase = useCallback(
-    async (file: File, propertyId: number) => {
+    async (file: File, propertyId: string) => {
       const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
       const {
         data: { user },
@@ -525,9 +766,7 @@ export default function HinzufuegenPage() {
 
       // IMPORTANT: Path must match signed-url policy:
       // agents/<uid>/properties/<propertyId>/...
-      const filePath = `agents/${
-        user.id
-      }/properties/${propertyId}/${Date.now()}-${safeName}`;
+      const filePath = `agents/${user.id}/properties/${propertyId}/${Date.now()}-${safeName}`;
 
       const { error } = await supabase.storage
         .from(PROPERTY_IMAGES_BUCKET)
@@ -725,9 +964,13 @@ export default function HinzufuegenPage() {
         .filter((p) => !!p && !p.startsWith("http")) || [];
 
     await persistUpdate({
-      ...property,
       status: "draft",
       image_urls: canonicalPaths,
+      // also ensure core fields are written with proper types
+      price: property.price,
+      size_sqm: property.size_sqm,
+      year_built: property.year_built,
+      pets_allowed: property.pets_allowed,
     });
 
     toast.success("Entwurf gespeichert.");
@@ -759,7 +1002,7 @@ export default function HinzufuegenPage() {
     try {
       await persistUpdate({ status: "published" });
       toast.success("Immobilie veröffentlicht.");
-      router.push("/app/immobilien");
+      router.push(returnTo);
     } finally {
       setPublishing(false);
     }
@@ -767,7 +1010,7 @@ export default function HinzufuegenPage() {
 
   const discardDraft = async () => {
     if (!property.id) {
-      router.push("/app/immobilien");
+      router.push(returnTo);
       return;
     }
 
@@ -806,7 +1049,7 @@ export default function HinzufuegenPage() {
       }
 
       toast.success("Entwurf gelöscht.");
-      router.push("/app/immobilien");
+      router.push(returnTo);
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message ?? "Konnte Entwurf nicht löschen.");
@@ -821,14 +1064,20 @@ export default function HinzufuegenPage() {
   const vermarktungKey = toVermarktungKey(property.price_type);
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
+    <div
+      className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900"
+      data-tour="property-add-page"
+    >
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
-        <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
+        <div
+          className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
+          data-tour="property-add-header"
+        >
           <div className="flex items-start justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl md:text-2xl font-semibold">
+                <h1 className="text-xl md:text-2xl font-semibold" data-tour="property-add-title">
                   Immobilie hinzufügen
                 </h1>
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
@@ -854,8 +1103,9 @@ export default function HinzufuegenPage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => router.push("/app/immobilien")}
+                onClick={() => router.push(returnTo)}
                 disabled={deleting}
+                data-tour="property-add-back"
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
               >
                 Zurück
@@ -865,6 +1115,7 @@ export default function HinzufuegenPage() {
                 type="button"
                 onClick={discardDraft}
                 disabled={deleting}
+                data-tour="property-add-discard"
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
                 title="Entwurf verwerfen und löschen"
               >
@@ -880,6 +1131,7 @@ export default function HinzufuegenPage() {
                 type="button"
                 onClick={forceSaveNow}
                 disabled={disabledHeaderActions}
+                data-tour="property-add-save"
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
                 title="Entwurf speichern"
               >
@@ -897,6 +1149,7 @@ export default function HinzufuegenPage() {
                   deleting ||
                   !canPublish
                 }
+                data-tour="property-add-publish"
                 className="px-3 py-2 text-sm rounded-lg bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 disabled:opacity-50"
                 title={
                   canPublish
@@ -919,8 +1172,14 @@ export default function HinzufuegenPage() {
         <div className="py-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Main form */}
-            <div className="lg:col-span-2 rounded-2xl border border-gray-200 bg-white overflow-hidden">
-              <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
+            <div
+              className="lg:col-span-2 rounded-2xl border border-gray-200 bg-white overflow-hidden"
+              data-tour="property-add-details"
+            >
+              <div
+                className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between"
+                data-tour="property-add-details-header"
+              >
                 <div className="text-sm text-gray-700 font-medium">Details</div>
                 <div className="text-xs text-gray-500">
                   {lastSavedAt
@@ -945,6 +1204,7 @@ export default function HinzufuegenPage() {
                       placeholder="Kurztitel"
                       onChange={handleChange}
                       value={property.title}
+                      data-tour="property-add-title-input"
                       className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                     />
                   </Field>
@@ -955,6 +1215,7 @@ export default function HinzufuegenPage() {
                       placeholder="Stadt"
                       onChange={handleChange}
                       value={property.city}
+                      data-tour="property-add-city"
                       className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                     />
                   </Field>
@@ -985,6 +1246,7 @@ export default function HinzufuegenPage() {
                       placeholder="Typ"
                       onChange={handleChange}
                       value={property.type}
+                      data-tour="property-add-type"
                       className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                     />
                   </Field>
@@ -996,6 +1258,7 @@ export default function HinzufuegenPage() {
                       placeholder="Preis"
                       onChange={handleChange}
                       value={property.price}
+                      data-tour="property-add-price"
                       className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                     />
                   </Field>
@@ -1006,6 +1269,7 @@ export default function HinzufuegenPage() {
                         name="price_type"
                         onChange={handleChange}
                         value={property.price_type}
+                        data-tour="property-add-vermarktung"
                         className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                       >
                         <option value="">Bitte wählen…</option>
@@ -1068,6 +1332,7 @@ export default function HinzufuegenPage() {
                       placeholder="Listing-Link"
                       onChange={handleChange}
                       value={property.url}
+                      data-tour="property-add-listing-url"
                       className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                     />
                     {property.url && !isProbablyUrl(property.url) && (
@@ -1083,7 +1348,10 @@ export default function HinzufuegenPage() {
                     hint="(optional) · Was soll ein Interessent direkt liefern/erfüllen?"
                     full
                   >
-                    <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-4">
+                    <div
+                      className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-4"
+                      data-tour="property-add-checklist"
+                    >
                       {!vermarktungKey ? (
                         <div className="text-sm text-gray-600">
                           Wähle zuerst eine Vermarktung (Vermietung/Verkauf),
@@ -1091,7 +1359,10 @@ export default function HinzufuegenPage() {
                         </div>
                       ) : vermarktungKey === "rent" ? (
                         <div className="space-y-3">
-                          <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                          <div
+                            className="flex items-center gap-2 text-sm font-medium text-gray-900"
+                            data-tour="property-add-checklist-rent"
+                          >
                             <ListChecks className="h-4 w-4" />
                             Vermietung
                           </div>
@@ -1157,6 +1428,7 @@ export default function HinzufuegenPage() {
                                 onChange={(e) =>
                                   setPetsPolicy(e.target.value as PetsPolicy)
                                 }
+                                data-tour="property-add-pets-policy"
                                 className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                               >
                                 <option value="allowed">Erlaubt</option>
@@ -1183,7 +1455,10 @@ export default function HinzufuegenPage() {
                         </div>
                       ) : (
                         <div className="space-y-3">
-                          <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                          <div
+                            className="flex items-center gap-2 text-sm font-medium text-gray-900"
+                            data-tour="property-add-checklist-sale"
+                          >
                             <ListChecks className="h-4 w-4" />
                             Verkauf
                           </div>
@@ -1244,6 +1519,7 @@ export default function HinzufuegenPage() {
                           value={property.requirements_notes}
                           onChange={handleChange}
                           rows={4}
+                          data-tour="property-add-requirements-notes"
                           placeholder="z.B. Mindestnettoeinkommen, gewünschte Einzugsdaten, Haustiere nach Absprache, etc."
                           className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50 resize-none"
                         />
@@ -1277,6 +1553,7 @@ export default function HinzufuegenPage() {
                       onChange={handleChange}
                       value={property.listing_summary}
                       rows={3}
+                      data-tour="property-add-summary"
                       className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50 resize-none"
                     />
                   </Field>
@@ -1288,6 +1565,7 @@ export default function HinzufuegenPage() {
                       onChange={handleChange}
                       value={property.description}
                       rows={6}
+                      data-tour="property-add-description"
                       className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50 resize-none"
                     />
                   </Field>
@@ -1350,7 +1628,10 @@ export default function HinzufuegenPage() {
 
             {/* Side cards */}
             <div className="space-y-4">
-              <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+              <div
+                className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
+                data-tour="property-add-images"
+              >
                 <div className="px-4 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
                   <div className="text-sm font-medium text-gray-800 inline-flex items-center gap-2">
                     <ImageIcon className="h-4 w-4 text-gray-500" />
@@ -1363,13 +1644,15 @@ export default function HinzufuegenPage() {
                   )}
                 </div>
                 <div className="p-4">
-                  <div className="text-xs text-gray-600 mb-3">
+                  <div className="text-xs text-gray-600 mb-3" data-tour="property-add-images-hint">
                     Bilder werden privat gespeichert (signed URLs im Frontend).
                     Du kannst Reihenfolge ändern und Bilder löschen.
                   </div>
 
                   {/* IMPORTANT: UI gets signed URLs, internal state stays storage paths */}
-                  <SortablePreviewList files={uiFiles} setFiles={setUiFiles} />
+                  <div data-tour="property-add-images-list">
+                    <SortablePreviewList files={uiFiles} setFiles={setUiFiles} />
+                  </div>
 
                   <div className="mt-3 text-xs text-gray-500 inline-flex items-center gap-2">
                     <CloudUpload className="h-4 w-4" />
@@ -1380,7 +1663,154 @@ export default function HinzufuegenPage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div
+                className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
+                data-tour="property-add-followups-policy"
+              >
+                <div className="px-4 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
+                  <div className="text-sm font-medium text-gray-800">Follow-up Regeln</div>
+                  <div className="flex items-center gap-2">
+                    {followupPolicyLoading && (
+                      <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700">
+                        Lädt…
+                      </span>
+                    )}
+                    {followupPolicySaving && (
+                      <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800">
+                        Speichert…
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-4">
+                  <div className="text-xs text-gray-600 mb-3">
+                    Property-spezifisch (optional). „Standard“ nutzt deine globalen Follow-up Settings.
+                  </div>
+
+                  {!property.id && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-3">
+                      <div className="text-sm text-amber-900 font-medium">Hinweis</div>
+                      <div className="text-sm text-amber-800 mt-1">
+                        Um property-spezifische Follow-up Regeln zu speichern, muss zuerst ein Entwurf angelegt werden.
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void createDraftIfNeeded()}
+                        className="mt-3 inline-flex items-center gap-2 rounded-lg bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 px-3 py-2 text-sm"
+                      >
+                        Entwurf anlegen
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-xs font-medium text-gray-700 mb-1">Follow-ups</div>
+                      <select
+                        value={followupPolicy.enabled}
+                        onChange={(e) => {
+                          const v = e.target.value as TriState;
+                          setFollowupPolicy((p) => ({ ...p, enabled: v }));
+                          void upsertFollowupPolicy({ enabled: v });
+                        }}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      >
+                        <option value="standard">Standard</option>
+                        <option value="enabled">An</option>
+                        <option value="disabled">Aus</option>
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <div className="text-xs font-medium text-gray-700 mb-1">Max. Follow-ups (Miete)</div>
+                        <select
+                          value={followupPolicy.max_stage_rent ?? ""}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const v = raw === "" ? null : clampInt(Number(raw), 0, 2);
+                            setFollowupPolicy((p) => ({ ...p, max_stage_rent: v }));
+                            void upsertFollowupPolicy({ max_stage_rent: v });
+                          }}
+                          className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                        >
+                          <option value="">Standard</option>
+                          <option value="0">0</option>
+                          <option value="1">1</option>
+                          <option value="2">2</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <div className="text-xs font-medium text-gray-700 mb-1">Max. Follow-ups (Kauf)</div>
+                        <select
+                          value={followupPolicy.max_stage_buy ?? ""}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const v = raw === "" ? null : clampInt(Number(raw), 0, 2);
+                            setFollowupPolicy((p) => ({ ...p, max_stage_buy: v }));
+                            void upsertFollowupPolicy({ max_stage_buy: v });
+                          }}
+                          className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                        >
+                          <option value="">Standard</option>
+                          <option value="0">0</option>
+                          <option value="1">1</option>
+                          <option value="2">2</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <div className="text-xs font-medium text-gray-700 mb-1">Delay Stage 1 (Stunden)</div>
+                        <input
+                          type="number"
+                          min={1}
+                          max={336}
+                          placeholder="Standard"
+                          value={followupPolicy.stage1_delay_hours ?? ""}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const v = raw === "" ? null : clampInt(Number(raw), 1, 336);
+                            setFollowupPolicy((p) => ({ ...p, stage1_delay_hours: v }));
+                            void upsertFollowupPolicy({ stage1_delay_hours: v });
+                          }}
+                          className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="text-xs font-medium text-gray-700 mb-1">Delay Stage 2 (Stunden)</div>
+                        <input
+                          type="number"
+                          min={1}
+                          max={336}
+                          placeholder="Standard"
+                          value={followupPolicy.stage2_delay_hours ?? ""}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const v = raw === "" ? null : clampInt(Number(raw), 1, 336);
+                            setFollowupPolicy((p) => ({ ...p, stage2_delay_hours: v }));
+                            void upsertFollowupPolicy({ stage2_delay_hours: v });
+                          }}
+                          className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-gray-500">
+                      Tipp: Lass die Werte auf „Standard“, wenn du nur global steuern willst.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                className="rounded-2xl border border-amber-200 bg-amber-50 p-4"
+                data-tour="property-add-tip"
+              >
                 <div className="text-sm font-medium text-amber-900 inline-flex items-center gap-2">
                   <Sparkles className="h-4 w-4" />
                   Tipp
@@ -1392,7 +1822,10 @@ export default function HinzufuegenPage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-gray-200 bg-white p-4">
+              <div
+                className="rounded-2xl border border-gray-200 bg-white p-4"
+                data-tour="property-add-required"
+              >
                 <div className="text-sm font-medium text-gray-900">
                   Pflichtfelder
                 </div>

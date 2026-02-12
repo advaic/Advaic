@@ -1,5 +1,3 @@
-
-
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
@@ -130,9 +128,7 @@ function isTokenExpired(expiresAtIso: string | null) {
   return Date.now() > t - 2 * 60 * 1000;
 }
 
-async function refreshOutlookAccessToken(args: {
-  refreshToken: string;
-}) {
+async function refreshOutlookAccessToken(args: { refreshToken: string }) {
   const tenant = process.env.OUTLOOK_TENANT_ID || "common";
   const tokenUrl = `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`;
 
@@ -159,8 +155,10 @@ async function refreshOutlookAccessToken(args: {
   }
 
   const data = (await resp.json().catch(() => null)) as any;
-  const accessToken = typeof data?.access_token === "string" ? data.access_token : "";
-  const refreshToken = typeof data?.refresh_token === "string" ? data.refresh_token : undefined;
+  const accessToken =
+    typeof data?.access_token === "string" ? data.access_token : "";
+  const refreshToken =
+    typeof data?.refresh_token === "string" ? data.refresh_token : undefined;
   const expiresIn = Number(data?.expires_in ?? 0);
 
   if (!accessToken || !Number.isFinite(expiresIn) || expiresIn <= 0) {
@@ -172,9 +170,11 @@ async function refreshOutlookAccessToken(args: {
 }
 
 async function getGraphAccessToken(supabaseAdmin: any, agentId: string) {
-  const { data: conn, error } = await (supabaseAdmin.from("email_connections") as any)
+  const { data: conn, error } = await (
+    supabaseAdmin.from("email_connections") as any
+  )
     .select(
-      "id, refresh_token, access_token, expires_at, status, email_address, outlook_mailbox_id"
+      "id, refresh_token, access_token, expires_at, status, email_address, outlook_mailbox_id",
     )
     .eq("agent_id", agentId)
     .eq("provider", "outlook")
@@ -186,7 +186,8 @@ async function getGraphAccessToken(supabaseAdmin: any, agentId: string) {
   }
 
   const refreshToken = String(conn.refresh_token || "");
-  if (!refreshToken) return { ok: false as const, error: "missing_refresh_token" };
+  if (!refreshToken)
+    return { ok: false as const, error: "missing_refresh_token" };
 
   const expiresAtIso = parseIsoOrNull(conn.expires_at);
   const accessToken = String(conn.access_token || "");
@@ -208,7 +209,9 @@ async function getGraphAccessToken(supabaseAdmin: any, agentId: string) {
     .update({
       access_token: refreshed.accessToken,
       expires_at: refreshed.expiresAtIso,
-      ...(refreshed.refreshToken ? { refresh_token: refreshed.refreshToken } : {}),
+      ...(refreshed.refreshToken
+        ? { refresh_token: refreshed.refreshToken }
+        : {}),
       last_error: null,
       status: "active",
     })
@@ -220,7 +223,7 @@ async function getGraphAccessToken(supabaseAdmin: any, agentId: string) {
 async function graphFetch(
   accessToken: string,
   url: string,
-  init?: RequestInit
+  init?: RequestInit,
 ) {
   return await fetch(url, {
     ...(init || {}),
@@ -235,11 +238,15 @@ async function graphFetch(
 async function downloadAttachmentAsBase64(
   supabaseAdmin: any,
   bucket: string,
-  path: string
+  path: string,
 ) {
-  const { data, error } = await supabaseAdmin.storage.from(bucket).download(path);
+  const { data, error } = await supabaseAdmin.storage
+    .from(bucket)
+    .download(path);
   if (error || !data) {
-    throw new Error(`Attachment download failed: ${error?.message ?? "no data"}`);
+    throw new Error(
+      `Attachment download failed: ${error?.message ?? "no data"}`,
+    );
   }
   const arrayBuffer = await data.arrayBuffer();
   const buf = Buffer.from(arrayBuffer);
@@ -247,7 +254,7 @@ async function downloadAttachmentAsBase64(
   if (buf.length === 0) throw new Error("Attachment is empty");
   if (buf.length > MAX_ATTACHMENT_BYTES) {
     throw new Error(
-      `Attachment too large (max ${Math.round(MAX_ATTACHMENT_BYTES / (1024 * 1024))}MB)`
+      `Attachment too large (max ${Math.round(MAX_ATTACHMENT_BYTES / (1024 * 1024))}MB)`,
     );
   }
 
@@ -265,7 +272,7 @@ function pickAttachmentsMeta(attachments: unknown): AttachmentInput[] {
           typeof (a as any).bucket === "string" &&
           typeof (a as any).path === "string" &&
           typeof (a as any).name === "string" &&
-          typeof (a as any).mime === "string"
+          typeof (a as any).mime === "string",
       )
     : [];
 
@@ -297,7 +304,7 @@ export async function POST(req: NextRequest) {
   const supabaseAdmin = createClient<Database>(
     mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
     mustEnv("SUPABASE_SERVICE_ROLE_KEY"),
-    { auth: { persistSession: false, autoRefreshToken: false } }
+    { auth: { persistSession: false, autoRefreshToken: false } },
   );
 
   const messageId = String(id).trim();
@@ -339,7 +346,7 @@ export async function POST(req: NextRequest) {
           set() {},
           remove() {},
         },
-      }
+      },
     );
 
     const {
@@ -373,7 +380,8 @@ export async function POST(req: NextRequest) {
     return jsonError(500, "Failed to load lead");
   }
   if (!leadRow) return jsonError(404, "Lead not found");
-  if (String(leadRow.agent_id) !== String(user.id)) return jsonError(403, "Forbidden");
+  if (String(leadRow.agent_id) !== String(user.id))
+    return jsonError(403, "Forbidden");
 
   const leadEmail = String(leadRow.email || "").trim();
   if (!leadEmail) return jsonError(400, "Lead has no email");
@@ -395,14 +403,20 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (statusErr) {
-      console.error("[outlook/send] send_status lookup failed:", statusErr.message);
+      console.error(
+        "[outlook/send] send_status lookup failed:",
+        statusErr.message,
+      );
       return jsonError(500, "Failed to load message status");
     }
 
     if (!statusRow) return jsonError(404, "Message not found");
 
     if (String((statusRow as any).send_status || "").toLowerCase() === "sent") {
-      return NextResponse.json({ ok: true, status: "already_sent" }, { status: 200 });
+      return NextResponse.json(
+        { ok: true, status: "already_sent" },
+        { status: 200 },
+      );
     }
   }
 
@@ -477,7 +491,7 @@ export async function POST(req: NextRequest) {
     if (lock.error === "locked_or_in_progress") {
       return NextResponse.json(
         { ok: true, status: "locked_or_in_progress" },
-        { status: 200 }
+        { status: 200 },
       );
     }
 
@@ -519,22 +533,23 @@ export async function POST(req: NextRequest) {
       const dl = await downloadAttachmentAsBase64(
         supabaseAdmin,
         ATTACHMENTS_BUCKET,
-        a0.path
+        a0.path,
       );
 
       totalBytes += dl.bytes;
       if (totalBytes > MAX_TOTAL_ATTACHMENTS_BYTES) {
         throw new Error(
           `Total attachment size exceeds ${Math.round(
-            MAX_TOTAL_ATTACHMENTS_BYTES / (1024 * 1024)
-          )}MB`
+            MAX_TOTAL_ATTACHMENTS_BYTES / (1024 * 1024),
+          )}MB`,
         );
       }
 
       graphAttachments.push({
         "@odata.type": "#microsoft.graph.fileAttachment",
         name,
-        contentType: mime && ALLOWED_MIME.has(mime) ? mime : "application/octet-stream",
+        contentType:
+          mime && ALLOWED_MIME.has(mime) ? mime : "application/octet-stream",
         contentBytes: dl.base64,
       });
     }
@@ -565,7 +580,9 @@ export async function POST(req: NextRequest) {
   let anchorMessageId: string | null = explicitAnchor;
 
   if (!anchorMessageId) {
-    const { data: inboundAnchor } = await (supabaseAdmin.from("messages") as any)
+    const { data: inboundAnchor } = await (
+      supabaseAdmin.from("messages") as any
+    )
       .select("outlook_message_id")
       .eq("lead_id", leadId)
       .eq("sender", "user")
@@ -592,7 +609,10 @@ export async function POST(req: NextRequest) {
       .eq("id", messageId)
       .eq("agent_id", user.id);
 
-    return jsonError(400, "Cannot send Outlook reply: missing anchor message id");
+    return jsonError(
+      400,
+      "Cannot send Outlook reply: missing anchor message id",
+    );
   }
 
   // Send as a reply in the same conversation using createReply -> patch -> send
@@ -602,7 +622,7 @@ export async function POST(req: NextRequest) {
   try {
     // 1) createReply
     const createReplyUrl = `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(
-      anchorMessageId
+      anchorMessageId,
     )}/createReply`;
 
     const createRes = await graphFetch(accessToken, createReplyUrl, {
@@ -612,7 +632,9 @@ export async function POST(req: NextRequest) {
 
     if (!createRes.ok) {
       const txt = await createRes.text().catch(() => "");
-      throw new Error(`createReply_failed_${createRes.status}: ${txt.slice(0, 800)}`);
+      throw new Error(
+        `createReply_failed_${createRes.status}: ${txt.slice(0, 800)}`,
+      );
     }
 
     const draftReply = (await createRes.json().catch(() => null)) as any;
@@ -627,7 +649,7 @@ export async function POST(req: NextRequest) {
 
     // 2) update reply draft (subject/body/recipients + optional attachments)
     const patchUrl = `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(
-      replyId
+      replyId,
     )}`;
 
     const patchBody: any = {
@@ -650,14 +672,16 @@ export async function POST(req: NextRequest) {
 
     if (!patchRes.ok) {
       const txt = await patchRes.text().catch(() => "");
-      throw new Error(`patchReply_failed_${patchRes.status}: ${txt.slice(0, 800)}`);
+      throw new Error(
+        `patchReply_failed_${patchRes.status}: ${txt.slice(0, 800)}`,
+      );
     }
 
     // 2.5) Add attachments (Graph: POST /attachments)
     if (graphAttachments.length > 0) {
       for (const att of graphAttachments) {
         const attUrl = `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(
-          replyId
+          replyId,
         )}/attachments`;
 
         const attRes = await graphFetch(accessToken, attUrl, {
@@ -667,14 +691,16 @@ export async function POST(req: NextRequest) {
 
         if (!attRes.ok) {
           const txt = await attRes.text().catch(() => "");
-          throw new Error(`addAttachment_failed_${attRes.status}: ${txt.slice(0, 800)}`);
+          throw new Error(
+            `addAttachment_failed_${attRes.status}: ${txt.slice(0, 800)}`,
+          );
         }
       }
     }
 
     // 3) send the reply draft
     const sendUrl = `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(
-      replyId
+      replyId,
     )}/send`;
 
     const sendRes = await graphFetch(accessToken, sendUrl, {
@@ -709,22 +735,85 @@ export async function POST(req: NextRequest) {
       .eq("id", messageId)
       .eq("agent_id", user.id);
 
-
     // Persist conversation mapping on lead (thread-equivalent)
-    await (supabaseAdmin.from("leads") as any)
-      .update({
-        outlook_conversation_id: finalConversationId,
-        email_provider: "outlook",
-        last_message_at: nowIso,
-      })
+    // Always keep last_message_at in sync, and set last_agent_message_at because this endpoint sends agent emails.
+    const baseLeadUpdate: Record<string, any> = {
+      outlook_conversation_id: finalConversationId,
+      email_provider: "outlook",
+      last_message_at: nowIso,
+      last_agent_message_at: nowIso,
+    };
+
+    const { error: baseLeadErr } = await (supabaseAdmin.from("leads") as any)
+      .update(baseLeadUpdate)
       .eq("id", leadId);
+
+    if (baseLeadErr) {
+      console.error(
+        "[outlook/send] Failed to update lead base fields:",
+        baseLeadErr.message,
+      );
+    }
+
+    // If this email is a follow-up, advance follow-up state (new data model)
+    if (was_followup) {
+      const { data: st, error: stErr } = await (
+        supabaseAdmin.from("leads") as any
+      )
+        .select("followup_stage, followups_enabled")
+        .eq("id", leadId)
+        .maybeSingle();
+
+      if (stErr) {
+        console.error(
+          "[outlook/send] Failed to read lead followup state:",
+          stErr.message,
+        );
+      }
+
+      const currentStage = Math.max(
+        0,
+        Number((st as any)?.followup_stage ?? 0),
+      );
+      const nextStage = Math.min(currentStage + 1, 2);
+      const autoEnabled = Boolean((st as any)?.followups_enabled ?? true);
+
+      // If stage 1 was just sent (0->1) and auto is enabled, plan stage 2 for +72h. Otherwise clear next_at.
+      const nextAt =
+        autoEnabled && nextStage === 1
+          ? new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString()
+          : null;
+
+      const followupUpdate: Record<string, any> = {
+        followup_last_sent_at: nowIso,
+        followup_stage: nextStage,
+        followup_status: "sent",
+        followup_stop_reason: null,
+        followup_paused_until: null,
+        followup_next_at: nextAt,
+      };
+
+      const { error: fuErr } = await (supabaseAdmin.from("leads") as any)
+        .update(followupUpdate)
+        .eq("id", leadId);
+
+      if (fuErr) {
+        console.error(
+          "[outlook/send] Failed to update lead followup fields:",
+          fuErr.message,
+        );
+      }
+    }
 
     return NextResponse.json({
       ok: true,
       status: "sent",
       message: {
         outlook_message_id: sentGraphMessageId,
-        outlook_conversation_id: sentConversationId ?? (leadRow as any).outlook_conversation_id ?? null,
+        outlook_conversation_id:
+          sentConversationId ??
+          (leadRow as any).outlook_conversation_id ??
+          null,
       },
     });
   } catch (e: any) {

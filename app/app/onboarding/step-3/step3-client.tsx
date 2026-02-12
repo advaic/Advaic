@@ -242,8 +242,8 @@ export default function Step3Client() {
   const [saving, setSaving] = useState(false);
 
   // We store the user's selection here:
-  // "approval" = Freigabe; "autosend" = Auto-Send
-  const [mode, setMode] = useState<"approval" | "autosend">("approval");
+  // "approval" = Freigabe; "auto" = Auto-Send
+  const [mode, setMode] = useState<"approval" | "auto">("approval");
 
   const emailConnected = useMemo(
     () => Boolean(row?.step_email_connected_done),
@@ -297,7 +297,7 @@ export default function Step3Client() {
           Boolean(settings?.autosend) ||
           Boolean(settings?.auto_send);
 
-        setMode(autosendOn ? "autosend" : "approval");
+        setMode(autosendOn ? "auto" : "approval");
 
         setLoading(false);
         return;
@@ -320,7 +320,7 @@ export default function Step3Client() {
 
       // We write in the most future-proof way:
       // - If your backend expects different key, it's still one place to adapt.
-      const autosendEnabled = mode === "autosend";
+      const autosendEnabled = mode === "auto";
 
       await saveSettings({
         // API expects exactly this key
@@ -404,8 +404,8 @@ export default function Step3Client() {
         <ChoiceCard
           title="Auto-Send aktivieren"
           desc="Advaic sendet sichere Antworten automatisch. Unklares & Kritisches geht weiterhin zur Freigabe."
-          active={mode === "autosend"}
-          onClick={() => setMode("autosend")}
+          active={mode === "auto"}
+          onClick={() => setMode("auto")}
         />
       </div>
 

@@ -1,5 +1,5 @@
 // app/api/pipeline/outlook/fetch/run/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 
@@ -27,11 +27,18 @@ function mustEnv(name: string): string {
   return v;
 }
 
+function isInternal(req: NextRequest) {
+  const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
+  if (!secret) return false;
+  const got = req.headers.get("x-advaic-internal-secret");
+  return !!got && got === secret;
+}
+
 function supabaseAdmin() {
   return createClient<Database>(
     mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
     mustEnv("SUPABASE_SERVICE_ROLE_KEY"),
-    { auth: { persistSession: false, autoRefreshToken: false } }
+    { auth: { persistSession: false, autoRefreshToken: false } },
   );
 }
 
@@ -49,6 +56,26 @@ function lowerTrim(x: unknown, max = 320) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function toIsoOrNow(v: string | null) {
+  try {
+    return v ? new Date(v).toISOString() : nowIso();
+  } catch {
+    return nowIso();
+  }
+}
+
+function isFutureIso(v: string | null) {
+  if (!v) return false;
+  const t = Date.parse(v);
+  return Number.isFinite(t) && t > Date.now();
+}
+
+function addHoursIso(baseIso: string, hours: number) {
+  const t = Date.parse(baseIso);
+  if (!Number.isFinite(t)) return null;
+  return new Date(t + hours * 60 * 60 * 1000).toISOString();
 }
 
 type OutlookConnectionRow = {
@@ -88,7 +115,7 @@ async function refreshOutlookAccessToken(args: { refreshToken: string }) {
 
   if (!clientId || !clientSecret) {
     throw new Error(
-      "Missing MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET env vars"
+      "Missing MICROSOFT_CLIENT_ID / MICROSOFT_CLIENT_SECRET env vars",
     );
   }
 
@@ -163,7 +190,9 @@ async function graphGet(url: string, accessToken: string) {
 
   if (!resp.ok) {
     const t = await resp.text().catch(() => "");
-    const err = new Error(`Graph request failed: ${resp.status} ${t}`) as Error & {
+    const err = new Error(
+      `Graph request failed: ${resp.status} ${t}`,
+    ) as Error & {
       status?: number;
       body?: string;
     };
@@ -186,7 +215,7 @@ function isDeltaGoneError(e: any) {
   return (
     body.includes("syncstatenotfound") ||
     body.includes("deltatoken") ||
-    body.includes("invalid") && body.includes("delta")
+    (body.includes("invalid") && body.includes("delta"))
   );
 }
 
@@ -215,7 +244,7 @@ function buildInitialInboxDeltaUrl(top = 50) {
   // Inbox delta (best for your “lead inquiry” workflow)
   // Note: /me/mailFolders('Inbox')/messages/delta supports delta links.
   return `https://graph.microsoft.com/v1.0/me/mailFolders('Inbox')/messages/delta?$select=${encodeURIComponent(
-    select
+    select,
   )}&$top=${$top}`;
 }
 
@@ -229,7 +258,6 @@ function extractEmailAddress(addrObj: any): string | null {
   if (!e) return null;
   return e;
 }
-
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -295,6 +323,61 @@ function safePreview(text: unknown, max = 2400) {
   return t.replace(/\s+/g, " ").trim();
 }
 
+function computeFollowupPlan(args: {
+  nowIso: string;
+  followupsEnabled: boolean;
+  pausedUntil: string | null;
+}) {
+  if (!args.followupsEnabled) {
+    return {
+      followup_status: "idle" as const,
+      followup_next_at: null as string | null,
+      // Keep paused_until as-is (agent may re-enable later)
+      followup_paused_until: args.pausedUntil,
+    };
+  }
+
+  // If snoozed into the future, keep the snooze date (do not override).
+  if (isFutureIso(args.pausedUntil)) {
+    return {
+      followup_status: "planned" as const,
+      followup_next_at: args.pausedUntil,
+      followup_paused_until: args.pausedUntil,
+    };
+  }
+
+  // Default: stage 1 planned for +24h from last inbound user message
+  const nextAt = addHoursIso(args.nowIso, 24);
+  return {
+    followup_status: nextAt
+      ? ("planned" as const)
+      : ("idle" as const),
+    followup_next_at: nextAt,
+    followup_paused_until: null as string | null,
+  };
+}
+
+async function getAgentFollowupsEnabled(supabase: any, agentId: string) {
+  // We want follow-ups to respect the agent's real setting.
+  // If the setting/table is missing or unreadable, we fail open to `true` to avoid breaking the pipeline.
+  try {
+    const { data, error } = await (supabase.from("agent_settings") as any)
+      .select("followups_enabled")
+      .eq("agent_id", agentId)
+      .maybeSingle();
+
+    if (error) return true;
+
+    const v = (data as any)?.followups_enabled;
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number") return v === 1;
+
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 async function findOrCreateLead(args: {
   supabase: any;
   agentId: string;
@@ -303,6 +386,7 @@ async function findOrCreateLead(args: {
   agentMailboxEmail: string | null;
   outlookConversationId: string | null;
   subject: string | null;
+  inboundIso: string;
 }) {
   const { supabase, agentId } = args;
 
@@ -322,7 +406,8 @@ async function findOrCreateLead(args: {
       .maybeSingle();
 
     if (byConv?.id) {
-      const existingEmail = typeof byConv.email === "string" ? byConv.email : "";
+      const existingEmail =
+        typeof byConv.email === "string" ? byConv.email : "";
       const existingNorm = existingEmail ? normalizeEmail(existingEmail) : "";
       const chosenNorm = chosenEmail ? normalizeEmail(chosenEmail) : "";
 
@@ -375,6 +460,14 @@ async function findOrCreateLead(args: {
   }
 
   // 2) Create new lead
+  const agentFollowupsEnabled = await getAgentFollowupsEnabled(supabase, agentId);
+
+  const initialPlan = computeFollowupPlan({
+    nowIso: args.inboundIso,
+    followupsEnabled: agentFollowupsEnabled,
+    pausedUntil: null,
+  });
+
   const { data: created } = await (supabase.from("leads") as any)
     .insert({
       agent_id: agentId,
@@ -382,7 +475,16 @@ async function findOrCreateLead(args: {
       email_provider: "outlook",
       outlook_conversation_id: args.outlookConversationId,
       subject: args.subject ? safeString(args.subject, 180) : null,
-      last_message_at: nowIso(),
+
+      last_message_at: args.inboundIso,
+      last_user_message_at: args.inboundIso,
+
+      followups_enabled: agentFollowupsEnabled,
+      followup_stage: 0,
+      followup_status: initialPlan.followup_status,
+      followup_next_at: initialPlan.followup_next_at,
+      followup_stop_reason: null,
+      followup_paused_until: initialPlan.followup_paused_until,
     })
     .select("id")
     .single();
@@ -442,10 +544,16 @@ async function upsertInboundMessage(args: {
   // Postgres unique_violation
   if (code === "23505") return;
 
-  throw new Error(`message insert failed: ${(error as any).message || "unknown"}`);
+  throw new Error(
+    `message insert failed: ${(error as any).message || "unknown"}`,
+  );
 }
 
-export async function POST() {
+export async function POST(req: NextRequest) {
+  // Protect pipeline runner: only callable by internal cron/queue
+  if (!isInternal(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const supabase = supabaseAdmin();
 
   // Pull outlook connections that need backfill
@@ -453,7 +561,7 @@ export async function POST() {
     supabase.from("email_connections") as any
   )
     .select(
-      "id, agent_id, provider, status, email_address, access_token, refresh_token, expires_at, needs_backfill, outlook_delta_link, outlook_subscription_id, outlook_subscription_expiration, watch_active, last_error"
+      "id, agent_id, provider, status, email_address, access_token, refresh_token, expires_at, needs_backfill, outlook_delta_link, outlook_subscription_id, outlook_subscription_expiration, watch_active, last_error",
     )
     .eq("provider", "outlook")
     .in("status", ["connected", "active"])
@@ -465,7 +573,7 @@ export async function POST() {
   if (connsErr) {
     return NextResponse.json(
       { error: "Failed to load email_connections", details: connsErr.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -555,12 +663,14 @@ export async function POST() {
           if (!fromEmail) continue;
 
           // reply-to (portal systems often put the real lead here)
-          const replyToEmail = Array.isArray(it?.replyTo) && it.replyTo.length > 0
-            ? extractEmailAddress(it.replyTo[0])
-            : null;
+          const replyToEmail =
+            Array.isArray(it?.replyTo) && it.replyTo.length > 0
+              ? extractEmailAddress(it.replyTo[0])
+              : null;
 
           // Skip self-sent/outbound copies (prevents drafting replies to the agent's own messages)
-          if (c.email_address && sameEmail(fromEmail, c.email_address)) continue;
+          if (c.email_address && sameEmail(fromEmail, c.email_address))
+            continue;
 
           // only process inbound-ish
           // (We’re pulling Inbox delta, so this is already mostly inbound.)
@@ -575,8 +685,10 @@ export async function POST() {
           const receivedAt = it?.receivedDateTime
             ? safeString(it.receivedDateTime, 64)
             : it?.sentDateTime
-            ? safeString(it.sentDateTime, 64)
-            : null;
+              ? safeString(it.sentDateTime, 64)
+              : null;
+
+          const inboundIso = toIsoOrNow(receivedAt);
 
           const leadId = await findOrCreateLead({
             supabase,
@@ -586,6 +698,7 @@ export async function POST() {
             agentMailboxEmail: c.email_address || null,
             outlookConversationId: conversationId,
             subject,
+            inboundIso,
           });
 
           if (!leadId) continue;
@@ -603,15 +716,53 @@ export async function POST() {
             snippet: bodyPreview || subject || "Neue Nachricht",
           });
 
-          // Update lead recency (best-effort)
+          // Update lead recency + follow-up scheduling state (best-effort)
+          // Inbound message => last_user_message_at should move forward.
+          // Follow-up sequencing should reset to stage 0 and plan next_at (+24h) if enabled and not paused.
+          let followupsEnabled = true;
+          let pausedUntil: string | null = null;
+
+          const { data: fuState, error: fuStateErr } = await (
+            supabase.from("leads") as any
+          )
+            .select("followups_enabled, followup_paused_until")
+            .eq("id", leadId)
+            .eq("agent_id", agentId)
+            .maybeSingle();
+
+          if (!fuStateErr && fuState) {
+            followupsEnabled = Boolean(
+              (fuState as any).followups_enabled ?? true,
+            );
+            pausedUntil = (fuState as any).followup_paused_until
+              ? toIsoOrNow(String((fuState as any).followup_paused_until))
+              : null;
+          }
+
+          const plan = computeFollowupPlan({
+            nowIso: inboundIso,
+            followupsEnabled,
+            pausedUntil,
+          });
+
+          const leadPatch: Record<string, any> = {
+            last_message_at: inboundIso,
+            last_user_message_at: inboundIso,
+            email_provider: "outlook",
+            outlook_conversation_id: conversationId,
+
+            // Follow-up state reset on inbound
+            followup_stage: 0,
+            followup_status: plan.followup_status,
+            followup_stop_reason: null,
+            followup_next_at: plan.followup_next_at,
+
+            // Keep paused_until consistent with plan (don't override future snooze)
+            followup_paused_until: plan.followup_paused_until,
+          };
+
           await (supabase.from("leads") as any)
-            .update({
-              last_message_at: receivedAt
-                ? new Date(receivedAt).toISOString()
-                : nowIso(),
-              email_provider: "outlook",
-              outlook_conversation_id: conversationId,
-            })
+            .update(leadPatch)
             .eq("id", leadId)
             .eq("agent_id", agentId);
 

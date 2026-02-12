@@ -34,6 +34,16 @@ export type ApprovalMessage = {
   email_type?: string | null;
   classification_confidence?: number | null;
 
+  classification_reason?: string | null;
+  classification_reason_long?: string | null;
+
+  // QA meta (optional)
+  qa_verdict?: string | null;
+  qa_score?: number | null;
+  qa_reason?: string | null;
+  qa_reason_long?: string | null;
+  qa_risk_flags?: string[] | null;
+
   // for UI label
   lead_name?: string;
 
@@ -72,8 +82,8 @@ function normalizeAttachments(msg: any): AttachmentMeta[] {
     const arr = Array.isArray(raw)
       ? raw
       : typeof raw === "string"
-      ? JSON.parse(raw)
-      : [];
+        ? JSON.parse(raw)
+        : [];
 
     return (arr || [])
       .filter(Boolean)
@@ -103,12 +113,104 @@ function safeLineDiff(original: string, edited: string) {
   return rows;
 }
 
+function buildReasonRows(message: ApprovalMessage) {
+  const rows: Array<{ label: string; value: string }> = [];
+
+  // Email classifier reasoning (inbound)
+  const emailType = message.email_type ? String(message.email_type) : "";
+  const conf =
+    typeof message.classification_confidence === "number"
+      ? message.classification_confidence
+      : null;
+  const confStr = conf === null ? "" : ` (Confidence: ${conf.toFixed(2)})`;
+
+  const clsReason =
+    (message as any).classification_reason_long ??
+    (message as any).classification_reason ??
+    null;
+
+  if (emailType || clsReason || conf !== null) {
+    rows.push({
+      label: "E-Mail Klassifizierung",
+      value:
+        `${emailType ? emailType : "—"}${confStr}` +
+        (clsReason ? `\n${String(clsReason)}` : ""),
+    });
+  }
+
+  // QA reasoning (draft)
+  const qaVerdict = (message as any).qa_verdict
+    ? String((message as any).qa_verdict)
+    : "";
+  const qaScore =
+    typeof (message as any).qa_score === "number" ? (message as any).qa_score : null;
+  const qaScoreStr = qaScore === null ? "" : ` (Score: ${Number(qaScore).toFixed(2)})`;
+
+  const qaReason =
+    (message as any).qa_reason_long ?? (message as any).qa_reason ?? null;
+
+  if (qaVerdict || qaReason || qaScore !== null) {
+    rows.push({
+      label: "QA Bewertung",
+      value:
+        `${qaVerdict ? qaVerdict : "—"}${qaScoreStr}` +
+        (qaReason ? `\n${String(qaReason)}` : ""),
+    });
+  }
+
+  const riskFlags = (message as any).qa_risk_flags as string[] | null | undefined;
+  if (Array.isArray(riskFlags) && riskFlags.length > 0) {
+    rows.push({
+      label: "Risiko-Flags",
+      value: riskFlags.map((f) => String(f)).join(", "),
+    });
+  }
+
+  if (message.was_followup) {
+    rows.push({ label: "Typ", value: "Follow-up" });
+  }
+
+  // Fallback if nothing is present (common when the server query doesn't select/join these fields yet)
+  if (rows.length === 0) {
+    rows.push({
+      label: "Grund",
+      value:
+        "Noch kein Reasoning vorhanden / nicht mitgeladen. \n\n" +
+        "Wenn du Reasoning sehen willst, stelle sicher dass die Server-Query für die Zur-Freigabe-Liste diese Felder selektiert/joind und an dieses UI durchreicht: \n" +
+        "- messages.email_type, messages.classification_confidence, messages.classification_reason, messages.classification_reason_long\n" +
+        "- message_qas.qa_verdict, message_qas.qa_score, message_qas.qa_reason, message_qas.qa_reason_long, message_qas.qa_risk_flags\n",
+    });
+
+    // Small debug snapshot to confirm what the UI actually receives
+    const debug = {
+      id: message.id,
+      approval_required: message.approval_required,
+      email_type: (message as any).email_type ?? null,
+      classification_confidence: (message as any).classification_confidence ?? null,
+      classification_reason: (message as any).classification_reason ?? null,
+      classification_reason_long: (message as any).classification_reason_long ?? null,
+      qa_verdict: (message as any).qa_verdict ?? null,
+      qa_score: (message as any).qa_score ?? null,
+      qa_reason: (message as any).qa_reason ?? null,
+      qa_reason_long: (message as any).qa_reason_long ?? null,
+      qa_risk_flags: (message as any).qa_risk_flags ?? null,
+    };
+
+    rows.push({
+      label: "Debug (eingehende Props)",
+      value: JSON.stringify(debug, null, 2),
+    });
+  }
+
+  return rows;
+}
+
 async function readSendResponse(
-  res: Response
+  res: Response,
 ): Promise<
   { ok: boolean; status?: string; error?: string } & Record<string, any>
 > {
-  const data = await res.json().catch(() => ({} as any));
+  const data = await res.json().catch(() => ({}) as any);
   if (!res.ok) {
     return {
       ok: false,
@@ -134,7 +236,7 @@ export default function ZurFreigabeUI({
 
   const [pendingIds, setPendingIds] = useState<Record<string, boolean>>({});
   const [actionError, setActionError] = useState<Record<string, string | null>>(
-    {}
+    {},
   );
   const [search, setSearch] = useState<string>("");
 
@@ -145,6 +247,7 @@ export default function ZurFreigabeUI({
     Record<string, Record<string, string>>
   >({});
   const [previewOpen, setPreviewOpen] = useState<Record<string, boolean>>({});
+  const [reasonOpen, setReasonOpen] = useState<Record<string, boolean>>({});
 
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -161,13 +264,13 @@ export default function ZurFreigabeUI({
     return base.filter((m) =>
       String(m.text ?? "")
         .toLowerCase()
-        .includes(q)
+        .includes(q),
     );
   }, [messages, search]);
 
   const approvalIds = useMemo(
     () => approvalMessages.map((m) => m.id),
-    [approvalMessages]
+    [approvalMessages],
   );
 
   useEffect(() => {
@@ -177,6 +280,12 @@ export default function ZurFreigabeUI({
       return next;
     });
     setSelectAll(false);
+
+    setReasonOpen((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const id of approvalIds) next[id] = !!prev[id];
+      return next;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [approvalIds.join("|")]);
 
@@ -226,7 +335,7 @@ export default function ZurFreigabeUI({
 
         if (!res.ok) continue;
 
-        const data = await res.json().catch(() => ({} as any));
+        const data = await res.json().catch(() => ({}) as any);
 
         // supports both single + batch shapes
         if (
@@ -305,7 +414,7 @@ export default function ZurFreigabeUI({
       // If another worker/process is currently sending, rollback and surface a friendly note.
       if (send.status === "locked_or_in_progress") {
         throw new Error(
-          "Diese Nachricht wird bereits gesendet. Bitte warte kurz und aktualisiere die Seite."
+          "Diese Nachricht wird bereits gesendet. Bitte warte kurz und aktualisiere die Seite.",
         );
       }
 
@@ -410,7 +519,7 @@ export default function ZurFreigabeUI({
       }
       if (send.status === "locked_or_in_progress") {
         throw new Error(
-          "Diese Nachricht wird bereits gesendet. Bitte warte kurz und aktualisiere die Seite."
+          "Diese Nachricht wird bereits gesendet. Bitte warte kurz und aktualisiere die Seite.",
         );
       }
 
@@ -474,10 +583,16 @@ export default function ZurFreigabeUI({
   };
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
+    <div
+      className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900"
+      data-tour="approval-page"
+    >
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-6">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 mb-6">
+        <div
+          className="flex items-start justify-between gap-4 mb-6"
+          data-tour="approval-header"
+        >
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl md:text-3xl font-semibold">
@@ -496,7 +611,7 @@ export default function ZurFreigabeUI({
             </p>
           </div>
 
-          <div className="w-full max-w-sm">
+          <div className="w-full max-w-sm" data-tour="approval-search">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -507,7 +622,10 @@ export default function ZurFreigabeUI({
         </div>
 
         {/* Bulk bar */}
-        <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4 flex items-center justify-between gap-3">
+        <div
+          className="mt-4 rounded-2xl border border-gray-200 bg-white p-4 flex items-center justify-between gap-3"
+          data-tour="approval-bulk-actions"
+        >
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 text-sm text-gray-800 select-none">
               <input
@@ -544,7 +662,7 @@ export default function ZurFreigabeUI({
         </div>
 
         {/* List */}
-        <div className="space-y-3">
+        <div className="space-y-3" data-tour="approval-list">
           {approvalMessages.map((message) => {
             const pending =
               !!pendingIds[message.id] ||
@@ -555,10 +673,10 @@ export default function ZurFreigabeUI({
               message.sender === "user"
                 ? "Interessent"
                 : message.sender === "agent"
-                ? "Du"
-                : message.sender === "assistant"
-                ? "Advaic"
-                : "System";
+                  ? "Du"
+                  : message.sender === "assistant"
+                    ? "Advaic"
+                    : "System";
 
             const ts = message.timestamp ? new Date(message.timestamp) : null;
 
@@ -568,6 +686,7 @@ export default function ZurFreigabeUI({
                   cardRefs.current[message.id] = el;
                 }}
                 key={message.id}
+                data-tour="approval-card"
                 onClick={() => {
                   if (isEditing || pending) return;
                   router.push(`/app/nachrichten/${message.lead_id}`);
@@ -613,12 +732,74 @@ export default function ZurFreigabeUI({
                           Wird gesendet…
                         </div>
                       )}
+
+                      {(() => {
+                        const rows = buildReasonRows(message);
+                        const open = !!reasonOpen[message.id];
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setReasonOpen((prev) => ({
+                                ...prev,
+                                [message.id]: !open,
+                              }));
+                            }}
+                            className={`text-xs px-2 py-1 rounded-full border transition-colors ${
+                              open
+                                ? "border-amber-300 bg-amber-50 text-amber-900"
+                                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                            }`}
+                            title="Warum ist diese Nachricht zur Freigabe?"
+                          >
+                            Warum hier?
+                          </button>
+                        );
+                      })()}
                     </div>
 
                     <p className="text-sm text-gray-700 mt-2 line-clamp-2">
                       {String(message.text ?? "").slice(0, 240)}
                       {String(message.text ?? "").length > 240 ? "…" : ""}
                     </p>
+
+                    {(() => {
+                      const rows = buildReasonRows(message);
+                      const open = !!reasonOpen[message.id];
+                      if (!open) return null;
+
+                      return (
+                        <div
+                          className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/60 px-4 py-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="text-xs font-semibold text-amber-900 mb-2">
+                            Warum ist diese Nachricht zur Freigabe?
+                          </div>
+
+                          <div className="space-y-2">
+                            {rows.map((r, idx) => (
+                              <div key={idx} className="text-xs text-gray-900">
+                                <div className="font-medium text-gray-900">
+                                  {r.label}
+                                </div>
+                                <pre className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-gray-800">
+                                  {r.value}
+                                </pre>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="mt-2 text-[11px] text-gray-600">
+                            Hinweis: Wenn Autosend deaktiviert ist oder Regeln
+                            greifen (z.B. no-reply, Billing, niedrige
+                            Confidence), landet die Nachricht hier zur
+                            Kontrolle.
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Attachments preview */}
                     {(() => {
@@ -632,6 +813,7 @@ export default function ZurFreigabeUI({
                         <div className="mt-3">
                           <button
                             type="button"
+                            data-tour="approval-attachments"
                             onClick={(e) => {
                               e.stopPropagation();
                               if (!open) ensurePreviews(message);
@@ -714,6 +896,7 @@ export default function ZurFreigabeUI({
                     {isEditing && (
                       <div
                         className="mt-4"
+                        data-tour="approval-editor"
                         onClick={(e) => {
                           e.stopPropagation();
                         }}
@@ -748,7 +931,7 @@ export default function ZurFreigabeUI({
                           <div className="space-y-1">
                             {safeLineDiff(
                               String(message.text ?? ""),
-                              editedText
+                              editedText,
                             ).map((r, idx) => (
                               <div
                                 key={idx}
@@ -772,6 +955,7 @@ export default function ZurFreigabeUI({
                         <div className="mt-2 flex items-center gap-2">
                           <button
                             disabled={pending}
+                            data-tour="approval-editor-send"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleSaveEditedMessage(message.id);
@@ -782,6 +966,7 @@ export default function ZurFreigabeUI({
                           </button>
                           <button
                             disabled={pending}
+                            data-tour="approval-editor-cancel"
                             onClick={(e) => {
                               e.stopPropagation();
                               setEditingMessageId(null);
@@ -800,12 +985,14 @@ export default function ZurFreigabeUI({
                   {/* Actions */}
                   <div
                     className="flex items-center gap-2"
+                    data-tour="approval-card-actions"
                     onClick={(e) => {
                       e.stopPropagation();
                     }}
                   >
                     <button
                       disabled={pending || isEditing}
+                      data-tour="approval-send"
                       onClick={() => handleApprove(message.id)}
                       className="px-3 py-2 rounded-xl text-sm border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Freigeben & senden"
@@ -815,6 +1002,7 @@ export default function ZurFreigabeUI({
 
                     <button
                       disabled={pending || isEditing}
+                      data-tour="approval-edit"
                       onClick={() => {
                         if (editingMessageId) return;
                         handleEdit(message.id, String(message.text ?? ""));
@@ -827,6 +1015,7 @@ export default function ZurFreigabeUI({
 
                     <button
                       disabled={pending || isEditing}
+                      data-tour="approval-reject"
                       onClick={() => handleReject(message.id)}
                       className="px-3 py-2 rounded-xl text-sm border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Ablehnen"
@@ -840,7 +1029,10 @@ export default function ZurFreigabeUI({
           })}
 
           {approvalMessages.length === 0 && (
-            <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center">
+            <div
+              className="rounded-2xl border border-gray-200 bg-white p-10 text-center"
+              data-tour="approval-empty"
+            >
               <div className="text-gray-900 font-semibold">
                 Keine Nachrichten zur Freigabe.
               </div>

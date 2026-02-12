@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import type { Database } from "@/types/supabase";
 import { toast } from "sonner";
@@ -15,23 +15,43 @@ import {
   RefreshCw,
   Search,
   Send,
+  Settings,
   Wand2,
   X,
 } from "lucide-react";
 import { snoozeFollowUp, suggestFollowUpText } from "@/app/actions/followups";
 
-/** View-Zeile aus `leads_with_metrics` */
-type LeadMetrics = {
+/** View-Zeile aus `followups_queue_v1` */
+type FollowupQueueRow = {
   id: string;
   agent_id: string;
   name: string | null;
   email: string | null;
-  last_message: string | null;
-  updated_at: string | null; // timestamptz
-  hours_since_last_reply: number; // numeric oder int
+
+  bucket: "waiting" | "planned" | "sent";
+  bucket_label: string | null;
+
+  followups_enabled: boolean;
+  followup_paused_until: string | null;
+  followup_stage: number;
+  followup_next_at: string | null;
+  followup_status: string;
+  followup_stop_reason: string | null;
+
+  last_followup_text: string | null;
+  last_followup_sent_at: string | null;
+
+  last_user_message_at: string | null;
+  last_agent_message_at: string | null;
+
+  computed_due_at: string | null;
+  computed_is_due: boolean;
+  next_stage: number | null;
+
+  hours_until_next: number | null;
 };
 
-/** Nachricht aus `messages` für gesendete Follow-ups */
+/** Nachricht aus `messages` für gesendete Follow-ups (Fallback-Historie) */
 type SentFollowUp = {
   id: string;
   lead_id: string;
@@ -45,7 +65,7 @@ type LeadMin = {
   email: string | null;
 };
 
-type TabKey = "due" | "soon" | "sent";
+type TabKey = "waiting" | "planned" | "sent";
 
 type FollowUpsUIProps = {
   /** vom Server (page.tsx) durchgereicht */
@@ -54,13 +74,11 @@ type FollowUpsUIProps = {
 
 export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
   const supabase = useSupabaseClient<Database>();
-  const [tab, setTab] = useState<TabKey>("due");
+  const [tab, setTab] = useState<TabKey>("waiting");
   const [loading, setLoading] = useState(true);
-  const [threshold, setThreshold] = useState<number>(24);
-  const [soonWindow, setSoonWindow] = useState<number>(12);
   const [search, setSearch] = useState("");
 
-  const [metrics, setMetrics] = useState<LeadMetrics[]>([]);
+  const [queue, setQueue] = useState<FollowupQueueRow[]>([]);
   const [sent, setSent] = useState<SentFollowUp[]>([]);
   const [sentLeadMap, setSentLeadMap] = useState<Record<string, LeadMin>>({});
 
@@ -76,7 +94,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
   const setSendErrorFor = (id: string, msg: string | null) =>
     setSendError((p) => ({ ...p, [id]: msg }));
 
-  const buildDefaultText = (lead: Pick<LeadMetrics, "name">) =>
+  const buildDefaultText = (lead: Pick<FollowupQueueRow, "name">) =>
     `${
       lead.name?.trim() || "Hallo"
     }, nur ein kurzes Follow-up: Haben Sie schon ein Update oder noch Fragen? Ich freue mich auf Ihre Rückmeldung.`;
@@ -86,22 +104,20 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
     try {
       if (!opts?.silent) setLoading(true);
 
-      // 1) Fälligkeit aus View
-      const { data: mData, error: mErr } = await supabase
-        .from("leads_with_metrics")
-        .select(
-          "id, agent_id, name, email, last_message, updated_at, hours_since_last_reply"
-        )
+      // 1) Queue aus View (Wartet / Geplant / Gesendet)
+      const { data: qData, error: qErr } = await supabase
+        .from("followups_queue_v1")
+        .select("*")
         .eq("agent_id", userId);
 
-      if (mErr) {
-        console.error("⚠️ leads_with_metrics error:", mErr);
+      if (qErr) {
+        console.error("⚠️ followups_queue_v1 error:", qErr);
         toast.error(
-          "Fehler beim Laden der Fälligkeiten. Existiert die View `leads_with_metrics`?"
+          "Fehler beim Laden der Follow-ups. Existiert die View `followups_queue_v1`?",
         );
-        setMetrics([]);
+        setQueue([]);
       } else {
-        const rows = (mData ?? []) as LeadMetrics[];
+        const rows = (qData ?? []) as FollowupQueueRow[];
         setDrafts((prev) => {
           const copy = { ...prev };
           for (const r of rows) {
@@ -109,10 +125,10 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
           }
           return copy;
         });
-        setMetrics(rows);
+        setQueue(rows);
       }
 
-      // 2) Gesendete Follow-ups
+      // 2) Gesendete Follow-ups (Fallback Historie aus messages)
       const { data: sMsgs, error: sErr } = await supabase
         .from("messages")
         .select("id, lead_id, text, timestamp")
@@ -138,7 +154,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
             console.error("⚠️ leads info error:", lErr);
           } else {
             leadMap = Object.fromEntries(
-              (leadsInfo ?? []).map((l) => [l.id, l as LeadMin])
+              (leadsInfo ?? []).map((l) => [l.id, l as LeadMin]),
             );
           }
         }
@@ -159,38 +175,32 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  const dueRows = useMemo(() => {
-    return metrics.filter(
-      (m) => (m.hours_since_last_reply ?? 0) >= Number(threshold)
-    );
-  }, [metrics, threshold]);
-
-  const soonRows = useMemo(() => {
-    const min = Math.max(1, Number(threshold) - Number(soonWindow));
-    const max = Number(threshold);
-    return metrics.filter((m) => {
-      const h = Number(m.hours_since_last_reply ?? 0);
-      return h >= min && h < max;
-    });
-  }, [metrics, threshold, soonWindow]);
-
-  const applySearchLead = (rows: LeadMetrics[]) => {
+  const applySearchLead = (rows: FollowupQueueRow[]) => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((r) =>
-      `${r.name ?? ""} ${r.email ?? ""} ${r.last_message ?? ""}`
+      `${r.name ?? ""} ${r.email ?? ""} ${r.last_followup_text ?? ""}`
         .toLowerCase()
-        .includes(q)
+        .includes(q),
     );
   };
 
-  const filteredDue = useMemo(
-    () => applySearchLead(dueRows),
-    [dueRows, search]
+  const waitingRows = useMemo(
+    () => queue.filter((r) => r.bucket === "waiting"),
+    [queue],
   );
-  const filteredSoon = useMemo(
-    () => applySearchLead(soonRows),
-    [soonRows, search]
+  const plannedRows = useMemo(
+    () => queue.filter((r) => r.bucket === "planned"),
+    [queue],
+  );
+
+  const filteredWaiting = useMemo(
+    () => applySearchLead(waitingRows),
+    [waitingRows, search],
+  );
+  const filteredPlanned = useMemo(
+    () => applySearchLead(plannedRows),
+    [plannedRows, search],
   );
 
   const filteredSent = useMemo(() => {
@@ -212,7 +222,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
   const onDraftChange = (id: string, val: string) =>
     setDrafts((p) => ({ ...p, [id]: val }));
 
-  const onSuggest = async (lead: LeadMetrics) => {
+  const onSuggest = async (lead: FollowupQueueRow) => {
     try {
       setBusyFor(lead.id, true);
       const suggestion = await suggestFollowUpText(lead.id);
@@ -227,7 +237,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
     }
   };
 
-  const onSend = async (lead: LeadMetrics) => {
+  const onSend = async (lead: FollowupQueueRow) => {
     if (sendPending[lead.id]) return;
 
     const leadId = lead.id;
@@ -238,18 +248,21 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
       return;
     }
 
-    const localSentId = `local-${leadId}-${Date.now()}`;
+    const initialLocalSentId = `local-${leadId}-${Date.now()}`;
+    let localSentId = initialLocalSentId;
+
     setSendPendingFor(leadId, true);
     setSendErrorFor(leadId, null);
 
     const removedLeadSnapshot = lead;
 
-    setMetrics((prev) => prev.filter((x) => x.id !== leadId));
+    // Optimistic UI: remove from queue and add to "sent" immediately
+    setQueue((prev) => prev.filter((x) => x.id !== leadId));
     setExpanded((prev) => ({ ...prev, [leadId]: false }));
 
     setSent((prev) => [
       {
-        id: localSentId,
+        id: initialLocalSentId,
         lead_id: leadId,
         text,
         timestamp: new Date().toISOString(),
@@ -266,7 +279,9 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
 
       const { data: leadRow, error: leadErr } = await supabase
         .from("leads")
-        .select("id, gmail_thread_id, type")
+        .select(
+          "id, type, email_provider, gmail_thread_id, outlook_conversation_id",
+        )
         .eq("id", leadId)
         .single();
 
@@ -274,19 +289,77 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
         throw new Error("Konnte Interessent nicht laden.");
       }
 
-      const subject = `Re: ${leadRow.type ?? "Anfrage"}`;
+      const subject = `Re: ${(leadRow as any).type ?? "Anfrage"}`;
 
-      const res = await fetch("/api/gmail/send", {
+      // Outlook send route requires a `messages.id` (draft row). For Gmail we can send without it.
+      async function ensureOutlookDraftMessageId(): Promise<string> {
+        const nowIso = new Date().toISOString();
+
+        const { data: inserted, error: insErr } = await (
+          supabase.from("messages") as any
+        )
+          .insert({
+            agent_id: userId,
+            lead_id: leadId,
+            sender: "agent",
+            text,
+            timestamp: nowIso,
+            was_followup: true,
+            email_provider: "outlook",
+            send_status: "pending",
+            approval_required: false,
+            status: "approved",
+          })
+          .select("id")
+          .single();
+
+        if (insErr || !inserted?.id) {
+          throw new Error(
+            insErr?.message ||
+              "Konnte Outlook-Entwurf (Message) nicht anlegen.",
+          );
+        }
+
+        return String(inserted.id);
+      }
+
+      const provider = (leadRow as any).email_provider ?? "gmail";
+      const endpoint =
+        provider === "outlook" ? "/api/outlook/send" : "/api/gmail/send";
+
+      const payload: Record<string, any> = {
+        lead_id: leadId,
+        to: lead.email,
+        subject,
+        text,
+        was_followup: true,
+      };
+
+      // Provider-spezifische Conversation/Thread-Verknüpfung
+      if (provider === "outlook") {
+        payload.outlook_conversation_id =
+          (leadRow as any).outlook_conversation_id ?? null;
+
+        // Outlook requires a message id; create a draft row first.
+        const draftMessageId = await ensureOutlookDraftMessageId();
+        payload.id = draftMessageId;
+
+        // Update optimistic row id from local-... to the real draft id
+        setSent((prev) =>
+          prev.map((m) =>
+            m.id === initialLocalSentId ? { ...m, id: draftMessageId } : m,
+          ),
+        );
+
+        localSentId = draftMessageId;
+      } else {
+        payload.gmail_thread_id = (leadRow as any).gmail_thread_id ?? null;
+      }
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lead_id: leadId,
-          gmail_thread_id: (leadRow as any).gmail_thread_id ?? null,
-          to: lead.email,
-          subject,
-          text,
-          was_followup: true,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -297,11 +370,20 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
 
       toast.success("Follow-up gesendet.");
 
-      if (data?.gmail_message_id) {
+      const returnedId =
+        data?.gmail_message_id ??
+        data?.outlook_message_id ??
+        data?.message?.outlook_message_id ??
+        data?.message?.gmail_message_id ??
+        null;
+
+      // If the API returns a different id (Gmail message id, or Graph message id),
+      // swap it in the UI.
+      if (returnedId) {
         setSent((prev) =>
           prev.map((m) =>
-            m.id === localSentId ? { ...m, id: data.gmail_message_id } : m
-          )
+            m.id === localSentId ? { ...m, id: String(returnedId) } : m,
+          ),
         );
       }
 
@@ -317,20 +399,24 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
       toast.error(msg);
       setSendErrorFor(leadId, msg);
 
-      setMetrics((prev) => {
+      // Reinsert the lead into queue
+      setQueue((prev) => {
         const exists = prev.some((x) => x.id === removedLeadSnapshot.id);
         if (exists) return prev;
         return [removedLeadSnapshot, ...prev];
       });
 
-      setSent((prev) => prev.filter((m) => m.id !== localSentId));
+      // Remove optimistic sent row (could be initialLocalSentId or draft id)
+      setSent((prev) =>
+        prev.filter((m) => m.id !== initialLocalSentId && m.id !== localSentId),
+      );
     } finally {
       setBusyFor(leadId, false);
       setSendPendingFor(leadId, false);
     }
   };
 
-  const onSnooze24h = async (lead: LeadMetrics) => {
+  const onSnooze24h = async (lead: FollowupQueueRow) => {
     try {
       setBusyFor(lead.id, true);
 
@@ -338,10 +424,10 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
 
       const nextLocal = new Date(Date.now() + 24 * 60 * 60 * 1000);
       toast.success(
-        `Follow-up verschoben auf ${nextLocal.toLocaleString("de-DE")}.`
+        `Follow-up verschoben auf ${nextLocal.toLocaleString("de-DE")}.`,
       );
 
-      setMetrics((prev) => prev.filter((x) => x.id !== lead.id));
+      setQueue((prev) => prev.filter((x) => x.id !== lead.id));
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message ?? "Snooze fehlgeschlagen.");
@@ -356,7 +442,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
       <div className="min-h-[70vh] bg-[#f7f7f8] px-4 md:px-6 py-6">
         <div className="max-w-6xl mx-auto">
           <div className="h-10 w-56 bg-white rounded-xl border border-gray-200 animate-pulse mb-3" />
-          <div className="h-4 w-[420px] bg-white rounded-xl border border-gray-200 animate-pulse mb-6" />
+          <div className="h-4 w-[520px] bg-white rounded-xl border border-gray-200 animate-pulse mb-6" />
 
           <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
             <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc]">
@@ -374,10 +460,16 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
   }
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
+    <div
+      className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900"
+      data-tour="followups-page"
+    >
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
-        <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
+        <div
+          className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
+          data-tour="followups-header"
+        >
           <div className="flex items-start justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -388,18 +480,30 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
                   Advaic
                 </span>
                 <span className="text-xs text-gray-500 hidden sm:inline">
-                  Zeigt fällige, bald fällige und bereits gesendete Follow-ups.
+                  Wartet = benötigt Aktion. Geplant = kommt automatisch.
+                  Gesendet = Historie.
                 </span>
               </div>
               <div className="mt-1 text-sm text-gray-600">
-                Arbeite deine fälligen Nachrichten wie eine Inbox ab – schnell,
-                sauber, nachvollziehbar.
+                Behalte Kontrolle – ohne Spam. Du siehst nur echte Zustände, die
+                relevant sind.
               </div>
             </div>
 
             <div className="flex items-center gap-2">
+              <Link
+                href="/app/follow-ups/settings"
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800"
+                title="Follow-up Einstellungen"
+              >
+                <Settings className="h-4 w-4" />
+                Einstellungen
+              </Link>
               {/* Search (desktop) */}
-              <div className="hidden md:block relative">
+              <div
+                className="hidden md:block relative"
+                data-tour="followups-search"
+              >
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 <input
                   value={search}
@@ -409,35 +513,11 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
                 />
               </div>
 
-              <select
-                value={threshold}
-                onChange={(e) => setThreshold(Number(e.target.value))}
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
-                title="Schwellwert (fällig ab … Stunden)"
-              >
-                <option value={12}>≥ 12h</option>
-                <option value={24}>≥ 24h</option>
-                <option value={36}>≥ 36h</option>
-                <option value={48}>≥ 48h</option>
-                <option value={72}>≥ 72h</option>
-              </select>
-
-              <select
-                value={soonWindow}
-                onChange={(e) => setSoonWindow(Number(e.target.value))}
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
-                title="Fenster für 'bald fällig' (Stunden vor Schwelle)"
-              >
-                <option value={6}>bald in ≤ 6h</option>
-                <option value={12}>bald in ≤ 12h</option>
-                <option value={18}>bald in ≤ 18h</option>
-                <option value={24}>bald in ≤ 24h</option>
-              </select>
-
               <button
                 onClick={() => load({ silent: true })}
                 className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
                 title="Neu laden"
+                data-tour="followups-refresh"
               >
                 <RefreshCw className="h-4 w-4" />
                 Aktualisieren
@@ -447,46 +527,49 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
 
           {/* Tabs */}
           <div className="pb-4">
-            <div className="inline-flex gap-2 rounded-2xl border border-gray-200 bg-white p-1">
+            <div
+              className="inline-flex gap-2 rounded-2xl border border-gray-200 bg-white p-1"
+              data-tour="followups-tabs"
+            >
               <button
-                onClick={() => setTab("due")}
+                onClick={() => setTab("waiting")}
                 className={`px-3 py-2 text-sm rounded-xl transition-colors inline-flex items-center gap-2 ${
-                  tab === "due"
+                  tab === "waiting"
                     ? "bg-gray-900 text-amber-200"
                     : "bg-white text-gray-700 hover:bg-gray-50"
                 }`}
               >
                 <AlertTriangle className="h-4 w-4" />
-                Fällig
+                Wartet
                 <span
                   className={`text-[11px] px-2 py-0.5 rounded-full border ${
-                    tab === "due"
+                    tab === "waiting"
                       ? "border-amber-300/40 bg-gray-900 text-amber-200"
                       : "border-gray-200 bg-gray-50 text-gray-700"
                   }`}
                 >
-                  {filteredDue.length}
+                  {filteredWaiting.length}
                 </span>
               </button>
 
               <button
-                onClick={() => setTab("soon")}
+                onClick={() => setTab("planned")}
                 className={`px-3 py-2 text-sm rounded-xl transition-colors inline-flex items-center gap-2 ${
-                  tab === "soon"
+                  tab === "planned"
                     ? "bg-gray-900 text-amber-200"
                     : "bg-white text-gray-700 hover:bg-gray-50"
                 }`}
               >
                 <Clock className="h-4 w-4" />
-                Bald
+                Geplant
                 <span
                   className={`text-[11px] px-2 py-0.5 rounded-full border ${
-                    tab === "soon"
+                    tab === "planned"
                       ? "border-amber-300/40 bg-gray-900 text-amber-200"
                       : "border-gray-200 bg-gray-50 text-gray-700"
                   }`}
                 >
-                  {filteredSoon.length}
+                  {filteredPlanned.length}
                 </span>
               </button>
 
@@ -527,21 +610,21 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
 
         {/* Content card */}
         <div className="py-6">
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+          <div
+            className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
+            data-tour="followups-list"
+          >
             <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between gap-3">
               <div className="text-sm text-gray-600">
-                {tab === "due" && (
+                {tab === "waiting" && (
                   <>
-                    Fällige Follow-ups ab{" "}
-                    <span className="font-medium">{threshold}h</span> ohne
-                    Antwort.
+                    Wartet: Follow-ups, die Ihre Aufmerksamkeit brauchen (z.B.
+                    Freigabe, Fehler oder manuell fällig).
                   </>
                 )}
-                {tab === "soon" && (
+                {tab === "planned" && (
                   <>
-                    Bald fällig:{" "}
-                    <span className="font-medium">{soonWindow}h</span> vor der
-                    Schwelle.
+                    Geplant: Follow-ups, die automatisch als Nächstes anstehen.
                   </>
                 )}
                 {tab === "sent" && <>Bereits versendete Follow-ups.</>}
@@ -552,10 +635,10 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
             </div>
 
             <div className="p-4 md:p-6">
-              {tab === "due" && (
-                <SectionDue
-                  rows={filteredDue}
-                  emptyText={`Keine fälligen Follow-Ups ≥ ${threshold}h.`}
+              {tab === "waiting" && (
+                <SectionWaiting
+                  rows={filteredWaiting}
+                  emptyText="Aktuell wartet nichts."
                   drafts={drafts}
                   expanded={expanded}
                   busy={busy}
@@ -568,10 +651,10 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
                   onSuggest={onSuggest}
                 />
               )}
-              {tab === "soon" && (
-                <SectionSoon
-                  rows={filteredSoon}
-                  emptyText="Aktuell keine bald fälligen Follow-Ups."
+              {tab === "planned" && (
+                <SectionPlanned
+                  rows={filteredPlanned}
+                  emptyText="Aktuell ist nichts geplant."
                   drafts={drafts}
                   expanded={expanded}
                   busy={busy}
@@ -601,7 +684,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
 
 /* ---------- Unter-Komponenten ---------- */
 
-function SectionDue({
+function SectionWaiting({
   rows,
   emptyText,
   drafts,
@@ -615,7 +698,7 @@ function SectionDue({
   onSnooze24h,
   onSuggest,
 }: {
-  rows: LeadMetrics[];
+  rows: FollowupQueueRow[];
   emptyText: string;
   drafts: Record<string, string>;
   expanded: Record<string, boolean>;
@@ -624,9 +707,9 @@ function SectionDue({
   sendError: Record<string, string | null>;
   onToggleEditor: (id: string) => void;
   onDraftChange: (id: string, val: string) => void;
-  onSend: (lead: LeadMetrics) => void;
-  onSnooze24h: (lead: LeadMetrics) => void;
-  onSuggest: (lead: LeadMetrics) => void;
+  onSend: (lead: FollowupQueueRow) => void;
+  onSnooze24h: (lead: FollowupQueueRow) => void;
+  onSuggest: (lead: FollowupQueueRow) => void;
 }) {
   if (rows.length === 0) {
     return (
@@ -639,7 +722,7 @@ function SectionDue({
         <LeadCardWithActions
           key={lead.id}
           lead={lead}
-          badge={`${lead.hours_since_last_reply}h überfällig`}
+          badge={lead.bucket_label ?? "Wartet"}
           draft={drafts[lead.id] ?? ""}
           expanded={!!expanded[lead.id]}
           busy={!!busy[lead.id]}
@@ -656,7 +739,7 @@ function SectionDue({
   );
 }
 
-function SectionSoon({
+function SectionPlanned({
   rows,
   emptyText,
   drafts,
@@ -670,7 +753,7 @@ function SectionSoon({
   onSnooze24h,
   onSuggest,
 }: {
-  rows: LeadMetrics[];
+  rows: FollowupQueueRow[];
   emptyText: string;
   drafts: Record<string, string>;
   expanded: Record<string, boolean>;
@@ -679,32 +762,41 @@ function SectionSoon({
   sendError: Record<string, string | null>;
   onToggleEditor: (id: string) => void;
   onDraftChange: (id: string, val: string) => void;
-  onSend: (lead: LeadMetrics) => void;
-  onSnooze24h: (lead: LeadMetrics) => void;
-  onSuggest: (lead: LeadMetrics) => void;
+  onSend: (lead: FollowupQueueRow) => void;
+  onSnooze24h: (lead: FollowupQueueRow) => void;
+  onSuggest: (lead: FollowupQueueRow) => void;
 }) {
   if (rows.length === 0) {
     return <EmptyBox icon={<Clock className="h-4 w-4" />} text={emptyText} />;
   }
   return (
     <div className="space-y-3">
-      {rows.map((lead) => (
-        <LeadCardWithActions
-          key={lead.id}
-          lead={lead}
-          badge={`${lead.hours_since_last_reply}h seit letzter Antwort`}
-          draft={drafts[lead.id] ?? ""}
-          expanded={!!expanded[lead.id]}
-          busy={!!busy[lead.id]}
-          sendPending={!!sendPending[lead.id]}
-          sendError={sendError[lead.id] ?? null}
-          onToggleEditor={() => onToggleEditor(lead.id)}
-          onDraftChange={(v) => onDraftChange(lead.id, v)}
-          onSend={() => onSend(lead)}
-          onSnooze24h={() => onSnooze24h(lead)}
-          onSuggest={() => onSuggest(lead)}
-        />
-      ))}
+      {rows.map((lead) => {
+        const nextAt = lead.followup_next_at
+          ? new Date(lead.followup_next_at).toLocaleString("de-DE")
+          : null;
+
+        const badge =
+          lead.bucket_label ?? (nextAt ? `Geplant: ${nextAt}` : "Geplant");
+
+        return (
+          <LeadCardWithActions
+            key={lead.id}
+            lead={lead}
+            badge={badge}
+            draft={drafts[lead.id] ?? ""}
+            expanded={!!expanded[lead.id]}
+            busy={!!busy[lead.id]}
+            sendPending={!!sendPending[lead.id]}
+            sendError={sendError[lead.id] ?? null}
+            onToggleEditor={() => onToggleEditor(lead.id)}
+            onDraftChange={(v) => onDraftChange(lead.id, v)}
+            onSend={() => onSend(lead)}
+            onSnooze24h={() => onSnooze24h(lead)}
+            onSuggest={() => onSuggest(lead)}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -729,6 +821,7 @@ function SectionSent({
           <div
             key={m.id}
             className="flex items-start justify-between gap-4 border border-gray-200 rounded-2xl p-4 hover:bg-gray-50"
+            data-tour="followups-sent-item"
           >
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -778,7 +871,7 @@ function LeadCardWithActions({
   onSnooze24h,
   onSuggest,
 }: {
-  lead: LeadMetrics;
+  lead: FollowupQueueRow;
   badge: string;
   draft: string;
   expanded: boolean;
@@ -791,13 +884,18 @@ function LeadCardWithActions({
   onSnooze24h: () => void;
   onSuggest: () => void;
 }) {
-  const isOverdue = badge.toLowerCase().includes("überfällig");
+  const nextAt = lead.followup_next_at
+    ? new Date(lead.followup_next_at).toLocaleString("de-DE")
+    : null;
+
+  const lastSent = lead.last_followup_sent_at
+    ? new Date(lead.last_followup_sent_at).toLocaleString("de-DE")
+    : null;
 
   return (
     <div
-      className={`flex flex-col gap-3 border border-gray-200 rounded-2xl p-4 hover:bg-gray-50 ${
-        isOverdue ? "bg-amber-50/40 border-amber-200" : "bg-white"
-      }`}
+      className="flex flex-col gap-3 border border-gray-200 rounded-2xl p-4 hover:bg-gray-50 bg-white"
+      data-tour="followups-card"
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
@@ -809,14 +907,18 @@ function LeadCardWithActions({
           </div>
 
           <p className="mt-1 text-sm text-gray-700 line-clamp-2">
-            {lead.last_message ?? "Keine letzte Nachricht gespeichert."}
+            <span className="text-gray-500">Letztes Follow-up: </span>
+            {lead.last_followup_text ?? "—"}
           </p>
 
           <p className="mt-1 text-xs text-gray-500">
-            Letzte Aktivität:{" "}
-            {lead.updated_at
-              ? new Date(lead.updated_at).toLocaleString("de-DE")
-              : "–"}
+            {nextAt ? (
+              <>Nächstes Follow-up: {nextAt}</>
+            ) : lastSent ? (
+              <>Letztes Follow-up gesendet: {lastSent}</>
+            ) : (
+              <>—</>
+            )}
           </p>
 
           {sendError && (
@@ -839,6 +941,7 @@ function LeadCardWithActions({
             <Link
               href={`/app/nachrichten/${lead.id}`}
               className="text-xs inline-flex items-center gap-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2"
+              data-tour="followups-open-conversation"
             >
               Konversation öffnen
             </Link>
@@ -848,6 +951,7 @@ function LeadCardWithActions({
               onClick={onToggleEditor}
               className="text-xs inline-flex items-center gap-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2 disabled:opacity-60 disabled:cursor-not-allowed"
               title={expanded ? "Text-Editor schließen" : "Text editieren"}
+              data-tour="followups-edit-toggle"
             >
               {expanded ? (
                 <>
@@ -867,6 +971,7 @@ function LeadCardWithActions({
               disabled={busy || sendPending}
               className="text-xs inline-flex items-center gap-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2 disabled:opacity-60"
               title="KI-Vorschlag einfügen"
+              data-tour="followups-suggest"
             >
               {busy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -880,7 +985,10 @@ function LeadCardWithActions({
       </div>
 
       {expanded && (
-        <div className="mt-1 rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+        <div
+          className="mt-1 rounded-xl border border-gray-200 bg-[#fbfbfc] p-3"
+          data-tour="followups-editor"
+        >
           <textarea
             value={draft}
             onChange={(e) => onDraftChange(e.target.value)}
@@ -889,7 +997,8 @@ function LeadCardWithActions({
             placeholder="Individuellen Follow-up-Text eingeben…"
           />
           <div className="mt-2 text-xs text-gray-500">
-            Der Text wird direkt über Ihr verbundenes Gmail versendet.
+            Der Text wird als echte E-Mail über Ihr verbundenes Postfach
+            versendet (nicht nur intern).
           </div>
         </div>
       )}
@@ -900,6 +1009,7 @@ function LeadCardWithActions({
           onClick={onSnooze24h}
           className="inline-flex items-center gap-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2 text-sm disabled:opacity-60"
           title="Follow-up um 24h verschieben"
+          data-tour="followups-snooze"
         >
           {busy ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -914,6 +1024,7 @@ function LeadCardWithActions({
           onClick={onSend}
           className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 disabled:opacity-60"
           title="Follow-up jetzt senden"
+          data-tour="followups-send"
         >
           {busy ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -927,7 +1038,7 @@ function LeadCardWithActions({
   );
 }
 
-function EmptyBox({ icon, text }: { icon: React.ReactNode; text: string }) {
+function EmptyBox({ icon, text }: { icon: ReactNode; text: string }) {
   return (
     <div className="w-full rounded-2xl border border-gray-200 bg-[#fbfbfc] p-6 text-center">
       <div className="inline-flex items-center gap-2 text-gray-900 font-medium">

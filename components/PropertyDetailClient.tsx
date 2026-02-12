@@ -42,6 +42,25 @@ interface Property {
   image_urls?: string[] | null;
 }
 
+type TriState = "inherit" | "on" | "off";
+
+type PropertyFollowupPolicyRow = {
+  enabled: boolean | null;
+  max_stage_rent: number | null;
+  max_stage_buy: number | null;
+  stage1_delay_hours: number | null;
+  stage2_delay_hours: number | null;
+  updated_at: string | null;
+};
+
+type AgentFollowupDefaultsRow = {
+  followups_enabled_default: boolean;
+  followups_max_stage_rent: number;
+  followups_max_stage_buy: number;
+  followups_delay_hours_stage1: number;
+  followups_delay_hours_stage2: number;
+};
+
 function formatCurrencyEUR(value: unknown): string {
   if (typeof value === "number" && !isNaN(value)) {
     return value.toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 0 });
@@ -190,6 +209,11 @@ export default function PropertyDetailClient({
   const PROPERTY_IMAGES_BUCKET =
     process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET || "property-images";
 
+  const [policyLoading, setPolicyLoading] = useState(false);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+  const [policyRow, setPolicyRow] = useState<PropertyFollowupPolicyRow | null>(null);
+  const [defaultsRow, setDefaultsRow] = useState<AgentFollowupDefaultsRow | null>(null);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -281,6 +305,98 @@ export default function PropertyDetailClient({
   }, [rawImageUrls, PROPERTY_IMAGES_BUCKET]);
 
   const hasImages = resolvedImageUrls.length > 0;
+
+  const triState: TriState = useMemo(() => {
+    if (!policyRow) return "inherit";
+    if (policyRow.enabled === null) return "inherit";
+    return policyRow.enabled ? "on" : "off";
+  }, [policyRow]);
+
+  const triStateLabel = useMemo(() => {
+    if (triState === "inherit") return "Standard";
+    if (triState === "on") return "An";
+    return "Aus";
+  }, [triState]);
+
+  const triStateBadgeClasses = useMemo(() => {
+    if (triState === "inherit") return "border-gray-200 bg-gray-50 text-gray-700";
+    if (triState === "on") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+    return "border-red-200 bg-red-50 text-red-800";
+  }, [triState]);
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        setPolicyError(null);
+        setPolicyLoading(true);
+
+        const { data: auth } = await supabase.auth.getUser();
+        const userId = auth?.user?.id ? String(auth.user.id) : "";
+
+        // If not authenticated, we simply don't show policy info.
+        if (!userId) {
+          if (!cancelled) {
+            setPolicyRow(null);
+            setDefaultsRow(null);
+          }
+          return;
+        }
+
+        // Load agent-level defaults (for displaying the inherited baseline)
+        const { data: defData, error: defErr } = await supabase
+          .from("agent_settings")
+          .select(
+            "followups_enabled_default, followups_max_stage_rent, followups_max_stage_buy, followups_delay_hours_stage1, followups_delay_hours_stage2"
+          )
+          .eq("agent_id", userId)
+          .maybeSingle();
+
+        if (defErr) {
+          if (!cancelled) {
+            // Non-fatal: we can still show policy info without defaults
+            setDefaultsRow(null);
+          }
+        } else {
+          if (!cancelled) {
+            setDefaultsRow((defData as any) ?? null);
+          }
+        }
+
+        const { data, error } = await supabase
+          .from("property_followup_policies")
+          .select("enabled, max_stage_rent, max_stage_buy, stage1_delay_hours, stage2_delay_hours, updated_at")
+          .eq("agent_id", userId)
+          .eq("property_id", propertyId)
+          .maybeSingle();
+
+        if (error) {
+          if (!cancelled) {
+            setPolicyError(error.message || "Follow-up-Regeln konnten nicht geladen werden.");
+            setPolicyRow(null);
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setPolicyRow((data as any) ?? null);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setPolicyError(e?.message ?? "Follow-up-Regeln konnten nicht geladen werden.");
+          setPolicyRow(null);
+        }
+      } finally {
+        if (!cancelled) setPolicyLoading(false);
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId]);
 
   const [sliderRef, instanceRef] = useKeenSlider<HTMLDivElement>({
     loop: resolvedImageUrls.length > 1,
@@ -406,11 +522,11 @@ export default function PropertyDetailClient({
     );
   }
 
-  return (
-    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
-      <div className="max-w-6xl mx-auto px-4 md:px-6 py-6">
+return (
+    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900" data-tour="property-detail-page">
+      <div className="max-w-6xl mx-auto px-4 md:px-6 py-6" data-tour="property-detail-container">
         {/* IMAGE SLIDER CARD */}
-        <section className="mb-6 bg-white rounded-2xl border border-gray-200 p-4">
+        <section className="mb-6 bg-white rounded-2xl border border-gray-200 p-4" data-tour="property-detail-images">
           <h2 className="text-lg font-semibold mb-2 bg-[#fbfbfc] rounded-md px-3 py-1 inline-block">
             Bilder
           </h2>
@@ -421,6 +537,7 @@ export default function PropertyDetailClient({
                 ref={sliderRef}
                 className="keen-slider rounded-md overflow-hidden"
                 style={{ height: "450px" }}
+                data-tour="property-detail-image-slider"
               >
                 {resolvedImageUrls.map((url, idx) => (
                   <div
@@ -462,7 +579,7 @@ export default function PropertyDetailClient({
               </div>
 
               {/* Thumbnails below dots - desktop only */}
-              <div className="hidden md:flex gap-2 overflow-x-auto mt-3">
+              <div className="hidden md:flex gap-2 overflow-x-auto mt-3" data-tour="property-detail-thumbnails">
                 {resolvedImageUrls.map((url, idx) => (
                   <button
                     key={idx}
@@ -554,8 +671,8 @@ export default function PropertyDetailClient({
         </section>
 
         {/* HEADER CARD */}
-        <section className="mb-6 bg-white rounded-2xl border border-gray-200 p-6">
-          <h1 className="text-3xl font-bold mb-2">{property.title}</h1>
+        <section className="mb-6 bg-white rounded-2xl border border-gray-200 p-6" data-tour="property-detail-header">
+          <h1 className="text-3xl font-bold mb-2" data-tour="property-detail-title">{property.title}</h1>
           <div className="text-gray-600 mb-3">
             {firstNonEmpty(
               property.street_address,
@@ -565,7 +682,7 @@ export default function PropertyDetailClient({
             {(property.neighborhood || property.neighbourhood) ? `, ${firstNonEmpty(property.neighborhood, property.neighbourhood)}` : ""}
           </div>
           <div className="flex flex-wrap items-baseline gap-4 mb-4">
-            <div className="text-2xl font-extrabold text-blue-700">
+            <div className="text-2xl font-extrabold text-blue-700" data-tour="property-detail-price">
               {formatCurrencyEUR(property.price)}
             </div>
             <div className="text-sm font-medium uppercase text-gray-500 select-none">
@@ -577,7 +694,7 @@ export default function PropertyDetailClient({
               </span>
             )}
           </div>
-          <div className="flex flex-wrap gap-3 text-sm text-gray-700">
+          <div className="flex flex-wrap gap-3 text-sm text-gray-700" data-tour="property-detail-quickfacts">
             {property.rooms !== undefined && property.rooms !== null && (
               <div className="bg-gray-100 rounded-full px-3 py-1">{property.rooms} Zimmer</div>
             )}
@@ -597,9 +714,9 @@ export default function PropertyDetailClient({
         </section>
 
         {/* TWO COLUMN GRID */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6" data-tour="property-detail-main">
           {/* Left Column - Beschreibung */}
-          <article className="bg-white rounded-2xl border border-gray-200 p-6 prose max-w-full">
+          <article className="bg-white rounded-2xl border border-gray-200 p-6 prose max-w-full" data-tour="property-detail-description">
             <h2>Beschreibung</h2>
             {property.listing_summary && (
               <p className="text-gray-700 mb-4 font-semibold">{property.listing_summary}</p>
@@ -608,7 +725,7 @@ export default function PropertyDetailClient({
           </article>
 
           {/* Right Column - Details */}
-          <article className="bg-white rounded-2xl border border-gray-200 p-6 text-sm text-gray-700 space-y-3">
+          <article className="bg-white rounded-2xl border border-gray-200 p-6 text-sm text-gray-700 space-y-3" data-tour="property-detail-details">
             <h2 className="mb-3 text-base font-semibold border-b border-gray-200 pb-2">Details</h2>
             <div className="grid grid-cols-2 gap-y-2 gap-x-4">
               <div className="font-semibold">Vermarktung:</div>
@@ -658,6 +775,7 @@ export default function PropertyDetailClient({
                     target="_blank"
                     rel="noreferrer"
                     className="text-blue-600 underline"
+                    data-tour="property-detail-expose-link"
                   >
                     Ansehen
                   </a>
@@ -666,33 +784,110 @@ export default function PropertyDetailClient({
                 )}
               </div>
             </div>
+
+            {/* Follow-up Regeln */}
+            <div className="mt-4 pt-4 border-t border-gray-200" data-tour="property-detail-followup-policy">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Follow-up Regeln</div>
+                  <div className="text-sm text-gray-700 mt-1">
+                    Diese Immobilie kann eigene Follow-up-Regeln haben. Wenn nichts gesetzt ist, gilt der Standard des Maklers.
+                  </div>
+                </div>
+                <span className={clsx("shrink-0 text-xs font-medium rounded-full px-2.5 py-1 border", triStateBadgeClasses)}>
+                  {triStateLabel}
+                </span>
+              </div>
+
+              {policyLoading ? (
+                <div className="mt-3 text-xs text-gray-500">Lade Regeln…</div>
+              ) : policyError ? (
+                <div className="mt-3 text-xs text-red-600">{policyError}</div>
+              ) : policyRow ? (
+                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                  <div className="text-gray-500">Max. Vermietung</div>
+                  <div className="text-gray-900 font-medium">{policyRow.max_stage_rent ?? "—"}</div>
+
+                  <div className="text-gray-500">Max. Verkauf</div>
+                  <div className="text-gray-900 font-medium">{policyRow.max_stage_buy ?? "—"}</div>
+
+                  <div className="text-gray-500">Delay Stufe 1</div>
+                  <div className="text-gray-900 font-medium">
+                    {policyRow.stage1_delay_hours != null ? `${policyRow.stage1_delay_hours}h` : "—"}
+                  </div>
+
+                  <div className="text-gray-500">Delay Stufe 2</div>
+                  <div className="text-gray-900 font-medium">
+                    {policyRow.stage2_delay_hours != null ? `${policyRow.stage2_delay_hours}h` : "—"}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 text-xs text-gray-500">Keine spezifischen Regeln gesetzt.</div>
+              )}
+
+              {defaultsRow && (
+                <div className="mt-4 rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Standard (Makler)</div>
+                    <span className={clsx(
+                      "text-[11px] font-medium rounded-full px-2 py-0.5 border",
+                      defaultsRow.followups_enabled_default
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-red-200 bg-red-50 text-red-800"
+                    )}>
+                      {defaultsRow.followups_enabled_default ? "Standard: An" : "Standard: Aus"}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                    <div className="text-gray-500">Max. Vermietung</div>
+                    <div className="text-gray-900 font-medium">{defaultsRow.followups_max_stage_rent}</div>
+
+                    <div className="text-gray-500">Max. Verkauf</div>
+                    <div className="text-gray-900 font-medium">{defaultsRow.followups_max_stage_buy}</div>
+
+                    <div className="text-gray-500">Delay Stufe 1</div>
+                    <div className="text-gray-900 font-medium">{defaultsRow.followups_delay_hours_stage1}h</div>
+
+                    <div className="text-gray-500">Delay Stufe 2</div>
+                    <div className="text-gray-900 font-medium">{defaultsRow.followups_delay_hours_stage2}h</div>
+                  </div>
+
+                  {triState !== "inherit" && (
+                    <div className="mt-2 text-[11px] text-gray-500">
+                      Hinweis: Diese Immobilie überschreibt den Standard.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </article>
         </section>
 
         {/* Conditional Additional Cards */}
         {property.highlights && property.highlights.trim() !== "" && (
-          <section className="mb-6 bg-white rounded-2xl border border-gray-200 p-6 prose max-w-full">
+          <section className="mb-6 bg-white rounded-2xl border border-gray-200 p-6 prose max-w-full" data-tour="property-detail-highlights">
             <h2>Highlights</h2>
             {renderTextWithBullets(property.highlights)}
           </section>
         )}
 
         {property.requirements && property.requirements.trim() !== "" && (
-          <section className="mb-6 bg-white rounded-2xl border border-gray-200 p-6 prose max-w-full">
+          <section className="mb-6 bg-white rounded-2xl border border-gray-200 p-6 prose max-w-full" data-tour="property-detail-requirements">
             <h2>Voraussetzungen</h2>
             {renderTextWithBullets(property.requirements)}
           </section>
         )}
 
         {property.contact_instructions && property.contact_instructions.trim() !== "" && (
-          <section className="mb-6 bg-white rounded-2xl border border-gray-200 p-6 prose max-w-full">
+          <section className="mb-6 bg-white rounded-2xl border border-gray-200 p-6 prose max-w-full" data-tour="property-detail-contact">
             <h2>Kontakt / Besichtigung</h2>
             <p>{property.contact_instructions}</p>
           </section>
         )}
 
         {property.internal_notes && property.internal_notes.trim() !== "" && (
-          <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-6 prose max-w-full relative">
+          <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-6 prose max-w-full relative" data-tour="property-detail-internal-notes">
             <h2 className="flex items-center gap-2">
               Interne Notizen
               <span className="inline-block rounded-full bg-amber-300 text-amber-900 text-xs font-semibold px-2 py-0.5 select-none">
@@ -704,7 +899,7 @@ export default function PropertyDetailClient({
         )}
 
         {/* Last Updated Footer */}
-        <div className="text-xs text-gray-400 mt-4 text-right select-none">
+        <div className="text-xs text-gray-400 mt-4 text-right select-none" data-tour="property-detail-last-updated">
           Letzte Aktualisierung: {formatDateDE(property.updated_at ?? property.created_at)}{" "}
           {property.updated_at ? `um ${new Date(property.updated_at).toLocaleTimeString("de-DE")}` : ""}
         </div>

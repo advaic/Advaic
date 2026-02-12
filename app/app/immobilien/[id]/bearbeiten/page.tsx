@@ -175,6 +175,35 @@ type PropertyEdit = {
   image_urls: string[];
 };
 
+type PropertyFollowupPolicy = {
+  enabled: boolean | null;
+  max_stage_rent: number | null;
+  max_stage_buy: number | null;
+  stage1_delay_hours: number | null;
+  stage2_delay_hours: number | null;
+};
+
+const DEFAULT_POLICY: PropertyFollowupPolicy = {
+  enabled: null,
+  max_stage_rent: null,
+  max_stage_buy: null,
+  stage1_delay_hours: null,
+  stage2_delay_hours: null,
+};
+
+function toNullableInt(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function clampNullable(n: number | null, min: number, max: number): number | null {
+  if (n === null) return null;
+  return Math.min(Math.max(n, min), max);
+}
+
 function safeTrim(v: unknown): string {
   return String(v ?? "").trim();
 }
@@ -202,6 +231,10 @@ export default function EditPropertyPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [property, setProperty] = useState<PropertyEdit | null>(null);
+  const [policyLoading, setPolicyLoading] = useState(false);
+  const [policySaving, setPolicySaving] = useState(false);
+  const [policy, setPolicy] = useState<PropertyFollowupPolicy>(DEFAULT_POLICY);
+  const policySaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
    * IMPORTANT:
@@ -327,6 +360,59 @@ export default function EditPropertyPage() {
       setProperty(normalized);
       setFiles((normalized.image_urls ?? []) as string[]);
       prevImagePathsRef.current = (normalized.image_urls ?? []) as string[];
+      // Load property-specific follow-up policy (optional, inherits if NULL)
+      try {
+        setPolicyLoading(true);
+
+        // Ensure we know the authed user id (agent_id)
+        if (!authedUserIdRef.current) {
+          const {
+            data: { user },
+            error: userErr,
+          } = await supabase.auth.getUser();
+
+          if (!userErr && user) {
+            authedUserIdRef.current = user.id;
+          }
+        }
+
+        const agentId = authedUserIdRef.current;
+
+        if (agentId) {
+          const { data: polRow, error: polErr } = await (supabase as any)
+            .from("property_followup_policies")
+            .select(
+              "enabled, max_stage_rent, max_stage_buy, stage1_delay_hours, stage2_delay_hours"
+            )
+            .eq("agent_id", agentId)
+            .eq("property_id", data.id)
+            .maybeSingle();
+
+          if (polErr) {
+            console.warn("⚠️ policy load failed:", polErr);
+            setPolicy(DEFAULT_POLICY);
+          } else {
+            setPolicy({
+              enabled:
+                typeof (polRow as any)?.enabled === "boolean"
+                  ? (polRow as any).enabled
+                  : null,
+              max_stage_rent: toNullableInt((polRow as any)?.max_stage_rent),
+              max_stage_buy: toNullableInt((polRow as any)?.max_stage_buy),
+              stage1_delay_hours: toNullableInt((polRow as any)?.stage1_delay_hours),
+              stage2_delay_hours: toNullableInt((polRow as any)?.stage2_delay_hours),
+            });
+          }
+        } else {
+          // If we can't resolve agent id, fall back to inherit.
+          setPolicy(DEFAULT_POLICY);
+        }
+      } catch (e) {
+        console.warn("⚠️ policy load threw:", e);
+        setPolicy(DEFAULT_POLICY);
+      } finally {
+        setPolicyLoading(false);
+      }
       setLoading(false);
     };
 
@@ -391,6 +477,87 @@ export default function EditPropertyPage() {
 
     setProperty((prev) => (prev ? { ...prev, [name]: newValue } : prev));
     schedulePersist({ [name]: newValue } as any);
+  };
+
+  const persistPolicyUpdate = useCallback(
+    async (updated: Partial<PropertyFollowupPolicy>) => {
+      if (!property) return;
+
+      setPolicySaving(true);
+      try {
+        // Ensure agent id
+        if (!authedUserIdRef.current) {
+          const {
+            data: { user },
+            error: userErr,
+          } = await supabase.auth.getUser();
+
+          if (userErr || !user) {
+            throw new Error("Nicht eingeloggt. Bitte neu einloggen.");
+          }
+
+          authedUserIdRef.current = user.id;
+        }
+
+        const agentId = authedUserIdRef.current;
+
+        const next: PropertyFollowupPolicy = {
+          ...policy,
+          ...updated,
+        };
+
+        // Clamp guardrails (DB constraints expect 0..2 and 1..336 when set)
+        const payload = {
+          agent_id: agentId,
+          property_id: property.id,
+          enabled: next.enabled,
+          max_stage_rent: clampNullable(next.max_stage_rent, 0, 2),
+          max_stage_buy: clampNullable(next.max_stage_buy, 0, 2),
+          stage1_delay_hours: clampNullable(next.stage1_delay_hours, 1, 336),
+          stage2_delay_hours: clampNullable(next.stage2_delay_hours, 1, 336),
+        } as any;
+
+        const { error } = await (supabase as any)
+          .from("property_followup_policies")
+          .upsert(payload, { onConflict: "agent_id,property_id" });
+
+        if (error) {
+          console.error("❌ policy upsert error:", error);
+          toast.error("Follow-up Policy konnte nicht gespeichert werden.");
+          return;
+        }
+
+        setPolicy(next);
+      } finally {
+        setPolicySaving(false);
+      }
+    },
+    [property, policy]
+  );
+
+  const schedulePolicyPersist = useCallback(
+    (updated: Partial<PropertyFollowupPolicy>) => {
+      if (policySaveTimer.current) clearTimeout(policySaveTimer.current);
+      policySaveTimer.current = setTimeout(() => {
+        void persistPolicyUpdate(updated);
+      }, 450);
+    },
+    [persistPolicyUpdate]
+  );
+
+  const onPolicyModeChange = (v: "inherit" | "enable" | "disable") => {
+    const enabled = v === "inherit" ? null : v === "enable";
+    setPolicy((p) => ({ ...p, enabled }));
+    schedulePolicyPersist({ enabled });
+  };
+
+  const onPolicyNumberChange = (
+    key: keyof Omit<PropertyFollowupPolicy, "enabled">,
+    raw: string
+  ) => {
+    const n = toNullableInt(raw);
+    setPolicy((p) => ({ ...p, [key]: n }));
+    schedulePolicyPersist({ [key]: n } as any);
   };
 
   const uploadImageToSupabase = useCallback(
@@ -1112,6 +1279,167 @@ export default function EditPropertyPage() {
 
             {/* Side cards */}
             <div className="space-y-4">
+              {/* Follow-up Policy (per property) */}
+              <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+                <div className="px-4 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
+                  <div className="text-sm font-medium text-gray-800">
+                    Follow-ups (Immobilie)
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {policyLoading ? (
+                      <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700 inline-flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Laden…
+                      </span>
+                    ) : policySaving ? (
+                      <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700 inline-flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Speichern…
+                      </span>
+                    ) : (
+                      <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700">
+                        {policy.enabled === null
+                          ? "Standard"
+                          : policy.enabled
+                          ? "Aktiv"
+                          : "Deaktiviert"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-4 space-y-3">
+                  <div className="text-xs text-gray-600">
+                    Steuert, ob und wie viele Follow-ups für <b>diese Immobilie</b>
+                    erlaubt sind. „Standard" nutzt die Agent/Lead-Settings.
+                  </div>
+
+                  <div>
+                    <div className="text-xs font-medium text-gray-700 mb-1">
+                      Modus
+                    </div>
+                    <select
+                      value={
+                        policy.enabled === null
+                          ? "inherit"
+                          : policy.enabled
+                          ? "enable"
+                          : "disable"
+                      }
+                      onChange={(e) =>
+                        onPolicyModeChange(e.target.value as any)
+                      }
+                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                    >
+                      <option value="inherit">Standard</option>
+                      <option value="enable">Follow-ups aktiv</option>
+                      <option value="disable">Follow-ups deaktiviert</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-xs font-medium text-gray-700 mb-1">
+                        Max. (Miete)
+                      </div>
+                      <select
+                        value={
+                          policy.max_stage_rent === null
+                            ? "inherit"
+                            : String(policy.max_stage_rent)
+                        }
+                        onChange={(e) =>
+                          onPolicyNumberChange(
+                            "max_stage_rent",
+                            e.target.value === "inherit" ? "" : e.target.value
+                          )
+                        }
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      >
+                        <option value="inherit">Standard</option>
+                        <option value="0">0</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-medium text-gray-700 mb-1">
+                        Max. (Kauf)
+                      </div>
+                      <select
+                        value={
+                          policy.max_stage_buy === null
+                            ? "inherit"
+                            : String(policy.max_stage_buy)
+                        }
+                        onChange={(e) =>
+                          onPolicyNumberChange(
+                            "max_stage_buy",
+                            e.target.value === "inherit" ? "" : e.target.value
+                          )
+                        }
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      >
+                        <option value="inherit">Standard</option>
+                        <option value="0">0</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-xs font-medium text-gray-700 mb-1">
+                        Delay #1 (h)
+                      </div>
+                      <input
+                        inputMode="numeric"
+                        value={
+                          policy.stage1_delay_hours === null
+                            ? ""
+                            : String(policy.stage1_delay_hours)
+                        }
+                        onChange={(e) =>
+                          onPolicyNumberChange(
+                            "stage1_delay_hours",
+                            e.target.value
+                          )
+                        }
+                        placeholder="Standard"
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-medium text-gray-700 mb-1">
+                        Delay #2 (h)
+                      </div>
+                      <input
+                        inputMode="numeric"
+                        value={
+                          policy.stage2_delay_hours === null
+                            ? ""
+                            : String(policy.stage2_delay_hours)
+                        }
+                        onChange={(e) =>
+                          onPolicyNumberChange(
+                            "stage2_delay_hours",
+                            e.target.value
+                          )
+                        }
+                        placeholder="Standard"
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] text-gray-500">
+                    Hinweis: Leere Felder = Standardwerte des Agenten/Leads.
+                  </div>
+                </div>
+              </div>
               <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
                 <div className="px-4 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
                   <div className="text-sm font-medium text-gray-800 inline-flex items-center gap-2">

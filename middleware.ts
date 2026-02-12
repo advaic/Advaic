@@ -71,6 +71,11 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
+  // ✅ Allow pipeline APIs (internal secret protects these)
+  if (pathname.startsWith("/api/pipeline")) {
+    return res;
+  }
+
   // ---- Auth check ----
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -105,6 +110,33 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
+  // ---- Admin gate ----
+  // Admin UI lives under /app/admin.
+  // V1: Allow ONLY a single explicit user id (the founder) to access admin.
+  // Configure via env var: ADVAIC_ADMIN_USER_ID=<auth.users.id>
+  const isAdminPath = pathname === "/app/admin" || pathname.startsWith("/app/admin/");
+  const isAdminApiPath = pathname.startsWith("/api/admin");
+
+  if (isAdminPath || isAdminApiPath) {
+    const allowedAdminId = String(process.env.ADVAIC_ADMIN_USER_ID || "").trim();
+
+    // Fail-closed for admin area if not configured.
+    if (!allowedAdminId) {
+      const redirectUrl = req.nextUrl.clone();
+      redirectUrl.pathname = "/app";
+      redirectUrl.search = "";
+      return NextResponse.redirect(redirectUrl);
+    }
+
+    // Only the configured user id is allowed.
+    if (String(user.id) !== allowedAdminId) {
+      const redirectUrl = req.nextUrl.clone();
+      redirectUrl.pathname = "/app";
+      redirectUrl.search = "";
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
+
   // ---- Onboarding gate ----
   // Only run for authenticated users.
   // Fail-open: if the onboarding table isn't deployed yet, don't block users.
@@ -113,15 +145,36 @@ export async function middleware(req: NextRequest) {
     const isOnboardingPath =
       pathname === "/app/onboarding" || pathname.startsWith("/app/onboarding/");
 
-    const { data, error } = await (supabase.from("agent_onboarding") as any)
-      .select("completed_at")
+    // NOTE: We treat onboarding as completed if EITHER:
+    // - agent_onboarding.completed_at is set (new flow)
+    // - agent_settings.onboarding_completed is true (legacy / settings-based flow)
+    // This prevents getting bounced back to step 1 on Step 6 “Onboarding beenden”.
+
+    const onboardingRes = await (supabase.from("agent_onboarding") as any)
+      .select("completed_at, current_step")
       .eq("agent_id", user.id)
       .maybeSingle();
 
-    // If the row doesn't exist yet, treat as not completed.
-    const completed = !error && !!data?.completed_at;
+    const settingsRes = await (supabase.from("agent_settings") as any)
+      .select("onboarding_completed")
+      .eq("agent_id", user.id)
+      .maybeSingle();
 
-    if (!completed && !isOnboardingPath) {
+    const step = Number((onboardingRes as any)?.data?.current_step ?? 1);
+
+    // ✅ Allow certain app routes during onboarding.
+    // IMPORTANT: We currently allow all Immobilien routes during onboarding so the user can add properties in Step 5.
+    // (If you want to tighten this later, gate it by step again once current_step is reliably updated.)
+    const isImmoPath =
+      pathname === "/app/immobilien" || pathname.startsWith("/app/immobilien/");
+
+    const allowDuringOnboarding = isImmoPath;
+
+    const completed =
+      !!(onboardingRes as any)?.data?.completed_at ||
+      !!(settingsRes as any)?.data?.onboarding_completed;
+
+    if (!completed && !isOnboardingPath && !allowDuringOnboarding) {
       const redirectUrl = req.nextUrl.clone();
       redirectUrl.pathname = "/app/onboarding";
 
@@ -146,5 +199,13 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   // 🔒 Protect only the app + onboarding areas. Marketing pages remain public.
-  matcher: ["/app", "/app/:path*", "/app/onboarding", "/app/onboarding/:path*"],
+  matcher: [
+    "/app",
+    "/app/:path*",
+    "/app/onboarding",
+    "/app/onboarding/:path*",
+    "/app/admin",
+    "/app/admin/:path*",
+    "/api/admin/:path*",
+  ],
 };

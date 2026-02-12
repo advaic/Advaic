@@ -300,7 +300,7 @@ export default function StartseiteUI({
     <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
-        <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
+        <div data-tour="home-hero" className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
           <div className="flex items-start justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -334,7 +334,7 @@ export default function StartseiteUI({
 
         <div className="py-6 space-y-8">
           {/* KPI cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div data-tour="home-stats" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <KpiCard
               title="Neue Interessenten"
               value={loading ? "–" : String(shownKpis.newLeads)}
@@ -362,7 +362,7 @@ export default function StartseiteUI({
           </div>
 
           {/* Sections */}
-          <div className="flex flex-col gap-6">
+          <div data-tour="home-shortcuts" className="flex flex-col gap-6">
             <Section
               title="Freigaben ausstehend"
               subtitle="Antworten, die noch bestätigt werden müssen."
@@ -397,7 +397,7 @@ export default function StartseiteUI({
             />
           </div>
 
-          <div className="text-xs text-gray-500">
+          <div data-tour="home-tip" className="text-xs text-gray-500">
             Tipp: Öffne eine Konversation und antworte direkt.
           </div>
         </div>
@@ -475,9 +475,6 @@ function Section({
             {top.map((lead) => {
               const last = lastMessages[lead.id];
               const lastText = safeStr(last?.text);
-              const lastDate = last?.timestamp
-                ? new Date(last.timestamp).toLocaleDateString("de-DE")
-                : "";
               const msgCount = messageCounts[lead.id] ?? 0;
 
               return (
@@ -486,9 +483,9 @@ function Section({
                     lead={{
                       ...(lead as any),
                       href: `/app/nachrichten/${lead.id}`,
-                      lastMessage: lastText || null,
-                      lastMessageDate: lastDate,
-                      messageCount: msgCount,
+                      last_message: lastText || null,
+                      message_count: msgCount,
+                      updated_at: last?.timestamp ?? (lead as any).updated_at,
                     }}
                     userId={userId}
                   />

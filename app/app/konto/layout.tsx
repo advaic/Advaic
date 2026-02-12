@@ -22,16 +22,17 @@ export default function KontoLayout({
   const pathname = usePathname();
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 p-6">
-      <aside className="w-full md:w-60 border rounded-lg p-4 bg-muted">
-        <h2 className="text-sm font-semibold mb-4 text-muted-foreground">
+    <div data-tour="account-layout" className="flex flex-col md:flex-row gap-6 p-6">
+      <aside data-tour="account-sidebar" className="w-full md:w-60 border rounded-lg p-4 bg-muted">
+        <h2 data-tour="account-sidebar-title" className="text-sm font-semibold mb-4 text-muted-foreground">
           Konto
         </h2>
-        <nav className="space-y-1">
+        <nav data-tour="account-sidebar-nav" className="space-y-1">
           {kontoLinks.map(({ href, label }) => (
             <Link
               key={href}
               href={href}
+              data-tour={`account-link-${label.toLowerCase().replace(/[^a-z]/g, "")}`}
               className={cn(
                 "block text-sm rounded px-3 py-2 hover:bg-accent hover:text-accent-foreground transition",
                 pathname === href

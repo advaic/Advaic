@@ -64,200 +64,225 @@ export default function NotificationSettingsPage() {
   };
 
   return (
-    <main className="flex-1 p-6 overflow-y-auto">
-      <div className="max-w-3xl mx-auto">
-        <h1 className="text-2xl font-bold mb-2">
-          Benachrichtigungen verwalten
-        </h1>
-        <p className="text-muted-foreground mb-6">
-          Steuern Sie, wann und wie Sie über neue Ereignisse informiert werden.
-          So verpassen Sie keine wichtigen Updates – und behalten trotzdem die
-          Kontrolle.
-        </p>
-
-        <h2 className="text-lg font-semibold mb-1">Benachrichtigungsarten</h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Für welche Ereignisse möchten Sie benachrichtigt werden?
-        </p>
-
-        <div className="space-y-4 mb-6">
-          {Object.entries(notifications).map(([key, value]) => (
-            <div className="flex items-center justify-between" key={key}>
-              <span>
-                {key === "newLeads"
-                  ? "Neue Interessenten"
-                  : key === "escalations"
-                  ? "Eskalationen / Übergaben"
-                  : key === "followUps"
-                  ? "Follow-up Erinnerungen"
-                  : "Systemhinweise"}
-              </span>
-              <Switch
-                checked={value}
-                onCheckedChange={() => handleToggle(key, "notifications")}
-              />
-            </div>
-          ))}
-        </div>
-
-        <Separator className="my-6" />
-
-        <h2 className="text-lg font-semibold mb-1">Empfangskanäle</h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Auf welchen Wegen möchten Sie Benachrichtigungen erhalten?
-        </p>
-
-        <div className="space-y-4 mb-6">
-          {Object.entries(delivery).map(([key, value]) => (
-            <div className="flex items-center justify-between" key={key}>
-              <span>
-                {key === "email"
-                  ? "E-Mail"
-                  : key === "whatsapp"
-                  ? "WhatsApp"
-                  : key === "dashboard"
-                  ? "Dashboard"
-                  : "Slack"}
-              </span>
-              <Switch
-                checked={value}
-                onCheckedChange={() => handleToggle(key, "delivery")}
-              />
-            </div>
-          ))}
-        </div>
-
-        <Separator className="my-6" />
-
-        <h2 className="text-lg font-semibold mb-1">Kontaktinformationen</h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Wohin sollen wir Ihre Benachrichtigungen senden?
-        </p>
-        <div className="grid grid-cols-1 gap-4 mb-6">
-          <Input
-            placeholder="E-Mail-Adresse"
-            value={contactInfo.email}
-            onChange={(e) =>
-              setContactInfo({ ...contactInfo, email: e.target.value })
-            }
-          />
-          <Input
-            placeholder="Telefonnummer für WhatsApp"
-            value={contactInfo.phone}
-            onChange={(e) =>
-              setContactInfo({ ...contactInfo, phone: e.target.value })
-            }
-          />
-
-          <button
-            onClick={connectSlack}
-            className="flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-[#4A154B] text-white font-medium hover:brightness-110 transition"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 122.8 122.8"
-              fill="none"
-            >
-              <path
-                d="M30.3 77.2c0 8.4-6.8 15.2-15.2 15.2S0 85.6 0 77.2s6.8-15.2 15.2-15.2h15.1v15.2z"
-                fill="#E01E5A"
-              />
-              <path
-                d="M37.9 77.2c0-8.4 6.8-15.2 15.2-15.2s15.2 6.8 15.2 15.2v37.9c0 8.4-6.8 15.2-15.2 15.2s-15.2-6.8-15.2-15.2V77.2z"
-                fill="#E01E5A"
-              />
-              <path
-                d="M45.5 30.3c-8.4 0-15.2-6.8-15.2-15.2S37.1 0 45.5 0s15.2 6.8 15.2 15.2v15.1H45.5z"
-                fill="#36C5F0"
-              />
-              <path
-                d="M45.5 37.9c8.4 0 15.2 6.8 15.2 15.2S53.9 68.3 45.5 68.3H7.6c-8.4 0-15.2-6.8-15.2-15.2S-0.8 37.9 7.6 37.9h37.9z"
-                fill="#36C5F0"
-              />
-              <path
-                d="M92.5 45.5c0-8.4 6.8-15.2 15.2-15.2s15.2 6.8 15.2 15.2-6.8 15.2-15.2 15.2H92.5V45.5z"
-                fill="#2EB67D"
-              />
-              <path
-                d="M84.9 45.5c0 8.4-6.8 15.2-15.2 15.2S54.5 53.9 54.5 45.5V7.6c0-8.4 6.8-15.2 15.2-15.2s15.2 6.8 15.2 15.2v37.9z"
-                fill="#2EB67D"
-              />
-              <path
-                d="M77.2 92.5c8.4 0 15.2 6.8 15.2 15.2s-6.8 15.2-15.2 15.2-15.2-6.8-15.2-15.2V92.5h15.2z"
-                fill="#ECB22E"
-              />
-              <path
-                d="M77.2 84.9c-8.4 0-15.2-6.8-15.2-15.2s6.8-15.2 15.2-15.2h37.9c8.4 0 15.2 6.8 15.2 15.2s-6.8 15.2-15.2 15.2H77.2z"
-                fill="#ECB22E"
-              />
-            </svg>
-            Mit Slack verbinden
-          </button>
-        </div>
-
-        <Separator className="my-6" />
-
-        <h2 className="text-lg font-semibold mb-1">
-          Benachrichtigungszeitfenster
-        </h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Innerhalb welcher Zeiten möchten Sie benachrichtigt werden?
-        </p>
-        <div className="flex items-center gap-4 mb-6">
-          <Input
-            type="time"
-            value={timeWindow.start}
-            onChange={(e) =>
-              setTimeWindow({ ...timeWindow, start: e.target.value })
-            }
-          />
-          <span>bis</span>
-          <Input
-            type="time"
-            value={timeWindow.end}
-            onChange={(e) =>
-              setTimeWindow({ ...timeWindow, end: e.target.value })
-            }
-          />
-        </div>
-
-        <h2 className="text-lg font-semibold mb-1">Zusätzliche Hinweise</h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Wenn es spezielle Wünsche für die Kommunikation gibt (z. B. nachts nur
-          bei Eskalationen).
-        </p>
-        <Textarea
-          placeholder="Z. B. 'Nach 20 Uhr nur bei dringenden Eskalationen benachrichtigen.'"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-
-        <Separator className="my-6" />
-
-        <h2 className="text-lg font-semibold mb-1">
-          Beispiel-Benachrichtigung
-        </h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          So könnte eine typische Nachricht bei einem neuen Lead aussehen:
-        </p>
-
-        <div className="bg-muted text-sm rounded-md border px-4 py-3">
-          <p className="font-semibold mb-1">📩 Neuer Interessent!</p>
-          <p className="text-muted-foreground">
-            Max Mustermann hat gerade auf das Inserat „Modernes Penthouse mit
-            Blick“ geantwortet.
-            <br />
-            Nachricht: „Guten Tag, ist die Wohnung noch verfügbar?“
-            <br />
-            <span className="text-xs text-muted-foreground">
-              Erhalten via WhatsApp • 14:36 Uhr
-            </span>
+    <main
+      className="flex-1 p-6 overflow-y-auto"
+      data-tour="notifications-page"
+    >
+      <div className="max-w-3xl mx-auto" data-tour="notifications-container">
+        <div data-tour="notifications-header">
+          <h1 className="text-2xl font-bold mb-2">
+            Benachrichtigungen verwalten
+          </h1>
+          <p className="text-muted-foreground mb-6">
+            Steuern Sie, wann und wie Sie über neue Ereignisse informiert werden.
+            So verpassen Sie keine wichtigen Updates – und behalten trotzdem die
+            Kontrolle.
           </p>
         </div>
 
-        <Button className="mt-6">Einstellungen speichern</Button>
+        <div data-tour="notifications-types">
+          <h2 className="text-lg font-semibold mb-1">Benachrichtigungsarten</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Für welche Ereignisse möchten Sie benachrichtigt werden?
+          </p>
+
+          <div className="space-y-4 mb-6" data-tour="notifications-types-toggles">
+            {Object.entries(notifications).map(([key, value]) => (
+              <div className="flex items-center justify-between" key={key}>
+                <span>
+                  {key === "newLeads"
+                    ? "Neue Interessenten"
+                    : key === "escalations"
+                    ? "Eskalationen / Übergaben"
+                    : key === "followUps"
+                    ? "Follow-up Erinnerungen"
+                    : "Systemhinweise"}
+                </span>
+                <Switch
+                  checked={value}
+                  onCheckedChange={() => handleToggle(key, "notifications")}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <Separator className="my-6" />
+
+        <div data-tour="notifications-channels">
+          <h2 className="text-lg font-semibold mb-1">Empfangskanäle</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Auf welchen Wegen möchten Sie Benachrichtigungen erhalten?
+          </p>
+
+          <div className="space-y-4 mb-6" data-tour="notifications-channels-toggles">
+            {Object.entries(delivery).map(([key, value]) => (
+              <div className="flex items-center justify-between" key={key}>
+                <span>
+                  {key === "email"
+                    ? "E-Mail"
+                    : key === "whatsapp"
+                    ? "WhatsApp"
+                    : key === "dashboard"
+                    ? "Dashboard"
+                    : "Slack"}
+                </span>
+                <Switch
+                  checked={value}
+                  onCheckedChange={() => handleToggle(key, "delivery")}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <Separator className="my-6" />
+
+        <div data-tour="notifications-contact">
+          <h2 className="text-lg font-semibold mb-1">Kontaktinformationen</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Wohin sollen wir Ihre Benachrichtigungen senden?
+          </p>
+          <div className="grid grid-cols-1 gap-4 mb-6">
+            <Input
+              placeholder="E-Mail-Adresse"
+              value={contactInfo.email}
+              onChange={(e) =>
+                setContactInfo({ ...contactInfo, email: e.target.value })
+              }
+              data-tour="notifications-contact-email"
+            />
+            <Input
+              placeholder="Telefonnummer für WhatsApp"
+              value={contactInfo.phone}
+              onChange={(e) =>
+                setContactInfo({ ...contactInfo, phone: e.target.value })
+              }
+              data-tour="notifications-contact-phone"
+            />
+
+            <button
+              onClick={connectSlack}
+              className="flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-[#4A154B] text-white font-medium hover:brightness-110 transition"
+              data-tour="notifications-connect-slack"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 122.8 122.8"
+                fill="none"
+              >
+                <path
+                  d="M30.3 77.2c0 8.4-6.8 15.2-15.2 15.2S0 85.6 0 77.2s6.8-15.2 15.2-15.2h15.1v15.2z"
+                  fill="#E01E5A"
+                />
+                <path
+                  d="M37.9 77.2c0-8.4 6.8-15.2 15.2-15.2s15.2 6.8 15.2 15.2v37.9c0 8.4-6.8 15.2-15.2 15.2s-15.2-6.8-15.2-15.2V77.2z"
+                  fill="#E01E5A"
+                />
+                <path
+                  d="M45.5 30.3c-8.4 0-15.2-6.8-15.2-15.2S37.1 0 45.5 0s15.2 6.8 15.2 15.2v15.1H45.5z"
+                  fill="#36C5F0"
+                />
+                <path
+                  d="M45.5 37.9c8.4 0 15.2 6.8 15.2 15.2S53.9 68.3 45.5 68.3H7.6c-8.4 0-15.2-6.8-15.2-15.2S-0.8 37.9 7.6 37.9h37.9z"
+                  fill="#36C5F0"
+                />
+                <path
+                  d="M92.5 45.5c0-8.4 6.8-15.2 15.2-15.2s15.2 6.8 15.2 15.2-6.8 15.2-15.2 15.2H92.5V45.5z"
+                  fill="#2EB67D"
+                />
+                <path
+                  d="M84.9 45.5c0 8.4-6.8 15.2-15.2 15.2S54.5 53.9 54.5 45.5V7.6c0-8.4 6.8-15.2 15.2-15.2s15.2 6.8 15.2 15.2v37.9z"
+                  fill="#2EB67D"
+                />
+                <path
+                  d="M77.2 92.5c8.4 0 15.2 6.8 15.2 15.2s-6.8 15.2-15.2 15.2-15.2-6.8-15.2-15.2V92.5h15.2z"
+                  fill="#ECB22E"
+                />
+                <path
+                  d="M77.2 84.9c-8.4 0-15.2-6.8-15.2-15.2s6.8-15.2 15.2-15.2h37.9c8.4 0 15.2 6.8 15.2 15.2s-6.8 15.2-15.2 15.2H77.2z"
+                  fill="#ECB22E"
+                />
+              </svg>
+              Mit Slack verbinden
+            </button>
+          </div>
+        </div>
+
+        <Separator className="my-6" />
+
+        <div data-tour="notifications-time-window">
+          <h2 className="text-lg font-semibold mb-1">
+            Benachrichtigungszeitfenster
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Innerhalb welcher Zeiten möchten Sie benachrichtigt werden?
+          </p>
+          <div className="flex items-center gap-4 mb-6">
+            <Input
+              type="time"
+              value={timeWindow.start}
+              onChange={(e) =>
+                setTimeWindow({ ...timeWindow, start: e.target.value })
+              }
+              data-tour="notifications-time-start"
+            />
+            <span>bis</span>
+            <Input
+              type="time"
+              value={timeWindow.end}
+              onChange={(e) =>
+                setTimeWindow({ ...timeWindow, end: e.target.value })
+              }
+              data-tour="notifications-time-end"
+            />
+          </div>
+        </div>
+
+        <div data-tour="notifications-note">
+          <h2 className="text-lg font-semibold mb-1">Zusätzliche Hinweise</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Wenn es spezielle Wünsche für die Kommunikation gibt (z. B. nachts nur
+            bei Eskalationen).
+          </p>
+          <Textarea
+            placeholder="Z. B. 'Nach 20 Uhr nur bei dringenden Eskalationen benachrichtigen.'"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            data-tour="notifications-note-textarea"
+          />
+        </div>
+
+        <Separator className="my-6" />
+
+        <div data-tour="notifications-example">
+          <h2 className="text-lg font-semibold mb-1">
+            Beispiel-Benachrichtigung
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            So könnte eine typische Nachricht bei einem neuen Lead aussehen:
+          </p>
+
+          <div className="bg-muted text-sm rounded-md border px-4 py-3" data-tour="notifications-example-box">
+            <p className="font-semibold mb-1">📩 Neuer Interessent!</p>
+            <p className="text-muted-foreground">
+              Max Mustermann hat gerade auf das Inserat „Modernes Penthouse mit
+              Blick“ geantwortet.
+              <br />
+              Nachricht: „Guten Tag, ist die Wohnung noch verfügbar?“
+              <br />
+              <span className="text-xs text-muted-foreground">
+                Erhalten via WhatsApp • 14:36 Uhr
+              </span>
+            </p>
+          </div>
+        </div>
+
+        <Button className="mt-6" data-tour="notifications-save">
+          Einstellungen speichern
+        </Button>
       </div>
     </main>
   );

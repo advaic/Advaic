@@ -448,10 +448,16 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
   ]);
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
+    <div
+      className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900"
+      data-tour="escalations-page"
+    >
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
-        <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
+        <div
+          className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
+          data-tour="escalations-header"
+        >
           <div className="flex items-start justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -477,7 +483,10 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div
+              className="flex items-center gap-2 flex-wrap justify-end"
+              data-tour="escalations-filters"
+            >
               {/* Search */}
               <div className="relative hidden md:block">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
@@ -676,7 +685,10 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
         {/* Content */}
         <div className="py-6">
           {/* Info banner */}
-          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div
+            className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"
+            data-tour="escalations-info"
+          >
             <div className="flex items-start gap-3">
               <div className="mt-0.5">
                 <AlertTriangle className="h-5 w-5 text-amber-700" />
@@ -695,7 +707,10 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+          <div
+            className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
+            data-tour="escalations-list"
+          >
             <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between gap-3">
               <div className="text-sm text-gray-600 inline-flex items-center gap-2">
                 <Clock className="h-4 w-4 text-gray-500" />
@@ -709,7 +724,10 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
 
             <div className="p-4 md:p-6">
               {selectedIds.length > 0 && (
-                <div className="mb-4 rounded-2xl border border-gray-200 bg-white p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div
+                  className="mb-4 rounded-2xl border border-gray-200 bg-white p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                  data-tour="escalations-bulk-actions"
+                >
                   <div className="text-sm text-gray-700 inline-flex items-center gap-2">
                     <CheckSquare className="h-4 w-4" />
                     <span className="font-medium">{selectedIds.length}</span>
@@ -778,7 +796,10 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
               )}
 
               {/* pagination info */}
-              <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div
+                className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                data-tour="escalations-pagination"
+              >
                 <div className="text-xs text-gray-500">
                   Seite{" "}
                   <span className="font-medium text-gray-700">{safePage}</span>{" "}
@@ -829,6 +850,7 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
                     return (
                       <div
                         key={lead.id}
+                        data-tour="escalation-card"
                         className={`group flex items-stretch gap-3 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors ${
                           checked ? "ring-2 ring-amber-300/40" : ""
                         }`}
@@ -850,7 +872,10 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
                           <InboxItem lead={lead as any} userId={userId} />
                         </div>
 
-                        <div className="shrink-0 flex flex-col items-end gap-2 p-3">
+                        <div
+                          className="shrink-0 flex flex-col items-end gap-2 p-3"
+                          data-tour="escalation-actions"
+                        >
                           <span
                             className={`text-[11px] font-medium px-2 py-1 rounded-full border ${ageCls}`}
                             title="Zeit seit letztem Update"

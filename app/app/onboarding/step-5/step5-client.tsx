@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -202,22 +203,138 @@ export default function Step5Client() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canContinue = useMemo(() => choice !== null, [choice]);
+  const [propsLoading, setPropsLoading] = useState(false);
+  const [propsError, setPropsError] = useState<string | null>(null);
+  const [properties, setProperties] = useState<
+    Array<{
+      id: string;
+      title: string | null;
+      city: string | null;
+      price: number | null;
+      price_type: string | null;
+      image_urls: string[] | null;
+      created_at?: string | null;
+    }>
+  >([]);
+
+  const hasProperties = useMemo(() => properties.length > 0, [properties]);
+
+  const canContinue = useMemo(() => {
+    if (choice === "immoscout") return true;
+    if (choice === "manual") return hasProperties;
+    // If the user already created properties, allow continuing even if the
+    // choice state got reset after a navigation.
+    return hasProperties;
+  }, [choice, hasProperties]);
+
+  // Restore choice from sessionStorage after navigation (e.g. coming back from
+  // manual property creation).
+  useEffect(() => {
+    try {
+      const saved = window.sessionStorage.getItem("onboarding_step5_choice");
+      if (saved === "immoscout" || saved === "manual") {
+        setChoice((prev) => prev ?? (saved as any));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  function rememberChoice(next: "immoscout" | "manual") {
+    try {
+      window.sessionStorage.setItem("onboarding_step5_choice", next);
+    } catch {
+      // ignore
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPreview() {
+      setPropsError(null);
+      setPropsLoading(true);
+      try {
+        const {
+          data: { user },
+          error: userErr,
+        } = await supabase.auth.getUser();
+
+        if (userErr || !user) {
+          if (!cancelled) setProperties([]);
+          return;
+        }
+
+        const { data, error: selErr } = await supabase
+          .from("properties")
+          .select("id,title,city,price,price_type,image_urls,created_at")
+          .eq("agent_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(3);
+
+        if (selErr) {
+          if (!cancelled) setPropsError(selErr.message);
+          return;
+        }
+
+        if (!cancelled) {
+          setProperties((data as any) || []);
+          // If we have properties, make manual the implicit choice unless the
+          // user explicitly selected immoscout.
+          setChoice((prev) => {
+            if (prev === "immoscout") return prev;
+            if ((data as any)?.length) {
+              try {
+                const saved = window.sessionStorage.getItem(
+                  "onboarding_step5_choice"
+                );
+                if (saved === "immoscout") return "immoscout";
+              } catch {}
+              return prev ?? "manual";
+            }
+            return prev;
+          });
+        }
+      } catch (e: any) {
+        if (!cancelled) setPropsError(String(e?.message || "load_failed"));
+      } finally {
+        if (!cancelled) setPropsLoading(false);
+      }
+    }
+
+    void loadPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function startImmoScout() {
     setChoice("immoscout");
+    rememberChoice("immoscout");
     // ⬇️ falls dein Start-Endpoint anders heißt, hier ändern:
     window.location.href = "/api/auth/immoscout/start";
   }
 
   function goManualCreate() {
     setChoice("manual");
-    // ⬇️ HIER deinen echten Pfad rein (zu deiner HinzufuegenPage)
-    router.push("/app/immobilien/hinzufuegen");
+    rememberChoice("manual");
+
+    // IMPORTANT: Do NOT route via /app/onboarding?next=... because the onboarding
+    // layout guard can bounce to step 1. Go directly to the create page and
+    // provide a return target.
+    const returnTo = "/app/onboarding/step-5";
+    router.push(
+      `/app/immobilien/hinzufuegen?returnTo=${encodeURIComponent(returnTo)}`
+    );
   }
 
   async function continueNext() {
     setError(null);
+    if (choice === "manual" && !hasProperties) {
+      setError("Bitte füge mindestens eine Immobilie hinzu oder verbinde ImmoScout.");
+      return;
+    }
     if (!canContinue) return;
 
     setSaving(true);
@@ -309,6 +426,75 @@ export default function Step5Client() {
             </div>
           }
         />
+      </div>
+
+      <div className="mt-4">
+        <div
+          className="rounded-[14px] border p-4"
+          style={{
+            borderColor: "var(--border, rgba(0,0,0,0.08))",
+            background: "rgba(0,0,0,0.02)",
+          }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[13px] font-semibold">Deine Objekte</div>
+            <div
+              className="text-[12px]"
+              style={{ color: "var(--textMuted, rgba(14,14,17,0.65))" }}
+            >
+              {propsLoading ? "Lädt…" : `${properties.length} gefunden`}
+            </div>
+          </div>
+
+          {propsError ? (
+            <div
+              className="mt-2 text-[12px]"
+              style={{ color: "rgba(220,38,38,0.85)" }}
+            >
+              {propsError}
+            </div>
+          ) : null}
+
+          {!propsLoading && properties.length === 0 ? (
+            <div
+              className="mt-2 text-[13px]"
+              style={{ color: "var(--textMuted, rgba(14,14,17,0.65))" }}
+            >
+              Noch keine Immobilien angelegt. Wenn du „Manuell“ nutzt, füge
+              mindestens eine Immobilie hinzu.
+            </div>
+          ) : null}
+
+          {properties.length > 0 ? (
+            <div className="mt-3 grid gap-2">
+              {properties.map((p) => (
+                <div
+                  key={p.id}
+                  className="rounded-[12px] border px-3 py-2"
+                  style={{
+                    borderColor: "var(--border, rgba(0,0,0,0.08))",
+                    background: "#fff",
+                  }}
+                >
+                  <div className="text-[13px] font-medium">
+                    {p.title || "(Ohne Titel)"}
+                  </div>
+                  <div
+                    className="mt-[2px] text-[12px]"
+                    style={{ color: "var(--textMuted, rgba(14,14,17,0.65))" }}
+                  >
+                    {(p.city || "") +
+                      (p.price
+                        ? ` · ${new Intl.NumberFormat("de-DE").format(
+                            Number(p.price)
+                          )} €`
+                        : "")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">

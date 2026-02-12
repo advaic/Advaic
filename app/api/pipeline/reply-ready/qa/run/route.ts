@@ -55,10 +55,19 @@ function formatThreadContext(ctx: any[]) {
 
 type QaVerdict = "pass" | "warn" | "fail";
 
+type QaReasonEngine = {
+  reason_short_de: string; // <= 120
+  reason_long_de?: string | null; // longer explanation for UI
+  action_de?: string | null; // what agent should do
+  risk_flags?: string[] | null; // machine-readable flags
+  confidence?: number | null; // 0..1 optional
+};
+
 type QaResult = {
   verdict: QaVerdict;
-  reason: string; // <= 120 chars
+  reason: string; // legacy short reason <= 120
   score?: number | null; // 0..1 optional
+  engine?: QaReasonEngine | null;
 };
 
 async function fetchJsonWithTimeout(
@@ -164,6 +173,25 @@ function normalizeReason(r: any) {
   return String(r || "n/a").slice(0, 120);
 }
 
+function normalizeReasonLong(r: any) {
+  const s = String(r || "").trim();
+  return s ? s.slice(0, 2000) : null;
+}
+
+function normalizeAction(a: any) {
+  const s = String(a || "").trim();
+  return s ? s.slice(0, 800) : null;
+}
+
+function normalizeRiskFlags(v: any): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const out = v
+    .map((x) => String(x || "").toLowerCase().trim())
+    .filter((x) => x.length > 0)
+    .slice(0, 20);
+  return out.length ? out : null;
+}
+
 async function getAutosendEnabled(supabase: any, agentId: string) {
   try {
     const { data } = await (supabase.from("agent_settings") as any)
@@ -200,48 +228,72 @@ export async function POST() {
   const supabase = supabaseAdmin();
   const nowIso = new Date().toISOString();
 
-  // 0) Load active QA prompt from ai_prompts
-  const PROMPT_KEY = "qa_reply_v1";
+  // 0) Load active QA prompts from ai_prompts (normal + followup)
+  const NORMAL_QA_KEY = "qa_reply_v1";
+  const FOLLOWUP_QA_KEY = "followup_qa_v1";
 
-  const { data: promptRow, error: promptErr } = await (
-    supabase.from("ai_prompts") as any
-  )
-    .select(
-      "id, key, version, is_active, system_prompt, user_prompt, temperature, max_tokens, response_format"
-    )
-    .eq("is_active", true)
-    .eq("key", PROMPT_KEY)
-    .order("version", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  type LoadedPrompt = {
+    key: string;
+    version: number;
+    system: string;
+    userTemplate: string;
+    temperature: number;
+    maxTokens: number;
+    versionTag: string; // e.g. v1
+  };
 
-  if (promptErr || !promptRow) {
+  async function loadActivePrompt(key: string): Promise<LoadedPrompt> {
+    const { data: row, error } = await (supabase.from("ai_prompts") as any)
+      .select(
+        "id, key, version, is_active, system_prompt, user_prompt, temperature, max_tokens, response_format"
+      )
+      .eq("is_active", true)
+      .eq("key", key)
+      .order("version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !row) {
+      throw new Error(`Active ${key} prompt not found in ai_prompts`);
+    }
+
+    const system = String(row.system_prompt || "").trim();
+    const userTemplate = String(row.user_prompt || "").trim();
+    let temperature = Number(row.temperature ?? 0);
+    let maxTokens = Number(row.max_tokens ?? 220);
+    if (!Number.isFinite(temperature)) temperature = 0;
+    if (!Number.isFinite(maxTokens) || maxTokens <= 0) maxTokens = 220;
+
+    if (!system || !userTemplate) {
+      throw new Error(`Active ${key} prompt missing system_prompt/user_prompt`);
+    }
+
+    const version = Number(row.version ?? 1);
+    return {
+      key,
+      version,
+      system,
+      userTemplate,
+      temperature,
+      maxTokens,
+      versionTag: `v${version}`,
+    };
+  }
+
+  let normalPrompt: LoadedPrompt;
+  let followupPrompt: LoadedPrompt;
+  try {
+    normalPrompt = await loadActivePrompt(NORMAL_QA_KEY);
+    followupPrompt = await loadActivePrompt(FOLLOWUP_QA_KEY);
+  } catch (e: any) {
     return NextResponse.json(
-      { error: `Active ${PROMPT_KEY} prompt not found in ai_prompts` },
+      { error: e?.message || "Failed to load QA prompts" },
       { status: 500 }
     );
   }
-
-  const systemPrompt = String(promptRow.system_prompt || "").trim();
-  const userPromptTemplate = String(promptRow.user_prompt || "").trim();
-  let temperature = Number(promptRow.temperature ?? 0);
-  let maxTokens = Number(promptRow.max_tokens ?? 220);
-
-  if (!systemPrompt || !userPromptTemplate) {
-    return NextResponse.json(
-      {
-        error: `Active ${PROMPT_KEY} prompt missing system_prompt/user_prompt`,
-      },
-      { status: 500 }
-    );
-  }
-  if (!Number.isFinite(temperature)) temperature = 0;
-  if (!Number.isFinite(maxTokens) || maxTokens <= 0) maxTokens = 220;
-
-  const PROMPT_VERSION = `v${promptRow.version ?? 1}`;
 
   // 1) Load drafts to QA
-  // We QA only drafts created by reply_writer_v1 and that are currently qa_pending.
+  // A) Normal replies via message_drafts
   const { data: draftLinks, error: draftsErr } = await (
     supabase.from("message_drafts") as any
   )
@@ -260,20 +312,139 @@ export async function POST() {
     );
   }
 
-  const processed: any[] = [];
+  // B) Follow-up drafts directly from messages (no message_drafts link)
+  // We QA only follow-up drafts that are qa_pending.
+  const { data: followupDrafts, error: followupErr } = await (
+    supabase.from("messages") as any
+  )
+    .select(
+      "id, agent_id, lead_id, text, timestamp, sender, status, send_status, approval_required, was_followup"
+    )
+    .eq("was_followup", true)
+    .eq("sender", "agent")
+    .eq("status", "qa_pending")
+    .order("timestamp", { ascending: true })
+    .limit(50);
+
+  if (followupErr) {
+    return NextResponse.json(
+      { error: "Failed to load follow-up drafts", details: followupErr.message },
+      { status: 500 }
+    );
+  }
+
+  type QaWorkItem =
+    | {
+        kind: "normal";
+        agentId: string;
+        leadId: string;
+        inboundMessageId: string;
+        draftMessageId: string;
+      }
+    | {
+        kind: "followup";
+        agentId: string;
+        leadId: string;
+        inboundMessageId: string; // we resolve to latest user message id
+        draftMessageId: string;
+      };
+
+  const work: QaWorkItem[] = [];
 
   for (const link of draftLinks || []) {
-    const agentId = String(link.agent_id);
-    const leadId = String(link.lead_id);
-    const inboundMessageId = String(link.inbound_message_id);
-    const draftMessageId = String(link.draft_message_id);
+    if (!link?.draft_message_id || !link?.inbound_message_id) continue;
+    work.push({
+      kind: "normal",
+      agentId: String(link.agent_id),
+      leadId: String(link.lead_id),
+      inboundMessageId: String(link.inbound_message_id),
+      draftMessageId: String(link.draft_message_id),
+    });
+  }
+
+  for (const d of followupDrafts || []) {
+    // Resolve inbound anchor as latest user message for the same lead
+    const agentId = String(d.agent_id);
+    const leadId = String(d.lead_id);
+    const draftMessageId = String(d.id);
+
+    const { data: inboundAnchor } = await (supabase.from("messages") as any)
+      .select("id")
+      .eq("lead_id", leadId)
+      .eq("sender", "user")
+      .order("timestamp", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const inboundMessageId = inboundAnchor?.id ? String(inboundAnchor.id) : "";
+    if (!inboundMessageId) continue;
+
+    work.push({
+      kind: "followup",
+      agentId,
+      leadId,
+      inboundMessageId,
+      draftMessageId,
+    });
+  }
+
+  const processed: any[] = [];
+
+  async function insertQaRow(supabase: any, row: Record<string, any>) {
+    // Try extended payload first (if columns exist), then fall back to the minimal payload.
+    const minimal = {
+      agent_id: row.agent_id,
+      lead_id: row.lead_id,
+      inbound_message_id: row.inbound_message_id,
+      draft_message_id: row.draft_message_id,
+      verdict: row.verdict,
+      score: row.score ?? null,
+      reason: row.reason,
+      model: row.model,
+      prompt_key: row.prompt_key,
+      prompt_version: row.prompt_version,
+    };
+
+    const extended = {
+      ...minimal,
+      // These are optional columns in some schemas; safe to attempt.
+      reason_long: row.reason_long ?? null,
+      action: row.action ?? null,
+      risk_flags: row.risk_flags ?? null,
+      meta: row.meta ?? null,
+    };
+
+    // Attempt extended insert
+    try {
+      await (supabase.from("message_qas") as any).insert(extended);
+      return;
+    } catch {
+      // ignore
+    }
+
+    // Fallback minimal insert
+    try {
+      await (supabase.from("message_qas") as any).insert(minimal);
+    } catch {
+      // swallow
+    }
+  }
+
+  for (const item of work) {
+    const agentId = item.agentId;
+    const leadId = item.leadId;
+    const inboundMessageId = item.inboundMessageId;
+    const draftMessageId = item.draftMessageId;
+
+    // Choose prompt based on kind
+    const prompt = item.kind === "followup" ? followupPrompt : normalPrompt;
 
     // 1.1) Skip if QA already exists for this draft + prompt version
     const { data: existingQa } = await (supabase.from("message_qas") as any)
       .select("id")
       .eq("draft_message_id", draftMessageId)
-      .eq("prompt_key", PROMPT_KEY)
-      .eq("prompt_version", PROMPT_VERSION)
+      .eq("prompt_key", prompt.key)
+      .eq("prompt_version", prompt.versionTag)
       .maybeSingle();
 
     if (existingQa?.id) continue;
@@ -322,7 +493,7 @@ export async function POST() {
     const draftText = String(draft.text || "").slice(0, 2200);
 
     // 4) Compose QA user prompt (template placeholders)
-    const qaUserPrompt = userPromptTemplate
+    const qaUserPrompt = prompt.userTemplate
       .replaceAll("{{THREAD_CONTEXT}}", threadContext || "")
       .replaceAll("{{INBOUND_MESSAGE}}", inboundText || "")
       .replaceAll("{{DRAFT_MESSAGE}}", draftText || "");
@@ -331,10 +502,10 @@ export async function POST() {
     let qa: QaResult = { verdict: "warn", reason: "qa_not_run", score: null };
 
     const resp = await callAzureQa({
-      system: systemPrompt,
+      system: prompt.system,
       user: qaUserPrompt,
-      temperature,
-      maxTokens,
+      temperature: prompt.temperature,
+      maxTokens: prompt.maxTokens,
       timeoutMs: 25_000,
       retries: 2,
     });
@@ -347,31 +518,57 @@ export async function POST() {
         qa = { verdict: "warn", reason: "qa_invalid_json", score: null };
       } else {
         const verdict = normalizeVerdict(parsed.verdict);
-        const reason = normalizeReason(parsed.reason);
+        const legacyReason = parsed.reason;
+        const shortReason = normalizeReason(
+          legacyReason ?? parsed.reason_short_de ?? parsed.reason_short ?? parsed.short_reason
+        );
         const score = parsed.score !== undefined ? clamp01(parsed.score) : null;
-        qa = { verdict, reason, score };
+
+        const engine: QaReasonEngine = {
+          reason_short_de: shortReason,
+          reason_long_de: normalizeReasonLong(
+            parsed.reason_long_de ?? parsed.reason_long ?? parsed.long_reason
+          ),
+          action_de: normalizeAction(parsed.action_de ?? parsed.action ?? parsed.next_action),
+          risk_flags: normalizeRiskFlags(
+            parsed.risk_flags ?? parsed.flags ?? parsed.risks ?? parsed.riskFlags
+          ),
+          confidence: parsed.confidence !== undefined ? clamp01(parsed.confidence) : null,
+        };
+
+        qa = {
+          verdict,
+          reason: shortReason,
+          score,
+          engine,
+        };
       }
     }
 
     // 6) Persist QA record (best-effort)
     // If you have a UNIQUE constraint (draft_message_id, prompt_key, prompt_version),
     // this will naturally be idempotent enough with the existingQa check above.
-    try {
-      await (supabase.from("message_qas") as any).insert({
-        agent_id: agentId,
-        lead_id: leadId,
-        inbound_message_id: inboundMessageId,
-        draft_message_id: draftMessageId,
-        verdict: qa.verdict,
-        score: qa.score ?? null,
-        reason: qa.reason,
-        model: "azure",
-        prompt_key: PROMPT_KEY,
-        prompt_version: PROMPT_VERSION,
-      });
-    } catch {
-      // swallow
-    }
+    await insertQaRow(supabase, {
+      agent_id: agentId,
+      lead_id: leadId,
+      inbound_message_id: inboundMessageId,
+      draft_message_id: draftMessageId,
+      verdict: qa.verdict,
+      score: qa.score ?? null,
+      reason: qa.reason,
+      reason_long: qa.engine?.reason_long_de ?? null,
+      action: qa.engine?.action_de ?? null,
+      risk_flags: qa.engine?.risk_flags ?? null,
+      meta: qa.engine
+        ? {
+            confidence: qa.engine.confidence ?? null,
+            kind: item.kind,
+          }
+        : { kind: item.kind },
+      model: "azure",
+      prompt_key: prompt.key,
+      prompt_version: prompt.versionTag,
+    });
 
     // 7) Update draft message status based on QA
     // Decision logic:
@@ -427,13 +624,18 @@ export async function POST() {
       );
     }
 
-
     processed.push({
       inboundMessageId,
       draftMessageId,
       verdict: qa.verdict,
       reason: qa.reason,
       score: qa.score ?? null,
+      reason_long: qa.engine?.reason_long_de ?? null,
+      action: qa.engine?.action_de ?? null,
+      risk_flags: qa.engine?.risk_flags ?? null,
+      qa_confidence: qa.engine?.confidence ?? null,
+      qa_prompt_key: prompt.key,
+      qa_prompt_version: prompt.versionTag,
       autosendEnabled,
       nextStatus:
         qa.verdict === "pass"

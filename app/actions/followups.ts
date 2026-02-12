@@ -183,26 +183,55 @@ export async function sendFollowUpNow(
     throw new Error("Versand an Make fehlgeschlagen");
   }
 
-  // 3) Counter ++ (RPC) und follow_up_due_at +48h
-  const { error: rpcErr } = await supabase.rpc("inc_follow_up_count", {
-    p_lead_id: leadId,
-  });
-  if (rpcErr) {
-    console.warn("inc_follow_up_count failed:", rpcErr.message);
+  // 3) Lead-Follow-up-Status aktualisieren (neues Datenmodell)
+  //    - last_agent_message_at: für Due-Berechnung
+  //    - followup_last_sent_at: Historie
+  //    - followup_stage: 0->1->2 (max 2)
+  //    - followup_status: 'sent'
+  //    - followup_next_at: wenn Auto an und noch eine Stage offen ist
+
+  const { data: leadState, error: stateErr } = await supabase
+    .from("leads")
+    .select("followup_stage, followups_enabled")
+    .eq("id", leadId)
+    .eq("agent_id", user.id)
+    .single();
+
+  if (stateErr) {
+    console.warn("Could not read lead followup state:", stateErr.message);
   }
 
-  const next = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-  await supabase
+  const currentStage = Math.max(0, Number((leadState as any)?.followup_stage ?? 0));
+  const nextStage = Math.min(currentStage + 1, 2);
+  const autoEnabled = Boolean((leadState as any)?.followups_enabled ?? true);
+
+  // If stage 1 just sent and auto is enabled, plan stage 2 for +72h; otherwise clear.
+  const nextAt = autoEnabled && nextStage === 1
+    ? new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString()
+    : null;
+
+  const { error: updErr } = await supabase
     .from("leads")
-    .update({ follow_up_due_at: next })
+    .update({
+      last_agent_message_at: timestamp,
+      followup_last_sent_at: timestamp,
+      followup_stage: nextStage,
+      followup_status: "sent",
+      followup_stop_reason: null,
+      followup_next_at: nextAt,
+    })
     .eq("id", leadId)
     .eq("agent_id", user.id);
+
+  if (updErr) {
+    console.warn("Could not update lead followup fields:", updErr.message);
+  }
 
   return { ok: true };
 }
 
 /**
- * Snooze (24h oder N Stunden): setzt follow_up_due_at entsprechend in die Zukunft.
+ * Snooze (24h oder N Stunden): pausiert Follow-ups bis zu einem Zeitpunkt in der Zukunft (followup_paused_until).
  */
 export async function snoozeFollowUp(
   leadId: string,
@@ -217,9 +246,28 @@ export async function snoozeFollowUp(
   if (userErr || !user) throw new Error("Nicht eingeloggt");
 
   const next = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+
+  // Keep planned time visible in the UI when auto-followups are enabled.
+  const { data: leadState, error: stateErr } = await supabase
+    .from("leads")
+    .select("followups_enabled")
+    .eq("id", leadId)
+    .eq("agent_id", user.id)
+    .single();
+
+  if (stateErr) {
+    console.warn("Could not read lead followups_enabled:", stateErr.message);
+  }
+
+  const autoEnabled = Boolean((leadState as any)?.followups_enabled ?? true);
+
   const { error } = await supabase
     .from("leads")
-    .update({ follow_up_due_at: next })
+    .update({
+      followup_paused_until: next,
+      followup_status: "paused",
+      followup_next_at: autoEnabled ? next : null,
+    })
     .eq("id", leadId)
     .eq("agent_id", user.id);
 

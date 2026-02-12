@@ -235,50 +235,82 @@ export default function ToneSettingsPage() {
   };
 
   return (
-    <main className="flex-1 p-6 overflow-y-auto bg-[#f7f7f8]">
-      <div className="mx-auto w-full max-w-6xl flex flex-col lg:flex-row gap-10">
+    <main
+      className="flex-1 p-6 overflow-y-auto bg-[#f7f7f8]"
+      data-tour="tone-style-page"
+    >
+      <div
+        className="mx-auto w-full max-w-6xl flex flex-col lg:flex-row gap-10"
+        data-tour="tone-style-layout"
+      >
         {/* LEFT: Main Form */}
-        <div className="flex-1">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold mb-2">Ton & Stil anpassen</h1>
+        <div className="flex-1" data-tour="tone-style-left">
+          <div
+            className="flex items-start justify-between gap-4"
+            data-tour="tone-style-header"
+          >
+            <div data-tour="tone-style-intro">
+              <h1
+                className="text-2xl font-bold mb-2"
+                data-tour="tone-style-title"
+              >
+                Ton & Stil anpassen
+              </h1>
               <p className="text-muted-foreground mb-6">
                 Diese Einstellungen beeinflussen den Stil aller KI-Antworten,
                 Vorschläge im Antwortvorlagen-Tool sowie Follow-Ups.
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" data-tour="tone-style-actions">
               <Button
                 variant="secondary"
                 onClick={() => void loadAll()}
                 disabled={loading || saving}
+                data-tour="tone-style-reload"
               >
                 Neu laden
               </Button>
-              <Button onClick={handleSave} disabled={loading || saving}>
+              <Button
+                onClick={handleSave}
+                disabled={loading || saving}
+                data-tour="tone-style-save"
+              >
                 {saving ? "Speichern…" : "Einstellungen speichern"}
               </Button>
             </div>
           </div>
 
-          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div
+            className="rounded-2xl border bg-white p-5 shadow-sm"
+            data-tour="tone-style-card"
+          >
             {/* Tone Style Selection */}
-            <h2 className="text-lg font-semibold mb-1">Antwort-Ton wählen</h2>
+            <h2
+              className="text-lg font-semibold mb-1"
+              data-tour="tone-style-tone-title"
+            >
+              Antwort-Ton wählen
+            </h2>
             <p className="text-sm text-muted-foreground mb-4">
               Wählen Sie einen generellen Stil für Ihre Kommunikation mit
               Interessenten.
             </p>
-            <ToneStyleSelector
-              selectedStyle={selectedStyle}
-              setSelectedStyle={setSelectedStyle}
-            />
+            <div data-tour="tone-style-selector">
+              <ToneStyleSelector
+                selectedStyle={selectedStyle}
+                setSelectedStyle={setSelectedStyle}
+              />
+            </div>
 
             <Separator className="my-6" />
 
             {/* Structured knobs */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+            <div
+              className="grid grid-cols-1 md:grid-cols-2 gap-4"
+              data-tour="tone-style-knobs"
+            >
+              <div data-tour="tone-style-formality">
                 <div className="text-sm font-medium mb-1">Anrede</div>
                 <select
                   value={formality}
@@ -293,7 +325,7 @@ export default function ToneSettingsPage() {
                 </div>
               </div>
 
-              <div>
+              <div data-tour="tone-style-length">
                 <div className="text-sm font-medium mb-1">Antwortlänge</div>
                 <select
                   value={lengthPref}
@@ -309,7 +341,7 @@ export default function ToneSettingsPage() {
                 </div>
               </div>
 
-              <div>
+              <div data-tour="tone-style-emoji">
                 <div className="text-sm font-medium mb-1">Emoji-Level</div>
                 <select
                   value={emojiLevel}
@@ -325,7 +357,7 @@ export default function ToneSettingsPage() {
                 </div>
               </div>
 
-              <div>
+              <div data-tour="tone-style-signoff">
                 <div className="text-sm font-medium mb-1">
                   Signatur (optional)
                 </div>
@@ -343,7 +375,10 @@ export default function ToneSettingsPage() {
             <Separator className="my-6" />
 
             {/* Custom Tone Instructions */}
-            <h2 className="text-lg font-semibold mb-1">
+            <h2
+              className="text-lg font-semibold mb-1"
+              data-tour="tone-style-rules-title"
+            >
               Wünsche oder Einschränkungen
             </h2>
             <p className="text-sm text-muted-foreground mb-4">
@@ -354,26 +389,34 @@ export default function ToneSettingsPage() {
               placeholder="Z. B. 'Bitte keine Emojis verwenden', 'Gegendert ansprechen', etc."
               value={customTone}
               onChange={(e) => setCustomTone(e.target.value)}
+              data-tour="tone-style-rules-text"
             />
 
             <Separator className="my-6" />
 
             {/* Preferred Formulations */}
-            <h2 className="text-lg font-semibold mb-1">
+            <h2
+              className="text-lg font-semibold mb-1"
+              data-tour="tone-style-formulations-title"
+            >
               Eigene Lieblingsformulierungen
             </h2>
             <p className="text-sm text-muted-foreground mb-4">
               Diese Phrasen werden von der KI bevorzugt verwendet – ideal für
               Begrüßungen, Abschlüsse etc.
             </p>
-            <div className="flex gap-2 mb-2">
+            <div className="flex gap-2 mb-2" data-tour="tone-style-formulations-add">
               <Input
                 placeholder="Formulierung eingeben & Enter drücken"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleQuickSaveOnEnter}
+                data-tour="tone-style-formulations-input"
               />
-              <Button onClick={() => void handleAddFormulation()}>
+              <Button
+                onClick={() => void handleAddFormulation()}
+                data-tour="tone-style-formulations-add-btn"
+              >
                 Hinzufügen
               </Button>
             </div>
@@ -385,9 +428,16 @@ export default function ToneSettingsPage() {
                 Noch keine Formulierungen gespeichert.
               </div>
             ) : (
-              <ul className="text-sm text-muted-foreground space-y-2">
+              <ul
+                className="text-sm text-muted-foreground space-y-2"
+                data-tour="tone-style-formulations-list"
+              >
                 {formulations.map((f) => (
-                  <li key={f.id} className="flex items-center justify-between">
+                  <li
+                    key={f.id}
+                    className="flex items-center justify-between"
+                    data-tour="tone-style-formulation-item"
+                  >
                     <span>{f.text}</span>
                     <Button
                       variant="ghost"
@@ -404,14 +454,22 @@ export default function ToneSettingsPage() {
             <Separator className="my-6" />
 
             {/* File Upload */}
-            <h2 className="text-lg font-semibold mb-1">
+            <h2
+              className="text-lg font-semibold mb-1"
+              data-tour="tone-style-upload-title"
+            >
               Ton-Beispiele hochladen (optional)
             </h2>
             <p className="text-sm text-muted-foreground mb-4">
               Laden Sie PDF-, TXT-, PNG- oder Word-Dateien mit
               Gesprächsbeispielen hoch, die den gewünschten Stil zeigen.
             </p>
-            <Input type="file" multiple onChange={handleFileChange} />
+            <Input
+              type="file"
+              multiple
+              onChange={handleFileChange}
+              data-tour="tone-style-upload-input"
+            />
             <p className="text-xs text-muted-foreground mt-2">
               Hinweis: Upload/Parsing ist noch nicht angebunden – wir speichern
               zunächst nur die Ton-Einstellungen & Formulierungen.
@@ -420,8 +478,12 @@ export default function ToneSettingsPage() {
                 : ""}
             </p>
 
-            <div className="mt-6">
-              <Button onClick={handleSave} disabled={loading || saving}>
+            <div className="mt-6" data-tour="tone-style-bottom-save">
+              <Button
+                onClick={handleSave}
+                disabled={loading || saving}
+                data-tour="tone-style-bottom-save-btn"
+              >
                 {saving ? "Speichern…" : "Einstellungen speichern"}
               </Button>
               <p className="text-xs text-muted-foreground mt-2">
@@ -433,15 +495,23 @@ export default function ToneSettingsPage() {
         </div>
 
         {/* RIGHT: Sticky Preview */}
-        <div className="w-full lg:w-1/3">
-          <div className="sticky top-24">
-            <div className="bg-white border rounded-2xl p-4 shadow-sm">
-              <TonePreviewSummary
-                selectedStyle={selectedStyle}
-                customTone={customTone}
-                formulations={formulationStrings}
-              />
-              <div className="mt-4 text-xs text-muted-foreground">
+        <div className="w-full lg:w-1/3" data-tour="tone-style-right">
+          <div className="sticky top-24" data-tour="tone-style-preview-sticky">
+            <div
+              className="bg-white border rounded-2xl p-4 shadow-sm"
+              data-tour="tone-style-preview-card"
+            >
+              <div data-tour="tone-style-preview-summary">
+                <TonePreviewSummary
+                  selectedStyle={selectedStyle}
+                  customTone={customTone}
+                  formulations={formulationStrings}
+                />
+              </div>
+              <div
+                className="mt-4 text-xs text-muted-foreground"
+                data-tour="tone-style-preview-hint"
+              >
                 Vorschau berücksichtigt: Ton, Einschränkungen und gespeicherte
                 Formulierungen.
               </div>

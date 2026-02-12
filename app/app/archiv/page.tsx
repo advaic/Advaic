@@ -120,12 +120,15 @@ export default function ArchivPage() {
   }, [filtered.length, loading]);
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
-      <div className="max-w-6xl mx-auto px-4 md:px-6 py-6">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+    <div
+      className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900"
+      data-tour="archive-page"
+    >
+      <div className="max-w-6xl mx-auto px-4 md:px-6 py-6" data-tour="archive-container">
+        <div className="flex items-start justify-between gap-4 flex-wrap" data-tour="archive-header">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl md:text-2xl font-semibold">Archiv</h1>
+              <h1 className="text-xl md:text-2xl font-semibold" data-tour="archive-title">Archiv</h1>
               <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
                 Advaic
               </span>
@@ -133,13 +136,13 @@ export default function ArchivPage() {
                 {countLabel}
               </span>
             </div>
-            <div className="mt-1 text-sm text-gray-600">
+            <div className="mt-1 text-sm text-gray-600" data-tour="archive-description">
               Hier findest du abgeschlossene Konversationen. Du kannst sie weiterhin öffnen,
               aber sie zählen nicht mehr als aktive Interessenten.
             </div>
           </div>
 
-          <div className="w-full sm:w-[340px]">
+          <div className="w-full sm:w-[340px]" data-tour="archive-search">
             <div className="relative">
               <Search className="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -155,7 +158,10 @@ export default function ArchivPage() {
         <div className="h-5" />
 
         {loading ? (
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+          <div
+            className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
+            data-tour="archive-loading"
+          >
             <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center gap-2 text-sm text-gray-700">
               <Loader2 className="h-4 w-4 animate-spin" />
               Lade Archiv…
@@ -172,7 +178,7 @@ export default function ArchivPage() {
             </div>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="rounded-2xl border border-gray-200 bg-white p-8">
+          <div className="rounded-2xl border border-gray-200 bg-white p-8" data-tour="archive-empty">
             <div className="flex items-center gap-3 text-gray-900">
               <div className="h-10 w-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center">
                 <Archive className="h-5 w-5 text-amber-900" />
@@ -195,8 +201,14 @@ export default function ArchivPage() {
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-            <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
+          <div
+            className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
+            data-tour="archive-list"
+          >
+            <div
+              className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between"
+              data-tour="archive-list-header"
+            >
               <div className="text-sm text-gray-700 font-medium">Archivierte Interessenten</div>
               <div className="text-xs text-gray-500">
                 Tipp: Klicke auf einen Eintrag, um die Unterhaltung zu öffnen.
@@ -204,7 +216,7 @@ export default function ArchivPage() {
             </div>
 
             <div className="p-4 md:p-6">
-              <div className="grid gap-3">
+              <div className="grid gap-3" data-tour="archive-items">
                 {filtered.map((lead) => {
                   const title = safeStr(lead.name) || safeStr(lead.email) || "Unbekannt";
                   const subtitle = safeStr(lead.email);
@@ -218,11 +230,12 @@ export default function ArchivPage() {
                       type="button"
                       onClick={() => router.push(`/app/nachrichten/${lead.id}`)}
                       className="text-left rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition p-4"
+                      data-tour="archive-card"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <div className="font-semibold text-gray-900 truncate">{title}</div>
+                            <div className="font-semibold text-gray-900 truncate" data-tour="archive-card-title">{title}</div>
                             <span className="text-[11px] font-medium px-2 py-1 rounded-full bg-gray-50 border border-gray-200 text-gray-700">
                               Archiv
                             </span>

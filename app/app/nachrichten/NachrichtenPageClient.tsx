@@ -115,10 +115,10 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
   }, [leads, filteredLeads]);
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
+    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900" data-tour="messages-page">
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
-        <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
+        <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200" data-tour="messages-header">
           <div className="flex flex-col gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -152,9 +152,12 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 justify-start">
+            <div className="flex flex-wrap items-center gap-2 justify-start" data-tour="messages-filters">
               {/* Desktop search */}
-              <div className="relative hidden md:block w-full md:w-72 md:min-w-[18rem]">
+              <div
+                className="relative hidden md:block w-full md:w-72 md:min-w-[18rem]"
+                data-tour="messages-search"
+              >
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
@@ -162,6 +165,7 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Suche… (Name, E-Mail, Nachricht)"
                   className="w-full pl-9 pr-9 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                  data-tour="messages-search-input"
                 />
                 {search.trim() && (
                   <button
@@ -181,6 +185,7 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
                 onChange={(e) => setKategorie(e.target.value)}
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
                 title="Kategorie"
+                data-tour="messages-filter-category"
               >
                 <option value="Alle">Alle Kategorien</option>
                 <option value="Kaufen">Kaufen</option>
@@ -193,6 +198,7 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
                 onChange={(e) => setPriorität(e.target.value)}
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
                 title="Priorität"
+                data-tour="messages-filter-priority"
               >
                 <option value="Alle">Alle Prioritäten</option>
                 <option value="Hoch">Hoch</option>
@@ -209,6 +215,7 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
                     : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
                 }`}
                 title="Nur eskalierte Interessenten"
+                data-tour="messages-filter-escalated"
               >
                 <ShieldAlert className="h-4 w-4" />
                 Nur eskalierte
@@ -224,6 +231,7 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
                     : "bg-white border-gray-200 text-gray-400 opacity-60 cursor-not-allowed"
                 }`}
                 title="E-Mails der angezeigten Interessenten kopieren"
+                data-tour="messages-copy-emails"
               >
                 <Mail className="h-4 w-4" />
                 E-Mails
@@ -239,12 +247,13 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
                     : "bg-white border-gray-200 text-gray-400 opacity-60 cursor-not-allowed"
                 }`}
                 title="Filter zurücksetzen"
+                data-tour="messages-reset-filters"
               >
                 <RotateCcw className="h-4 w-4" />
                 Zurücksetzen
               </button>
 
-              <div className="hidden sm:flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-2" data-tour="messages-sort">
                 <SlidersHorizontal className="h-4 w-4 text-gray-500" />
                 <select
                   value={sortierung}
@@ -264,7 +273,7 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
 
           {/* Mobile search */}
           <div className="md:hidden pb-4 w-full">
-            <div className="relative">
+            <div className="relative" data-tour="messages-search-mobile">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
               <input
                 type="text"
@@ -320,7 +329,7 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
 
         {/* Content */}
         <div className="py-6">
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden" data-tour="messages-inbox">
             <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between gap-3">
               <div className="text-sm text-gray-600">
                 Tipp: Öffne eine Konversation und antworte direkt.
@@ -330,9 +339,9 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
               </div>
             </div>
 
-            <div className="p-4 md:p-6">
+            <div className="p-4 md:p-6" data-tour="messages-list">
               {filteredLeads.length === 0 ? (
-                <div className="w-full rounded-2xl border border-gray-200 bg-[#fbfbfc] p-6 text-center">
+                <div className="w-full rounded-2xl border border-gray-200 bg-[#fbfbfc] p-6 text-center" data-tour="messages-empty">
                   <div className="text-gray-900 font-medium">Keine passenden Nachrichten</div>
                   <div className="text-sm text-gray-600 mt-2">
                     {search.trim()
@@ -343,7 +352,7 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
                   </div>
                 </div>
               ) : (
-                <div className="h-[calc(100vh-260px)] overflow-y-auto pr-2">
+                <div className="h-[calc(100vh-260px)] overflow-y-auto pr-2" data-tour="messages-scroll">
                   <InboxView leads={filteredLeads} userId={userId} />
                 </div>
               )}

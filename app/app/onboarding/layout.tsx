@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 type OnboardingRow = {
   agent_id: string;
@@ -189,6 +189,41 @@ function Modal({
   );
 }
 
+function safeDecodeURIComponent(v: string) {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+}
+
+function isSafeInternalPath(p: string) {
+  // only allow internal absolute paths
+  if (!p || typeof p !== "string") return false;
+  if (!p.startsWith("/")) return false;
+  // block protocol-relative or full URLs
+  if (p.startsWith("//")) return false;
+  if (p.startsWith("/\\")) return false;
+  // very defensive: block obvious external schemes encoded as path
+  const lower = p.toLowerCase();
+  if (lower.startsWith("http:") || lower.startsWith("https:") || lower.startsWith("javascript:")) {
+    return false;
+  }
+  return true;
+}
+
+function isAllowedNextPath(p: string) {
+  // Allow a small whitelist of “side quest” pages that onboarding can jump to.
+  // Keep this list tight.
+  const path = p.split("?")[0];
+  return (
+    path === "/app/konto/verknuepfungen" ||
+    path === "/app/konto/verknuepfungen/gmail" ||
+    path === "/app/konto/verknuepfungen/outlook" ||
+    path === "/app/immobilien/hinzufuegen"
+  );
+}
+
 export default function OnboardingLayout({
   children,
 }: {
@@ -196,6 +231,8 @@ export default function OnboardingLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const nextParam = searchParams?.get("next") || "";
 
   const [loading, setLoading] = useState(true);
   const [onboarding, setOnboarding] = useState<OnboardingRow | null>(null);
@@ -255,8 +292,17 @@ export default function OnboardingLayout({
           return;
         }
 
-        // If user is on /app/onboarding (index) -> redirect to correct step
+        // If user is on /app/onboarding (index) -> redirect either to a safe "next" page
+        // (used for OAuth/connect flows & allowed side-actions) or to the correct step.
         if (pathname === "/app/onboarding") {
+          const rawNext = nextParam || "";
+          const decodedNext = safeDecodeURIComponent(rawNext);
+
+          if (isSafeInternalPath(decodedNext) && isAllowedNextPath(decodedNext)) {
+            router.replace(decodedNext);
+            return;
+          }
+
           router.replace(stepHref(row.current_step || 1));
           return;
         }

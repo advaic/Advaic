@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -171,6 +172,34 @@ export default function Step6Client() {
       setSaving(false);
       setError(upd.error);
       return;
+    }
+
+    // ✅ ALSO mark onboarding completed in agent_settings (middleware uses this)
+    try {
+      const {
+        data: { user },
+        error: userErr,
+      } = await supabase.auth.getUser();
+
+      if (userErr || !user) {
+        throw new Error("Not authenticated");
+      }
+
+      const { error: setErr } = await supabase
+        .from("agent_settings")
+        .upsert(
+          {
+            agent_id: user.id,
+            onboarding_completed: true,
+          },
+          { onConflict: "agent_id" }
+        );
+
+      if (setErr) {
+        console.warn("Failed to set onboarding_completed", setErr);
+      }
+    } catch (e) {
+      console.warn("Could not persist onboarding completion", e);
     }
 
     setSaving(false);

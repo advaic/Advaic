@@ -335,11 +335,11 @@ export default function VerknuepfungenPage() {
     return null;
   }, [gmailParam, outlookParam, immoscoutParam, reasonParam]);
 
-  return (
-    <div className="max-w-3xl mx-auto p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold">Verknüpfte Dienste</h1>
-        <p className="mt-1 text-sm text-gray-600">
+return (
+    <div className="max-w-3xl mx-auto p-6" data-tour="links-page">
+      <div className="mb-6" data-tour="links-header">
+        <h1 className="text-2xl font-semibold" data-tour="links-title">Verknüpfte Dienste</h1>
+        <p className="mt-1 text-sm text-gray-600" data-tour="links-subtitle">
           Verbinde deine Tools, damit Advaic automatisiert für dich arbeiten
           kann. Du kannst Verknüpfungen jederzeit erneuern.
         </p>
@@ -347,6 +347,7 @@ export default function VerknuepfungenPage() {
 
       {banner && (
         <div
+          data-tour="links-banner"
           className={classNames(
             "mb-6 rounded-md border p-4 text-sm",
             banner.tone === "success" &&
@@ -361,7 +362,7 @@ export default function VerknuepfungenPage() {
         </div>
       )}
 
-      <div className="space-y-4">
+      <div className="space-y-4" data-tour="links-cards">
         {cards.map((service) => {
           const isGmail = service.id === "gmail";
           const isOutlook = service.id === "outlook";
@@ -453,28 +454,29 @@ export default function VerknuepfungenPage() {
           return (
             <div
               key={service.id}
+              data-tour={`link-card-${service.id}`}
               className={classNames(
                 "flex items-start justify-between gap-4 rounded-lg border bg-white p-5",
                 !service.enabled && "opacity-75"
               )}
             >
               <div className="flex items-start gap-4">
-                <div className="mt-1">{service.icon}</div>
+                <div className="mt-1" data-tour={`link-icon-${service.id}`}>{service.icon}</div>
 
                 <div>
                   <div className="flex items-center gap-3">
-                    <h2 className="text-base font-semibold text-gray-900">
+                    <h2 className="text-base font-semibold text-gray-900" data-tour={`link-name-${service.id}`}>
                       {service.name}
                     </h2>
                     {statusBadge}
                   </div>
 
-                  <p className="mt-1 text-sm text-gray-600 max-w-xl">
+                  <p className="mt-1 text-sm text-gray-600 max-w-xl" data-tour={`link-desc-${service.id}`}>
                     {service.description}
                   </p>
 
                   {isGmail && !loading && gmailConnected && (
-                    <div className="mt-3 text-sm text-gray-900">
+                    <div className="mt-3 text-sm text-gray-900" data-tour="link-gmail-connected-as">
                       <span className="text-gray-600">Verbunden als:</span>{" "}
                       <span className="font-medium">{gmailEmail ?? "—"}</span>
                     </div>
@@ -490,7 +492,7 @@ export default function VerknuepfungenPage() {
                     )}
 
                   {isOutlook && outlookConnected && (
-                    <div className="mt-3 text-sm text-gray-900">
+                    <div className="mt-3 text-sm text-gray-900" data-tour="link-outlook-connected-as">
                       <span className="text-gray-600">Verbunden als:</span>{" "}
                       <span className="font-medium">{outlookEmail ?? "—"}</span>
                     </div>
@@ -505,7 +507,7 @@ export default function VerknuepfungenPage() {
                     )}
 
                   {isImmoScout && (
-                    <div className="mt-3 text-sm text-gray-700">
+                    <div className="mt-3 text-sm text-gray-700" data-tour="link-immoscout-info">
                       {immoscoutConnected ? (
                         <>
                           <span className="text-gray-600">Verbunden als:</span>{" "}
@@ -527,12 +529,13 @@ export default function VerknuepfungenPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col items-end gap-2">
+              <div className="flex flex-col items-end gap-2" data-tour={`link-actions-${service.id}`}>
                 {service.enabled ? (
                   isGmail ? (
                     gmailConnected ? (
                       <>
                         <button
+                          data-tour="link-gmail-reconnect"
                           type="button"
                           onClick={startGmailOAuth}
                           className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50"
@@ -550,6 +553,7 @@ export default function VerknuepfungenPage() {
                       </>
                     ) : (
                       <button
+                        data-tour="link-gmail-connect"
                         type="button"
                         onClick={startGmailOAuth}
                         disabled={loading}
@@ -567,6 +571,7 @@ export default function VerknuepfungenPage() {
                     immoscoutConnected ? (
                       <>
                         <button
+                          data-tour="link-immoscout-reconnect"
                           type="button"
                           onClick={startImmoScoutOAuth}
                           className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50"
@@ -584,6 +589,7 @@ export default function VerknuepfungenPage() {
                       </>
                     ) : (
                       <button
+                        data-tour="link-immoscout-connect"
                         type="button"
                         onClick={startImmoScoutOAuth}
                         className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium bg-gray-900 text-amber-200 hover:bg-gray-800"
@@ -595,6 +601,7 @@ export default function VerknuepfungenPage() {
                     outlookConnected ? (
                       <>
                         <button
+                          data-tour="link-outlook-reconnect"
                           type="button"
                           onClick={startOutlookOAuth}
                           className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50"
@@ -612,6 +619,7 @@ export default function VerknuepfungenPage() {
                       </>
                     ) : (
                       <button
+                        data-tour="link-outlook-connect"
                         type="button"
                         onClick={startOutlookOAuth}
                         className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
@@ -650,7 +658,7 @@ export default function VerknuepfungenPage() {
         })}
       </div>
 
-      <div className="mt-8 rounded-lg border bg-gray-50 p-4 text-sm text-gray-700">
+      <div className="mt-8 rounded-lg border bg-gray-50 p-4 text-sm text-gray-700" data-tour="links-note">
         <div className="font-medium">Hinweis</div>
         <ul className="mt-2 list-disc pl-5 space-y-1">
           <li>

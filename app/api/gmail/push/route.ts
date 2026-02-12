@@ -456,6 +456,41 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function computeFollowupPlan(args: {
+  nowIso: string;
+  followupsEnabled: boolean;
+  pausedUntil: string | null;
+}) {
+  const nowMs = Date.parse(args.nowIso);
+  const pausedMs = args.pausedUntil ? Date.parse(args.pausedUntil) : NaN;
+  const pausedActive = Number.isFinite(pausedMs) && pausedMs > nowMs;
+
+  // If auto follow-ups are disabled, we treat the lead as "waiting" (manual action / no auto scheduling).
+  if (!args.followupsEnabled) {
+    return {
+      followup_status: "waiting",
+      followup_next_at: null as string | null,
+      followup_paused_until: args.pausedUntil,
+    };
+  }
+
+  // If paused, we do not schedule next_at until unpaused.
+  if (pausedActive) {
+    return {
+      followup_status: "paused",
+      followup_next_at: null as string | null,
+      followup_paused_until: args.pausedUntil,
+    };
+  }
+
+  // Default: schedule stage 1 for +24h.
+  return {
+    followup_status: "planned",
+    followup_next_at: new Date(nowMs + 24 * 60 * 60 * 1000).toISOString(),
+    followup_paused_until: null as string | null,
+  };
+}
+
 async function markConnError(
   supabase: any,
   connectionId: number,
@@ -628,7 +663,7 @@ async function backfillRecentMessages(args: {
 
       const { data: existingLead } = await supabase
         .from("leads")
-        .select("id,email")
+        .select("id,email,followups_enabled,followup_paused_until")
         .eq("agent_id", connection.agent_id)
         .eq("gmail_thread_id", threadId)
         .maybeSingle();
@@ -641,8 +676,33 @@ async function backfillRecentMessages(args: {
           leadContactEmail &&
           (!existingLeadEmail || isProbablyNoReplyAddress(existingLeadEmail));
 
-        const leadUpdatePayload: any = { last_message_at: timestampIso };
+        const followupsEnabled = Boolean((existingLead as any)?.followups_enabled ?? true);
+        const pausedUntil = ((existingLead as any)?.followup_paused_until
+          ? String((existingLead as any).followup_paused_until)
+          : null);
+
+        const leadUpdatePayload: any = {
+          last_message_at: timestampIso,
+          ...(sender === "user" ? { last_user_message_at: timestampIso } : {}),
+          ...(sender === "agent" ? { last_agent_message_at: timestampIso } : {}),
+        };
+
         if (shouldUpdateEmail) leadUpdatePayload.email = leadContactEmail;
+
+        // If the user replied, reset the follow-up pipeline (stage back to 0) and reschedule based on settings.
+        if (sender === "user") {
+          const plan = computeFollowupPlan({
+            nowIso: timestampIso,
+            followupsEnabled,
+            pausedUntil,
+          });
+
+          leadUpdatePayload.followup_stage = 0;
+          leadUpdatePayload.followup_stop_reason = null;
+          leadUpdatePayload.followup_status = plan.followup_status;
+          leadUpdatePayload.followup_next_at = plan.followup_next_at;
+          leadUpdatePayload.followup_paused_until = plan.followup_paused_until;
+        }
 
         const { error: leadUpdErr } = await supabase
           .from("leads")
@@ -662,12 +722,27 @@ async function backfillRecentMessages(args: {
         }
       } else {
         if (sender === "agent") continue;
+        const plan = computeFollowupPlan({
+          nowIso: timestampIso,
+          followupsEnabled: true,
+          pausedUntil: null,
+        });
         const { data: newLead, error: leadInsErr } = await supabase
           .from("leads")
           .insert({
             agent_id: connection.agent_id,
             gmail_thread_id: threadId,
+            email_provider: "gmail",
             last_message_at: timestampIso,
+            last_user_message_at: timestampIso,
+
+            followups_enabled: true,
+            followup_stage: 0,
+            followup_status: plan.followup_status,
+            followup_next_at: plan.followup_next_at,
+            followup_stop_reason: null,
+            followup_paused_until: plan.followup_paused_until,
+
             ...(leadContactEmail ? { email: leadContactEmail } : {}),
           } as any)
           .select("id")
@@ -1198,7 +1273,7 @@ export async function POST(req: Request) {
 
         const { data: existingLead, error: leadSelErr } = await supabase
           .from("leads")
-          .select("id,email")
+          .select("id,email,followups_enabled,followup_paused_until")
           .eq("agent_id", connection.agent_id)
           .eq("gmail_thread_id", threadId)
           .maybeSingle();
@@ -1220,8 +1295,33 @@ export async function POST(req: Request) {
             leadContactEmail &&
             (!existingLeadEmail || isProbablyNoReplyAddress(existingLeadEmail));
 
-          const leadUpdatePayload: any = { last_message_at: timestampIso };
+          const followupsEnabled = Boolean((existingLead as any)?.followups_enabled ?? true);
+          const pausedUntil = ((existingLead as any)?.followup_paused_until
+            ? String((existingLead as any).followup_paused_until)
+            : null);
+
+          const leadUpdatePayload: any = {
+            last_message_at: timestampIso,
+            ...(sender === "user" ? { last_user_message_at: timestampIso } : {}),
+            ...(sender === "agent" ? { last_agent_message_at: timestampIso } : {}),
+          };
+
           if (shouldUpdateEmail) leadUpdatePayload.email = leadContactEmail;
+
+          // If the user replied, reset the follow-up pipeline (stage back to 0) and reschedule based on settings.
+          if (sender === "user") {
+            const plan = computeFollowupPlan({
+              nowIso: timestampIso,
+              followupsEnabled,
+              pausedUntil,
+            });
+
+            leadUpdatePayload.followup_stage = 0;
+            leadUpdatePayload.followup_stop_reason = null;
+            leadUpdatePayload.followup_status = plan.followup_status;
+            leadUpdatePayload.followup_next_at = plan.followup_next_at;
+            leadUpdatePayload.followup_paused_until = plan.followup_paused_until;
+          }
 
           const { error: leadUpdErr } = await supabase
             .from("leads")
@@ -1250,14 +1350,28 @@ export async function POST(req: Request) {
             continue;
           }
 
-          // Minimal insert; if your leads table has other NOT NULL cols without defaults,
-          // this insert will fail and we need to adjust accordingly.
+          // Insert with initial follow-up state and timestamps.
+          const plan = computeFollowupPlan({
+            nowIso: timestampIso,
+            followupsEnabled: true,
+            pausedUntil: null,
+          });
           const { data: newLead, error: leadInsErr } = await supabase
             .from("leads")
             .insert({
               agent_id: connection.agent_id,
               gmail_thread_id: threadId,
+              email_provider: "gmail",
               last_message_at: timestampIso,
+              last_user_message_at: timestampIso,
+
+              followups_enabled: true,
+              followup_stage: 0,
+              followup_status: plan.followup_status,
+              followup_next_at: plan.followup_next_at,
+              followup_stop_reason: null,
+              followup_paused_until: plan.followup_paused_until,
+
               ...(leadContactEmail ? { email: leadContactEmail } : {}),
             } as any)
             .select("id")

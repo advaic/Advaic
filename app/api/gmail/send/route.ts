@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   function jsonError(
     status: number,
     error: string,
-    extra?: Record<string, any>
+    extra?: Record<string, any>,
   ) {
     return NextResponse.json({ error, ...(extra || {}) }, { status });
   }
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
   const internal = isInternal(req);
 
   const SEND_LOCK_STALE_MS = Number(
-    process.env.ADVAIC_SEND_LOCK_STALE_MS || 10 * 60 * 1000
+    process.env.ADVAIC_SEND_LOCK_STALE_MS || 10 * 60 * 1000,
   ); // default 10 minutes
 
   function isFiniteMs(n: number) {
@@ -158,7 +158,7 @@ export async function POST(req: NextRequest) {
   // Admin client for DB reads/writes (service role)
   const supabaseAdmin = createClient<Database>(
     mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    mustEnv("SUPABASE_SERVICE_ROLE_KEY")
+    mustEnv("SUPABASE_SERVICE_ROLE_KEY"),
   );
 
   // Resolve ownership from the message row (source of truth)
@@ -219,7 +219,7 @@ export async function POST(req: NextRequest) {
           set() {},
           remove() {},
         },
-      }
+      },
     );
 
     const {
@@ -317,7 +317,7 @@ export async function POST(req: NextRequest) {
     if (statusErr) {
       console.error(
         "[gmail/send] send_status lookup failed:",
-        statusErr.message
+        statusErr.message,
       );
       return jsonError(500, "Failed to load message status");
     }
@@ -329,7 +329,7 @@ export async function POST(req: NextRequest) {
     if (String((statusRow as any).send_status || "").toLowerCase() === "sent") {
       return NextResponse.json(
         { ok: true, status: "already_sent" },
-        { status: 200 }
+        { status: 200 },
       );
     }
   }
@@ -359,7 +359,7 @@ export async function POST(req: NextRequest) {
     // Someone else is sending or it was already handled
     return NextResponse.json(
       { ok: true, status: "locked_or_in_progress" },
-      { status: 200 }
+      { status: 200 },
     );
   }
 
@@ -397,8 +397,8 @@ export async function POST(req: NextRequest) {
     mustEnv("GOOGLE_CLIENT_SECRET"),
     new URL(
       "/api/auth/gmail/callback",
-      mustEnv("NEXT_PUBLIC_SITE_URL")
-    ).toString()
+      mustEnv("NEXT_PUBLIC_SITE_URL"),
+    ).toString(),
   );
 
   oauth2.setCredentials({
@@ -427,7 +427,7 @@ export async function POST(req: NextRequest) {
       .download(path);
     if (error || !data) {
       throw new Error(
-        `Attachment download failed: ${error?.message ?? "no data"}`
+        `Attachment download failed: ${error?.message ?? "no data"}`,
       );
     }
     const arrayBuffer = await data.arrayBuffer();
@@ -440,8 +440,8 @@ export async function POST(req: NextRequest) {
     if (buf.length > MAX_ATTACHMENT_BYTES) {
       throw new Error(
         `Attachment too large (max ${Math.round(
-          MAX_ATTACHMENT_BYTES / (1024 * 1024)
-        )}MB)`
+          MAX_ATTACHMENT_BYTES / (1024 * 1024),
+        )}MB)`,
       );
     }
 
@@ -459,7 +459,7 @@ export async function POST(req: NextRequest) {
             typeof a.bucket === "string" &&
             typeof a.path === "string" &&
             typeof a.name === "string" &&
-            typeof a.mime === "string"
+            typeof a.mime === "string",
         )
       : [];
     if (attInputsRaw.length > MAX_ATTACHMENTS) {
@@ -520,8 +520,8 @@ export async function POST(req: NextRequest) {
       if (totalBytes > MAX_TOTAL_ATTACHMENTS_BYTES) {
         throw new Error(
           `Total attachment size exceeds ${Math.round(
-            MAX_TOTAL_ATTACHMENTS_BYTES / (1024 * 1024)
-          )}MB`
+            MAX_TOTAL_ATTACHMENTS_BYTES / (1024 * 1024),
+          )}MB`,
         );
       }
 
@@ -557,7 +557,7 @@ export async function POST(req: NextRequest) {
           send_status: "failed",
           send_error: String(e?.message || "Attachment build failed").slice(
             0,
-            5000
+            5000,
           ),
           send_locked_at: null,
         })
@@ -583,7 +583,7 @@ export async function POST(req: NextRequest) {
             typeof a.bucket === "string" &&
             typeof a.path === "string" &&
             typeof a.name === "string" &&
-            typeof a.mime === "string"
+            typeof a.mime === "string",
         )
         .slice(0, MAX_ATTACHMENTS)
         .map((a) => ({
@@ -673,7 +673,7 @@ export async function POST(req: NextRequest) {
           send_status: "failed",
           send_error: String(details?.message || "Failed to send email").slice(
             0,
-            5000
+            5000,
           ),
           send_locked_at: null,
         })
@@ -696,15 +696,69 @@ export async function POST(req: NextRequest) {
 
   // 7️⃣ Persist threadId on lead so Gmail Push can map future events to the same lead
   const nowIso = new Date().toISOString();
-  if (sentThreadId) {
-    const { error: leadUpdateErr } = await (supabaseAdmin.from("leads") as any)
-      .update({ gmail_thread_id: sentThreadId, last_message_at: nowIso })
+
+  // Always keep last_message_at in sync, and set last_agent_message_at because this endpoint sends agent emails.
+  const baseLeadUpdate: Record<string, any> = {
+    last_message_at: nowIso,
+    last_agent_message_at: nowIso,
+    ...(sentThreadId ? { gmail_thread_id: sentThreadId } : {}),
+  };
+
+  const { error: baseLeadErr } = await (supabaseAdmin.from("leads") as any)
+    .update(baseLeadUpdate)
+    .eq("id", lead_id);
+
+  if (baseLeadErr) {
+    console.error(
+      "[gmail/send] Failed to update lead base fields:",
+      baseLeadErr.message,
+    );
+  }
+
+  // If this email is a follow-up, advance follow-up state (new data model)
+  if (was_followup) {
+    // Read current state
+    const { data: st, error: stErr } = await (
+      supabaseAdmin.from("leads") as any
+    )
+      .select("followup_stage, followups_enabled")
+      .eq("id", lead_id)
+      .maybeSingle();
+
+    if (stErr) {
+      console.error(
+        "[gmail/send] Failed to read lead followup state:",
+        stErr.message,
+      );
+    }
+
+    const currentStage = Math.max(0, Number((st as any)?.followup_stage ?? 0));
+    const nextStage = Math.min(currentStage + 1, 2);
+    const autoEnabled = Boolean((st as any)?.followups_enabled ?? true);
+
+    // If stage 1 was just sent (0->1) and auto is enabled, plan stage 2 for +72h. Otherwise clear next_at.
+    const nextAt =
+      autoEnabled && nextStage === 1
+        ? new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString()
+        : null;
+
+    const followupUpdate: Record<string, any> = {
+      followup_last_sent_at: nowIso,
+      followup_stage: nextStage,
+      followup_status: "sent",
+      followup_stop_reason: null,
+      followup_paused_until: null,
+      followup_next_at: nextAt,
+    };
+
+    const { error: fuErr } = await (supabaseAdmin.from("leads") as any)
+      .update(followupUpdate)
       .eq("id", lead_id);
 
-    if (leadUpdateErr) {
+    if (fuErr) {
       console.error(
-        "[gmail/send] Failed to update lead gmail_thread_id:",
-        leadUpdateErr.message
+        "[gmail/send] Failed to update lead followup fields:",
+        fuErr.message,
       );
     }
   }

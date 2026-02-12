@@ -463,7 +463,7 @@ export default function Step4Client() {
     }
 
     setSaving(false);
-    router.push("/app/onboarding/step-5-listings");
+    router.push("/app/onboarding/step-5");
   }
 
   return (
@@ -743,7 +743,7 @@ export default function Step4Client() {
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
-          onClick={() => router.push("/app/onboarding/step-3-autosend")}
+          onClick={() => router.push("/app/onboarding/step-3")}
           className="rounded-[12px] border px-4 py-2 text-[13px] font-medium transition"
           style={{
             borderColor: "var(--border, rgba(0,0,0,0.08))",
