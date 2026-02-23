@@ -394,16 +394,29 @@ export default function AntwortvorlagenPage() {
         body: JSON.stringify({ prompt }),
       });
 
+      const errorJson = (await res.json().catch(() => null)) as
+        | { error?: string; details?: string }
+        | null;
+
       if (!res.ok) {
+        if (res.status === 402) {
+          const details = String(errorJson?.details || "").trim();
+          showToast(
+            details ||
+              "Dieses Feature ist in deinem aktuellen Plan nicht enthalten. Sieh dir unter Konto > Abo die Pläne an.",
+          );
+          return;
+        }
+
         const msg =
           res.status === 404
             ? "KI-Generator ist noch nicht aktiv (API-Route fehlt)."
-            : "KI konnte keine Vorlage erstellen.";
+            : String(errorJson?.details || "KI konnte keine Vorlage erstellen.");
         showToast(msg);
         return;
       }
 
-      const json = (await res.json().catch(() => null)) as {
+      const json = errorJson as {
         title?: string;
         content?: string;
         category?: string;

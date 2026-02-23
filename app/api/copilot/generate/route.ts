@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/types/supabase";
+import {
+  getBillingEntitlements,
+  hasFeatureAccess,
+  paymentRequiredResponse,
+} from "@/lib/billing/entitlements";
 
 export const runtime = "nodejs";
 
@@ -144,6 +149,17 @@ export async function POST(req: Request) {
 
   if (userErr || !user?.id) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const ent = await getBillingEntitlements({
+    supabase: supabase as any,
+    agentId: String(user.id),
+  });
+  if (ent.ok && !hasFeatureAccess(ent.entitlements, "copilot_generate")) {
+    return paymentRequiredResponse({
+      feature: "copilot_generate",
+      entitlements: ent.entitlements,
+    });
   }
 
   // 2) Body

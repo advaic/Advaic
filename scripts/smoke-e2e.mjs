@@ -9,6 +9,7 @@ const checkAppRedirect =
 async function request(method, path, options = {}) {
   const headers = { ...(options.headers || {}) };
   const init = { method, headers };
+  if (options.redirect) init.redirect = options.redirect;
   if (options.body !== undefined) {
     init.body = JSON.stringify(options.body);
     headers["Content-Type"] = "application/json";
@@ -40,7 +41,10 @@ async function main() {
 
   // Optional app redirect check (requires working auth env)
   if (checkAppRedirect) {
-    const app = await request("GET", "/app", { headers: { Accept: "text/html" } });
+    const app = await request("GET", "/app", {
+      headers: { Accept: "text/html" },
+      redirect: "manual",
+    });
     expectStatus(app.status, 307, "GET /app");
     const location = String(app.headers.get("location") || "");
     expectIncludes(location, "/login?next=", "GET /app location");

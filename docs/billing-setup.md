@@ -27,6 +27,7 @@ Datei:
 
 ```text
 supabase/migrations/20260223_billing_foundation.sql
+supabase/migrations/20260224_billing_webhook_events.sql
 ```
 
 Ausführen in Supabase:
@@ -40,6 +41,7 @@ Tabellen danach:
 - `billing_customers`
 - `billing_subscriptions`
 - `billing_invoices`
+- `billing_webhook_events`
 
 ## 4) Webhook in Stripe konfigurieren
 
@@ -83,8 +85,16 @@ Den Signing Secret als `STRIPE_WEBHOOK_SECRET` eintragen.
 - `POST /api/billing/checkout` (auth required)
 - `POST /api/billing/portal` (auth required)
 - `POST /api/billing/webhook` (Stripe signature required)
+- `GET /api/admin/billing/webhook-events` (admin only)
 
-## 7) Relevante UI Seiten
+## 7) Webhook-Resilienz
+
+- Events werden in `billing_webhook_events` geloggt.
+- Idempotenz: Bereits `processed` Events werden nicht erneut verarbeitet.
+- Status-Lebenszyklus: `processing` -> `processed` oder `failed`.
+- Wenn die Logging-Tabelle noch nicht deployed ist, bleibt die Verarbeitung fail-open aktiv.
+
+## 8) Relevante UI Seiten
 
 - `/signup` Konto erstellen
 - `/app/konto` Konto-Overview

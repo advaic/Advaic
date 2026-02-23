@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
+import {
+  getBillingEntitlements,
+  hasFeatureAccess,
+  paymentRequiredResponse,
+} from "@/lib/billing/entitlements";
 
 export const runtime = "nodejs";
 
@@ -99,6 +104,17 @@ export async function POST(req: NextRequest) {
   if (authErr || !auth?.user) return jsonError("Unauthorized", 401);
 
   const agentId = auth.user.id;
+
+  const ent = await getBillingEntitlements({
+    supabase: supabase as any,
+    agentId: String(agentId),
+  });
+  if (ent.ok && !hasFeatureAccess(ent.entitlements, "response_templates_generate")) {
+    return paymentRequiredResponse({
+      feature: "response_templates_generate",
+      entitlements: ent.entitlements,
+    });
+  }
 
   // Load agent_style (optional)
   const { data: styleData } = await supabase

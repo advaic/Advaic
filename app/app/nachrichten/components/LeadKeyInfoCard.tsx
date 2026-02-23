@@ -200,6 +200,11 @@ export default function LeadKeyInfoCard({ leadId }: Props) {
         if (res.status === 403) {
           throw new Error("Keine Berechtigung für diesen Interessenten.");
         }
+        if (res.status === 402) {
+          throw new Error(
+            "Dieses Feature ist in deinem aktuellen Plan nicht enthalten. Öffne Konto > Abo, um deinen Plan zu ändern.",
+          );
+        }
         if (res.status === 429) {
           throw new Error(
             "Zu viele Anfragen. Bitte in 30 Sekunden erneut versuchen.",
