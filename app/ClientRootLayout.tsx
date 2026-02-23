@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, createContext } from "react";
+import { usePathname } from "next/navigation";
 import type { SupabaseClient, Session } from "@supabase/supabase-js";
 import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import { Database } from "@/types/supabase";
 import Sidebar from "@/components/Sidebar";
+import Navbar from "@/components/Navbar";
 import { TourProvider } from "@/components/tour/Tour-Provider";
 import TourOverlay from "@/components/tour/Tour-Overlay";
 import { TourLauncherIcon } from "@/components/tour/TourLauncherIcon";
@@ -25,6 +27,7 @@ export default function ClientRootLayout({
   session: Session | null;
 }) {
   const supabase = useSupabaseClient<Database>();
+  const pathname = usePathname();
 
   const [session, setSession] = useState<Session | null>(serverSession);
 
@@ -56,13 +59,26 @@ export default function ClientRootLayout({
   }, []);
 
   if (!hydrated) return null;
+  const isAppRoute = pathname === "/app" || pathname.startsWith("/app/");
+  const showPublicNavbar = !isAppRoute;
 
   return (
     <TourProvider>
       <SupabaseContext.Provider value={{ supabase, session }}>
-        <div className="flex h-screen">
-          <Sidebar />
-          <main className="flex-1 p-6 overflow-y-auto relative">
+        {showPublicNavbar ? (
+          <a
+            href="#main-content"
+            className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[1100] focus:rounded-md focus:bg-black focus:px-4 focus:py-2 focus:text-white"
+          >
+            Zum Inhalt springen
+          </a>
+        ) : null}
+        <div className={isAppRoute ? "flex h-screen" : "min-h-screen"}>
+          {isAppRoute ? <Sidebar /> : <Navbar />}
+          <div
+            id="main-content"
+            className={isAppRoute ? "flex-1 p-6 overflow-y-auto relative" : "relative flex-1"}
+          >
             {/* Tour overlay (global, multi-page) */}
             <TourOverlay />
 
@@ -72,7 +88,7 @@ export default function ClientRootLayout({
             <div className="fixed bottom-6 right-6 z-[1000]">
               <TourLauncherIcon />
             </div>
-          </main>
+          </div>
         </div>
       </SupabaseContext.Provider>
     </TourProvider>

@@ -1,48 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
-import AdvaicLogo from "../public/Advaic_Logo.webp";
+import { usePathname } from "next/navigation";
 
 type NavbarLinksProps = {
-  direction?: "horizontal" | "vertical"; // optional prop with default
-  onLinkClick?: () => void; // optional function prop for mobile menu close
+  direction?: "horizontal" | "vertical";
+  onLinkClick?: () => void;
 };
 
 const NavbarLinks = ({
   direction = "horizontal",
   onLinkClick,
 }: NavbarLinksProps) => {
-  const [activeSection, setActiveSection] = useState("");
   const pathname = usePathname();
 
-  useEffect(() => {
-    const handleScroll = () => {
-      const sections = ["produkt", "preise", "faq", "kontakt"];
-      for (let id of sections) {
-        const el = document.getElementById(id);
-        if (el) {
-          const top = el.getBoundingClientRect().top;
-          if (top <= 100 && top >= -200) {
-            setActiveSection(id);
-            break;
-          }
-        }
-      }
-    };
-    window.addEventListener("scroll", handleScroll);
-    handleScroll();
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
   const links = [
-    { name: "Produkt", href: "produkt", id: "produkt" },
-    { name: "Preise", href: "preise", id: "preise" },
-    { name: "FAQ", href: "faq", id: "faq" },
-    { name: "Kontakt", href: "#kontakt", id: "kontakt" },
+    { name: "Produkt", href: "/produkt", id: "produkt" },
+    { name: "Preise", href: "/preise", id: "preise" },
+    { name: "FAQ", href: "/faq", id: "faq" },
+    { name: "Kontakt", href: "/#kontakt", id: "kontakt" },
   ];
+
+  function isActive(link: (typeof links)[number]) {
+    if (link.id === "kontakt") return pathname === "/";
+    return pathname === link.href || pathname.startsWith(`${link.href}/`);
+  }
 
   const linkClasses = `
     relative transition-colors duration-200 hover:text-black
@@ -62,16 +44,17 @@ const NavbarLinks = ({
         } text-[17px] font-medium text-neutral-800`}
       >
         {links.map((link) => (
-          <a
+          <Link
             key={link.name}
             href={link.href}
             onClick={onLinkClick}
+            aria-current={isActive(link) ? "page" : undefined}
             className={`${linkClasses} ${
-              activeSection === link.id ? "before:w-full text-black" : ""
+              isActive(link) ? "before:w-full text-black" : ""
             }`}
           >
             {link.name}
-          </a>
+          </Link>
         ))}
       </nav>
     </div>

@@ -1,28 +1,13 @@
 "use client";
 
-import { useContext } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import NavbarLinks from "./NavbarLinks";
 import { Menu, X } from "lucide-react";
-import { SupabaseContext } from "@/app/ClientRootLayout";
 import { useState } from "react";
 
 const Navbar = () => {
-  const { supabase } = useContext(SupabaseContext);
   const [menuOpen, setMenuOpen] = useState(false);
-
-  const handleLogin = async () => {
-    const email = prompt("Bitte geben Sie Ihre E-Mail-Adresse ein:");
-    if (!email) return;
-
-    const { error } = await supabase.auth.signInWithOtp({ email });
-    if (error) {
-      alert("Login fehlgeschlagen: " + error.message);
-    } else {
-      alert("Ein Login-Link wurde an Ihre E-Mail gesendet.");
-    }
-  };
 
   return (
     <header className="sticky top-0 z-50 w-full bg-white shadow-md">
@@ -41,17 +26,26 @@ const Navbar = () => {
           <NavbarLinks />
         </div>
 
-        <div className="hidden lg:block">
+        <div className="hidden lg:flex items-center gap-4">
           <Link
             href="/login"
-            className="ml-6 rounded-full bg-black px-6 py-2 text-sm font-medium text-white hover:bg-gray-800 transition"
+            className="text-sm font-medium text-neutral-700 hover:text-black transition"
           >
-            Login / Registrieren
+            Einloggen
+          </Link>
+          <Link
+            href="/signup"
+            className="rounded-full bg-black px-6 py-2 text-sm font-medium text-white hover:bg-gray-800 transition"
+          >
+            Kostenlos testen
           </Link>
         </div>
 
         <button
           className="lg:hidden text-black"
+          type="button"
+          aria-label={menuOpen ? "Menü schließen" : "Menü öffnen"}
+          aria-expanded={menuOpen}
           onClick={() => setMenuOpen(!menuOpen)}
         >
           {menuOpen ? <X size={28} /> : <Menu size={28} />}
@@ -66,9 +60,17 @@ const Navbar = () => {
           />
           <Link
             href="/login"
-            className="mt-6 w-full rounded-full bg-black px-6 py-3 text-white font-medium hover:bg-gray-800 transition text-center block"
+            onClick={() => setMenuOpen(false)}
+            className="mt-6 w-full rounded-full border border-gray-300 px-6 py-3 text-neutral-700 font-medium hover:text-black transition text-center block"
           >
-            Login / Registrieren
+            Einloggen
+          </Link>
+          <Link
+            href="/signup"
+            onClick={() => setMenuOpen(false)}
+            className="mt-3 w-full rounded-full bg-black px-6 py-3 text-white font-medium hover:bg-gray-800 transition text-center block"
+          >
+            Kostenlos testen
           </Link>
         </div>
       )}

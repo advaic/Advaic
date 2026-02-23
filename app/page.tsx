@@ -3,7 +3,6 @@
 import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Navbar from "../components/Navbar";
 import LeadTestForm from "@/components/LeadTestForm";
 import FAQAccordion from "@/components/FAQAccordion";
 import ChatWidget from "@/components/ChatWidget";
@@ -489,7 +488,10 @@ kommunizieren – ohne rechtliche Risiken.`,
       </section>
 
       {/* Footer */}
-      <footer className="bg-[#f9f9f9] py-6 text-center text-sm text-[#4d4d4d]">
+      <footer
+        id="kontakt"
+        className="bg-[#f9f9f9] py-6 text-center text-sm text-[#4d4d4d]"
+      >
         © {new Date().getFullYear()} Advaic. Alle Rechte vorbehalten.
       </footer>
       <ChatWidget />
