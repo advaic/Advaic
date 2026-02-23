@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Archive, Search, ArrowRight } from "lucide-react";
+import { Loader2, Archive, Search, ArrowRight, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/lib/supabaseClient";
@@ -41,6 +41,7 @@ export default function ArchivPage() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ArchivedLead[]>([]);
   const [query, setQuery] = useState("");
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +60,7 @@ export default function ArchivPage() {
           return;
         }
 
-        // Preferred: archived items via status = 'archived'
+        // Preferred: archived items via status = 'archived' or 'done'
         const baseSelect =
           "id,name,email,last_message,last_message_at,archived_at,status";
 
@@ -67,18 +68,20 @@ export default function ArchivPage() {
           .from("leads")
           .select(baseSelect)
           .eq("agent_id", user.id)
-          .eq("status", "archived")
+          // Treat both "archived" and "done" as archived/closed in the UI.
+          .in("status", ["archived", "done"])
           .order("archived_at", { ascending: false, nullsFirst: false })
           .order("last_message_at", { ascending: false, nullsFirst: false });
 
-        // Fallback: some schemas archive via archived_at != null
+        // Fallback: some schemas archive via archived_at != null or status = done
         if (res.error) {
           console.warn("Archive query (status) failed, trying archived_at…", res.error);
           res = await supabase
             .from("leads")
             .select(baseSelect)
             .eq("agent_id", user.id)
-            .not("archived_at", "is", null)
+            // Fallback for schemas that only use archived_at. Also include "done".
+            .or(`archived_at.not.is.null,status.eq.done`)
             .order("archived_at", { ascending: false, nullsFirst: false })
             .order("last_message_at", { ascending: false, nullsFirst: false });
         }
@@ -103,6 +106,40 @@ export default function ArchivPage() {
       cancelled = true;
     };
   }, []);
+
+  const restoreLead = async (leadId: string) => {
+    if (!leadId) return;
+
+    const ok = window.confirm(
+      "Diesen Interessenten wiederherstellen und zurück in normale Gespräche verschieben?"
+    );
+    if (!ok) return;
+
+    try {
+      setRestoringId(leadId);
+
+      // Move back to active: clear archived_at and set a sane active status.
+      // We use 'new' as the safe default because it exists in your schema defaults.
+      const { error } = await supabase
+        .from("leads")
+        .update({
+          archived_at: null,
+          status: "new",
+        } as any)
+        .eq("id", leadId);
+
+      if (error) throw error;
+
+      // Optimistic: remove from archive list
+      setRows((prev) => prev.filter((r) => r.id !== leadId));
+      toast.success("Wiederhergestellt. Der Interessent ist wieder im Posteingang.");
+    } catch (e: any) {
+      console.error("❌ restoreLead failed", e);
+      toast.error(e?.message ?? "Konnte nicht wiederherstellen.");
+    } finally {
+      setRestoringId(null);
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = safeStr(query).toLowerCase();
@@ -137,7 +174,7 @@ export default function ArchivPage() {
               </span>
             </div>
             <div className="mt-1 text-sm text-gray-600" data-tour="archive-description">
-              Hier findest du abgeschlossene Konversationen. Du kannst sie weiterhin öffnen,
+              Hier findest du archivierte und erledigte Konversationen. Du kannst sie weiterhin öffnen,
               aber sie zählen nicht mehr als aktive Interessenten.
             </div>
           </div>
@@ -209,7 +246,7 @@ export default function ArchivPage() {
               className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between"
               data-tour="archive-list-header"
             >
-              <div className="text-sm text-gray-700 font-medium">Archivierte Interessenten</div>
+              <div className="text-sm text-gray-700 font-medium">Archivierte & erledigte Interessenten</div>
               <div className="text-xs text-gray-500">
                 Tipp: Klicke auf einen Eintrag, um die Unterhaltung zu öffnen.
               </div>
@@ -221,15 +258,21 @@ export default function ArchivPage() {
                   const title = safeStr(lead.name) || safeStr(lead.email) || "Unbekannt";
                   const subtitle = safeStr(lead.email);
                   const snippet = safeStr(lead.last_message);
-                  const date =
-                    lead.archived_at || lead.last_message_at || null;
+                  const date = lead.archived_at || lead.last_message_at || null;
 
                   return (
-                    <button
+                    <div
                       key={lead.id}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => router.push(`/app/nachrichten/${lead.id}`)}
-                      className="text-left rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition p-4"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          router.push(`/app/nachrichten/${lead.id}`);
+                        }
+                      }}
+                      className="text-left rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition p-4 cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                       data-tour="archive-card"
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -237,7 +280,7 @@ export default function ArchivPage() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <div className="font-semibold text-gray-900 truncate" data-tour="archive-card-title">{title}</div>
                             <span className="text-[11px] font-medium px-2 py-1 rounded-full bg-gray-50 border border-gray-200 text-gray-700">
-                              Archiv
+                              {safeStr(lead.status).toLowerCase() === "done" ? "Erledigt" : "Archiviert"}
                             </span>
                           </div>
                           {subtitle ? (
@@ -260,12 +303,32 @@ export default function ArchivPage() {
                           ) : (
                             <div className="text-xs text-gray-400">—</div>
                           )}
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void restoreLead(lead.id);
+                            }}
+                            disabled={restoringId === lead.id}
+                            className="inline-flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60"
+                            title="Wiederherstellen (zurück in den Posteingang)"
+                            data-tour="archive-restore"
+                          >
+                            {restoringId === lead.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Undo2 className="h-3.5 w-3.5" />
+                            )}
+                            Wiederherstellen
+                          </button>
+
                           <div className="text-xs text-gray-500 inline-flex items-center gap-1">
                             Öffnen <ArrowRight className="h-3.5 w-3.5" />
                           </div>
                         </div>
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>

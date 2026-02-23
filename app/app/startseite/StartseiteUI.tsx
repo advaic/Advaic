@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import type { Database } from "@/types/supabase";
 import InboxItem from "../nachrichten/components/InboxItem";
@@ -11,7 +12,11 @@ import {
   ShieldAlert,
   Sparkles,
   RefreshCw,
+  Power,
+  AlarmClock,
 } from "lucide-react";
+
+import { toast } from "sonner";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
 
@@ -33,7 +38,6 @@ function safeStr(v: unknown): string {
 
 function normalizeStatus(v: unknown): string {
   const s = safeStr(v).toLowerCase();
-  // support both old german values and new english values
   if (!s) return "";
   if (s === "open" || s === "offen" || s === "neu") return "open";
   if (s === "closed" || s === "erledigt" || s === "abgeschlossen")
@@ -42,31 +46,10 @@ function normalizeStatus(v: unknown): string {
 }
 
 function isHighPriority(priority: unknown): boolean {
-  // supports numeric priorities (>=2) and german strings ("Hoch")
   const n = Number(priority);
   if (Number.isFinite(n)) return n >= 2;
   const s = safeStr(priority).toLowerCase();
   return s === "hoch" || s === "high";
-}
-
-function formatMinutes(min: number): string {
-  if (!Number.isFinite(min) || min <= 0) return "–";
-  return `${Math.round(min)} Min`;
-}
-
-function calculateAverageResponseTimeFromPairs(pairs: Array<{ userAt: string; agentAt: string }>): string {
-  if (!pairs.length) return "–";
-  const deltas: number[] = [];
-  for (const p of pairs) {
-    const a = new Date(p.userAt).getTime();
-    const b = new Date(p.agentAt).getTime();
-    const d = b - a;
-    // ignore nonsense and very long gaps (>= 24h)
-    if (d > 0 && d < 1000 * 60 * 60 * 24) deltas.push(d);
-  }
-  if (!deltas.length) return "–";
-  const avgMs = deltas.reduce((s, x) => s + x, 0) / deltas.length;
-  return formatMinutes(avgMs / 1000 / 60);
 }
 
 export default function StartseiteUI({
@@ -82,12 +65,28 @@ export default function StartseiteUI({
   const [userName, setUserName] = useState<string>("");
 
   const [allLeads, setAllLeads] = useState<LeadRow[]>([]);
-  const [lastMessages, setLastMessages] = useState<Record<string, MsgRow | null>>(
-    {}
+  const [lastMessages, setLastMessages] = useState<
+    Record<string, MsgRow | null>
+  >({});
+  const [messageCounts, setMessageCounts] = useState<Record<string, number>>(
+    {},
   );
-  const [messageCounts, setMessageCounts] = useState<Record<string, number>>({});
 
-  const [avgResponseTime, setAvgResponseTime] = useState<string>("–");
+  // NEW: approvals derived from messages, not leads
+  const [approvalLeadIds, setApprovalLeadIds] = useState<Set<string>>(
+    new Set(),
+  );
+
+  // NEW: KPI replacement for avg response time
+  const [timeSaved30d, setTimeSaved30d] = useState<string>("–");
+  const [autoReplies30d, setAutoReplies30d] = useState<number>(0);
+
+  const [autosendEnabled, setAutosendEnabled] = useState<boolean | null>(null);
+  const [autosendBusy, setAutosendBusy] = useState(false);
+  const [followupsEnabled, setFollowupsEnabled] = useState<boolean | null>(
+    null,
+  );
+  const [followupsBusy, setFollowupsBusy] = useState(false);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -110,7 +109,7 @@ export default function StartseiteUI({
         "";
       setUserName(n ? `${n[0].toUpperCase()}${n.slice(1)}` : "");
 
-      // Load leads once; derive KPI buckets client-side (more robust to schema changes)
+      // Load leads
       const { data: leadsData, error } = await supabase
         .from("leads")
         .select("*")
@@ -121,73 +120,128 @@ export default function StartseiteUI({
       if (error) {
         console.error("❌ leads fetch", error);
         setAllLeads([]);
+        setApprovalLeadIds(new Set());
         return;
       }
 
       const rows = (leadsData ?? []) as LeadRow[];
       setAllLeads(rows);
 
-      // Average response time
-      // Option A: compute from serverLeads if they include messages (as you had before)
-      // Option B: best-effort compute from latest messages for those leads
+      // autosend & followups toggle — always read via API routes
       try {
-        const pairs: Array<{ userAt: string; agentAt: string }> = [];
+        const [aRes, fRes] = await Promise.all([
+          fetch("/api/agent/settings/autosend", { method: "GET" }),
+          fetch("/api/agent/settings/followups", { method: "GET" }),
+        ]);
 
-        // Prefer serverLeads messages if present
-        const fromServer = Array.isArray(serverLeads) ? serverLeads : [];
-        for (const l of fromServer) {
-          const msgs = (l as any)?.messages;
-          if (!Array.isArray(msgs) || msgs.length < 2) continue;
-          for (let i = 1; i < msgs.length; i++) {
-            const prev = msgs[i - 1];
-            const curr = msgs[i];
-            if (String(prev?.sender) === "user" && isAgentSender(curr?.sender)) {
-              if (prev?.timestamp && curr?.timestamp) {
-                pairs.push({ userAt: prev.timestamp, agentAt: curr.timestamp });
-              }
-            }
+        if (aRes.ok) {
+          const aJson = await aRes.json().catch(() => null);
+          if (
+            aJson?.ok &&
+            typeof aJson?.settings?.autosend_enabled === "boolean"
+          ) {
+            setAutosendEnabled(aJson.settings.autosend_enabled);
+          } else if (aJson?.ok && aJson?.settings?.reply_mode) {
+            setAutosendEnabled(String(aJson.settings.reply_mode) === "auto");
+          } else {
+            setAutosendEnabled(false);
           }
+        } else {
+          setAutosendEnabled(false);
         }
 
-        // If we didn't get anything from serverLeads, compute from DB using last 2000 messages
-        if (pairs.length === 0) {
-          const { data: msgs, error: mErr } = await supabase
-            .from("messages")
-            .select("lead_id, sender, timestamp")
-            .in(
-              "lead_id",
-              rows.slice(0, 200).map((r) => r.id)
-            )
-            .order("timestamp", { ascending: true })
-            .limit(2000);
-
-          if (!mErr && msgs?.length) {
-            const byLead: Record<string, Array<{ sender: string | null; timestamp: string }>> = {};
-            for (const m of msgs as any[]) {
-              const id = String(m.lead_id);
-              if (!byLead[id]) byLead[id] = [];
-              byLead[id].push({ sender: m.sender ?? null, timestamp: m.timestamp });
-            }
-            for (const arr of Object.values(byLead)) {
-              for (let i = 1; i < arr.length; i++) {
-                const prev = arr[i - 1];
-                const curr = arr[i];
-                if (String(prev.sender) === "user" && isAgentSender(curr.sender)) {
-                  pairs.push({ userAt: prev.timestamp, agentAt: curr.timestamp });
-                }
-              }
-            }
+        if (fRes.ok) {
+          const fJson = await fRes.json().catch(() => null);
+          if (
+            fJson?.ok &&
+            typeof fJson?.settings?.followups_enabled_default === "boolean"
+          ) {
+            setFollowupsEnabled(fJson.settings.followups_enabled_default);
+          } else {
+            setFollowupsEnabled(true);
           }
+        } else {
+          setFollowupsEnabled(true);
         }
-
-        setAvgResponseTime(calculateAverageResponseTimeFromPairs(pairs));
-      } catch (e) {
-        console.warn("avg response time compute failed", e);
-        setAvgResponseTime("–");
+      } catch {
+        setAutosendEnabled(false);
+        setFollowupsEnabled(true);
       }
 
-      // Prefetch last message + counts only for the cards we actually render
-      // (top items of each bucket). We do this after we computed buckets below.
+      // Derive "Freigaben ausstehend" from messages (not leads)
+      try {
+        const leadIds = rows.map((r) => r.id).filter(Boolean);
+        const approvalSet = new Set<string>();
+
+        if (leadIds.length > 0) {
+          const { data: approvalMsgs, error: aErr } = await supabase
+            .from("messages")
+            .select("lead_id, status, send_status")
+            .in("lead_id", leadIds.slice(0, 500))
+            .eq("approval_required", true)
+            .order("timestamp", { ascending: false })
+            .limit(2000);
+
+          if (!aErr && approvalMsgs?.length) {
+            for (const m of approvalMsgs as any[]) {
+              const st = String(m?.status || "").toLowerCase();
+              const ss = String(m?.send_status || "").toLowerCase();
+
+              const statusOk =
+                st === "needs_approval" ||
+                st === "needs_human" ||
+                st === "approved" ||
+                st === "ready_to_send";
+
+              const sendOk = ss !== "sent";
+              const ignored = st === "ignored";
+
+              if (statusOk && sendOk && !ignored && m?.lead_id) {
+                approvalSet.add(String(m.lead_id));
+              }
+            }
+          }
+        }
+
+        setApprovalLeadIds(approvalSet);
+      } catch (e) {
+        console.warn("approval derivation failed", e);
+        setApprovalLeadIds(new Set());
+      }
+
+      // KPI: Auto-Antworten + Zeit gespart (30 Tage) — konservativ & nachvollziehbar
+      // Definition "Auto-Antwort": assistant, wirklich gesendet, ohne Freigabe.
+      try {
+        const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+        const { count: autoCount, error: cErr } = await (supabase.from("messages") as any)
+          .select("id", { count: "exact", head: true })
+          .eq("agent_id", userId)
+          .eq("send_status", "sent")
+          .gte("sent_at", since)
+          .eq("sender", "assistant")
+          .eq("approval_required", false);
+
+        const safeCount = !cErr && typeof autoCount === "number" ? autoCount : 0;
+        setAutoReplies30d(safeCount);
+
+        // Conservative time-saved heuristic: 4 min per truly auto-sent reply.
+        // (We can refine later with intent-based minutes, but this is honest + stable.)
+        const minutes = safeCount * 4;
+
+        if (minutes <= 0) {
+          setTimeSaved30d("–");
+        } else if (minutes < 60) {
+          setTimeSaved30d(`${minutes} Min`);
+        } else {
+          const hours = Math.round((minutes / 60) * 10) / 10;
+          setTimeSaved30d(`${hours} h`);
+        }
+      } catch (e) {
+        console.warn("auto KPI compute failed", e);
+        setAutoReplies30d(0);
+        setTimeSaved30d("–");
+      }
     } finally {
       if (!opts?.silent) setLoading(false);
     }
@@ -209,18 +263,14 @@ export default function StartseiteUI({
 
     const openConversations = allLeads.filter((l) => {
       const st = normalizeStatus((l as any).status);
-      // treat empty as open (legacy)
       return !st || st === "open";
     });
 
-    const highPriority = allLeads.filter((l) => isHighPriority((l as any).priority));
+    const highPriority = allLeads.filter((l) =>
+      isHighPriority((l as any).priority),
+    );
 
-    // "Freigaben ausstehend" (best-effort): if leads have any flag that indicates approval
-    // If not available, this bucket will just be empty.
-    const approvals = allLeads.filter((l) => {
-      const v = (l as any).approval_required;
-      return v === true;
-    });
+    const approvals = allLeads.filter((l) => approvalLeadIds.has(l.id));
 
     return {
       newLeads,
@@ -228,7 +278,7 @@ export default function StartseiteUI({
       highPriority,
       approvals,
     };
-  }, [allLeads, cutoff48h]);
+  }, [allLeads, cutoff48h, approvalLeadIds]);
 
   // Fetch last messages & counts for the top leads rendered
   useEffect(() => {
@@ -239,13 +289,12 @@ export default function StartseiteUI({
             ...buckets.approvals.slice(0, 3).map((l) => l.id),
             ...buckets.highPriority.slice(0, 3).map((l) => l.id),
             ...buckets.openConversations.slice(0, 3).map((l) => l.id),
-          ].filter(Boolean)
-        )
+          ].filter(Boolean),
+        ),
       );
 
       if (topIds.length === 0) return;
 
-      // last messages
       const { data: msgs, error } = await supabase
         .from("messages")
         .select("lead_id, sender, timestamp, text")
@@ -285,7 +334,12 @@ export default function StartseiteUI({
     };
 
     fetchSnippets();
-  }, [buckets.approvals, buckets.highPriority, buckets.openConversations, supabase]);
+  }, [
+    buckets.approvals,
+    buckets.highPriority,
+    buckets.openConversations,
+    supabase,
+  ]);
 
   const shownKpis = useMemo(() => {
     return {
@@ -296,11 +350,91 @@ export default function StartseiteUI({
     };
   }, [buckets]);
 
+  const toggleAutosend = async () => {
+    if (autosendBusy) return;
+    if (autosendEnabled === null) return;
+
+    const next = !autosendEnabled;
+    setAutosendBusy(true);
+    setAutosendEnabled(next);
+
+    try {
+      const res = await fetch("/api/agent/settings/autosend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autosend_enabled: next }),
+      });
+      const data = await res.json();
+      if (!res.ok || data?.ok !== true) {
+        throw new Error(
+          data?.error || "Serverfehler beim Ändern von Auto-Senden.",
+        );
+      }
+      if (typeof data?.settings?.autosend_enabled === "boolean") {
+        setAutosendEnabled(data.settings.autosend_enabled);
+      }
+      toast.success(
+        data?.settings?.autosend_enabled
+          ? "Auto-Senden aktiviert"
+          : "Auto-Senden pausiert",
+      );
+    } catch (e: any) {
+      console.error("autosend toggle failed", e);
+      setAutosendEnabled(!next);
+      toast.error(e?.message ?? "Konnte Auto-Senden nicht ändern.");
+    } finally {
+      setAutosendBusy(false);
+    }
+  };
+
+  const toggleFollowups = async () => {
+    if (followupsBusy) return;
+    if (followupsEnabled === null) return;
+
+    const next = !followupsEnabled;
+    setFollowupsBusy(true);
+    setFollowupsEnabled(next);
+
+    try {
+      const res = await fetch("/api/agent/settings/followups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ followups_enabled_default: next }),
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.ok !== true) {
+        throw new Error(
+          data?.error || "Serverfehler beim Ändern von Follow-ups.",
+        );
+      }
+
+      if (typeof data?.settings?.followups_enabled_default === "boolean") {
+        setFollowupsEnabled(data.settings.followups_enabled_default);
+      }
+
+      toast.success(
+        data?.settings?.followups_enabled_default
+          ? "Follow-ups aktiviert"
+          : "Follow-ups pausiert",
+      );
+    } catch (e: any) {
+      console.error("followups toggle failed", e);
+      setFollowupsEnabled(!next);
+      toast.error(e?.message ?? "Konnte Follow-ups nicht ändern.");
+    } finally {
+      setFollowupsBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
-        <div data-tour="home-hero" className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
+        <div
+          data-tour="home-hero"
+          className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
+        >
           <div className="flex items-start justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -321,6 +455,44 @@ export default function StartseiteUI({
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={toggleFollowups}
+                disabled={followupsEnabled === null || followupsBusy}
+                className={`px-3 py-2 text-sm rounded-lg border inline-flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed transition-colors ${
+                  followupsEnabled
+                    ? "bg-gray-900 border-gray-900 text-amber-200 hover:bg-gray-800"
+                    : "bg-white border-gray-200 text-gray-900 hover:bg-gray-50"
+                }`}
+                title={
+                  followupsEnabled
+                    ? "Follow-ups sind aktiv (klicken zum Pausieren)"
+                    : "Follow-ups sind pausiert (klicken zum Aktivieren)"
+                }
+              >
+                <AlarmClock className="h-4 w-4" />
+                {followupsEnabled ? "Follow-ups: AN" : "Follow-ups: AUS"}
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleAutosend}
+                disabled={autosendEnabled === null || autosendBusy}
+                className={`px-3 py-2 text-sm rounded-lg border inline-flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed transition-colors ${
+                  autosendEnabled
+                    ? "bg-gray-900 border-gray-900 text-amber-200 hover:bg-gray-800"
+                    : "bg-white border-gray-200 text-gray-900 hover:bg-gray-50"
+                }`}
+                title={
+                  autosendEnabled
+                    ? "Auto-Senden ist aktiv (klicken zum Pausieren)"
+                    : "Auto-Senden ist pausiert (klicken zum Aktivieren)"
+                }
+              >
+                <Power className="h-4 w-4" />
+                {autosendEnabled ? "Auto-Senden: AN" : "Auto-Senden: AUS"}
+              </button>
+
+              <button
+                type="button"
                 onClick={() => load({ silent: true })}
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 inline-flex items-center gap-2"
                 title="Aktualisieren"
@@ -334,7 +506,10 @@ export default function StartseiteUI({
 
         <div className="py-6 space-y-8">
           {/* KPI cards */}
-          <div data-tour="home-stats" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div
+            data-tour="home-stats"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+          >
             <KpiCard
               title="Neue Interessenten"
               value={loading ? "–" : String(shownKpis.newLeads)}
@@ -342,10 +517,10 @@ export default function StartseiteUI({
               icon={<Sparkles className="h-4 w-4" />}
             />
             <KpiCard
-              title="Konversationen offen"
-              value={loading ? "–" : String(shownKpis.open)}
-              hint="Offen / Neu / ohne Status"
-              icon={<AlertTriangle className="h-4 w-4" />}
+              title="Auto-Antworten"
+              value={loading ? "–" : String(autoReplies30d)}
+              hint="Letzte 30 Tage (ohne Freigabe)"
+              icon={<Sparkles className="h-4 w-4" />}
             />
             <KpiCard
               title="Hohe Priorität"
@@ -354,9 +529,9 @@ export default function StartseiteUI({
               icon={<ShieldAlert className="h-4 w-4" />}
             />
             <KpiCard
-              title="Ø Antwortzeit"
-              value={loading ? "–" : avgResponseTime}
-              hint="User → Agent/Assistant"
+              title="Zeit gespart"
+              value={loading ? "–" : timeSaved30d}
+              hint="Letzte 30 Tage (konservativ)"
               icon={<Clock className="h-4 w-4" />}
             />
           </div>
@@ -415,7 +590,7 @@ function KpiCard({
   title: string;
   value: string;
   hint: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">

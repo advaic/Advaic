@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { Pin, PinOff, Tag, Trash2 } from "lucide-react";
+
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,17 +26,47 @@ type StyleRow = {
   example_phrases: string | null;
 };
 
+type StyleExampleKind =
+  | "greeting"
+  | "closing"
+  | "style_anchor"
+  | "scenario"
+  | "no_go";
+
 type StyleExampleRow = {
   id: string;
   agent_id: string;
   label: string | null;
   text: string;
+  kind: StyleExampleKind;
+  is_pinned: boolean;
   created_at: string;
+  updated_at: string;
 };
 
 const DEFAULT_FORMALITY = "Sie-Form";
 const DEFAULT_LENGTH = "mittel";
 const DEFAULT_EMOJI = "none";
+
+const KIND_OPTIONS: Array<{ value: StyleExampleKind; label: string; hint: string }> = [
+  { value: "style_anchor", label: "Stil-Anker", hint: "Sätze, die deinen Stil definieren" },
+  { value: "greeting", label: "Begrüßung", hint: "z.B. erste Zeile / Einstieg" },
+  { value: "closing", label: "Abschluss", hint: "z.B. Gruß + nächster Schritt" },
+  { value: "scenario", label: "Use-Case", hint: "z.B. Haustiere/Unterlagen/Termin" },
+  { value: "no_go", label: "No-Go", hint: "Formulierungen, die NICHT vorkommen sollen" },
+];
+
+function kindLabel(kind: StyleExampleKind): string {
+  return KIND_OPTIONS.find((k) => k.value === kind)?.label ?? kind;
+}
+
+function normalizeKind(v: unknown): StyleExampleKind {
+  const s = String(v ?? "").trim();
+  if (s === "greeting" || s === "closing" || s === "style_anchor" || s === "scenario" || s === "no_go") {
+    return s;
+  }
+  return "style_anchor";
+}
 
 export default function ToneSettingsPage() {
   // Core style
@@ -50,6 +82,9 @@ export default function ToneSettingsPage() {
   // "Lieblingsformulierungen" (stored as rows)
   const [formulations, setFormulations] = useState<StyleExampleRow[]>([]);
   const [inputValue, setInputValue] = useState("");
+  const [inputLabel, setInputLabel] = useState("");
+  const [inputKind, setInputKind] = useState<StyleExampleKind>("style_anchor");
+  const [inputPinned, setInputPinned] = useState<boolean>(false);
 
   // Loading / saving
   const [loading, setLoading] = useState(true);
@@ -58,10 +93,19 @@ export default function ToneSettingsPage() {
   // File upload placeholder (not wired yet)
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
 
-  const formulationStrings = useMemo(
-    () => formulations.map((f) => f.text),
-    [formulations]
-  );
+  const formulationStrings = useMemo(() => {
+    // Only feed "positive" examples into the denormalized list used for previews/exports.
+    // No-Go examples are handled via dont_rules (separately).
+    return (formulations || [])
+      .filter((f) => normalizeKind((f as any).kind) !== "no_go")
+      .sort((a, b) => {
+        const ap = !!(a as any).is_pinned;
+        const bp = !!(b as any).is_pinned;
+        if (ap !== bp) return ap ? -1 : 1;
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      })
+      .map((f) => f.text);
+  }, [formulations]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSelectedFiles(event.target.files);
@@ -110,14 +154,22 @@ export default function ToneSettingsPage() {
 
       const { data: ex, error: exErr } = await supabase
         .from("agent_style_examples")
-        .select("id,agent_id,label,text,created_at")
+        .select("id,agent_id,label,text,kind,is_pinned,created_at,updated_at")
         .eq("agent_id", uid)
+        .order("is_pinned", { ascending: false })
+        .order("kind", { ascending: true })
         .order("created_at", { ascending: true });
 
       if (exErr) {
         console.error("❌ agent_style_examples load error:", exErr);
       } else {
-        setFormulations(ex || []);
+        const cleaned = (ex || []).map((r: any) => ({
+          ...r,
+          kind: normalizeKind(r.kind),
+          is_pinned: Boolean(r.is_pinned),
+          updated_at: String(r.updated_at ?? r.created_at ?? new Date().toISOString()),
+        })) as StyleExampleRow[];
+        setFormulations(cleaned);
       }
     } finally {
       setLoading(false);
@@ -142,8 +194,19 @@ export default function ToneSettingsPage() {
       formality,
       length_pref: lengthPref,
       emoji_level: emojiLevel,
-      // Store constraints in dont_rules (matches SQL we created)
-      dont_rules: customTone || null,
+      // Store constraints in dont_rules (matches SQL we created).
+      // Also append "No-Go" examples so the model has hard negatives.
+      dont_rules: (() => {
+        const base = (customTone || "").trim();
+        const noGo = (formulations || [])
+          .filter((f) => normalizeKind((f as any).kind) === "no_go")
+          .map((f) => `- ${String(f.text || "").trim()}`)
+          .filter(Boolean);
+        const merged = [base, noGo.length ? `No-Go Beispiele:\n${noGo.join("\n")}` : ""]
+          .filter((x) => String(x || "").trim())
+          .join("\n\n");
+        return merged ? merged : null;
+      })(),
       // Optional sign-off
       sign_off: signOff || null,
       // Keep a denormalized list too (useful for exports / debugging)
@@ -167,6 +230,10 @@ export default function ToneSettingsPage() {
     const text = inputValue.trim();
     if (!text) return;
 
+    const kind = normalizeKind(inputKind);
+    const label = inputLabel.trim() || null;
+    const isPinned = Boolean(inputPinned);
+
     const uid = await getUserId();
     if (!uid) {
       toast.error("Nicht eingeloggt. Bitte neu einloggen.");
@@ -178,8 +245,8 @@ export default function ToneSettingsPage() {
 
     const { data, error } = await supabase
       .from("agent_style_examples")
-      .insert([{ agent_id: uid, text }])
-      .select("id,agent_id,label,text,created_at")
+      .insert([{ agent_id: uid, text, kind, label, is_pinned: isPinned }])
+      .select("id,agent_id,label,text,kind,is_pinned,created_at,updated_at")
       .single();
 
     if (error) {
@@ -189,6 +256,94 @@ export default function ToneSettingsPage() {
     }
 
     setFormulations((prev) => [...prev, data as StyleExampleRow]);
+    setInputLabel("");
+    setInputKind("style_anchor");
+    setInputPinned(false);
+  };
+  const handleTogglePinned = async (row: StyleExampleRow) => {
+    const uid = await getUserId();
+    if (!uid) {
+      toast.error("Nicht eingeloggt. Bitte neu einloggen.");
+      return;
+    }
+
+    const nextPinned = !row.is_pinned;
+
+    // Optimistic UI
+    setFormulations((prev) =>
+      prev
+        .map((x) => (x.id === row.id ? ({ ...x, is_pinned: nextPinned } as any) : x))
+        .sort((a, b) => {
+          const ap = !!a.is_pinned;
+          const bp = !!b.is_pinned;
+          if (ap !== bp) return ap ? -1 : 1;
+          const ak = kindLabel(a.kind);
+          const bk = kindLabel(b.kind);
+          if (ak !== bk) return ak.localeCompare(bk);
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        })
+    );
+
+    const { error } = await supabase
+      .from("agent_style_examples")
+      .update({ is_pinned: nextPinned } as any)
+      .eq("id", row.id)
+      .eq("agent_id", uid);
+
+    if (error) {
+      console.error("❌ update pinned error:", error);
+      toast.error("Konnte Pin nicht speichern.");
+      // rollback
+      setFormulations((prev) => prev.map((x) => (x.id === row.id ? row : x)));
+    }
+  };
+
+  const handleUpdateExampleMeta = async (
+    row: StyleExampleRow,
+    patch: Partial<Pick<StyleExampleRow, "label" | "kind">>
+  ) => {
+    const uid = await getUserId();
+    if (!uid) {
+      toast.error("Nicht eingeloggt. Bitte neu einloggen.");
+      return;
+    }
+
+    const next: StyleExampleRow = {
+      ...row,
+      ...(patch.kind ? { kind: normalizeKind(patch.kind) } : null),
+      ...(patch.label !== undefined ? { label: patch.label } : null),
+    } as any;
+
+    // Optimistic UI
+    setFormulations((prev) =>
+      prev
+        .map((x) => (x.id === row.id ? next : x))
+        .sort((a, b) => {
+          const ap = !!a.is_pinned;
+          const bp = !!b.is_pinned;
+          if (ap !== bp) return ap ? -1 : 1;
+          const ak = kindLabel(a.kind);
+          const bk = kindLabel(b.kind);
+          if (ak !== bk) return ak.localeCompare(bk);
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        })
+    );
+
+    const dbPatch: any = {};
+    if (patch.kind) dbPatch.kind = normalizeKind(patch.kind);
+    if (patch.label !== undefined) dbPatch.label = patch.label;
+
+    const { error } = await supabase
+      .from("agent_style_examples")
+      .update(dbPatch)
+      .eq("id", row.id)
+      .eq("agent_id", uid);
+
+    if (error) {
+      console.error("❌ update meta error:", error);
+      toast.error("Konnte Änderung nicht speichern.");
+      setFormulations((prev) => prev.map((x) => (x.id === row.id ? row : x)));
+    }
   };
 
   const handleRemoveFormulation = async (id: string) => {
@@ -402,23 +557,70 @@ export default function ToneSettingsPage() {
               Eigene Lieblingsformulierungen
             </h2>
             <p className="text-sm text-muted-foreground mb-4">
-              Diese Phrasen werden von der KI bevorzugt verwendet – ideal für
-              Begrüßungen, Abschlüsse etc.
+              Diese Beispiele sind echte Stil-Anker für die KI. Nutze <span className="font-medium">Pinned</span> für deine wichtigsten Sätze, und <span className="font-medium">No-Go</span> für Formulierungen, die niemals vorkommen sollen.
             </p>
-            <div className="flex gap-2 mb-2" data-tour="tone-style-formulations-add">
-              <Input
-                placeholder="Formulierung eingeben & Enter drücken"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleQuickSaveOnEnter}
-                data-tour="tone-style-formulations-input"
-              />
-              <Button
-                onClick={() => void handleAddFormulation()}
-                data-tour="tone-style-formulations-add-btn"
-              >
-                Hinzufügen
-              </Button>
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-2 mb-3" data-tour="tone-style-formulations-add">
+              <div className="md:col-span-4">
+                <Input
+                  placeholder="Formulierung (Text)"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleQuickSaveOnEnter}
+                  data-tour="tone-style-formulations-input"
+                />
+              </div>
+
+              <div className="md:col-span-3">
+                <Input
+                  placeholder="Label (optional) z.B. Haustiere"
+                  value={inputLabel}
+                  onChange={(e) => setInputLabel(e.target.value)}
+                  data-tour="tone-style-formulations-label"
+                />
+              </div>
+
+              <div className="md:col-span-3">
+                <select
+                  value={inputKind}
+                  onChange={(e) => setInputKind(normalizeKind(e.target.value))}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  data-tour="tone-style-formulations-kind"
+                >
+                  {KIND_OPTIONS.map((k) => (
+                    <option key={k.value} value={k.value}>
+                      {k.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2 flex items-center gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setInputPinned((v) => !v)}
+                  className={`h-10 px-3 rounded-md border text-sm inline-flex items-center gap-2 transition-colors ${
+                    inputPinned
+                      ? "bg-amber-50 border-amber-200 text-amber-900"
+                      : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                  }`}
+                  title={inputPinned ? "Gepinnt" : "Pin setzen (wird bevorzugt genutzt)"}
+                  data-tour="tone-style-formulations-pin"
+                >
+                  {inputPinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
+                  {inputPinned ? "Pinned" : "Pin"}
+                </button>
+
+                <Button
+                  onClick={() => void handleAddFormulation()}
+                  data-tour="tone-style-formulations-add-btn"
+                >
+                  Hinzufügen
+                </Button>
+              </div>
+            </div>
+
+            <div className="text-xs text-muted-foreground mb-2">
+              Tipp: <span className="font-medium">Pinned</span> Beispiele werden von der KI bevorzugt genutzt. <span className="font-medium">No-Go</span> Beispiele helfen, unerwünschte Formulierungen zu vermeiden.
             </div>
 
             {loading ? (
@@ -428,27 +630,107 @@ export default function ToneSettingsPage() {
                 Noch keine Formulierungen gespeichert.
               </div>
             ) : (
-              <ul
-                className="text-sm text-muted-foreground space-y-2"
-                data-tour="tone-style-formulations-list"
-              >
-                {formulations.map((f) => (
-                  <li
-                    key={f.id}
-                    className="flex items-center justify-between"
-                    data-tour="tone-style-formulation-item"
-                  >
-                    <span>{f.text}</span>
-                    <Button
-                      variant="ghost"
-                      className="text-red-500 hover:text-red-700 px-2 py-1 text-xs"
-                      onClick={() => void handleRemoveFormulation(f.id)}
+              <div className="space-y-2" data-tour="tone-style-formulations-list">
+                {formulations
+                  .slice()
+                  .sort((a, b) => {
+                    const ap = !!a.is_pinned;
+                    const bp = !!b.is_pinned;
+                    if (ap !== bp) return ap ? -1 : 1;
+                    const ak = kindLabel(a.kind);
+                    const bk = kindLabel(b.kind);
+                    if (ak !== bk) return ak.localeCompare(bk);
+                    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                  })
+                  .map((f) => (
+                    <div
+                      key={f.id}
+                      className="rounded-xl border bg-white px-3 py-2 flex items-start gap-3"
+                      data-tour="tone-style-formulation-item"
                     >
-                      Entfernen
-                    </Button>
-                  </li>
-                ))}
-              </ul>
+                      <button
+                        type="button"
+                        onClick={() => void handleTogglePinned(f)}
+                        className={`mt-0.5 h-9 w-9 rounded-md border inline-flex items-center justify-center transition-colors ${
+                          f.is_pinned
+                            ? "bg-amber-50 border-amber-200 text-amber-900"
+                            : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                        }`}
+                        title={f.is_pinned ? "Pinned (wird bevorzugt genutzt)" : "Pin setzen"}
+                      >
+                        {f.is_pinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
+                      </button>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] px-2 py-0.5 rounded-full border bg-[#fbfbfc] text-gray-700 inline-flex items-center gap-1">
+                            <Tag className="h-3 w-3" />
+                            {kindLabel(f.kind)}
+                          </span>
+
+                          {f.label ? (
+                            <span className="text-[11px] px-2 py-0.5 rounded-full border bg-white text-gray-700">
+                              {f.label}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-1 text-sm text-gray-800 whitespace-pre-line break-words">
+                          {f.text}
+                        </div>
+
+                        <div className="mt-2 grid grid-cols-1 md:grid-cols-12 gap-2">
+                          <div className="md:col-span-4">
+                            <Input
+                              value={f.label ?? ""}
+                              onChange={(e) =>
+                                void handleUpdateExampleMeta(f, {
+                                  label: e.target.value.trim() ? e.target.value : null,
+                                })
+                              }
+                              placeholder="Label (optional)"
+                            />
+                          </div>
+
+                          <div className="md:col-span-4">
+                            <select
+                              value={f.kind}
+                              onChange={(e) =>
+                                void handleUpdateExampleMeta(f, {
+                                  kind: normalizeKind(e.target.value),
+                                })
+                              }
+                              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                            >
+                              {KIND_OPTIONS.map((k) => (
+                                <option key={k.value} value={k.value}>
+                                  {k.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="md:col-span-4 flex items-center justify-end">
+                            <Button
+                              variant="ghost"
+                              className="text-red-500 hover:text-red-700"
+                              onClick={() => void handleRemoveFormulation(f.id)}
+                              title="Löschen"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        {f.kind === "no_go" ? (
+                          <div className="mt-2 text-xs text-amber-700">
+                            Hinweis: <span className="font-medium">No-Go</span> Beispiele werden als „nicht verwenden“ interpretiert.
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+              </div>
             )}
 
             <Separator className="my-6" />

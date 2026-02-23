@@ -143,8 +143,11 @@ function buildReasonRows(message: ApprovalMessage) {
     ? String((message as any).qa_verdict)
     : "";
   const qaScore =
-    typeof (message as any).qa_score === "number" ? (message as any).qa_score : null;
-  const qaScoreStr = qaScore === null ? "" : ` (Score: ${Number(qaScore).toFixed(2)})`;
+    typeof (message as any).qa_score === "number"
+      ? (message as any).qa_score
+      : null;
+  const qaScoreStr =
+    qaScore === null ? "" : ` (Score: ${Number(qaScore).toFixed(2)})`;
 
   const qaReason =
     (message as any).qa_reason_long ?? (message as any).qa_reason ?? null;
@@ -158,7 +161,10 @@ function buildReasonRows(message: ApprovalMessage) {
     });
   }
 
-  const riskFlags = (message as any).qa_risk_flags as string[] | null | undefined;
+  const riskFlags = (message as any).qa_risk_flags as
+    | string[]
+    | null
+    | undefined;
   if (Array.isArray(riskFlags) && riskFlags.length > 0) {
     rows.push({
       label: "Risiko-Flags",
@@ -186,9 +192,11 @@ function buildReasonRows(message: ApprovalMessage) {
       id: message.id,
       approval_required: message.approval_required,
       email_type: (message as any).email_type ?? null,
-      classification_confidence: (message as any).classification_confidence ?? null,
+      classification_confidence:
+        (message as any).classification_confidence ?? null,
       classification_reason: (message as any).classification_reason ?? null,
-      classification_reason_long: (message as any).classification_reason_long ?? null,
+      classification_reason_long:
+        (message as any).classification_reason_long ?? null,
       qa_verdict: (message as any).qa_verdict ?? null,
       qa_score: (message as any).qa_score ?? null,
       qa_reason: (message as any).qa_reason ?? null,
@@ -203,6 +211,101 @@ function buildReasonRows(message: ApprovalMessage) {
   }
 
   return rows;
+}
+
+function buildReplySubject(lead: any) {
+  const raw = String(lead?.subject ?? lead?.type ?? "Anfrage").trim();
+  if (!raw) return "Re: Anfrage";
+  // Avoid double "Re:"
+  if (/^re\s*:/i.test(raw)) return raw;
+  return `Re: ${raw}`;
+}
+
+function sendStatusMeta(status: any): { label: string; cls: string } | null {
+  const s = String(status ?? "").toLowerCase();
+  if (!s) return null;
+  if (s === "pending")
+    return { label: "Bereit", cls: "border-gray-200 bg-gray-50 text-gray-700" };
+  if (s === "sending")
+    return {
+      label: "Wird gesendet…",
+      cls: "border-amber-200 bg-amber-50 text-amber-800",
+    };
+  if (s === "sent")
+    return {
+      label: "Gesendet",
+      cls: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    };
+  if (s === "failed")
+    return {
+      label: "Fehlgeschlagen",
+      cls: "border-red-200 bg-red-50 text-red-700",
+    };
+  return { label: s, cls: "border-gray-200 bg-gray-50 text-gray-700" };
+}
+
+type ApprovalSortKey =
+  | "default"
+  | "newest"
+  | "oldest"
+  | "risk_desc"
+  | "confidence_asc"
+  | "confidence_desc";
+
+function getConfidence(m: ApprovalMessage): number | null {
+  const v = (m as any).classification_confidence;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function verdictWeight(v: any): number {
+  const s = String(v ?? "").toLowerCase();
+  if (s === "fail") return 3;
+  if (s === "warn") return 2;
+  if (s === "pass") return 0;
+  return 1; // unknown
+}
+
+function tsMs(m: ApprovalMessage): number {
+  const t = new Date(String(m.timestamp ?? "")).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+function riskScore(m: ApprovalMessage): number {
+  // Higher = riskier => review first
+  const flags = Array.isArray((m as any).qa_risk_flags)
+    ? ((m as any).qa_risk_flags as any[])
+    : [];
+  const flagScore = Math.min(5, flags.length) * 1.0;
+
+  const vw = verdictWeight((m as any).qa_verdict);
+
+  const qaScoreRaw = (m as any).qa_score;
+  const qaScore =
+    typeof qaScoreRaw === "number" && Number.isFinite(qaScoreRaw)
+      ? qaScoreRaw
+      : null;
+
+  // assumes qa_score ~ 0..1 (lower worse). Still gives sensible ordering if scale differs.
+  const qaPenalty =
+    qaScore === null ? 0.25 : Math.max(0, Math.min(1, 1 - qaScore));
+
+  const conf = getConfidence(m);
+  const confPenalty = conf === null ? 0.15 : Math.max(0, Math.min(1, 1 - conf));
+
+  const sendStatus = String(m.send_status ?? "").toLowerCase();
+  const sendPenalty =
+    sendStatus === "failed" ? 1.5 : sendStatus === "sending" ? 0.75 : 0;
+
+  const followupPenalty = m.was_followup ? 0.15 : 0;
+
+  return (
+    vw * 1.25 +
+    flagScore +
+    qaPenalty * 1.25 +
+    confPenalty * 1.0 +
+    sendPenalty +
+    followupPenalty
+  );
 }
 
 async function readSendResponse(
@@ -239,6 +342,8 @@ export default function ZurFreigabeUI({
     {},
   );
   const [search, setSearch] = useState<string>("");
+  const [sortKey, setSortKey] = useState<ApprovalSortKey>("default");
+  const [expandedText, setExpandedText] = useState<Record<string, boolean>>({});
 
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
   const [selectAll, setSelectAll] = useState(false);
@@ -258,15 +363,63 @@ export default function ZurFreigabeUI({
     setActionError((prev) => ({ ...prev, [id]: msg }));
 
   const approvalMessages = useMemo(() => {
-    const base = messages.filter((msg) => msg.approval_required);
+    const base0 = messages.filter((msg) => msg.approval_required);
+
     const q = search.trim().toLowerCase();
-    if (!q) return base;
-    return base.filter((m) =>
-      String(m.text ?? "")
-        .toLowerCase()
-        .includes(q),
-    );
-  }, [messages, search]);
+    const base = !q
+      ? base0
+      : base0.filter((m) =>
+          String(m.text ?? "")
+            .toLowerCase()
+            .includes(q),
+        );
+
+    const sorted = [...base].sort((a, b) => {
+      const aT = tsMs(a);
+      const bT = tsMs(b);
+
+      switch (sortKey) {
+        case "newest":
+          return bT - aT;
+        case "oldest":
+          return aT - bT;
+
+        case "confidence_asc": {
+          const ac = getConfidence(a);
+          const bc = getConfidence(b);
+          if (ac === null && bc === null) return bT - aT;
+          if (ac === null) return 1;
+          if (bc === null) return -1;
+          if (ac !== bc) return ac - bc;
+          return bT - aT;
+        }
+
+        case "confidence_desc": {
+          const ac = getConfidence(a);
+          const bc = getConfidence(b);
+          if (ac === null && bc === null) return bT - aT;
+          if (ac === null) return 1;
+          if (bc === null) return -1;
+          if (ac !== bc) return bc - ac;
+          return bT - aT;
+        }
+
+        case "risk_desc": {
+          const ar = riskScore(a);
+          const br = riskScore(b);
+          if (ar !== br) return br - ar;
+          return bT - aT;
+        }
+
+        case "default":
+        default:
+          // keep the previous feel: newest first
+          return bT - aT;
+      }
+    });
+
+    return sorted;
+  }, [messages, search, sortKey]);
 
   const approvalIds = useMemo(
     () => approvalMessages.map((m) => m.id),
@@ -282,6 +435,11 @@ export default function ZurFreigabeUI({
     setSelectAll(false);
 
     setReasonOpen((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const id of approvalIds) next[id] = !!prev[id];
+      return next;
+    });
+    setExpandedText((prev) => {
       const next: Record<string, boolean> = {};
       for (const id of approvalIds) next[id] = !!prev[id];
       return next;
@@ -376,11 +534,16 @@ export default function ZurFreigabeUI({
 
     // optimistic: remove immediately
     setMessages((prev) => prev.filter((msg) => msg.id !== id));
+    setExpandedText((prev) => {
+      const copy = { ...prev };
+      delete copy[id];
+      return copy;
+    });
 
     try {
       const { data: lead, error: leadErr } = await supabase
         .from("leads")
-        .select("id, email, gmail_thread_id, type")
+        .select("id, email, gmail_thread_id, type, subject")
         .eq("id", message.lead_id)
         .single();
 
@@ -388,7 +551,7 @@ export default function ZurFreigabeUI({
         throw new Error("Lead fehlt oder E-Mail fehlt beim Interessenten.");
       }
 
-      const subject = `Re: ${lead.type ?? "Anfrage"}`;
+      const subject = buildReplySubject(lead);
 
       const res = await fetch("/api/gmail/send", {
         method: "POST",
@@ -459,6 +622,11 @@ export default function ZurFreigabeUI({
     try {
       await rejectMessage(id);
       setMessages((prev) => prev.filter((msg) => msg.id !== id));
+      setExpandedText((prev) => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
     } finally {
       setPending(id, false);
       router.refresh();
@@ -489,7 +657,7 @@ export default function ZurFreigabeUI({
     try {
       const { data: lead, error: leadErr } = await supabase
         .from("leads")
-        .select("id, email, gmail_thread_id, type")
+        .select("id, email, gmail_thread_id, type, subject")
         .eq("id", message.lead_id)
         .single();
 
@@ -497,7 +665,7 @@ export default function ZurFreigabeUI({
         throw new Error("Lead fehlt oder E-Mail fehlt beim Interessenten.");
       }
 
-      const subject = `Re: ${lead.type ?? "Anfrage"}`;
+      const subject = buildReplySubject(lead);
 
       const res = await fetch("/api/gmail/send", {
         method: "POST",
@@ -564,6 +732,11 @@ export default function ZurFreigabeUI({
     const ids = approvalIds.filter((id) => selectedIds[id]);
     if (ids.length === 0) return;
 
+    const ok = window.confirm(
+      `Du sendest jetzt ${ids.length} Nachricht(en). Fortfahren?`,
+    );
+    if (!ok) return;
+
     for (const id of ids) {
       if (editingMessageId && editingMessageId !== id) continue;
       await handleApprove(id);
@@ -612,12 +785,34 @@ export default function ZurFreigabeUI({
           </div>
 
           <div className="w-full max-w-sm" data-tour="approval-search">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Suche im Text…"
-              className="w-full px-4 py-3 rounded-xl text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-            />
+            <div className="flex flex-col gap-2">
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as ApprovalSortKey)}
+                className="w-full px-4 py-3 rounded-xl text-sm bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                title="Sortierung"
+              >
+                <option value="default">Sortierung: Neueste zuerst</option>
+                <option value="risk_desc">
+                  Sortierung: Höchstes Risiko zuerst
+                </option>
+                <option value="confidence_asc">
+                  Sortierung: Niedrigste Confidence zuerst
+                </option>
+                <option value="confidence_desc">
+                  Sortierung: Höchste Confidence zuerst
+                </option>
+                <option value="newest">Sortierung: Neueste zuerst</option>
+                <option value="oldest">Sortierung: Älteste zuerst</option>
+              </select>
+
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Suche im Text…"
+                className="w-full px-4 py-3 rounded-xl text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+              />
+            </div>
           </div>
         </div>
 
@@ -687,14 +882,8 @@ export default function ZurFreigabeUI({
                 }}
                 key={message.id}
                 data-tour="approval-card"
-                onClick={() => {
-                  if (isEditing || pending) return;
-                  router.push(`/app/nachrichten/${message.lead_id}`);
-                }}
                 className={`group rounded-2xl border border-gray-200 bg-white transition-colors p-5 ${
-                  isEditing || pending
-                    ? "cursor-default opacity-95"
-                    : "cursor-pointer hover:bg-[#fbfbfc]"
+                  isEditing || pending ? "opacity-95" : "hover:bg-[#fbfbfc]"
                 }`}
               >
                 <div className="flex items-start justify-between gap-4">
@@ -727,9 +916,40 @@ export default function ZurFreigabeUI({
                         {ts ? ts.toLocaleString() : "—"}
                       </div>
 
-                      {pending && (
-                        <div className="text-xs px-2 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-800">
-                          Wird gesendet…
+                      {(() => {
+                        const m = sendStatusMeta(message.send_status);
+                        if (!m) return null;
+                        return (
+                          <div
+                            className={`text-xs px-2 py-1 rounded-full border ${m.cls}`}
+                          >
+                            {m.label}
+                          </div>
+                        );
+                      })()}
+
+                      {(message.email_type ||
+                        typeof message.classification_confidence ===
+                          "number") && (
+                        <div className="text-xs px-2 py-1 rounded-full border border-gray-200 bg-white text-gray-700">
+                          {message.email_type
+                            ? String(message.email_type)
+                            : "E-Mail"}
+                          {typeof message.classification_confidence === "number"
+                            ? ` · ${message.classification_confidence.toFixed(2)}`
+                            : ""}
+                        </div>
+                      )}
+
+                      {((message as any).qa_verdict ||
+                        typeof (message as any).qa_score === "number") && (
+                        <div className="text-xs px-2 py-1 rounded-full border border-gray-200 bg-white text-gray-700">
+                          {(message as any).qa_verdict
+                            ? String((message as any).qa_verdict)
+                            : "QA"}
+                          {typeof (message as any).qa_score === "number"
+                            ? ` · ${Number((message as any).qa_score).toFixed(2)}`
+                            : ""}
                         </div>
                       )}
 
@@ -759,10 +979,45 @@ export default function ZurFreigabeUI({
                       })()}
                     </div>
 
-                    <p className="text-sm text-gray-700 mt-2 line-clamp-2">
-                      {String(message.text ?? "").slice(0, 240)}
-                      {String(message.text ?? "").length > 240 ? "…" : ""}
-                    </p>
+                    {(() => {
+                      const full = String(message.text ?? "");
+                      const isOpen = !!expandedText[message.id];
+                      const tooLong =
+                        full.length > 260 || full.split("\n").length > 3;
+                      const preview =
+                        full.length > 260 ? `${full.slice(0, 260)}…` : full;
+
+                      return (
+                        <div className="mt-2">
+                          <p
+                            className={`text-sm text-gray-700 ${isOpen ? "" : "line-clamp-2"}`}
+                          >
+                            {isOpen ? full : preview}
+                          </p>
+
+                          {tooLong && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedText((prev) => ({
+                                  ...prev,
+                                  [message.id]: !isOpen,
+                                }));
+                              }}
+                              className="mt-2 text-xs px-2 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                              title={
+                                isOpen ? "Text einklappen" : "Volltext anzeigen"
+                              }
+                            >
+                              {isOpen
+                                ? "Volltext ausblenden"
+                                : "Volltext anzeigen"}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {(() => {
                       const rows = buildReasonRows(message);
@@ -792,9 +1047,9 @@ export default function ZurFreigabeUI({
                           </div>
 
                           <div className="mt-2 text-[11px] text-gray-600">
-                            Hinweis: Wenn Autosend deaktiviert ist oder Regeln
-                            greifen (z.B. no-reply, Billing, niedrige
-                            Confidence), landet die Nachricht hier zur
+                            Hinweis: Wenn Autosend deaktiviert ist oder
+                            Sicherheitsregeln greifen (z.B. no-reply, Billing,
+                            niedrige Confidence), landet die Nachricht hier zur
                             Kontrolle.
                           </div>
                         </div>
@@ -991,13 +1246,30 @@ export default function ZurFreigabeUI({
                     }}
                   >
                     <button
+                      type="button"
+                      disabled={isEditing || pending}
+                      onClick={() =>
+                        router.push(`/app/nachrichten/${message.lead_id}`)
+                      }
+                      className="px-3 py-2 rounded-xl text-sm border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Konversation öffnen"
+                    >
+                      Konversation öffnen
+                    </button>
+
+                    <button
                       disabled={pending || isEditing}
                       data-tour="approval-send"
                       onClick={() => handleApprove(message.id)}
                       className="px-3 py-2 rounded-xl text-sm border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Freigeben & senden"
+                      title="Senden"
                     >
-                      {pending ? "…" : "Freigeben"}
+                      {pending
+                        ? "…"
+                        : String(message.send_status || "").toLowerCase() ===
+                            "failed"
+                          ? "Erneut senden"
+                          : "Freigeben"}
                     </button>
 
                     <button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useSessionContext,
@@ -26,6 +26,7 @@ type Property = {
   created_at?: string | null;
   updated_at?: string | null;
   agent_id?: string | null;
+  status?: string | null;
 };
 
 type SortKey =
@@ -45,40 +46,43 @@ export default function ImmobilienPage() {
   // Removed thumbs state and effect as per instructions
 
   const { session, isLoading } = useSessionContext();
-  const user = session?.user;
+  const userId = session?.user?.id ?? null;
   const router = useRouter();
   const supabase = useSupabaseClient<Database>();
 
-  useEffect(() => {
-    const fetchProperties = async () => {
-      if (isLoading) return;
+  const refreshProperties = useCallback(async () => {
+    if (isLoading) return;
 
-      if (!user) {
-        setLoading(false);
-        router.replace("/login");
-        return;
-      }
-
-      const { data: propertyData, error: propError } = await supabase
-        .from("properties")
-        .select(
-          "id,title,street_address,city,price,size_sqm,year_built,type,image_urls,created_at,updated_at,agent_id"
-        )
-        .eq("agent_id", user.id)
-        // ✅ prefer updated_at if you have it, fallback to created_at if not
-        .order("updated_at", { ascending: false });
-
-      if (propError) {
-        console.error("Fehler beim Laden:", propError?.message, propError);
-        setProperties([]);
-      } else {
-        setProperties((propertyData as any) || []);
-      }
+    if (!userId) {
       setLoading(false);
-    };
+      router.replace("/login");
+      return;
+    }
 
-    fetchProperties();
-  }, [isLoading, user, router, supabase]);
+    setLoading(true);
+
+    const { data: propertyData, error: propError } = await supabase
+      .from("properties")
+      .select(
+        "id,title,street_address,city,price,size_sqm,year_built,type,image_urls,created_at,updated_at,agent_id,status"
+      )
+      .eq("agent_id", userId)
+      .neq("status", "archived")
+      .order("updated_at", { ascending: false, nullsFirst: false });
+
+    if (propError) {
+      console.error("Fehler beim Laden:", propError?.message, propError);
+      setProperties([]);
+    } else {
+      setProperties((propertyData as any) || []);
+    }
+
+    setLoading(false);
+  }, [isLoading, userId, router, supabase]);
+
+  useEffect(() => {
+    void refreshProperties();
+  }, [refreshProperties]);
 
   const safeStr = (v: unknown) => String(v ?? "").trim();
   const formatCurrency = (v: number | null | undefined) => {
@@ -162,7 +166,7 @@ export default function ImmobilienPage() {
               </span>
             </div>
             <p className="text-sm text-gray-600 mt-1">
-              Übersicht aller aktiven Objekte unter deiner Betreuung.
+              Übersicht aller Immobilien unter deiner Betreuung.
             </p>
           </div>
 
@@ -196,6 +200,16 @@ export default function ImmobilienPage() {
                 <option value="size_desc">Fläche: groß → klein</option>
                 <option value="size_asc">Fläche: klein → groß</option>
               </select>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void refreshProperties()}
+                className="border-gray-200"
+                data-tour="properties-refresh"
+              >
+                Aktualisieren
+              </Button>
             </div>
           </div>
         </div>
@@ -254,6 +268,13 @@ export default function ImmobilienPage() {
                       <img
                         src={imgSrc}
                         alt={title}
+                        loading="lazy"
+                        decoding="async"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          // If the signed URL endpoint fails, fall back to the placeholder
+                          (e.currentTarget as HTMLImageElement).src = "";
+                        }}
                         className="object-cover w-full h-48"
                       />
                     </div>
@@ -264,6 +285,13 @@ export default function ImmobilienPage() {
                   )}
 
                   <div className="p-4 space-y-3">
+                    {safeStr((property as any).status) && (
+                      <div className="flex justify-end">
+                        <span className="text-[11px] font-medium px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900">
+                          {safeStr((property as any).status)}
+                        </span>
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <h2 className="text-base font-semibold truncate">
                         {title}

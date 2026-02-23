@@ -78,7 +78,7 @@ async function removeStoragePathsViaApi(bucket: string, paths: string[]) {
  */
 function extractSignedUrlMap(
   payload: any,
-  paths: string[]
+  paths: string[],
 ): Record<string, string> {
   const root = payload ?? {};
   const candidate =
@@ -107,13 +107,13 @@ function extractSignedUrlMap(
   ) {
     for (const item of candidate) {
       const p = String(
-        (item as any)?.path ?? (item as any)?.filePath ?? ""
+        (item as any)?.path ?? (item as any)?.filePath ?? "",
       ).trim();
       const u = String(
         (item as any)?.url ??
           (item as any)?.signedUrl ??
           (item as any)?.signed_url ??
-          ""
+          "",
       ).trim();
       if (p && u && u.startsWith("http")) map[p] = u;
     }
@@ -199,7 +199,11 @@ function toNullableInt(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function clampNullable(n: number | null, min: number, max: number): number | null {
+function clampNullable(
+  n: number | null,
+  min: number,
+  max: number,
+): number | null {
   if (n === null) return null;
   return Math.min(Math.max(n, min), max);
 }
@@ -217,6 +221,34 @@ function isProbablyUrl(v: string): boolean {
   }
 }
 
+function isUniqueUrlError(e: any): boolean {
+  const msg = String(e?.message ?? e ?? "");
+  return (
+    msg.includes("properties_url_unique") ||
+    msg.includes("duplicate key") ||
+    (msg.includes("unique constraint") && msg.toLowerCase().includes("url"))
+  );
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, idx: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length) as any;
+  let nextIndex = 0;
+
+  const runners = new Array(Math.max(1, limit)).fill(0).map(async () => {
+    while (nextIndex < items.length) {
+      const idx = nextIndex++;
+      results[idx] = await worker(items[idx], idx);
+    }
+  });
+
+  await Promise.all(runners);
+  return results;
+}
+
 export default function EditPropertyPage() {
   const router = useRouter();
   const params = useParams();
@@ -227,14 +259,23 @@ export default function EditPropertyPage() {
   const [uploadingImages, setUploadingImages] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [flashField, setFlashField] = useState<string | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Avoid stale closures in async effects
+  const propertyIdRef = useRef<string | number | null>(null);
+  const signedUrlToPathRef = useRef<Record<string, string>>({});
+  const filesRef = useRef<(File | string)[]>([]);
+
+  // Avoid setState after unmount
+  const mountedRef = useRef(true);
 
   const [property, setProperty] = useState<PropertyEdit | null>(null);
   const [policyLoading, setPolicyLoading] = useState(false);
   const [policySaving, setPolicySaving] = useState(false);
   const [policy, setPolicy] = useState<PropertyFollowupPolicy>(DEFAULT_POLICY);
   const policySaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashFieldTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
    * IMPORTANT:
@@ -261,16 +302,74 @@ export default function EditPropertyPage() {
     });
   }, [files, signedUrlMap]);
 
-  const setUiFiles = useCallback(
-    (next: (File | string)[]) => {
-      const canonical = next.map((item) => {
-        if (typeof item !== "string") return item;
-        return signedUrlToPath[item] ?? item;
-      });
-      setFiles(canonical);
-    },
-    [signedUrlToPath]
-  );
+  const setUiFiles = useCallback((next: (File | string)[]) => {
+    const canonical = next.map((item) => {
+      if (typeof item !== "string") return item;
+      return signedUrlToPathRef.current?.[item] ?? item;
+    });
+    setFiles(canonical);
+  }, []);
+
+  // Keep refs in sync
+  useEffect(() => {
+    propertyIdRef.current = property?.id ?? null;
+  }, [property?.id]);
+
+  useEffect(() => {
+    signedUrlToPathRef.current = signedUrlToPath;
+  }, [signedUrlToPath]);
+
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
+  // Cleanup timers on unmount (+ best-effort final sync)
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      if (policySaveTimer.current) {
+        clearTimeout(policySaveTimer.current);
+        policySaveTimer.current = null;
+      }
+      if (flashFieldTimer.current) {
+        clearTimeout(flashFieldTimer.current);
+        flashFieldTimer.current = null;
+      }
+
+      // Best-effort final image_urls sync (do not block navigation)
+      void (async () => {
+        try {
+          const id = propertyIdRef.current;
+          if (!id) return;
+
+          const map = signedUrlToPathRef.current || {};
+          const currentFiles = filesRef.current || [];
+          const paths = currentFiles
+            .filter((f): f is string => typeof f === "string")
+            .map((s) => map[s] ?? s)
+            .filter((p) => !!p && !p.startsWith("http"));
+
+          await supabase
+            .from("properties")
+            .update({
+              image_urls: paths,
+              last_edit_at: new Date().toISOString(),
+            } as any)
+            .eq("id", id);
+        } catch {
+          // ignore
+        }
+      })();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Track previous canonical paths so we can delete removed images from storage
   const prevImagePathsRef = useRef<string[]>([]);
@@ -382,7 +481,7 @@ export default function EditPropertyPage() {
           const { data: polRow, error: polErr } = await (supabase as any)
             .from("property_followup_policies")
             .select(
-              "enabled, max_stage_rent, max_stage_buy, stage1_delay_hours, stage2_delay_hours"
+              "enabled, max_stage_rent, max_stage_buy, stage1_delay_hours, stage2_delay_hours",
             )
             .eq("agent_id", agentId)
             .eq("property_id", data.id)
@@ -399,8 +498,12 @@ export default function EditPropertyPage() {
                   : null,
               max_stage_rent: toNullableInt((polRow as any)?.max_stage_rent),
               max_stage_buy: toNullableInt((polRow as any)?.max_stage_buy),
-              stage1_delay_hours: toNullableInt((polRow as any)?.stage1_delay_hours),
-              stage2_delay_hours: toNullableInt((polRow as any)?.stage2_delay_hours),
+              stage1_delay_hours: toNullableInt(
+                (polRow as any)?.stage1_delay_hours,
+              ),
+              stage2_delay_hours: toNullableInt(
+                (polRow as any)?.stage2_delay_hours,
+              ),
             });
           }
         } else {
@@ -426,6 +529,17 @@ export default function EditPropertyPage() {
       try {
         // keep DB columns consistent (neighborhood/url)
         const payload: any = { ...updatedFields };
+        // Keep new enum column in sync if present in DB.
+        // UI uses `price_type` as Vermarktung ("Vermietung" | "Verkauf")
+        if ("price_type" in payload) {
+          const pt = String(payload.price_type ?? "").trim();
+          if (pt === "Vermietung") payload.vermarktung = "rent";
+          else if (pt === "Verkauf") payload.vermarktung = "sale";
+          else payload.vermarktung = null;
+        }
+
+        // Track last edit timestamp
+        payload.last_edit_at = new Date().toISOString();
         if ("neighborhood" in payload) {
           payload.neighborhood = payload.neighborhood;
           delete payload.neighbourhood;
@@ -442,7 +556,13 @@ export default function EditPropertyPage() {
 
         if (error) {
           console.error("❌ Update error:", error);
-          toast.error("Speichern fehlgeschlagen.");
+          if (isUniqueUrlError(error)) {
+            toast.error(
+              "Diese Listing-URL wird bereits von einer anderen Immobilie verwendet.",
+            );
+          } else {
+            toast.error("Speichern fehlgeschlagen.");
+          }
           return;
         }
 
@@ -452,23 +572,27 @@ export default function EditPropertyPage() {
         setSaving(false);
       }
     },
-    [property]
+    [property],
   );
 
   const schedulePersist = useCallback(
     (updatedFields: Partial<PropertyEdit>) => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
       saveTimer.current = setTimeout(() => {
+        if (!mountedRef.current) return;
         void persistUpdate(updatedFields);
       }, 500);
     },
-    [persistUpdate]
+    [persistUpdate],
   );
 
   const handleChange = (
     e: React.ChangeEvent<
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >
+    >,
   ) => {
     if (!property) return;
     const { name, value, type } = e.target;
@@ -532,7 +656,7 @@ export default function EditPropertyPage() {
         setPolicySaving(false);
       }
     },
-    [property, policy]
+    [property, policy],
   );
 
   const schedulePolicyPersist = useCallback(
@@ -542,7 +666,7 @@ export default function EditPropertyPage() {
         void persistPolicyUpdate(updated);
       }, 450);
     },
-    [persistPolicyUpdate]
+    [persistPolicyUpdate],
   );
 
   const onPolicyModeChange = (v: "inherit" | "enable" | "disable") => {
@@ -553,7 +677,7 @@ export default function EditPropertyPage() {
 
   const onPolicyNumberChange = (
     key: keyof Omit<PropertyFollowupPolicy, "enabled">,
-    raw: string
+    raw: string,
   ) => {
     const n = toNullableInt(raw);
     setPolicy((p) => ({ ...p, [key]: n }));
@@ -596,7 +720,7 @@ export default function EditPropertyPage() {
 
       return filePath; // private storage path
     },
-    []
+    [],
   );
 
   /**
@@ -622,7 +746,6 @@ export default function EditPropertyPage() {
           body: JSON.stringify({
             bucket: PROPERTY_IMAGES_BUCKET,
             paths,
-            path: paths[0],
           }),
         });
 
@@ -661,15 +784,16 @@ export default function EditPropertyPage() {
       if (hasNew) {
         setUploadingImages(true);
         try {
-          const out: (File | string)[] = [];
-          for (const item of files) {
-            if (typeof item === "string") {
-              out.push(item);
-              continue;
-            }
-            const path = await uploadImageToSupabase(item, property.id);
-            out.push(path);
-          }
+          const out = await mapWithConcurrency<File | string, File | string>(
+            files,
+            3,
+            async (item) => {
+              if (typeof item === "string") return item;
+              const path = await uploadImageToSupabase(item, property.id);
+              return path;
+            },
+          );
+
           nextFiles = out;
           if (!cancelled) setFiles(out);
         } catch (e: any) {
@@ -685,7 +809,7 @@ export default function EditPropertyPage() {
         .map((f) => {
           if (typeof f !== "string") return null;
           // Convert any signed preview URLs back to storage paths (defensive)
-          return signedUrlToPath[f] ?? f;
+          return (signedUrlToPathRef.current?.[f] ?? f) as any;
         })
         .filter((p): p is string => !!p && !p.startsWith("http"));
 
@@ -745,7 +869,9 @@ export default function EditPropertyPage() {
       } catch (e: any) {
         console.error(e);
         if (!cancelled)
-          toast.error(e?.message ?? "Bild löschen fehlgeschlagen.");
+          toast.error(
+            "Bild wurde entfernt – Storage-Cleanup wird beim nächsten Sync erneut versucht.",
+          );
       }
     };
 
@@ -759,6 +885,10 @@ export default function EditPropertyPage() {
 
   const forceSaveNow = async () => {
     if (!property) return;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
     await persistUpdate({
       title: property.title,
       city: property.city,
@@ -791,15 +921,26 @@ export default function EditPropertyPage() {
       image_urls:
         (files
           .filter((f) => typeof f === "string")
-          .map((s) => (typeof s === "string" ? signedUrlToPath[s] ?? s : s))
+          .map((s) => (typeof s === "string" ? (signedUrlToPath[s] ?? s) : s))
           .filter(
-            (p) => typeof p === "string" && p && !p.startsWith("http")
+            (p) => typeof p === "string" && p && !p.startsWith("http"),
           ) as string[]) || [],
     } as any);
 
     toast.success("Änderungen gespeichert.");
   };
-
+  const scrollToField = (name: string) => {
+    const el = document.querySelector(
+      `[data-field="${name}"]`,
+    ) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlashField(name);
+    if (flashFieldTimer.current) clearTimeout(flashFieldTimer.current);
+    flashFieldTimer.current = setTimeout(() => {
+      setFlashField((cur) => (cur === name ? null : cur));
+    }, 1200);
+  };
   const publishNow = async () => {
     if (!property) return;
 
@@ -811,12 +952,23 @@ export default function EditPropertyPage() {
       safeTrim(property.price);
 
     if (!requiredOk) {
+      const missingOrder: Array<keyof PropertyEdit> = [
+        "title",
+        "city",
+        "type",
+        "price_type",
+        "price",
+      ];
+      const firstMissing = missingOrder.find(
+        (k) => !safeTrim((property as any)[k]),
+      );
+      if (firstMissing) scrollToField(String(firstMissing));
+
       toast.error(
-        "Bitte fülle mindestens Titel, Stadt, Typ, Preis & Vermarktung aus."
+        "Bitte fülle mindestens Titel, Stadt, Typ, Preis & Vermarktung aus.",
       );
       return;
     }
-
     await persistUpdate({ status: "published" } as any);
     toast.success("Immobilie veröffentlicht.");
     router.push("/app/immobilien");
@@ -826,7 +978,7 @@ export default function EditPropertyPage() {
     if (!property) return;
 
     const ok = confirm(
-      "Eintrag wirklich löschen? Der Eintrag und alle gespeicherten Bilder werden entfernt."
+      "Eintrag wirklich löschen? Der Eintrag und alle gespeicherten Bilder werden entfernt.",
     );
     if (!ok) return;
 
@@ -971,7 +1123,7 @@ export default function EditPropertyPage() {
                 <div className="text-xs text-gray-500">
                   {lastSavedAt
                     ? `Zuletzt gespeichert: ${new Date(
-                        lastSavedAt
+                        lastSavedAt,
                       ).toLocaleTimeString("de-DE", {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -986,64 +1138,137 @@ export default function EditPropertyPage() {
                     label="Kurztitel"
                     hint="z.B. Moderne Wohnung mit Balkon"
                   >
-                    <input
-                      name="title"
-                      placeholder="Kurztitel"
-                      onChange={handleChange}
-                      value={property.title}
-                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                    />
+                    <div
+                      data-field="title"
+                      className={
+                        flashField === "title"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="title"
+                        placeholder="Kurztitel"
+                        onChange={handleChange}
+                        value={property.title}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
                   </Field>
 
                   <Field label="Stadt" hint="z.B. Hamburg">
-                    <input
-                      name="city"
-                      placeholder="Stadt"
-                      onChange={handleChange}
-                      value={property.city}
-                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                    />
+                    <div
+                      data-field="city"
+                      className={
+                        flashField === "city"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="city"
+                        placeholder="Stadt"
+                        onChange={handleChange}
+                        value={property.city}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
                   </Field>
 
                   <Field label="Stadtteil" hint="z.B. Eimsbüttel">
-                    <input
-                      name="neighborhood"
-                      placeholder="Stadtteil"
-                      onChange={handleChange}
-                      value={property.neighborhood}
-                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                    />
+                    <div
+                      data-field="neighborhood"
+                      className={
+                        flashField === "neighborhood"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="neighborhood"
+                        placeholder="Stadtteil"
+                        onChange={handleChange}
+                        value={property.neighborhood}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
                   </Field>
 
                   <Field label="Straße" hint="z.B. Osterstraße 12a">
-                    <input
-                      name="street_address"
-                      placeholder="Straße"
-                      onChange={handleChange}
-                      value={property.street_address}
-                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                    />
+                    <div
+                      data-field="street_address"
+                      className={
+                        flashField === "street_address"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="street_address"
+                        placeholder="Straße"
+                        onChange={handleChange}
+                        value={property.street_address}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
                   </Field>
 
                   <Field label="Typ" hint="z.B. Wohnung, Haus, Grundstück">
-                    <input
-                      name="type"
-                      placeholder="Typ"
-                      onChange={handleChange}
-                      value={property.type}
-                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                    />
+                    <div
+                      data-field="type"
+                      className={
+                        flashField === "type"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="type"
+                        placeholder="Typ"
+                        onChange={handleChange}
+                        value={property.type}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
                   </Field>
 
-                  <Field label="Preis" hint="z.B. 1250">
-                    <input
-                      name="price"
-                      type="number"
-                      placeholder="Preis"
-                      onChange={handleChange}
-                      value={property.price}
-                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                    />
+                  <Field
+                    label={
+                      property.price_type === "Vermietung"
+                        ? "Preis (€/Monat)"
+                        : property.price_type === "Verkauf"
+                          ? "Preis (€)"
+                          : "Preis"
+                    }
+                    hint={
+                      property.price_type === "Vermietung"
+                        ? "z.B. 1250"
+                        : "z.B. 450000"
+                    }
+                  >
+                    <div
+                      data-field="price"
+                      className={
+                        flashField === "price"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="price"
+                        type="number"
+                        placeholder={
+                          property.price_type === "Vermietung"
+                            ? "z.B. 1250"
+                            : property.price_type === "Verkauf"
+                              ? "z.B. 450000"
+                              : "Preis"
+                        }
+                        onChange={handleChange}
+                        value={property.price}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
                   </Field>
 
                   <Field label="Vermarktung" hint="Vermietung oder Verkauf">
@@ -1301,8 +1526,8 @@ export default function EditPropertyPage() {
                         {policy.enabled === null
                           ? "Standard"
                           : policy.enabled
-                          ? "Aktiv"
-                          : "Deaktiviert"}
+                            ? "Aktiv"
+                            : "Deaktiviert"}
                       </span>
                     )}
                   </div>
@@ -1310,7 +1535,8 @@ export default function EditPropertyPage() {
 
                 <div className="p-4 space-y-3">
                   <div className="text-xs text-gray-600">
-                    Steuert, ob und wie viele Follow-ups für <b>diese Immobilie</b>
+                    Steuert, ob und wie viele Follow-ups für{" "}
+                    <b>diese Immobilie</b>
                     erlaubt sind. „Standard" nutzt die Agent/Lead-Settings.
                   </div>
 
@@ -1323,8 +1549,8 @@ export default function EditPropertyPage() {
                         policy.enabled === null
                           ? "inherit"
                           : policy.enabled
-                          ? "enable"
-                          : "disable"
+                            ? "enable"
+                            : "disable"
                       }
                       onChange={(e) =>
                         onPolicyModeChange(e.target.value as any)
@@ -1351,7 +1577,7 @@ export default function EditPropertyPage() {
                         onChange={(e) =>
                           onPolicyNumberChange(
                             "max_stage_rent",
-                            e.target.value === "inherit" ? "" : e.target.value
+                            e.target.value === "inherit" ? "" : e.target.value,
                           )
                         }
                         className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
@@ -1376,7 +1602,7 @@ export default function EditPropertyPage() {
                         onChange={(e) =>
                           onPolicyNumberChange(
                             "max_stage_buy",
-                            e.target.value === "inherit" ? "" : e.target.value
+                            e.target.value === "inherit" ? "" : e.target.value,
                           )
                         }
                         className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
@@ -1404,7 +1630,7 @@ export default function EditPropertyPage() {
                         onChange={(e) =>
                           onPolicyNumberChange(
                             "stage1_delay_hours",
-                            e.target.value
+                            e.target.value,
                           )
                         }
                         placeholder="Standard"
@@ -1426,7 +1652,7 @@ export default function EditPropertyPage() {
                         onChange={(e) =>
                           onPolicyNumberChange(
                             "stage2_delay_hours",
-                            e.target.value
+                            e.target.value,
                           )
                         }
                         placeholder="Standard"

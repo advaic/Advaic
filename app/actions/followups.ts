@@ -8,6 +8,10 @@ import { createHmac } from "crypto";
 // --- Required env ---
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+// Optional but recommended: allows server actions to read `ai_prompts` even if RLS blocks anon/auth selects.
+// Never expose this to the client.
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
 const MAKE_SEND_WEBHOOK = process.env.MAKE_SEND_WEBHOOK!;
 const MAKE_SUGGEST_WEBHOOK = process.env.MAKE_SUGGEST_WEBHOOK;
 const MAKE_WEBHOOK_SECRET = process.env.NEXT_PUBLIC_MAKE_WEBHOOK_SECRET;
@@ -23,15 +27,40 @@ async function getClient() {
   });
 }
 
+// --- Admin client (service role) for reading shared config tables like `ai_prompts` ---
+function getAdminClient() {
+  if (!SUPABASE_SERVICE_ROLE_KEY) return null;
+  return createServerClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    cookies: {
+      // No auth context needed; this is for server-side config reads only.
+      getAll: () => [],
+      setAll: async () => {},
+    },
+  });
+}
+
 // --- HMAC helper for Make verification ---
 function signBody(body: string, ts: string, secret: string) {
   return createHmac("sha256", secret).update(`${ts}.${body}`).digest("hex");
 }
 
 /**
- * Vorschlagstext generieren via Make-Szenario.
+ * Vorschlagstext generieren.
+ * Reihenfolge:
+ * 1) Azure Copilot + ai_prompts (wenn konfiguriert)
+ * 2) Make (optional, wenn konfiguriert)
+ * 3) Rule-based Fallback
  */
-export async function suggestFollowUpText(leadId: string): Promise<string> {
+export async function suggestFollowUpText(
+  leadId: string,
+  opts?: {
+    // UI: Freundlich | Neutral | Klar
+    // Intern: friendly | neutral | firm  ("Klar" maps to "firm" = klar/kurz/sachlich)
+    tone?: "friendly" | "neutral" | "firm" | "clear";
+    instruction?: string;
+    regenerate?: boolean;
+  }
+): Promise<string> {
   const supabase = await getClient();
 
   const {
@@ -40,10 +69,66 @@ export async function suggestFollowUpText(leadId: string): Promise<string> {
   } = await supabase.auth.getUser();
   if (userErr || !user) throw new Error("Nicht eingeloggt");
 
-  // --- Try Make first if configured ---
+  const toneRaw = (opts?.tone ?? "friendly") as any;
+  const tone: "friendly" | "neutral" | "firm" =
+    toneRaw === "clear" ? "firm" : (toneRaw === "friendly" || toneRaw === "neutral" || toneRaw === "firm" ? toneRaw : "friendly");
+  const instruction = (opts?.instruction ?? "").trim();
+
+  // --- 1) Azure Copilot via ai_prompts (preferred) ---
+  try {
+    const promptKey = "followup_suggest_v1";
+    const prompt = await getActivePrompt(supabase, promptKey);
+    if (!prompt) {
+      console.info("[followups] No active ai_prompt for key followup_suggest_v1 -> skipping Copilot");
+    } else {
+      const leadContext = await buildLeadContext(supabase, leadId, user.id);
+
+      // Replace placeholders inside user prompt
+      const userPrompt = prompt.user_prompt
+        .replaceAll("{{lead_context}}", leadContext)
+        .replaceAll("{{tone}}", tone)
+        .replaceAll("{{instruction}}", instruction || "(none)");
+
+      const completion = await azureCopilotChatCompletion({
+        system: prompt.system_prompt,
+        user: userPrompt,
+        temperature: Number(prompt.temperature ?? 0.4),
+        maxTokens: Number(prompt.max_tokens ?? 400),
+        responseFormat: String(prompt.response_format ?? "json"),
+      });
+
+      const parsed = extractTextFromModelOutput(completion);
+      if (parsed) {
+        console.info("[followups] Copilot suggestion OK", {
+          engine: "copilot",
+          key: prompt.key,
+          version: prompt.version,
+          tone,
+          hasInstruction: Boolean(instruction),
+          chars: parsed.length,
+        });
+        return parsed;
+      }
+
+      throw new Error("Copilot: empty model output");
+    }
+  } catch (e) {
+    console.warn(
+      "Copilot suggestion failed, falling back:",
+      (e as Error)?.message
+    );
+  }
+
+  // --- 2) Try Make (optional) ---
   if (MAKE_SUGGEST_WEBHOOK && MAKE_WEBHOOK_SECRET) {
     try {
-      const payload = { lead_id: leadId, agent_id: user.id };
+      const payload = {
+        lead_id: leadId,
+        agent_id: user.id,
+        tone,
+        instruction: instruction || null,
+        regenerate: Boolean(opts?.regenerate),
+      };
       const body = JSON.stringify(payload);
       const ts = Math.floor(Date.now() / 1000).toString();
       const sig = signBody(body, ts, MAKE_WEBHOOK_SECRET);
@@ -66,10 +151,18 @@ export async function suggestFollowUpText(leadId: string): Promise<string> {
 
       const json = (await res.json().catch(() => ({}))) as {
         suggestion?: string;
+        text?: string;
       };
 
-      if (json?.suggestion && typeof json.suggestion === "string") {
-        return json.suggestion;
+      const s = (json?.suggestion ?? json?.text ?? "").trim();
+      if (s) {
+        console.info("[followups] Make suggestion OK", {
+          engine: "make",
+          tone,
+          hasInstruction: Boolean(instruction),
+          chars: s.length,
+        });
+        return s;
       }
 
       throw new Error("No suggestion in webhook response");
@@ -78,7 +171,7 @@ export async function suggestFollowUpText(leadId: string): Promise<string> {
     }
   }
 
-  // --- Local fallback (rule-based) ---
+  // --- 3) Local fallback (rule-based) ---
   const [{ data: lead }, { data: lastMsg }] = await Promise.all([
     supabase.from("leads").select("id, name").eq("id", leadId).single(),
     supabase
@@ -93,13 +186,266 @@ export async function suggestFollowUpText(leadId: string): Promise<string> {
   const namePart = lead?.name?.trim() ? `${lead.name.trim()}` : "Hallo";
   const tail =
     lastMsg?.text && lastMsg.text.trim().length > 0
-      ? `Bezugnehmend auf Ihre letzte Nachricht: „${lastMsg.text.slice(
-          0,
-          120
-        )}“`
+      ? `Bezugnehmend auf Ihre letzte Nachricht: „${lastMsg.text.slice(0, 120)}“`
       : "zu unserem letzten Austausch";
 
-  return `${namePart}, nur ein kurzes Follow-up ${tail}. Gibt es hierzu schon ein Update oder offene Fragen? Ich freue mich auf Ihre Rückmeldung.`;
+  const tonePrefix =
+    tone === "firm"
+      ? "nur kurz als Erinnerung"
+      : tone === "neutral"
+        ? "nur ein kurzes Follow-up"
+        : "nur kurz nachgehakt";
+
+  const extra = instruction ? ` (${instruction})` : "";
+
+  const fallback = `${namePart}, ${tonePrefix} ${tail}${extra}. Gibt es hierzu schon ein Update oder offene Fragen? Ich freue mich auf Ihre Rückmeldung.`;
+  console.info("[followups] Local fallback suggestion used", {
+    engine: "fallback",
+    tone,
+    hasInstruction: Boolean(instruction),
+    chars: fallback.length,
+  });
+  return fallback;
+}
+
+type ActivePrompt = {
+  key: string;
+  version: number;
+  system_prompt: string;
+  user_prompt: string;
+  temperature: number;
+  max_tokens: number;
+  response_format: string;
+};
+
+async function getActivePrompt(
+  supabase: ReturnType<typeof createServerClient<Database>>,
+  key: string
+): Promise<ActivePrompt | null> {
+  const keyNorm = String(key ?? "").trim();
+
+  // Prefer service-role for config reads to avoid RLS returning empty rows.
+  const admin = getAdminClient();
+  const sb: any = admin ?? (supabase as any);
+  if (!admin) {
+    console.info("[followups] getActivePrompt: no SUPABASE_SERVICE_ROLE_KEY set; using auth/anon client (RLS may hide rows)");
+  }
+
+  // Helpful debug: show which Supabase project/env we're talking to
+  try {
+    const host = (() => {
+      try {
+        return new URL(SUPABASE_URL).host;
+      } catch {
+        return SUPABASE_URL;
+      }
+    })();
+    console.info("[followups] getActivePrompt", { key: keyNorm, supabaseHost: host });
+  } catch {
+    // ignore
+  }
+
+  const { data, error } = await (sb.from("ai_prompts") as any)
+    .select(
+      "key, version, is_active, system_prompt, user_prompt, temperature, max_tokens, response_format"
+    )
+    .eq("key", keyNorm)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("[followups] Failed to load ai_prompts (active):", {
+      message: error.message,
+      code: (error as any)?.code,
+      details: (error as any)?.details,
+      hint: (error as any)?.hint,
+    });
+    return null;
+  }
+
+  if (!data) {
+    // Deep debug: see what the DB returns for this key (active and inactive)
+    try {
+      const { data: anyRows, error: anyErr } = await (sb.from("ai_prompts") as any)
+        .select("id, key, version, is_active, updated_at")
+        .eq("key", keyNorm)
+        .order("version", { ascending: false })
+        .limit(10);
+
+      if (anyErr) {
+        console.warn("[followups] Debug query for ai_prompts failed:", {
+          message: anyErr.message,
+          code: (anyErr as any)?.code,
+        });
+      } else {
+        console.warn("[followups] No active ai_prompt found for key", {
+          key: keyNorm,
+          foundRows: (anyRows || []).map((r: any) => ({
+            id: r.id,
+            key: r.key,
+            version: r.version,
+            is_active: r.is_active,
+            updated_at: r.updated_at,
+          })),
+        });
+      }
+
+      // Also list similar keys in case of mismatch/typo
+      const { data: likeRows } = await (sb.from("ai_prompts") as any)
+        .select("key, version, is_active")
+        .ilike("key", "%followup%")
+        .order("key", { ascending: true })
+        .limit(50);
+
+      console.warn("[followups] Similar keys (ilike %followup%)", {
+        sample: (likeRows || []).slice(0, 25),
+        count: (likeRows || []).length,
+      });
+    } catch (e: any) {
+      console.warn("[followups] Debug block crashed:", e?.message ?? String(e));
+    }
+
+    return null;
+  }
+
+  return {
+    key: String(data.key),
+    version: Number(data.version ?? 1),
+    system_prompt: String(data.system_prompt ?? ""),
+    user_prompt: String(data.user_prompt ?? ""),
+    temperature: Number(data.temperature ?? 0.4),
+    max_tokens: Number(data.max_tokens ?? 400),
+    response_format: String(data.response_format ?? "json"),
+  };
+}
+
+async function buildLeadContext(
+  supabase: ReturnType<typeof createServerClient<Database>>,
+  leadId: string,
+  agentId: string
+): Promise<string> {
+  // Lead meta
+  const { data: lead, error: leadErr } = await (supabase.from("leads") as any)
+    .select(
+      "id, name, email, subject, type, priority, sentiment, last_message, updated_at, key_info"
+    )
+    .eq("id", leadId)
+    .eq("agent_id", agentId)
+    .maybeSingle();
+
+  if (leadErr) {
+    console.warn("Failed to load lead for context:", leadErr.message);
+  }
+
+  // Recent messages (last 12)
+  const { data: msgs, error: msgErr } = await (supabase.from("messages") as any)
+    .select("sender, text, timestamp")
+    .eq("lead_id", leadId)
+    .order("timestamp", { ascending: false })
+    .limit(12);
+
+  if (msgErr) {
+    console.warn("Failed to load messages for context:", msgErr.message);
+  }
+
+  const meta = {
+    lead_id: leadId,
+    name: (lead?.name ?? "").trim() || null,
+    email: (lead?.email ?? "").trim() || null,
+    subject: (lead?.subject ?? "").trim() || null,
+    type: (lead?.type ?? "").trim() || null,
+    priority: lead?.priority ?? null,
+    sentiment: (lead?.sentiment ?? "").trim() || null,
+    last_message: (lead?.last_message ?? "").trim() || null,
+    updated_at: lead?.updated_at ?? null,
+    key_info: lead?.key_info ?? null,
+  };
+
+  const ordered = Array.isArray(msgs) ? [...msgs].reverse() : [];
+  const transcript = ordered
+    .map((m: any) => {
+      const sender = String(m?.sender ?? "").toLowerCase();
+      const role = sender === "agent" ? "AGENT" : sender === "lead" ? "LEAD" : sender.toUpperCase() || "MSG";
+      const text = String(m?.text ?? "").replace(/\s+/g, " ").trim();
+      const ts = m?.timestamp ? String(m.timestamp) : "";
+      return `${role}${ts ? ` (${ts})` : ""}: ${text}`;
+    })
+    .join("\n");
+
+  return `LEAD_META:\n${JSON.stringify(meta, null, 2)}\n\nRECENT_MESSAGES:\n${transcript || "(no messages)"}`;
+}
+
+function extractTextFromModelOutput(raw: string): string {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+
+  // Prefer JSON {"text": "..."}
+  try {
+    const j = JSON.parse(s);
+    const t = String((j as any)?.text ?? "").trim();
+    if (t) return t;
+  } catch {
+    // ignore
+  }
+
+  // If model returned plain text
+  return s;
+}
+
+async function azureCopilotChatCompletion(args: {
+  system: string;
+  user: string;
+  temperature: number;
+  maxTokens: number;
+  responseFormat: string;
+}): Promise<string> {
+  const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
+  const apiKey = process.env.AZURE_OPENAI_API_KEY;
+  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT_COPILOT;
+  const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-06-01";
+
+  if (!endpoint || !apiKey || !deployment) {
+    throw new Error("Azure OpenAI not configured (missing endpoint/apiKey/deployment)");
+  }
+
+  const url = `${endpoint.replace(/\/$/, "")}/openai/deployments/${deployment}/chat/completions?api-version=${encodeURIComponent(
+    apiVersion
+  )}`;
+
+  // We keep response_format flexible. If table says "json", we ask model to output JSON.
+  const wantsJson = String(args.responseFormat || "json").toLowerCase() === "json";
+
+  const system = wantsJson
+    ? `${args.system}\n\nWICHTIG: Gib ausschließlich gültiges JSON zurück: {"text": "..."}. Keine weiteren Keys. Kein Markdown. Keine Erklärungen.`
+    : args.system;
+
+  const body = {
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: args.user },
+    ],
+    temperature: args.temperature,
+    max_tokens: args.maxTokens,
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": apiKey,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    console.error("Azure OpenAI error:", res.status, t);
+    throw new Error("Azure OpenAI request failed");
+  }
+
+  const json = (await res.json().catch(() => null)) as any;
+  const content = String(json?.choices?.[0]?.message?.content ?? "").trim();
+  return content;
 }
 
 /**

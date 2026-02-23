@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Database } from "@/types/supabase";
+import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import {
   CheckCircle2,
   Pencil,
@@ -11,6 +13,10 @@ import {
   Wand2,
   Lightbulb,
   Loader2,
+  Search,
+  Copy,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 import { Textarea } from "@/components/ui/textarea";
@@ -19,14 +25,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/lib/supabaseClient";
 
 type Template = {
   id: string;
   title: string;
   content: string;
   category?: string | null;
-  is_ai_generated?: boolean;
+  its_ai_generated?: boolean | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -59,11 +64,42 @@ function safeTrim(v: unknown): string {
   return String(v ?? "").trim();
 }
 
+function normCat(v: unknown): string {
+  return safeTrim(v).toLowerCase();
+}
+
+function previewText(text: string, maxChars = 220): string {
+  const t = safeTrim(text).replace(/\s+$/g, "");
+  if (t.length <= maxChars) return t;
+  return t.slice(0, maxChars).trimEnd() + "…";
+}
+
+function logSupabaseError(label: string, err: unknown) {
+  const e = err as any;
+  // Wichtig: message/code/details/hint sind oft NICHT enumerable -> {} im Overlay
+  console.error(label, {
+    message: e?.message,
+    details: e?.details,
+    hint: e?.hint,
+    code: e?.code,
+    raw: e,
+  });
+}
+
 export default function AntwortvorlagenPage() {
+  const supabase = useSupabaseClient<Database>();
   const { showToast } = useToast();
 
   const [templates, setTemplates] = useState<Template[]>([]);
   const [suggestions, setSuggestions] = useState(aiSuggestions);
+
+  // list controls
+  const [listQuery, setListQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [showOnlyAI, setShowOnlyAI] = useState(false);
+
+  // per-card expand state
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   // loading states
   const [initialLoading, setInitialLoading] = useState(true);
@@ -88,11 +124,58 @@ export default function AntwortvorlagenPage() {
     return Boolean(safeTrim(title) && safeTrim(content));
   }, [title, content]);
 
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of templates) {
+      const c = safeTrim(t.category);
+      if (c) set.add(c);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [templates]);
+
+  const filteredTemplates = useMemo(() => {
+    const q = safeTrim(listQuery).toLowerCase();
+    const cf = categoryFilter;
+
+    return (templates ?? []).filter((t) => {
+      if (showOnlyAI && !t.its_ai_generated) return false;
+
+      if (cf !== "all") {
+        if (normCat(t.category) !== normCat(cf)) return false;
+      }
+
+      if (!q) return true;
+      const hay = [t.title, t.content, t.category].map((x) =>
+        safeTrim(x).toLowerCase(),
+      );
+      return hay.some((x) => x.includes(q));
+    });
+  }, [templates, listQuery, categoryFilter, showOnlyAI]);
+
+  const toggleExpanded = (id: string) => {
+    setExpanded((p) => ({ ...p, [id]: !p[id] }));
+  };
+
+  const copyTemplate = async (t: Template) => {
+    const text = safeTrim(t.content);
+    if (!text) {
+      showToast("Kein Text zum Kopieren.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("Vorlage kopiert.");
+    } catch {
+      showToast("Konnte nicht kopieren.");
+    }
+  };
+
   const resetForm = () => {
     setEditingId(null);
     setTitle("");
     setContent("");
     setCategory("");
+    setExpanded({});
   };
 
   const startEdit = (t: Template) => {
@@ -100,48 +183,50 @@ export default function AntwortvorlagenPage() {
     setTitle(t.title);
     setContent(t.content);
     setCategory(t.category ?? "");
-    // bring form into view
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   async function requireUserId(): Promise<string | null> {
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
+    const { data, error } = await supabase.auth.getUser();
+    const user = data?.user;
 
     if (error || !user?.id) {
+      logSupabaseError("[templates] getUser error", error);
       showToast("Nicht eingeloggt. Bitte neu einloggen.");
       return null;
     }
     return user.id;
   }
 
-  // Initial fetch
+  const refreshTemplates = useCallback(async () => {
+    const userId = await requireUserId();
+    if (!userId) return;
+
+    const { data, error } = await supabase
+      .from("response_templates")
+      .select(
+        "id, title, content, category, its_ai_generated, created_at, updated_at",
+      )
+      .eq("agent_id", userId) // <- RLS-safe
+      .order("updated_at", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      logSupabaseError("❌ response_templates select error:", error);
+      showToast("Konnte Vorlagen nicht laden.");
+      return;
+    }
+
+    setTemplates((data as any as Template[]) ?? []);
+  }, [supabase]);
+
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       setInitialLoading(true);
       try {
-        const userId = await requireUserId();
-        if (!userId || cancelled) return;
-
-        const { data, error } = await supabase
-          .from("response_templates")
-          .select(
-            "id, title, content, category, is_ai_generated, created_at, updated_at"
-          )
-          .order("updated_at", { ascending: false })
-          .order("created_at", { ascending: false });
-
-        if (error) {
-          console.error("❌ response_templates select error:", error);
-          showToast("Konnte Vorlagen nicht laden.");
-          return;
-        }
-
-        if (!cancelled) setTemplates((data as any as Template[]) ?? []);
+        await refreshTemplates();
       } finally {
         if (!cancelled) setInitialLoading(false);
       }
@@ -150,8 +235,7 @@ export default function AntwortvorlagenPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshTemplates]);
 
   const handleSubmit = async () => {
     if (!canSave) {
@@ -175,18 +259,18 @@ export default function AntwortvorlagenPage() {
           .from("response_templates")
           .update(payload)
           .eq("id", editingId)
+          .eq("agent_id", userId) // <- extra safe
           .select(
-            "id, title, content, category, is_ai_generated, created_at, updated_at"
+            "id, title, content, category, its_ai_generated, created_at, updated_at",
           )
           .single();
 
         if (error || !data) {
-          console.error("❌ response_templates update error:", error);
+          logSupabaseError("❌ response_templates update error:", error);
           showToast("Konnte Vorlage nicht aktualisieren.");
           return;
         }
 
-        // Move updated template to top
         setTemplates((prev) => {
           const next = prev.filter((t) => t.id !== editingId);
           return [data as any as Template, ...next];
@@ -197,23 +281,22 @@ export default function AntwortvorlagenPage() {
         return;
       }
 
-      // Insert
       const { data, error } = await supabase
         .from("response_templates")
         .insert([
           {
             agent_id: userId,
             ...payload,
-            is_ai_generated: false,
+            its_ai_generated: false,
           },
         ])
         .select(
-          "id, title, content, category, is_ai_generated, created_at, updated_at"
+          "id, title, content, category, its_ai_generated, created_at, updated_at",
         )
         .single();
 
       if (error || !data) {
-        console.error("❌ response_templates insert error:", error);
+        logSupabaseError("❌ response_templates insert error:", error);
         showToast("Konnte Vorlage nicht speichern.");
         return;
       }
@@ -235,10 +318,11 @@ export default function AntwortvorlagenPage() {
       const { error } = await supabase
         .from("response_templates")
         .delete()
-        .eq("id", id);
+        .eq("id", id)
+        .eq("agent_id", userId);
 
       if (error) {
-        console.error("❌ response_templates delete error:", error);
+        logSupabaseError("❌ response_templates delete error:", error);
         showToast("Konnte Vorlage nicht löschen.");
         return;
       }
@@ -258,6 +342,7 @@ export default function AntwortvorlagenPage() {
 
     setSaving(true);
     try {
+      // Wir holen uns direkt das neue Row zurück -> UI kann sofort updaten.
       const { data, error } = await supabase
         .from("response_templates")
         .insert([
@@ -266,23 +351,26 @@ export default function AntwortvorlagenPage() {
             title: t.title,
             content: t.content,
             category: t.category ?? null,
-            is_ai_generated: true,
+            its_ai_generated: true,
           },
         ])
         .select(
-          "id, title, content, category, is_ai_generated, created_at, updated_at"
+          "id, title, content, category, its_ai_generated, created_at, updated_at",
         )
         .single();
 
       if (error || !data) {
-        console.error(
+        logSupabaseError(
           "❌ response_templates insert (suggestion) error:",
-          error
+          error,
         );
-        showToast("Konnte KI-Vorschlag nicht übernehmen.");
+        showToast(
+          (error as any)?.message || "Konnte KI-Vorschlag nicht übernehmen.",
+        );
         return;
       }
 
+      // sofort sichtbar + Vorschlag aus Liste entfernen
       setTemplates((prev) => [data as any as Template, ...prev]);
       setSuggestions((prev) => prev.filter((s) => s.id !== t.id));
       showToast("KI-Vorschlag übernommen.");
@@ -330,7 +418,6 @@ export default function AntwortvorlagenPage() {
         return;
       }
 
-      // Fill form so agent can edit before saving
       setEditingId(null);
       setTitle(nextTitle);
       setContent(nextContent);
@@ -345,42 +432,30 @@ export default function AntwortvorlagenPage() {
   };
 
   return (
-    <div
-      className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900"
-      data-tour="templates-page"
-    >
+    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
-        <div
-          className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
-          data-tour="templates-header"
-        >
+        <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
           <div className="flex items-start justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1
-                  className="text-xl md:text-2xl font-semibold"
-                  data-tour="templates-title"
-                >
+                <h1 className="text-xl md:text-2xl font-semibold">
                   Antwortvorlagen
                 </h1>
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
                   Advaic
                 </span>
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700">
-                  {templates.length} Vorlagen
+                  {filteredTemplates.length} / {templates.length} Vorlagen
                 </span>
               </div>
-              <div
-                className="mt-1 text-sm text-gray-600"
-                data-tour="templates-intro"
-              >
+              <div className="mt-1 text-sm text-gray-600">
                 Erstelle eigene Textbausteine. Advaic kombiniert Vorlagen mit
                 Kontext, Ton & Stil – sie werden nie starr 1:1 gesendet.
               </div>
             </div>
 
-            <div className="flex items-center gap-2" data-tour="templates-actions">
+            <div className="flex items-center gap-2">
               {isEditing ? (
                 <Button variant="outline" onClick={resetForm} className="gap-2">
                   <X className="h-4 w-4" />
@@ -391,11 +466,6 @@ export default function AntwortvorlagenPage() {
               <Button
                 onClick={handleSubmit}
                 disabled={!canSave || saving}
-                title={
-                  isEditing
-                    ? "Änderungen speichern"
-                    : "Vorlage speichern (du kannst sie danach jederzeit bearbeiten)"
-                }
                 className="rounded-lg bg-gray-900 text-amber-200 hover:bg-gray-800 gap-2"
               >
                 {saving ? (
@@ -411,19 +481,10 @@ export default function AntwortvorlagenPage() {
 
         {/* Content */}
         <div className="py-6">
-          <div
-            className="grid grid-cols-1 lg:grid-cols-3 gap-4"
-            data-tour="templates-layout"
-          >
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Left: Form */}
-            <Card
-              className="lg:col-span-1 rounded-2xl border border-gray-200 bg-white overflow-hidden"
-              data-tour="templates-form-card"
-            >
-              <div
-                className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between"
-                data-tour="templates-form-header"
-              >
+            <Card className="lg:col-span-1 rounded-2xl border border-gray-200 bg-white overflow-hidden">
+              <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
                 <div className="text-sm text-gray-700 font-medium inline-flex items-center gap-2">
                   {isEditing ? (
                     <>
@@ -444,7 +505,7 @@ export default function AntwortvorlagenPage() {
                 ) : null}
               </div>
 
-              <div className="p-4 md:p-6 space-y-4" data-tour="templates-form">
+              <div className="p-4 md:p-6 space-y-4">
                 <div className="space-y-1">
                   <label
                     className="text-xs font-medium text-gray-700"
@@ -457,7 +518,6 @@ export default function AntwortvorlagenPage() {
                     placeholder="z. B. Rückmeldung zur Besichtigung"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    data-tour="templates-field-title"
                   />
                 </div>
 
@@ -473,7 +533,6 @@ export default function AntwortvorlagenPage() {
                     placeholder="z. B. Besichtigung, Nachfrage, Absage"
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    data-tour="templates-field-category"
                   />
                 </div>
 
@@ -490,17 +549,13 @@ export default function AntwortvorlagenPage() {
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     rows={7}
-                    data-tour="templates-field-content"
                   />
                   <div className="text-xs text-gray-500 text-right">
                     {content.length} Zeichen
                   </div>
                 </div>
 
-                <div
-                  className="rounded-xl border border-amber-200 bg-amber-50 p-4"
-                  data-tour="templates-tip"
-                >
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
                   <div className="text-sm font-medium text-amber-900 inline-flex items-center gap-2">
                     <Sparkles className="h-4 w-4" />
                     Tipp
@@ -514,16 +569,10 @@ export default function AntwortvorlagenPage() {
             </Card>
 
             {/* Right: Lists */}
-            <div className="lg:col-span-2 space-y-4" data-tour="templates-right-col">
+            <div className="lg:col-span-2 space-y-4">
               {/* AI Generator */}
-              <Card
-                className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
-                data-tour="templates-ai-card"
-              >
-                <div
-                  className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between"
-                  data-tour="templates-ai-header"
-                >
+              <Card className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+                <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
                   <div className="text-sm text-gray-700 font-medium inline-flex items-center gap-2">
                     <Wand2 className="h-4 w-4 text-gray-500" />
                     KI-Vorlage erstellen
@@ -531,11 +580,10 @@ export default function AntwortvorlagenPage() {
                   <div className="text-xs text-gray-500">optional</div>
                 </div>
 
-                <div className="p-4 md:p-6 space-y-3" data-tour="templates-ai-body">
+                <div className="p-4 md:p-6 space-y-3">
                   <div className="text-sm text-gray-600">
                     Beschreibe kurz, was du sagen willst. Der Generator erstellt
-                    eine erste Version – automatisch in deinem hinterlegten Ton
-                    & Stil. Danach kannst du sie anpassen und speichern.
+                    eine erste Version – automatisch in deinem Ton & Stil.
                   </div>
 
                   <Textarea
@@ -544,12 +592,7 @@ export default function AntwortvorlagenPage() {
                     placeholder="Beispiel: Freundliche Antwort für Interessenten, die nach Haustieren fragen (kurz, professionell)."
                     rows={3}
                     className="resize-none"
-                    data-tour="templates-ai-prompt"
                   />
-                  <div className="text-xs text-gray-500">
-                    Hinweis: Die KI nutzt deinen Ton & Stil aus den
-                    Einstellungen.
-                  </div>
 
                   <div className="flex items-center justify-end gap-2">
                     <Button
@@ -564,7 +607,6 @@ export default function AntwortvorlagenPage() {
                       className="rounded-lg bg-gray-900 text-amber-200 hover:bg-gray-800 gap-2"
                       onClick={generateWithAI}
                       disabled={aiLoading || !aiPrompt.trim()}
-                      data-tour="templates-ai-generate"
                     >
                       {aiLoading ? (
                         <>
@@ -585,10 +627,7 @@ export default function AntwortvorlagenPage() {
               </Card>
 
               {/* Your templates */}
-              <Card
-                className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
-                data-tour="templates-list-card"
-              >
+              <Card className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
                 <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
                   <div className="text-sm text-gray-700 font-medium inline-flex items-center gap-2">
                     <Lightbulb className="h-4 w-4 text-gray-500" />
@@ -598,40 +637,110 @@ export default function AntwortvorlagenPage() {
                     {initialLoading
                       ? "Lade…"
                       : templates.length === 0
-                      ? "Noch keine Vorlagen"
-                      : `${templates.length} gespeichert`}
+                        ? "Noch keine Vorlagen"
+                        : `${templates.length} gespeichert`}
                   </div>
                 </div>
 
-                <div className="p-4 md:p-6" data-tour="templates-list">
+                {/* List controls */}
+                <div className="px-4 md:px-6 py-3 border-b border-gray-200 bg-white">
+                  <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={listQuery}
+                        onChange={(e) => setListQuery(e.target.value)}
+                        placeholder="Suche… (Titel, Kategorie, Inhalt)"
+                        className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
+
+                    <select
+                      className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                      value={categoryFilter}
+                      onChange={(e) => setCategoryFilter(e.target.value)}
+                      title="Kategorie filtern"
+                    >
+                      <option value="all">Alle Kategorien</option>
+                      {categories.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowOnlyAI((v) => !v)}
+                      className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                        showOnlyAI
+                          ? "bg-amber-50 border-amber-200 text-amber-900"
+                          : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                      }`}
+                      title="Nur KI-generierte Vorlagen anzeigen"
+                    >
+                      <Sparkles className="h-4 w-4 inline-block mr-2" />
+                      Nur KI
+                    </button>
+                  </div>
+
+                  {(safeTrim(listQuery) ||
+                    categoryFilter !== "all" ||
+                    showOnlyAI) && (
+                    <div className="mt-2 text-xs text-gray-500">
+                      Filter aktiv:{" "}
+                      {safeTrim(listQuery)
+                        ? `Suche “${safeTrim(listQuery)}”`
+                        : "–"}
+                      {categoryFilter !== "all"
+                        ? ` · Kategorie: ${categoryFilter}`
+                        : ""}
+                      {showOnlyAI ? " · Nur KI" : ""}
+                      <button
+                        type="button"
+                        className="ml-2 text-gray-700 hover:underline"
+                        onClick={() => {
+                          setListQuery("");
+                          setCategoryFilter("all");
+                          setShowOnlyAI(false);
+                        }}
+                      >
+                        Zurücksetzen
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 md:p-6">
                   {initialLoading ? (
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Vorlagen werden geladen…
                     </div>
-                  ) : templates.length === 0 ? (
+                  ) : filteredTemplates.length === 0 ? (
                     <div className="text-sm text-gray-600">
-                      Noch keine Vorlagen gespeichert. Erstelle links eine neue
-                      Vorlage oder nutze den KI-Generator.
+                      {templates.length === 0
+                        ? "Noch keine Vorlagen gespeichert. Erstelle links eine neue Vorlage oder nutze den KI-Generator."
+                        : "Keine Treffer für deine Filter. Passe Suche/Kategorie an oder setze Filter zurück."}
                     </div>
                   ) : (
-                    <div className="space-y-3" data-tour="templates-items">
-                      {templates.map((t) => (
+                    <div className="space-y-3">
+                      {filteredTemplates.map((t) => (
                         <div
                           key={t.id}
-                          data-tour="template-card"
                           className="rounded-2xl border border-gray-200 bg-white p-4 hover:bg-[#fbfbfc] transition-colors"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="font-semibold text-gray-900 truncate" data-tour="template-title">
+                              <div className="font-semibold text-gray-900 truncate">
                                 {t.title}
                               </div>
                               <div className="mt-1 flex items-center gap-2 flex-wrap">
                                 {t.category ? (
                                   <Badge variant="outline">{t.category}</Badge>
                                 ) : null}
-                                {t.is_ai_generated ? (
+                                {t.its_ai_generated ? (
                                   <Badge variant="outline" className="bg-white">
                                     KI
                                   </Badge>
@@ -639,7 +748,7 @@ export default function AntwortvorlagenPage() {
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-2" data-tour="template-edit">
+                            <div className="flex items-center gap-2">
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -651,7 +760,6 @@ export default function AntwortvorlagenPage() {
                                 Bearbeiten
                               </Button>
                               <Button
-                              data-tour="template-delete"
                                 variant="destructive"
                                 size="sm"
                                 className="gap-2"
@@ -669,7 +777,53 @@ export default function AntwortvorlagenPage() {
                           </div>
 
                           <div className="mt-3 text-sm text-gray-700 whitespace-pre-line">
-                            {t.content}
+                            {expanded[t.id]
+                              ? safeTrim(t.content)
+                              : previewText(t.content)}
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-[11px] text-gray-500">
+                              {t.updated_at
+                                ? `Zuletzt geändert: ${new Date(t.updated_at).toLocaleDateString()}`
+                                : null}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-2"
+                                onClick={() => copyTemplate(t)}
+                                disabled={saving || deletingId === t.id}
+                                title="Vorlage kopieren"
+                              >
+                                <Copy className="h-4 w-4" />
+                                Kopieren
+                              </Button>
+
+                              {safeTrim(t.content).length > 220 ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-2"
+                                  onClick={() => toggleExpanded(t.id)}
+                                  disabled={saving || deletingId === t.id}
+                                  title={
+                                    expanded[t.id]
+                                      ? "Weniger anzeigen"
+                                      : "Mehr anzeigen"
+                                  }
+                                >
+                                  {expanded[t.id] ? (
+                                    <ChevronUp className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4" />
+                                  )}
+                                  {expanded[t.id] ? "Weniger" : "Mehr"}
+                                </Button>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -678,12 +832,9 @@ export default function AntwortvorlagenPage() {
                 </div>
               </Card>
 
-              {/* AI suggestions (optional) */}
+              {/* AI suggestions */}
               {suggestions.length > 0 ? (
-                <Card
-                  className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
-                  data-tour="templates-suggestions-card"
-                >
+                <Card className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
                   <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
                     <div className="text-sm text-gray-700 font-medium inline-flex items-center gap-2">
                       <Sparkles className="h-4 w-4 text-gray-500" />
@@ -694,12 +845,11 @@ export default function AntwortvorlagenPage() {
                     </div>
                   </div>
 
-                  <div className="p-4 md:p-6" data-tour="templates-suggestions">
+                  <div className="p-4 md:p-6">
                     <div className="space-y-3">
                       {suggestions.map((t) => (
                         <div
                           key={t.id}
-                          data-tour="template-suggestion-card"
                           className="rounded-2xl border border-gray-200 bg-white p-4"
                         >
                           <div className="flex items-start justify-between gap-3">
@@ -715,6 +865,7 @@ export default function AntwortvorlagenPage() {
                             </div>
 
                             <Button
+                              type="button"
                               variant="outline"
                               size="sm"
                               className="gap-2"
@@ -743,14 +894,8 @@ export default function AntwortvorlagenPage() {
 
         {/* Confirm Dialog */}
         {showConfirmId ? (
-          <div
-            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4"
-            data-tour="templates-delete-modal"
-          >
-            <div
-              className="bg-white rounded-2xl p-6 shadow-md w-full max-w-sm border border-gray-200"
-              data-tour="templates-delete-modal-card"
-            >
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4">
+            <div className="bg-white rounded-2xl p-6 shadow-md w-full max-w-sm border border-gray-200">
               <h2 className="text-lg font-semibold mb-2">
                 Vorlage wirklich löschen?
               </h2>

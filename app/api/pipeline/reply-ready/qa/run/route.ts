@@ -219,6 +219,44 @@ async function safeUpdate(
   }
 }
 
+
+async function enqueueNotificationBestEffort(args: {
+  agentId: string;
+  type: string;
+  entityType: string;
+  entityId: string;
+  payload?: Record<string, any>;
+}) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "";
+  const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET || "";
+
+  // If not configured (e.g. local env), silently skip.
+  if (!siteUrl || !secret) return { ok: false as const, skipped: true as const };
+
+  try {
+    const res = await fetch(`${siteUrl}/api/notifications/enqueue`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-advaic-internal-secret": secret,
+      },
+      body: JSON.stringify({
+        agent_id: args.agentId,
+        type: args.type,
+        entity_type: args.entityType,
+        entity_id: args.entityId,
+        payload: { ...(args.payload ?? {}), source: "qa_run" },
+      }),
+    });
+
+    // Best-effort: don’t throw on non-2xx.
+    if (!res.ok) return { ok: false as const, skipped: false as const };
+    return { ok: true as const, skipped: false as const };
+  } catch {
+    return { ok: false as const, skipped: false as const };
+  }
+}
+
 /**
  * =========================
  * Handler
@@ -597,6 +635,48 @@ export async function POST() {
         { status: "draft_created", visible_to_agent: true },
         { id: inboundMessageId }
       );
+
+      // Notify only when it actually lands in Zur Freigabe
+      if (!autosendEnabled) {
+        await enqueueNotificationBestEffort({
+          agentId,
+          type: "approval_required_created",
+          entityType: "message",
+          entityId: draftMessageId,
+          payload: {
+            deep_link: "/app/zur-freigabe",
+            lead_id: leadId,
+            inbound_message_id: inboundMessageId,
+            draft_message_id: draftMessageId,
+            qa_verdict: qa.verdict,
+            qa_reason: qa.reason,
+            qa_score: qa.score ?? null,
+            qa_prompt_key: prompt.key,
+            qa_prompt_version: prompt.versionTag,
+            kind: item.kind,
+          },
+        });
+      }
+      else {
+        await enqueueNotificationBestEffort({
+          agentId,
+          type: "autosend_ready",
+          entityType: "message",
+          entityId: draftMessageId,
+          payload: {
+            deep_link: "/app",
+            lead_id: leadId,
+            inbound_message_id: inboundMessageId,
+            draft_message_id: draftMessageId,
+            qa_verdict: qa.verdict,
+            qa_reason: qa.reason,
+            qa_score: qa.score ?? null,
+            qa_prompt_key: prompt.key,
+            qa_prompt_version: prompt.versionTag,
+            kind: item.kind,
+          },
+        });
+      }
     } else if (qa.verdict === "warn") {
       await (supabase.from("messages") as any)
         .update({
@@ -622,6 +702,25 @@ export async function POST() {
         { status: "needs_human", visible_to_agent: true },
         { id: inboundMessageId }
       );
+
+      await enqueueNotificationBestEffort({
+        agentId,
+        type: "escalation_created",
+        entityType: "lead",
+        entityId: leadId,
+        payload: {
+          deep_link: "/app/eskalationen",
+          lead_id: leadId,
+          inbound_message_id: inboundMessageId,
+          draft_message_id: draftMessageId,
+          qa_verdict: qa.verdict,
+          qa_reason: qa.reason,
+          qa_score: qa.score ?? null,
+          qa_prompt_key: prompt.key,
+          qa_prompt_version: prompt.versionTag,
+          kind: item.kind,
+        },
+      });
     }
 
     processed.push({
@@ -637,6 +736,12 @@ export async function POST() {
       qa_prompt_key: prompt.key,
       qa_prompt_version: prompt.versionTag,
       autosendEnabled,
+      notification_event_type:
+        qa.verdict === "pass"
+          ? (autosendEnabled ? "autosend_ready" : "approval_required_created")
+          : qa.verdict === "fail"
+          ? "escalation_created"
+          : null,
       nextStatus:
         qa.verdict === "pass"
           ? autosendEnabled
@@ -647,6 +752,7 @@ export async function POST() {
           : "needs_human",
     });
   }
+
 
   return NextResponse.json({
     ok: true,

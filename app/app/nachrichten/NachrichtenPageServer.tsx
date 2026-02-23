@@ -1,8 +1,6 @@
-// app/nachrichten/NachrichtenPageServer.tsx
-
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
-import { Database } from "@/types/supabase";
+import type { Database } from "@/types/supabase";
 import NachrichtenPageClient from "./NachrichtenPageClient";
 import Link from "next/link";
 
@@ -15,7 +13,8 @@ export default async function NachrichtenPage() {
     {
       cookies: {
         getAll: () => cookieStore.getAll(),
-        setAll: async () => {},
+        // Server Components can't set cookies directly. Mutations happen in Route Handlers/Server Actions.
+        setAll: () => {},
       },
     }
   );
@@ -53,6 +52,11 @@ export default async function NachrichtenPage() {
     .from("leads")
     .select("*")
     .eq("agent_id", userId)
+    // Inbox: only active leads (not archived) and not marked done
+    .is("archived_at", null)
+    .neq("status", "done")
+    // Prefer the actual conversation ordering
+    .order("last_message_at", { ascending: false, nullsFirst: false })
     .order("updated_at", { ascending: false });
 
   if (error) {

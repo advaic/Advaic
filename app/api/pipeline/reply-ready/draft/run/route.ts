@@ -30,6 +30,10 @@ function clamp01(x: any) {
   return Math.max(0, Math.min(1, n));
 }
 
+function safeStr(v: any) {
+  return typeof v === "string" && v.trim() ? v.trim() : "";
+}
+
 function asText(v: any, max = 4000) {
   const s = typeof v === "string" ? v : JSON.stringify(v ?? "");
   return s.length > max ? s.slice(0, max) + "…" : s;
@@ -56,6 +60,20 @@ function formatThreadContext(ctx: any[]) {
       const ts = m.timestamp ? String(m.timestamp) : "";
       return `- [${ts}] ${sender}: ${text}`.trim();
     })
+    .join("\n");
+}
+
+function formatStyleExamples(rows: any[]) {
+  if (!Array.isArray(rows) || rows.length === 0) return "";
+  return rows
+    .slice(0, 10)
+    .map((r) => {
+      const label = r?.label ? String(r.label).trim() : "";
+      const text = r?.text ? String(r.text).trim() : "";
+      const head = label ? `[${label}]` : "[Example]";
+      return `${head} ${text}`.trim();
+    })
+    .filter(Boolean)
     .join("\n");
 }
 
@@ -469,6 +487,14 @@ export async function POST() {
       .eq("agent_id", agentId)
       .maybeSingle();
 
+    const { data: styleExamples } = await (supabase.from("agent_style_examples") as any)
+      .select("label, text, created_at")
+      .eq("agent_id", agentId)
+      .order("created_at", { ascending: false })
+      .limit(8);
+
+    const styleExamplesBlock = formatStyleExamples(styleExamples || []);
+
     const brandName =
       (style?.brand_name ? String(style.brand_name) : null) ||
       (agent?.company ? String(agent.company) : null) ||
@@ -488,6 +514,7 @@ export async function POST() {
       style?.example_phrases
         ? `Example phrases:\n${style.example_phrases}`
         : null,
+      styleExamplesBlock ? `Style examples (verbatim, copy tone & wording patterns):\n${styleExamplesBlock}` : null,
       style?.sign_off ? `Sign-off:\n${style.sign_off}` : null,
     ]
       .filter(Boolean)
@@ -579,7 +606,7 @@ export async function POST() {
     const threadContext = formatThreadContext(ctx || []);
     const clientName = lead?.name ? String(lead.name) : "";
     const clientEmail = lead?.email ? String(lead.email) : "";
-    const languageHint = style?.language ? String(style.language) : "auto";
+    const languageHint = safeStr(style?.language) || "auto";
 
     const userPrompt = String(userPromptTemplateFromDb)
       .replaceAll("{{ROUTE}}", route)

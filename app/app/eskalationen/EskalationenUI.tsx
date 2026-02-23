@@ -11,7 +11,6 @@ import {
   CheckCircle2,
   CheckSquare,
   Clock,
-  Copy,
   Download,
   Mail,
   RotateCw,
@@ -20,6 +19,7 @@ import {
   SlidersHorizontal,
   Square,
   X,
+  Archive,
 } from "lucide-react";
 
 type Lead = Omit<Database["public"]["Tables"]["leads"]["Row"], "key_info"> & {
@@ -36,8 +36,6 @@ type SortKey =
   | "updated_asc"
   | "priority_desc"
   | "priority_asc";
-
-type EscalationFilter = "all" | "open" | "closed";
 
 function safeStr(v: unknown): string {
   return String(v ?? "").trim();
@@ -83,7 +81,7 @@ function toCsv(rows: Array<Record<string, any>>): string {
 function downloadTextFile(
   filename: string,
   content: string,
-  mime = "text/plain;charset=utf-8"
+  mime = "text/plain;charset=utf-8",
 ) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -101,12 +99,11 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Keep local copy so we can do UI-only updates without a full page reload.
+  // local copy for instant UI updates
   const [localLeads, setLocalLeads] = useState<Lead[]>(leads ?? []);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>("updated_desc");
-  const [statusFilter, setStatusFilter] = useState<EscalationFilter>("all");
 
   const [onlyWithEmail, setOnlyWithEmail] = useState(false);
   const [onlyHighPriority, setOnlyHighPriority] = useState(false);
@@ -120,7 +117,7 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
 
   const refreshBusyRef = useRef(false);
 
-  // Sync when server prop changes (navigation / reload)
+  // Sync when server prop changes
   useEffect(() => {
     setLocalLeads(leads ?? []);
   }, [leads]);
@@ -129,7 +126,6 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
   useEffect(() => {
     const q = searchParams?.get("q") ?? "";
     const sort = (searchParams?.get("sort") as SortKey) ?? "updated_desc";
-    const status = (searchParams?.get("status") as EscalationFilter) ?? "all";
     const email = searchParams?.get("email") === "1";
     const high = searchParams?.get("high") === "1";
     const ps = Number(searchParams?.get("ps") ?? "50");
@@ -137,7 +133,6 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
 
     if (q) setSearchQuery(q);
     if (sort) setSortBy(sort);
-    if (status) setStatusFilter(status);
     setOnlyWithEmail(email);
     setOnlyHighPriority(high);
     if (Number.isFinite(ps) && ps > 0) setPageSize(ps);
@@ -150,7 +145,6 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
     const sp = new URLSearchParams();
     if (searchQuery.trim()) sp.set("q", searchQuery.trim());
     if (sortBy) sp.set("sort", sortBy);
-    if (statusFilter) sp.set("status", statusFilter);
     if (onlyWithEmail) sp.set("email", "1");
     if (onlyHighPriority) sp.set("high", "1");
     if (pageSize !== 50) sp.set("ps", String(pageSize));
@@ -160,7 +154,6 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
   }, [
     searchQuery,
     sortBy,
-    statusFilter,
     onlyWithEmail,
     onlyHighPriority,
     pageSize,
@@ -173,7 +166,7 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
       Object.entries(selected)
         .filter(([, v]) => v)
         .map(([k]) => k),
-    [selected]
+    [selected],
   );
 
   const clearSelection = () => setSelected({});
@@ -181,30 +174,20 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
     setSelected((p) => ({ ...p, [id]: !p[id] }));
 
   const counts = useMemo(() => {
-    const open = (localLeads ?? []).filter((l) => {
-      const s = safeStr((l as any).status).toLowerCase();
-      return !s || s === "open";
-    }).length;
-
-    const closed = (localLeads ?? []).filter(
-      (l) => safeStr((l as any).status).toLowerCase() === "closed"
-    ).length;
-
-    return { open, closed, total: localLeads?.length ?? 0 };
+    const escalated = (localLeads ?? []).filter(
+      (l) => !!(l as any).escalated && !(l as any).archived_at,
+    );
+    return { open: escalated.length, total: escalated.length };
   }, [localLeads]);
 
   const filteredLeads = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
 
     const base = (localLeads ?? []).filter((lead) => {
-      // Status filter (best-effort)
-      if (statusFilter !== "all") {
-        const status = safeStr((lead as any).status).toLowerCase();
-        if (statusFilter === "open" && status && status !== "open")
-          return false;
-        if (statusFilter === "closed" && status && status !== "closed")
-          return false;
-      }
+      // only escalated leads belong here
+      if (!(lead as any).escalated) return false;
+      // do not show archived leads here
+      if ((lead as any).archived_at) return false;
 
       if (onlyWithEmail) {
         const email = safeStr((lead as any).email);
@@ -251,14 +234,7 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
     });
 
     return sorted;
-  }, [
-    localLeads,
-    searchQuery,
-    sortBy,
-    statusFilter,
-    onlyWithEmail,
-    onlyHighPriority,
-  ]);
+  }, [localLeads, searchQuery, sortBy, onlyWithEmail, onlyHighPriority]);
 
   const shownCount = filteredLeads.length;
 
@@ -289,90 +265,78 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
       return copy;
     });
 
-  const bulkUpdateStatus = async (nextStatus: "open" | "closed") => {
+  const bulkArchiveSelected = async () => {
     if (selectedIds.length === 0) return;
     try {
       setBulkBusy(true);
+
       const { error } = await supabase
         .from("leads")
-        .update({ status: nextStatus } as any)
+        .update({
+          archived_at: new Date().toISOString(),
+          status: "done",
+          escalated: false,
+        } as any)
         .in("id", selectedIds);
 
       if (error) throw error;
 
-      // UI sync
-      setLocalLeads((prev) =>
-        prev.map((l) =>
-          selectedIds.includes(l.id)
-            ? ({ ...(l as any), status: nextStatus } as any)
-            : l
-        )
-      );
+      setLocalLeads((prev) => prev.filter((l) => !selectedIds.includes(l.id)));
 
-      toast.success(
-        nextStatus === "closed"
-          ? `Als erledigt markiert (${selectedIds.length}).`
-          : `Wieder geöffnet (${selectedIds.length}).`
-      );
-
+      toast.success(`Archiviert (${selectedIds.length}).`);
       clearSelection();
     } catch (e: any) {
       console.error(e);
-      toast.error(e?.message ?? "Konnte Status nicht aktualisieren.");
+      toast.error(e?.message ?? "Konnte nicht archivieren.");
     } finally {
       setBulkBusy(false);
     }
   };
 
-  const copySelectedEmails = async () => {
-    const emails = selectedIds
-      .map((id) => filteredLeads.find((l) => l.id === id))
-      .map((l) => safeStr((l as any)?.email))
-      .filter(Boolean);
-
-    if (emails.length === 0) {
-      toast.error("Keine E-Mails in der Auswahl.");
-      return;
-    }
-
+  const bulkDeescalateSelected = async () => {
+    if (selectedIds.length === 0) return;
     try {
-      await navigator.clipboard.writeText(emails.join(", "));
-      toast.success(`${emails.length} E-Mails kopiert.`);
-    } catch {
-      toast.error("Konnte nicht kopieren.");
+      setBulkBusy(true);
+
+      const { error } = await supabase
+        .from("leads")
+        .update({ escalated: false } as any)
+        .in("id", selectedIds);
+
+      if (error) throw error;
+
+      setLocalLeads((prev) => prev.filter((l) => !selectedIds.includes(l.id)));
+
+      toast.success(
+        `Deeskaliert (${selectedIds.length}). KI-Pause aufgehoben.`,
+      );
+      clearSelection();
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message ?? "Konnte nicht deeskalieren.");
+    } finally {
+      setBulkBusy(false);
     }
   };
 
-  // Refresh: safe mode (only updates leads that are already in the escalation list)
+  // Refresh list
   const refreshLeads = useCallback(async () => {
     if (refreshBusyRef.current) return;
     refreshBusyRef.current = true;
 
     try {
-      const currentIds = new Set((localLeads ?? []).map((l) => l.id));
-      if (currentIds.size === 0) {
-        toast.error("Keine Eskalationen zum Aktualisieren.");
-        return;
-      }
-
       const { data, error } = await supabase
         .from("leads")
         .select("*")
-        .in("id", Array.from(currentIds))
+        .eq("agent_id", userId)
+        .eq("escalated", true)
+        .is("archived_at", null)
+        .order("updated_at", { ascending: false })
         .limit(500);
 
       if (error) throw error;
 
-      const byId = new Map<string, any>();
-      for (const row of data ?? []) byId.set(String((row as any).id), row);
-
-      setLocalLeads((prev) =>
-        prev.map((l) => {
-          const upd = byId.get(l.id);
-          return upd ? ({ ...(l as any), ...(upd as any) } as any) : l;
-        })
-      );
-
+      setLocalLeads(() => (data ?? []) as any);
       toast.success("Aktualisiert.");
     } catch (e: any) {
       console.error(e);
@@ -380,14 +344,14 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
     } finally {
       refreshBusyRef.current = false;
     }
-  }, [supabase, localLeads]);
+  }, [supabase, userId]);
 
-  // Realtime: safe mode (updates only existing)
+  // Realtime updates
   useEffect(() => {
     if (!userId) return;
 
     const ch = supabase
-      .channel(`escalations-leads-safe-${userId}`)
+      .channel(`escalations-leads-${userId}`)
       .on(
         "postgres_changes",
         {
@@ -398,26 +362,47 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
         },
         (payload) => {
           const row: any = payload.new;
-          const id = String(row?.id ?? "");
+          const oldRow: any = (payload as any).old;
+          const id = String(row?.id ?? oldRow?.id ?? "");
           if (!id) return;
+
+          const isEscNow = !!row?.escalated;
+          const isArchivedNow = !!row?.archived_at;
 
           setLocalLeads((prev) => {
             const idx = prev.findIndex((x) => x.id === id);
 
-            // Only update items already shown as escalated (safe, because we lack an escalation flag)
-            if (idx === -1) return prev;
-
             if (payload.eventType === "DELETE") {
+              if (idx === -1) return prev;
               const copy = [...prev];
               copy.splice(idx, 1);
               return copy;
             }
 
-            const copy = [...prev];
-            copy[idx] = { ...(copy[idx] as any), ...(row as any) };
-            return copy;
+            if (isArchivedNow) {
+              if (idx === -1) return prev;
+              const copy = [...prev];
+              copy.splice(idx, 1);
+              return copy;
+            }
+
+            if (isEscNow) {
+              if (idx === -1) return [row as any, ...prev];
+              const copy = [...prev];
+              copy[idx] = { ...(copy[idx] as any), ...(row as any) };
+              return copy;
+            }
+
+            // not escalated anymore => remove from this page
+            if (idx !== -1) {
+              const copy = [...prev];
+              copy.splice(idx, 1);
+              return copy;
+            }
+
+            return prev;
           });
-        }
+        },
       )
       .subscribe();
 
@@ -426,7 +411,7 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
     };
   }, [supabase, userId]);
 
-  // Clean selection when filters/pagination change (avoid phantom selections)
+  // Clean selection when filters/pagination change
   useEffect(() => {
     setSelected((prev) => {
       const setShown = new Set(pagedLeads.map((l) => l.id));
@@ -440,7 +425,6 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
   }, [
     searchQuery,
     sortBy,
-    statusFilter,
     onlyWithEmail,
     onlyHighPriority,
     safePage,
@@ -454,10 +438,7 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
     >
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
-        <div
-          className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
-          data-tour="escalations-header"
-        >
+        <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
           <div className="flex items-start justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -473,21 +454,28 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700">
                   Offen: {counts.open}
                 </span>
-                <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700">
-                  Erledigt: {counts.closed}
-                </span>
               </div>
+
               <div className="mt-1 text-sm text-gray-600">
                 Eskalierte Gespräche werden nicht automatisch beantwortet – hier
                 übernimmt dein Team manuell.
+                <span className="block mt-1">
+                  <span className="font-medium text-gray-900">
+                    Deeskalieren
+                  </span>{" "}
+                  = hebt die KI-Pause auf und verschiebt den Interessenten
+                  zurück in den normalen Nachrichten-Flow.
+                  <span className="mx-2">·</span>
+                  <span className="font-medium text-gray-900">
+                    Archivieren
+                  </span>{" "}
+                  = verschiebt den Interessenten ins Archiv.
+                </span>
               </div>
             </div>
 
-            <div
-              className="flex items-center gap-2 flex-wrap justify-end"
-              data-tour="escalations-filters"
-            >
-              {/* Search */}
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              {/* Search (desktop) */}
               <div className="relative hidden md:block">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 <input
@@ -511,21 +499,6 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
                   </button>
                 )}
               </div>
-
-              {/* Status filter */}
-              <select
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value as EscalationFilter);
-                  setPage(1);
-                }}
-                title="Status"
-              >
-                <option value="all">Alle</option>
-                <option value="open">Offen</option>
-                <option value="closed">Erledigt</option>
-              </select>
 
               <button
                 type="button"
@@ -581,7 +554,6 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
                 </select>
               </div>
 
-              {/* refresh */}
               <button
                 type="button"
                 onClick={refreshLeads}
@@ -592,26 +564,19 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
                 Aktualisieren
               </button>
 
-              {/* csv */}
               <button
                 type="button"
                 onClick={() => {
-                  const rows = (
-                    selectedIds.length
-                      ? selectedIds
-                      : filteredLeads.map((l) => l.id)
-                  )
-                    .map((id) => filteredLeads.find((l) => l.id === id))
-                    .filter(Boolean)
+                  const rows = filteredLeads
                     .map((l: any) => ({
                       id: l.id,
                       name: safeStr(l.name),
                       email: safeStr(l.email),
                       priority: Number(l.priority ?? 0),
-                      status: safeStr(l.status),
                       updated_at: safeStr(l.updated_at),
                       last_message: safeStr(l.last_message),
-                    }));
+                    }))
+                    .filter(Boolean);
 
                   if (rows.length === 0) {
                     toast.error("Nichts zum Exportieren.");
@@ -623,18 +588,17 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
                   downloadTextFile(
                     `eskalationen-${stamp}.csv`,
                     csv,
-                    "text/csv;charset=utf-8"
+                    "text/csv;charset=utf-8",
                   );
                   toast.success(`CSV exportiert (${rows.length}).`);
                 }}
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
-                title="CSV exportieren (Auswahl oder alle Treffer)"
+                title="CSV exportieren"
               >
                 <Download className="h-4 w-4 inline-block mr-2" />
                 CSV
               </button>
 
-              {/* page size */}
               <div className="hidden sm:flex items-center gap-2">
                 <span className="text-xs text-gray-500">Pro Seite</span>
                 <select
@@ -685,10 +649,7 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
         {/* Content */}
         <div className="py-6">
           {/* Info banner */}
-          <div
-            className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"
-            data-tour="escalations-info"
-          >
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
             <div className="flex items-start gap-3">
               <div className="mt-0.5">
                 <AlertTriangle className="h-5 w-5 text-amber-700" />
@@ -700,17 +661,15 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
                 <div className="text-sm text-amber-800 mt-1">
                   Sobald ein Gespräch eskaliert wird (automatisch oder manuell),
                   stoppt Advaic die Auto-Antworten. Bearbeite diese
-                  Interessenten manuell und markiere sie anschließend als
-                  erledigt.
+                  Interessenten manuell,{" "}
+                  <span className="font-medium">deeskaliere</span> (hebt die
+                  KI-Pause auf) oder archiviere den Interessenten.
                 </div>
               </div>
             </div>
           </div>
 
-          <div
-            className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
-            data-tour="escalations-list"
-          >
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
             <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between gap-3">
               <div className="text-sm text-gray-600 inline-flex items-center gap-2">
                 <Clock className="h-4 w-4 text-gray-500" />
@@ -724,10 +683,7 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
 
             <div className="p-4 md:p-6">
               {selectedIds.length > 0 && (
-                <div
-                  className="mb-4 rounded-2xl border border-gray-200 bg-white p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
-                  data-tour="escalations-bulk-actions"
-                >
+                <div className="mb-4 rounded-2xl border border-gray-200 bg-white p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                   <div className="text-sm text-gray-700 inline-flex items-center gap-2">
                     <CheckSquare className="h-4 w-4" />
                     <span className="font-medium">{selectedIds.length}</span>
@@ -752,34 +708,23 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
 
                     <button
                       type="button"
-                      onClick={copySelectedEmails}
+                      onClick={bulkDeescalateSelected}
                       className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
                       disabled={bulkBusy}
-                      title="E-Mails der Auswahl kopieren"
+                      title="Deeskalieren (hebt die KI-Pause auf)"
                     >
-                      <Mail className="h-4 w-4 inline-block mr-2" />
-                      E-Mails kopieren
+                      Deeskalieren
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => bulkUpdateStatus("closed")}
-                      className="px-3 py-2 text-sm rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100"
+                      onClick={bulkArchiveSelected}
+                      className="px-3 py-2 text-sm rounded-lg bg-gray-900 text-amber-200 hover:bg-gray-800"
                       disabled={bulkBusy}
-                      title="Als erledigt markieren"
+                      title="Archivieren (ins Archiv verschieben)"
                     >
-                      <CheckCircle2 className="h-4 w-4 inline-block mr-2" />
-                      Erledigt
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => bulkUpdateStatus("open")}
-                      className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
-                      disabled={bulkBusy}
-                      title="Wieder öffnen"
-                    >
-                      Offen
+                      <Archive className="h-4 w-4 inline-block mr-2" />
+                      Archivieren
                     </button>
 
                     <button
@@ -796,10 +741,7 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
               )}
 
               {/* pagination info */}
-              <div
-                className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-                data-tour="escalations-pagination"
-              >
+              <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="text-xs text-gray-500">
                   Seite{" "}
                   <span className="font-medium text-gray-700">{safePage}</span>{" "}
@@ -844,38 +786,31 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
                       tone === "bad"
                         ? "bg-red-50 border-red-200 text-red-800"
                         : tone === "warn"
-                        ? "bg-amber-50 border-amber-200 text-amber-800"
-                        : "bg-white border-gray-200 text-gray-700";
+                          ? "bg-amber-50 border-amber-200 text-amber-800"
+                          : "bg-white border-gray-200 text-gray-700";
 
                     return (
                       <div
                         key={lead.id}
-                        data-tour="escalation-card"
-                        className={`group flex items-stretch gap-3 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors ${
+                        className={`rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors ${
                           checked ? "ring-2 ring-amber-300/40" : ""
                         }`}
                       >
-                        <button
-                          type="button"
-                          onClick={() => toggleSelected(lead.id)}
-                          className="p-3 text-gray-500 hover:text-gray-900"
-                          title={checked ? "Auswahl entfernen" : "Auswählen"}
-                        >
-                          {checked ? (
-                            <CheckSquare className="h-5 w-5" />
-                          ) : (
-                            <Square className="h-5 w-5" />
-                          )}
-                        </button>
+                        {/* Top row */}
+                        <div className="flex items-start justify-between gap-3 p-3">
+                          <button
+                            type="button"
+                            onClick={() => toggleSelected(lead.id)}
+                            className="p-2 -m-2 text-gray-500 hover:text-gray-900"
+                            title={checked ? "Auswahl entfernen" : "Auswählen"}
+                          >
+                            {checked ? (
+                              <CheckSquare className="h-5 w-5" />
+                            ) : (
+                              <Square className="h-5 w-5" />
+                            )}
+                          </button>
 
-                        <div className="flex-1 min-w-0 p-1">
-                          <InboxItem lead={lead as any} userId={userId} />
-                        </div>
-
-                        <div
-                          className="shrink-0 flex flex-col items-end gap-2 p-3"
-                          data-tour="escalation-actions"
-                        >
                           <span
                             className={`text-[11px] font-medium px-2 py-1 rounded-full border ${ageCls}`}
                             title="Zeit seit letztem Update"
@@ -883,85 +818,79 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
                             Alter:{" "}
                             {formatAgeFromUpdatedAt((lead as any).updated_at)}
                           </span>
+                        </div>
 
-                          <div className="flex items-center gap-2">
+                        {/* Content */}
+                        <div className="px-3 pb-3">
+                          <div className="min-w-0">
+                            <InboxItem lead={lead as any} userId={userId} />
+                          </div>
+
+                          {/* Actions under content */}
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
                             <button
                               type="button"
                               className="px-3 py-2 text-xs rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
-                              onClick={async () => {
-                                const email = safeStr((lead as any).email);
-                                if (!email) {
-                                  toast.error("Keine E-Mail vorhanden.");
-                                  return;
-                                }
-                                try {
-                                  await navigator.clipboard.writeText(email);
-                                  toast.success("E-Mail kopiert.");
-                                } catch {
-                                  toast.error("Konnte nicht kopieren.");
-                                }
-                              }}
-                              title="E-Mail kopieren"
-                            >
-                              <Copy className="h-4 w-4 inline-block mr-2" />
-                              Kopieren
-                            </button>
-
-                            <button
-                              type="button"
-                              className={`px-3 py-2 text-xs rounded-lg border transition-colors ${
-                                safeStr((lead as any).status).toLowerCase() ===
-                                "closed"
-                                  ? "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                                  : "bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"
-                              }`}
                               disabled={bulkBusy}
                               onClick={async () => {
-                                const nextStatus =
-                                  safeStr(
-                                    (lead as any).status
-                                  ).toLowerCase() === "closed"
-                                    ? "open"
-                                    : "closed";
                                 try {
                                   const { error } = await supabase
                                     .from("leads")
-                                    .update({ status: nextStatus } as any)
+                                    .update({ escalated: false } as any)
                                     .eq("id", lead.id);
 
                                   if (error) throw error;
 
                                   toast.success(
-                                    nextStatus === "closed"
-                                      ? "Als erledigt markiert."
-                                      : "Wieder geöffnet."
+                                    "Deeskaliert. KI-Pause aufgehoben.",
                                   );
-
                                   setLocalLeads((prev) =>
-                                    prev.map((x) =>
-                                      x.id === lead.id
-                                        ? ({
-                                            ...(x as any),
-                                            status: nextStatus,
-                                          } as any)
-                                        : x
-                                    )
+                                    prev.filter((x) => x.id !== lead.id),
                                   );
                                 } catch (e: any) {
                                   console.error(e);
                                   toast.error(
-                                    e?.message ??
-                                      "Konnte Status nicht aktualisieren."
+                                    e?.message ?? "Konnte nicht deeskalieren.",
                                   );
                                 }
                               }}
-                              title="Status toggeln"
+                              title="Deeskalieren (hebt die KI-Pause auf)"
                             >
-                              <CheckCircle2 className="h-4 w-4 inline-block mr-2" />
-                              {safeStr((lead as any).status).toLowerCase() ===
-                              "closed"
-                                ? "Offen"
-                                : "Erledigt"}
+                              Deeskalieren
+                            </button>
+
+                            <button
+                              type="button"
+                              className="px-3 py-2 text-xs rounded-lg bg-gray-900 text-amber-200 hover:bg-gray-800"
+                              disabled={bulkBusy}
+                              onClick={async () => {
+                                try {
+                                  const { error } = await supabase
+                                    .from("leads")
+                                    .update({
+                                      archived_at: new Date().toISOString(),
+                                      status: "done",
+                                      escalated: false,
+                                    } as any)
+                                    .eq("id", lead.id);
+
+                                  if (error) throw error;
+
+                                  toast.success("Archiviert.");
+                                  setLocalLeads((prev) =>
+                                    prev.filter((x) => x.id !== lead.id),
+                                  );
+                                } catch (e: any) {
+                                  console.error(e);
+                                  toast.error(
+                                    e?.message ?? "Konnte nicht archivieren.",
+                                  );
+                                }
+                              }}
+                              title="Archivieren (ins Archiv verschieben)"
+                            >
+                              <Archive className="h-4 w-4 inline-block mr-2" />
+                              Archivieren
                             </button>
                           </div>
                         </div>

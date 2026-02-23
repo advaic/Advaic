@@ -134,6 +134,28 @@ type AgentFollowupDefaults = {
   followups_delay_hours_stage2: number;
 };
 
+type AgentStyleRow = {
+  agent_id: string;
+  brand_name: string | null;
+  language: string | null;
+  tone: string | null;
+  formality: string | null;
+  length_pref: string | null;
+  emoji_level: string | null;
+  sign_off: string | null;
+  do_rules: string | null;
+  dont_rules: string | null;
+  example_phrases: string | null;
+};
+
+type AgentStyleExampleRow = {
+  id: string;
+  agent_id: string;
+  label: string | null;
+  text: string;
+  created_at?: string | null;
+};
+
 type PropertyFollowupPolicy = {
   enabled: boolean | null;
   max_stage_rent: number | null;
@@ -276,6 +298,8 @@ async function azureGenerateFollowup(args: {
   stage: number;
   messages: MessageCtx[];
   prompt: AiPromptRow;
+  agentStyle?: AgentStyleRow | null;
+  agentStyleExamples?: AgentStyleExampleRow[] | null;
 }): Promise<AzureFollowupResult> {
   const endpoint = mustEnv("AZURE_OPENAI_ENDPOINT");
   const apiKey = mustEnv("AZURE_OPENAI_API_KEY");
@@ -322,6 +346,28 @@ async function azureGenerateFollowup(args: {
     last_user_message_at: args.lead.last_user_message_at,
     last_agent_message_at: args.lead.last_agent_message_at,
     history,
+    agent_style: args.agentStyle
+      ? {
+          brand_name: args.agentStyle.brand_name,
+          language: args.agentStyle.language,
+          tone: args.agentStyle.tone,
+          formality: args.agentStyle.formality,
+          length_pref: args.agentStyle.length_pref,
+          emoji_level: args.agentStyle.emoji_level,
+          sign_off: args.agentStyle.sign_off,
+          do_rules: args.agentStyle.do_rules,
+          dont_rules: args.agentStyle.dont_rules,
+          example_phrases: args.agentStyle.example_phrases,
+        }
+      : null,
+    agent_style_examples: Array.isArray(args.agentStyleExamples)
+      ? args.agentStyleExamples
+          .slice(0, 8)
+          .map((e) => ({
+            label: e.label ?? null,
+            text: safeString(e.text, 1200),
+          }))
+      : [],
   };
 
   const system = String(args.prompt.system_prompt || "").trim();
@@ -523,6 +569,8 @@ export async function POST(req: NextRequest) {
   );
 
   const agentDefaultsMap = new Map<string, AgentFollowupDefaults>();
+  const agentStyleMap = new Map<string, AgentStyleRow>();
+  const agentStyleExamplesMap = new Map<string, AgentStyleExampleRow[]>();
 
   if (agentIds.length > 0) {
     const { data: agentSettingsRows, error: asErr } = await (
@@ -549,6 +597,73 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Preload agent_style rows
+  if (agentIds.length > 0) {
+    const { data: styleRows, error: styleErr } = await (supabase.from(
+      "agent_style",
+    ) as any)
+      .select(
+        "agent_id, brand_name, language, tone, formality, length_pref, emoji_level, sign_off, do_rules, dont_rules, example_phrases",
+      )
+      .in("agent_id", agentIds);
+
+    if (styleErr) {
+      console.error("[followups/run] agent_style load failed:", styleErr.message);
+    }
+
+    for (const r of styleRows || []) {
+      const id = String(r.agent_id);
+      agentStyleMap.set(id, {
+        agent_id: id,
+        brand_name: r.brand_name ?? null,
+        language: r.language ?? null,
+        tone: r.tone ?? null,
+        formality: r.formality ?? null,
+        length_pref: r.length_pref ?? null,
+        emoji_level: r.emoji_level ?? null,
+        sign_off: r.sign_off ?? null,
+        do_rules: r.do_rules ?? null,
+        dont_rules: r.dont_rules ?? null,
+        example_phrases: r.example_phrases ?? null,
+      });
+    }
+  }
+
+  // Preload agent_style_examples rows
+  if (agentIds.length > 0) {
+    const { data: exRows, error: exErr } = await (supabase.from(
+      "agent_style_examples",
+    ) as any)
+      .select("id, agent_id, label, text, created_at")
+      .in("agent_id", agentIds)
+      .order("created_at", { ascending: false });
+
+    if (exErr) {
+      console.error(
+        "[followups/run] agent_style_examples load failed:",
+        exErr.message,
+      );
+    }
+
+    const grouped = new Map<string, AgentStyleExampleRow[]>();
+    for (const r of exRows || []) {
+      const aid = String(r.agent_id);
+      const arr = grouped.get(aid) || [];
+      arr.push({
+        id: String(r.id),
+        agent_id: aid,
+        label: r.label ?? null,
+        text: String(r.text ?? ""),
+        created_at: r.created_at ?? null,
+      });
+      grouped.set(aid, arr);
+    }
+
+    for (const [aid, arr] of grouped.entries()) {
+      agentStyleExamplesMap.set(aid, arr);
+    }
+  }
+
   for (const raw of leads as LeadRow[]) {
     const leadId = String(raw.id);
     const agentId = String(raw.agent_id);
@@ -566,6 +681,8 @@ export async function POST(req: NextRequest) {
         } as AgentFollowupDefaults);
 
       // Optional property overrides (only if lead.property_id is present)
+      const agentStyle = agentStyleMap.get(agentId) || null;
+      const agentStyleExamples = agentStyleExamplesMap.get(agentId) || [];
       let propertyPolicy: PropertyFollowupPolicy | null = null;
       const propertyId = (raw as any)?.property_id ? String((raw as any).property_id) : null;
 
@@ -666,6 +783,14 @@ export async function POST(req: NextRequest) {
       const promptKey = pickFollowupPromptKey(stage);
       const prompt = await loadActivePrompt(supabase, promptKey);
 
+      console.log("[followups/run] style context", {
+        leadId,
+        agentId,
+        promptKey,
+        hasAgentStyle: !!agentStyle,
+        examples: agentStyleExamples.length,
+      });
+
       if (!prompt) {
         await (supabase.from("leads") as any)
           .update({
@@ -690,6 +815,8 @@ export async function POST(req: NextRequest) {
         stage,
         messages,
         prompt,
+        agentStyle,
+        agentStyleExamples,
       });
 
       if (!ai.ok) {

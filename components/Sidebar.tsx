@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useSupabaseClient } from "@supabase/auth-helpers-react";
-import type { Database } from "@/types/supabase";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 const navSections = [
   {
@@ -74,11 +74,95 @@ function tourKeyForPath(path: string) {
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const supabase = useSupabaseClient<Database>();
+
+  const [autosendEnabled, setAutosendEnabled] = useState<boolean | null>(null);
+  const [autosendBusy, setAutosendBusy] = useState(false);
+
+  const autosendLabel = useMemo(() => {
+    if (autosendEnabled === null) return "Lade…";
+    return autosendEnabled ? "Auto-Senden aktiv" : "Auto-Senden pausiert";
+  }, [autosendEnabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAutosend() {
+      try {
+        const res = await fetch("/api/agent/settings/autosend", {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+        });
+
+        const data = await res.json().catch(() => ({} as any));
+
+        if (!res.ok) {
+          // If not logged in or any other error, keep conservative default
+          console.error("[sidebar] autosend GET failed", data);
+          if (!cancelled) setAutosendEnabled(false);
+          return;
+        }
+
+        const enabled = data?.settings?.autosend_enabled;
+        if (!cancelled) setAutosendEnabled(typeof enabled === "boolean" ? enabled : false);
+      } catch (e: any) {
+        console.error("[sidebar] load autosend error", e);
+        if (!cancelled) setAutosendEnabled(false);
+      }
+    }
+
+    loadAutosend();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggleAutosend = async () => {
+    if (autosendEnabled === null) return;
+    if (autosendBusy) return;
+
+    const prev = autosendEnabled;
+    const next = !prev;
+
+    setAutosendBusy(true);
+    setAutosendEnabled(next); // optimistic
+
+    try {
+      const res = await fetch("/api/agent/settings/autosend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autosend_enabled: next }),
+      });
+
+      const data = await res.json().catch(() => ({} as any));
+
+      if (!res.ok) {
+        throw new Error(String(data?.error || "Failed to update autosend"));
+      }
+
+      const saved = data?.settings?.autosend_enabled;
+      setAutosendEnabled(typeof saved === "boolean" ? saved : next);
+
+      toast.success(
+        (typeof saved === "boolean" ? saved : next)
+          ? "Auto-Senden aktiviert."
+          : "Auto-Senden pausiert."
+      );
+    } catch (e: any) {
+      console.error("[sidebar] toggle autosend failed", e);
+      setAutosendEnabled(prev); // rollback
+      toast.error(e?.message ?? "Konnte Auto-Senden nicht ändern.");
+    } finally {
+      setAutosendBusy(false);
+    }
+  };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    try {
+      await fetch("/auth/logout", { method: "POST" });
+    } catch {}
     router.push("/");
+    router.refresh();
   };
 
   return (
@@ -96,6 +180,45 @@ export default function Sidebar() {
         >
           Logout
         </button>
+      </div>
+
+      {/* Autosend toggle */}
+      <div
+        className="mb-6 rounded-2xl border border-gray-200 bg-[#fbfbfc] p-3"
+        data-tour="sidebar-autosend"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-gray-500">Automatik</div>
+            <div className="mt-0.5 text-sm font-medium text-gray-900 truncate">
+              {autosendLabel}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleAutosend}
+            disabled={autosendEnabled === null || autosendBusy}
+            aria-pressed={!!autosendEnabled}
+            className={`relative inline-flex h-7 w-12 items-center rounded-full border transition disabled:opacity-60 disabled:cursor-not-allowed ${
+              autosendEnabled
+                ? "bg-gray-900 border-gray-900"
+                : "bg-white border-gray-300"
+            }`}
+            title={autosendEnabled ? "Auto-Senden pausieren" : "Auto-Senden aktivieren"}
+            data-tour="sidebar-autosend-toggle"
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full transition ${
+                autosendEnabled ? "translate-x-6 bg-amber-200" : "translate-x-1 bg-gray-200"
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="mt-2 text-xs text-gray-500">
+          Stoppt/aktiviert das automatische Versenden. Entwürfe landen bei Bedarf weiterhin in „Zur Freigabe“.
+        </div>
       </div>
 
       <nav className="space-y-6">

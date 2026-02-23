@@ -85,6 +85,7 @@ type LeadPropertyStateRow = {
   active_property_confidence?: number | null;
 };
 
+
 type PropertyMini = {
   id: string;
   city: string | null;
@@ -97,6 +98,120 @@ type PropertyMini = {
   size_sqm: number | null;
   url: string | null;
 };
+
+type AgentStyleRow = {
+  agent_id: string;
+  brand_name: string | null;
+  language: string | null;
+  tone: string;
+  formality: string;
+  length_pref: string;
+  emoji_level: string | null;
+  sign_off: string | null;
+  do_rules: string | null;
+  dont_rules: string | null;
+  example_phrases: string | null;
+};
+
+type AgentStyleExampleRow = {
+  id: string;
+  agent_id: string;
+  label: string | null;
+  text: string;
+  // optional columns if present (we add best-effort support)
+  kind?: string | null;
+  is_pinned?: boolean | null;
+  sort_order?: number | null;
+};
+
+function normalizeKind(v: unknown): string {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return "general";
+  return s;
+}
+
+function groupExamples(rows: AgentStyleExampleRow[]) {
+  // Best-effort: prefer explicit kind. Fallback to label heuristics.
+  const greetings: AgentStyleExampleRow[] = [];
+  const closings: AgentStyleExampleRow[] = [];
+  const anchors: AgentStyleExampleRow[] = [];
+  const scenarios: AgentStyleExampleRow[] = [];
+  const nogos: AgentStyleExampleRow[] = [];
+  const general: AgentStyleExampleRow[] = [];
+
+  const sorted = [...rows].sort((a, b) => {
+    const ap = a.is_pinned ? 0 : 1;
+    const bp = b.is_pinned ? 0 : 1;
+    if (ap !== bp) return ap - bp;
+    const as = typeof a.sort_order === "number" ? a.sort_order : 9999;
+    const bs = typeof b.sort_order === "number" ? b.sort_order : 9999;
+    if (as !== bs) return as - bs;
+    const al = String(a.label ?? "").toLowerCase();
+    const bl = String(b.label ?? "").toLowerCase();
+    return al.localeCompare(bl);
+  });
+
+  for (const r of sorted) {
+    const kind = normalizeKind((r as any).kind);
+    const label = String(r.label ?? "").toLowerCase();
+
+    const isGreeting =
+      kind.includes("greet") ||
+      kind === "greeting" ||
+      label.includes("begrü") ||
+      label.includes("greeting") ||
+      label.includes("anrede") ||
+      label.includes("hallo") ||
+      label.includes("guten") ||
+      label.includes("moin");
+
+    const isClosing =
+      kind.includes("clos") ||
+      kind === "closing" ||
+      label.includes("gruß") ||
+      label.includes("gruss") ||
+      label.includes("closing") ||
+      label.includes("absch") ||
+      label.includes("sign") ||
+      label.includes("mit freund") ||
+      label.includes("beste") ||
+      label.includes("viele");
+
+    const isAnchor = kind.includes("anchor") || kind === "style_anchor";
+    const isScenario = kind.includes("scenario") || kind === "scenario";
+    const isNoGo = kind.includes("no") && kind.includes("go");
+
+    if (isNoGo) nogos.push(r);
+    else if (isGreeting) greetings.push(r);
+    else if (isClosing) closings.push(r);
+    else if (isAnchor) anchors.push(r);
+    else if (isScenario) scenarios.push(r);
+    else general.push(r);
+  }
+
+  return { greetings, closings, anchors, scenarios, nogos, general };
+}
+
+function insertIntoTextarea(
+  prev: string,
+  snippet: string,
+  opts?: { position?: "top" | "bottom"; ensureBlankLine?: boolean },
+): string {
+  const position = opts?.position ?? "top";
+  const ensureBlankLine = opts?.ensureBlankLine ?? true;
+
+  const p = String(prev ?? "");
+  const s = String(snippet ?? "").trim();
+  if (!s) return p;
+
+  if (!p.trim()) return s;
+
+  if (position === "top") {
+    return ensureBlankLine ? `${s}\n\n${p}` : `${s}\n${p}`;
+  }
+
+  return ensureBlankLine ? `${p}\n\n${s}` : `${p}\n${s}`;
+}
 
 function followupStatusLabel(s: any): string {
   const v = String(s || "")
@@ -284,6 +399,10 @@ export default function LeadChatView({
   const [documents, setDocuments] = useState<Document[]>(initialDocuments);
 
   const [newMessage, setNewMessage] = useState("");
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+  const [editingDraftOriginal, setEditingDraftOriginal] = useState<
+    string | null
+  >(null);
   const [isEscalated, setIsEscalated] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -294,6 +413,29 @@ export default function LeadChatView({
   const [copied, setCopied] = useState<string | null>(null);
   const [templateValue, setTemplateValue] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  const [agentStyle, setAgentStyle] = useState<AgentStyleRow | null>(null);
+  const [agentStyleExamples, setAgentStyleExamples] = useState<
+    AgentStyleExampleRow[]
+  >([]);
+  const [styleUiOpen, setStyleUiOpen] = useState(false);
+  const [styleInstruction, setStyleInstruction] = useState("");
+
+  const exampleGroups = useMemo(() => {
+    return groupExamples(agentStyleExamples);
+  }, [agentStyleExamples]);
+
+  const topGreeting = useMemo(() => {
+    return exampleGroups.greetings.find((x) => !!x.is_pinned) ||
+      exampleGroups.greetings[0] ||
+      null;
+  }, [exampleGroups.greetings]);
+
+  const topClosing = useMemo(() => {
+    return exampleGroups.closings.find((x) => !!x.is_pinned) ||
+      exampleGroups.closings[0] ||
+      null;
+  }, [exampleGroups.closings]);
 
   type PendingAttachment = {
     bucket: string;
@@ -714,7 +856,7 @@ export default function LeadChatView({
     try {
       const { error } = await supabase
         .from("leads")
-        .update({ status: next ? "closed" : "open" } as any)
+        .update({ status: next ? "done" : "open" } as any)
         .eq("id", leadId);
 
       if (error) console.warn("Could not update lead status", error);
@@ -911,8 +1053,75 @@ export default function LeadChatView({
 
       if (leadData) {
         setLead(leadData);
+        const statusRaw = String((leadData as any)?.status || "")
+          .toLowerCase()
+          .trim();
+        setIsSolved(statusRaw === "done" || statusRaw === "closed");
+        setIsEscalated(!!(leadData as any)?.escalated);
         const v = (leadData as any).followups_enabled;
         setFollowupsEnabled(typeof v === "boolean" ? v : true);
+
+        // --- Agent style (tone & examples) for premium in-chat guidance + consistent Copilot output
+        try {
+          const agentId = String((leadData as any)?.agent_id || "").trim();
+          if (agentId) {
+            // 1) agent_style (single row)
+            const { data: styleRow, error: styleErr } = await (
+              supabase.from("agent_style") as any
+            )
+              .select(
+                "agent_id, brand_name, language, tone, formality, length_pref, emoji_level, sign_off, do_rules, dont_rules, example_phrases",
+              )
+              .eq("agent_id", agentId)
+              .maybeSingle();
+
+            if (styleErr) {
+              console.warn("⚠️ agent_style fetch", styleErr);
+              setAgentStyle(null);
+            } else {
+              setAgentStyle((styleRow as AgentStyleRow | null) || null);
+            }
+
+            // 2) agent_style_examples (multiple rows)
+            // Best-effort: also try to select optional kind/is_pinned/sort_order if present.
+            const selectExamplesExtended =
+              "id, agent_id, label, text, kind, is_pinned, sort_order, created_at";
+            const selectExamplesMinimal = "id, agent_id, label, text, created_at";
+
+            const ext = await (supabase.from("agent_style_examples") as any)
+              .select(selectExamplesExtended)
+              .eq("agent_id", agentId)
+              .order("created_at", { ascending: false });
+
+            if (ext?.error) {
+              // fallback minimal select for schemas without the new columns
+              const min = await (supabase.from("agent_style_examples") as any)
+                .select(selectExamplesMinimal)
+                .eq("agent_id", agentId)
+                .order("created_at", { ascending: false });
+
+              if (min?.error) {
+                console.warn("⚠️ agent_style_examples fetch", min.error);
+                setAgentStyleExamples([]);
+              } else {
+                setAgentStyleExamples(
+                  ((min.data as AgentStyleExampleRow[]) || []) as any,
+                );
+              }
+            } else {
+              setAgentStyleExamples(
+                ((ext.data as AgentStyleExampleRow[]) || []) as any,
+              );
+            }
+          } else {
+            setAgentStyle(null);
+            setAgentStyleExamples([]);
+          }
+        } catch (e: any) {
+          console.warn("⚠️ agent style context error", e);
+          setAgentStyle(null);
+          setAgentStyleExamples([]);
+        }
 
         // --- Property matching state (active property + last recommendations)
         const fallbackActiveId =
@@ -1081,7 +1290,7 @@ export default function LeadChatView({
 
   useEffect(() => {
     const channel = supabase
-      .channel("message-updates")
+      .channel(`message-updates-${leadId}`)
       .on(
         "postgres_changes",
         {
@@ -1123,6 +1332,118 @@ export default function LeadChatView({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const isPendingApprovalDraft = (m: any): boolean => {
+    const approval =
+      typeof m?.approval_required === "boolean" ? m.approval_required : false;
+    if (!approval) return false;
+
+    const status = String(m?.status || "")
+      .toLowerCase()
+      .trim();
+    const sendStatus = String(m?.send_status || "")
+      .toLowerCase()
+      .trim();
+
+    // If it was explicitly ignored, it is not pending approval anymore.
+    if (status === "ignored") return false;
+
+    // If it was already sent, it is not pending approval.
+    if (sendStatus === "sent") return false;
+
+    // The explicit pending states.
+    if (status === "needs_approval" || status === "needs_human") return true;
+
+    // Fail-closed: approval_required true + not sent => pending.
+    return true;
+  };
+
+  const approveDraftAndSend = async (draftId: string) => {
+    if (!draftId) return;
+
+    // 1) Freigabe entfernen + als send-ready markieren
+    const { error: updErr } = await (supabase.from("messages") as any)
+      .update({
+        approval_required: false,
+        status: "ready_to_send",
+        send_status: "pending",
+      })
+      .eq("id", draftId);
+
+    if (updErr) throw updErr;
+
+    // 2) Pipeline send trigger
+    const pipelineRes = await fetch("/api/pipeline/reply-ready/send/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: draftId,
+        message_id: draftId,
+        lead_id: leadId,
+      }),
+    });
+
+    const pipelineData = await pipelineRes.json().catch(() => ({}));
+    if (!pipelineRes.ok) {
+      throw new Error(String(pipelineData?.error || "Senden fehlgeschlagen."));
+    }
+  };
+
+  const deleteDraft = async (draftId: string) => {
+    if (!draftId) return;
+    // safer than hard delete: ignore
+    const { error } = await (supabase.from("messages") as any)
+      .update({ status: "ignored", approval_required: false })
+      .eq("id", draftId);
+
+    if (error) throw error;
+  };
+
+  const startEditDraft = (draft: any) => {
+    const text = String(draft?.text || "");
+    setEditingDraftId(String(draft?.id || ""));
+    setEditingDraftOriginal(text);
+    setNewMessage(text);
+    // attachments editing isn't supported yet; avoid accidental sends
+    setPendingAttachments([]);
+  };
+
+  const cancelEditDraft = () => {
+    setEditingDraftId(null);
+    setEditingDraftOriginal(null);
+    setNewMessage("");
+  };
+
+  const saveEditedDraft = async () => {
+    if (!editingDraftId) return;
+
+    const text = String(newMessage || "").trim();
+    if (!text) {
+      setSendError("Text ist leer.");
+      return;
+    }
+
+    setSending(true);
+    setSendError(null);
+
+    try {
+      const { error } = await (supabase.from("messages") as any)
+        .update({ text, timestamp: new Date().toISOString() })
+        .eq("id", editingDraftId);
+
+      if (error) throw error;
+
+      pushSystemEvent("✏️ Entwurf aktualisiert. (Noch nicht gesendet)");
+      setEditingDraftId(null);
+      setEditingDraftOriginal(null);
+      setNewMessage("");
+    } catch (e: any) {
+      console.error("Failed to save edited draft", e);
+      setSendError(String(e?.message || "Speichern fehlgeschlagen."));
+    } finally {
+      setSending(false);
+    }
+  };
 
   const handleSend = async () => {
     if (!newMessage.trim() || sending) return;
@@ -1509,7 +1830,23 @@ export default function LeadChatView({
 
               <button
                 type="button"
-                onClick={() => setIsEscalated(true)}
+                onClick={async () => {
+                  if (isEscalated) return;
+                  setIsEscalated(true);
+                  try {
+                    const { error } = await supabase
+                      .from("leads")
+                      .update({ escalated: true } as any)
+                      .eq("id", leadId);
+                    if (error) throw error;
+                  } catch (e: any) {
+                    console.warn("Could not escalate lead", e);
+                    setIsEscalated(false);
+                    setSendError(
+                      String(e?.message || "Eskalieren fehlgeschlagen."),
+                    );
+                  }
+                }}
                 disabled={isEscalated}
                 className={`px-3 py-2 text-sm rounded-lg border ${
                   isEscalated
@@ -1564,20 +1901,21 @@ export default function LeadChatView({
                     {msgs.map((msg) => {
                       const isAgent = isAgentSender(msg.sender);
                       const text = String(msg.text ?? "");
+                      // System messages are ONLY internal system events (centered).
                       const isSystem =
                         String(msg.sender ?? "").toLowerCase() === "system" ||
-                        !!(msg as any).is_system ||
-                        !!(msg as any).was_followup;
-                      const isFollowup =
-                        !!(msg as any).was_followup ||
-                        String(msg.sender ?? "").toLowerCase() === "system";
+                        !!(msg as any).is_system;
+
+                      // Follow-ups are normal outgoing messages, but flagged as follow-up.
+                      const isFollowup = !!(msg as any).was_followup;
+                      const pendingApproval = isPendingApprovalDraft(msg);
                       const looksLikeImage = /\.(jpeg|jpg|gif|png|webp)$/i.test(
                         text,
                       );
                       const looksLikePDF = /\.pdf$/i.test(text);
                       const looksLikeUrl = isLikelyUrl(text);
 
-                      // Determine bubble classes and icon for system/followup/copilot
+                      // Determine bubble classes
                       let bubbleClasses = "";
                       let prependIcon = null;
 
@@ -1586,16 +1924,13 @@ export default function LeadChatView({
                           "bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl max-w-[72%]";
                         prependIcon = (
                           <span className="mr-2" aria-label="System">
-                            {String(msg.sender ?? "").toLowerCase() ===
-                              "system" || (msg as any).was_followup
-                              ? "⚡"
-                              : "🤖"}
+                            🤖
                           </span>
                         );
                       } else if (isAgent) {
-                        // Agent bubbles should feel premium + readable (not pure black)
-                        bubbleClasses =
-                          "bg-white border border-slate-200 shadow-sm text-slate-900 rounded-2xl max-w-[72%]";
+                        bubbleClasses = pendingApproval
+                          ? "bg-amber-50/70 border border-amber-300 text-slate-900 rounded-2xl max-w-[72%] shadow-sm"
+                          : "bg-white border border-slate-200 shadow-sm text-slate-900 rounded-2xl max-w-[72%]";
                       } else {
                         // Incoming (lead) bubbles: clean neutral
                         bubbleClasses =
@@ -1619,6 +1954,20 @@ export default function LeadChatView({
                             <div className="flex items-start">
                               {isSystem && prependIcon}
                               <div className="flex-1 min-w-0">
+                                {pendingApproval && !isSystem && (
+                                  <div className="mb-3">
+                                    <span className="inline-flex items-center gap-2 text-[11px] px-2 py-1 rounded-full border border-amber-300 bg-amber-100/60 text-amber-900">
+                                      ⏳ Zur Freigabe
+                                    </span>
+                                  </div>
+                                )}
+                                {isAgent && isFollowup && !isSystem && (
+                                  <div className="mb-2">
+                                    <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-800">
+                                      Follow-up
+                                    </span>
+                                  </div>
+                                )}
                                 {looksLikeImage ? (
                                   <a
                                     href={text}
@@ -1646,7 +1995,7 @@ export default function LeadChatView({
                                     <div
                                       className={`text-sm font-medium ${
                                         isAgent
-                                          ? "text-amber-100"
+                                          ? "text-slate-900"
                                           : "text-gray-900"
                                       }`}
                                     >
@@ -1655,7 +2004,7 @@ export default function LeadChatView({
                                     <div
                                       className={`text-xs mt-1 break-all ${
                                         isAgent
-                                          ? "text-gray-300"
+                                          ? "text-slate-700"
                                           : "text-gray-600"
                                       }`}
                                     >
@@ -1705,7 +2054,7 @@ export default function LeadChatView({
                                         <a
                                           className={`underline underline-offset-4 ${
                                             isAgent
-                                              ? "text-amber-200 hover:text-amber-100"
+                                              ? "text-slate-900 hover:text-slate-700"
                                               : "text-gray-900 hover:text-gray-700"
                                           }`}
                                           target="_blank"
@@ -1721,6 +2070,70 @@ export default function LeadChatView({
                                     {text}
                                   </ReactMarkdown>
                                 )}
+                                {pendingApproval && !isSystem && (
+                                  <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        try {
+                                          setSendError(null);
+                                          await approveDraftAndSend(
+                                            String((msg as any).id),
+                                          );
+                                          pushSystemEvent(
+                                            "✅ Entwurf freigegeben & gesendet.",
+                                          );
+                                        } catch (e: any) {
+                                          setSendError(
+                                            String(
+                                              e?.message ||
+                                                "Freigabe/Senden fehlgeschlagen.",
+                                            ),
+                                          );
+                                        }
+                                      }}
+                                      className="text-[11px] px-3 py-1.5 rounded-full border border-gray-900 bg-gray-900 text-amber-200 hover:bg-gray-800"
+                                      title="Freigeben & sofort senden"
+                                    >
+                                      Akzeptieren
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => startEditDraft(msg)}
+                                      className="text-[11px] px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                                      title="Entwurf bearbeiten"
+                                    >
+                                      Bearbeiten
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        try {
+                                          setSendError(null);
+                                          await deleteDraft(
+                                            String((msg as any).id),
+                                          );
+                                          pushSystemEvent(
+                                            "🗑️ Entwurf gelöscht/ignoriert.",
+                                          );
+                                        } catch (e: any) {
+                                          setSendError(
+                                            String(
+                                              e?.message ||
+                                                "Löschen fehlgeschlagen.",
+                                            ),
+                                          );
+                                        }
+                                      }}
+                                      className="text-[11px] px-3 py-1.5 rounded-full border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                                      title="Entwurf ignorieren"
+                                    >
+                                      Löschen
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             </div>
 
@@ -1729,7 +2142,7 @@ export default function LeadChatView({
                               <div
                                 className={`text-[10px] mt-2 opacity-80 ${
                                   isAgent
-                                    ? "text-amber-200"
+                                    ? "text-slate-600"
                                     : isSystem
                                       ? "text-amber-700"
                                       : "text-gray-500"
@@ -1950,6 +2363,43 @@ export default function LeadChatView({
                       ))}
                     </select>
 
+                    {/* Style shortcuts (uses agent_style_examples) */}
+                    <button
+                      type="button"
+                      onClick={() => setStyleUiOpen((v) => !v)}
+                      className={`px-3 py-2 text-sm rounded-lg border transition-colors whitespace-nowrap ${
+                        styleUiOpen
+                          ? "bg-gray-900 border-gray-900 text-amber-200"
+                          : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                      }`}
+                      title="Stil & Beispiele (Anrede/Abschluss/No-Go)"
+                    >
+                      Stil
+                      {agentStyleExamples.length > 0 ? (
+                        <span className="ml-2 text-xs opacity-80">
+                          {agentStyleExamples.length}
+                        </span>
+                      ) : null}
+                    </button>
+
+                    {agentStyle?.tone ? (
+                      <span className="text-xs px-2 py-1 rounded-full border border-gray-200 bg-white text-gray-700 whitespace-nowrap">
+                        Ton: <span className="font-medium">{agentStyle.tone}</span>
+                      </span>
+                    ) : null}
+
+                    {exampleGroups.nogos.length > 0 ? (
+                      <span className="text-xs px-2 py-1 rounded-full border border-red-200 bg-red-50 text-red-700 whitespace-nowrap">
+                        No-Go aktiv
+                      </span>
+                    ) : null}
+
+                    {editingDraftId && (
+                      <div className="text-xs px-3 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-800">
+                        Bearbeite Entwurf: {shortId(editingDraftId)}
+                      </div>
+                    )}
+
                     <div className="text-xs text-gray-500 hidden md:block">
                       Enter = senden · Shift+Enter = neue Zeile
                     </div>
@@ -1963,6 +2413,138 @@ export default function LeadChatView({
                       Chat-Simulation.
                     </div>
                   </div>
+                {styleUiOpen ? (
+                  <div className="mb-3 rounded-2xl border border-gray-200 bg-white p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-900">
+                          Stil & Beispiele
+                        </div>
+                        <div className="text-xs text-gray-600 mt-0.5">
+                          Nutze Anrede/Abschluss mit 1 Klick. Optional: Zusatzwunsch an Copilot.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setStyleUiOpen(false)}
+                        className="text-xs px-2 py-1 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                      >
+                        Schließen
+                      </button>
+                    </div>
+
+                    {/* Quick inserts */}
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                        <div className="text-xs font-medium text-gray-800 mb-2">
+                          Anrede
+                        </div>
+                        {topGreeting ? (
+                          <div className="text-[11px] text-gray-500 mb-2">
+                            Standard: <span className="font-medium">{topGreeting.label || "Anrede"}</span>
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap gap-2">
+                          {exampleGroups.greetings.slice(0, 4).map((ex) => (
+                            <button
+                              key={ex.id}
+                              type="button"
+                              onClick={() =>
+                                setNewMessage((prev) =>
+                                  insertIntoTextarea(prev, ex.text, {
+                                    position: "top",
+                                    ensureBlankLine: true,
+                                  }),
+                                )
+                              }
+                              className="text-xs px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                              title={ex.label || "Anrede"}
+                            >
+                              {ex.label || "Anrede"}
+                              {ex.is_pinned ? (
+                                <span className="ml-1 opacity-70">★</span>
+                              ) : null}
+                            </button>
+                          ))}
+                          {exampleGroups.greetings.length === 0 ? (
+                            <div className="text-xs text-gray-500">
+                              Keine Anreden gespeichert.
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                        <div className="text-xs font-medium text-gray-800 mb-2">
+                          Abschluss
+                        </div>
+                        {topClosing ? (
+                          <div className="text-[11px] text-gray-500 mb-2">
+                            Standard: <span className="font-medium">{topClosing.label || "Abschluss"}</span>
+                          </div>
+                        ) : null}
+                        <div className="flex flex-wrap gap-2">
+                          {exampleGroups.closings.slice(0, 4).map((ex) => (
+                            <button
+                              key={ex.id}
+                              type="button"
+                              onClick={() =>
+                                setNewMessage((prev) =>
+                                  insertIntoTextarea(prev, ex.text, {
+                                    position: "bottom",
+                                    ensureBlankLine: true,
+                                  }),
+                                )
+                              }
+                              className="text-xs px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                              title={ex.label || "Abschluss"}
+                            >
+                              {ex.label || "Abschluss"}
+                              {ex.is_pinned ? (
+                                <span className="ml-1 opacity-70">★</span>
+                              ) : null}
+                            </button>
+                          ))}
+                          {exampleGroups.closings.length === 0 ? (
+                            <div className="text-xs text-gray-500">
+                              Keine Abschlüsse gespeichert.
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Optional instruction */}
+                    <div className="mt-3">
+                      <label className="text-xs font-medium text-gray-700">
+                        Zusatzwunsch (optional)
+                      </label>
+                      <input
+                        value={styleInstruction}
+                        onChange={(e) => setStyleInstruction(e.target.value)}
+                        placeholder='z.B. "kürzer", "mehr Druck", "konkreter nächster Schritt"'
+                        className="mt-1 w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                      <div className="mt-1 text-[11px] text-gray-500">
+                        Wird bei Copilot-Vorschlägen als zusätzliche Anweisung genutzt.
+                      </div>
+                    </div>
+
+                    {exampleGroups.nogos.length > 0 ? (
+                      <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3">
+                        <div className="text-xs font-medium text-red-800">
+                          No-Go Regeln
+                        </div>
+                        <div className="text-xs text-red-700 mt-1 whitespace-pre-line">
+                          {exampleGroups.nogos
+                            .slice(0, 3)
+                            .map((x) => x.text)
+                            .join("\n\n")}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                   <div
                     className="flex items-center gap-2"
@@ -2001,7 +2583,11 @@ export default function LeadChatView({
                 >
                   <textarea
                     rows={3}
-                    placeholder="Antwort schreiben…"
+                    placeholder={
+                      editingDraftId
+                        ? "Entwurf bearbeiten… (wird NICHT automatisch gesendet)"
+                        : "Antwort schreiben…"
+                    }
                     className="flex-1 px-4 py-3 rounded-xl text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50 resize-none"
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
@@ -2013,14 +2599,35 @@ export default function LeadChatView({
                     }}
                     data-tour="composer-textarea"
                   />
-                  <button
-                    type="submit"
-                    disabled={sending || !newMessage.trim()}
-                    className="px-4 py-3 rounded-xl text-sm font-medium bg-gray-900 border border-gray-900 text-amber-200 transition-all duration-200 hover:bg-amber-200 hover:border-amber-200 hover:text-gray-900 hover:shadow-[0_10px_30px_rgba(245,158,11,0.18)] active:translate-y-[1px] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-900 disabled:hover:border-gray-900 disabled:hover:text-amber-200 disabled:hover:shadow-none"
-                    data-tour="send-button"
-                  >
-                    {sending ? "Sende…" : "Senden"}
-                  </button>
+                  {editingDraftId ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={cancelEditDraft}
+                        className="px-4 py-3 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                      >
+                        Abbrechen
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={sending || !newMessage.trim()}
+                        className="px-4 py-3 rounded-xl text-sm font-medium bg-gray-900 border border-gray-900 text-amber-200 transition-all duration-200 hover:bg-amber-200 hover:border-amber-200 hover:text-gray-900 hover:shadow-[0_10px_30px_rgba(245,158,11,0.18)] active:translate-y-[1px] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-900 disabled:hover:border-gray-900 disabled:hover:text-amber-200 disabled:hover:shadow-none"
+                        data-tour="send-button"
+                      >
+                        {sending ? "Speichert…" : "Änderungen speichern"}
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={sending || !newMessage.trim()}
+                      className="px-4 py-3 rounded-xl text-sm font-medium bg-gray-900 border border-gray-900 text-amber-200 transition-all duration-200 hover:bg-amber-200 hover:border-amber-200 hover:text-gray-900 hover:shadow-[0_10px_30px_rgba(245,158,11,0.18)] active:translate-y-[1px] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-900 disabled:hover:border-gray-900 disabled:hover:text-amber-200 disabled:hover:shadow-none"
+                      data-tour="send-button"
+                    >
+                      {sending ? "Sendet…" : "Senden"}
+                    </button>
+                  )}
                 </form>
               </div>
             </div>
@@ -2061,10 +2668,29 @@ export default function LeadChatView({
                       {followupsBusy
                         ? "…"
                         : followupsEnabled
-                          ? "Follow-ups: An"
-                          : "Follow-ups: Aus"}
+                          ? "Lead Follow-ups: An"
+                          : "Lead Follow-ups: Aus"}
                     </button>
                   </div>
+                </div>
+                <div className="mt-2 text-xs text-gray-600">
+                  Effektiv:{" "}
+                  <span className="font-medium">
+                    {copilotEffectiveEnabled ? "Aktiv" : "Deaktiviert"}
+                  </span>
+                  <span className="ml-2 text-gray-500">
+                    (Standard:{" "}
+                    {agentFollowupsDefaults?.followups_enabled_default === false
+                      ? "Aus"
+                      : "An"}
+                    {propertyFollowupPolicy?.enabled === false
+                      ? ", Immobilie: Aus"
+                      : ""}
+                    {propertyFollowupPolicy?.enabled === true
+                      ? ", Immobilie: An"
+                      : ""}
+                    )
+                  </span>
                 </div>
                 {followupsError && (
                   <div className="mt-2">
@@ -2696,7 +3322,21 @@ export default function LeadChatView({
 
                 <button
                   type="button"
-                  onClick={() => setIsEscalated(true)}
+                  onClick={async () => {
+                    if (isEscalated) return;
+                    setIsEscalated(true);
+                    try {
+                      const { error } = await supabase
+                        .from("leads")
+                        .update({ escalated: true } as any)
+                        .eq("id", leadId);
+                      if (error) throw error;
+                    } catch (e: any) {
+                      console.warn("Could not escalate lead", e);
+                      setIsEscalated(false);
+                      setSendError(String(e?.message || "Eskalieren fehlgeschlagen."));
+                    }
+                  }}
                   disabled={isEscalated}
                   className={`w-full text-sm px-3 py-2 rounded-xl border ${
                     isEscalated

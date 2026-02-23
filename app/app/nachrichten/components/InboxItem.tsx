@@ -8,12 +8,16 @@ import { toast } from "sonner";
 import { escalateLead } from "@/app/actions/escalateLead";
 import { deescalateLead } from "@/app/actions/deescalateLead";
 import { SupabaseContext } from "@/app/ClientRootLayout";
-import { ChevronRight, MessageSquare, ShieldAlert } from "lucide-react";
+import { Archive, Check, ChevronRight, Clock, MessageSquare, ShieldAlert } from "lucide-react";
 
 
 type InboxItemProps = {
   lead: Lead;
   userId?: string;
+  selected?: boolean;
+  onToggleSelect?: () => void;
+  // Optional explicit count from InboxView (preferred when available)
+  pendingApprovalCount?: number;
 };
 
 function getInitials(name: string): string {
@@ -31,7 +35,13 @@ function getInitials(name: string): string {
   return initials || "?";
 }
 
-export default function InboxItem({ lead, userId }: InboxItemProps) {
+export default function InboxItem({
+  lead,
+  userId,
+  selected = false,
+  onToggleSelect,
+  pendingApprovalCount: pendingApprovalCountProp,
+}: InboxItemProps) {
   const router = useRouter();
 
   const { session } = useContext(SupabaseContext);
@@ -52,6 +62,23 @@ export default function InboxItem({ lead, userId }: InboxItemProps) {
   }
   const [isEscalated, setIsEscalated] = useState(lead.escalated ?? false);
   const [actionBusy, setActionBusy] = useState(false);
+
+  const leadStatusRaw = String((lead as any)?.status || "").toLowerCase().trim();
+  const isDone = leadStatusRaw === "done" || leadStatusRaw === "closed";
+  const isArchived = !!(lead as any)?.archived_at || leadStatusRaw === "archived";
+
+  // These fields can be provided by InboxView (recommended): pendingApprovalCount prop
+  // Otherwise we fall back to lead fields: pending_approval_count / pendingApprovalCount
+  const pendingApprovalCount =
+    typeof pendingApprovalCountProp === "number"
+      ? pendingApprovalCountProp
+      : Number(
+          (lead as any)?.pending_approval_count ??
+            (lead as any)?.pendingApprovalCount ??
+            0
+        );
+  const hasPendingApproval =
+    pendingApprovalCount > 0 || !!(lead as any)?.has_pending_approval;
 
   const TYPE_BADGE: Record<string, string> = {
     Kaufen: "bg-emerald-50 text-emerald-800 border border-emerald-200",
@@ -150,8 +177,10 @@ export default function InboxItem({ lead, userId }: InboxItemProps) {
     };
   })();
 
-  const handleClick = () => {
-    router.push(`/app/nachrichten/${lead.id}`);
+  const handleClick = (opts?: { focusApproval?: boolean }) => {
+    const base = `/app/nachrichten/${lead.id}`;
+    const url = opts?.focusApproval ? `${base}?focus=approval` : base;
+    router.push(url);
   };
 
   const handleEscalate = async () => {
@@ -196,23 +225,87 @@ export default function InboxItem({ lead, userId }: InboxItemProps) {
   return (
     <div
       data-tour="conversation-card"
-      onClick={handleClick}
+      onClick={() => handleClick()}
       role="button"
       tabIndex={0}
       onKeyDown={onKeyDown}
-      className="group w-full rounded-2xl border border-gray-200 bg-white p-4 md:p-5 shadow-sm hover:bg-gray-50/60 hover:shadow transition cursor-pointer"
+      className={
+        "group w-full rounded-2xl border p-4 md:p-5 shadow-sm hover:shadow transition cursor-pointer " +
+        (hasPendingApproval
+          ? "border-amber-300 bg-amber-50/40 hover:bg-amber-50/60"
+          : isArchived
+            ? "border-gray-200 bg-gray-50/60 hover:bg-gray-50"
+            : isDone
+              ? "border-emerald-200 bg-emerald-50/30 hover:bg-emerald-50/40"
+              : "border-gray-200 bg-white hover:bg-gray-50/60")
+      }
     >
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
         {/* Left */}
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex items-center gap-3">
+              {/* Multi-select */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect?.();
+                }}
+                className={
+                  "h-5 w-5 rounded-md border flex items-center justify-center shrink-0 transition " +
+                  (selected
+                    ? "bg-gray-900 border-gray-900"
+                    : "bg-white border-gray-300 hover:border-gray-400")
+                }
+                aria-pressed={selected ? "true" : "false"}
+                aria-label={selected ? "Auswahl entfernen" : "Auswählen"}
+                title={selected ? "Auswahl entfernen" : "Auswählen"}
+              >
+                {selected ? <Check className="h-3.5 w-3.5 text-white" /> : null}
+              </button>
+
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-amber-900 font-semibold text-sm select-none">
                 {getInitials(display.name)}
               </div>
               <h2 className="text-base md:text-lg font-semibold text-gray-900 truncate">
                 {display.name}
               </h2>
+
+              {hasPendingApproval && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-900"
+                  title={
+                    pendingApprovalCount > 0
+                      ? `${pendingApprovalCount} Nachricht(en) warten auf Freigabe`
+                      : "Mindestens eine Nachricht wartet auf Freigabe"
+                  }
+                >
+                  <Clock className="h-4 w-4" />
+                  Zur Freigabe
+                </span>
+              )}
+
+              {isDone && !isArchived && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-xs font-medium text-emerald-800"
+                  title="Als erledigt markiert"
+                >
+                  <Check className="h-4 w-4" />
+                  Erledigt
+                </span>
+              )}
+
+              {isArchived && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full bg-gray-100 border border-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700"
+                  title="Archiviert"
+                >
+                  <Archive className="h-4 w-4" />
+                  Archiv
+                </span>
+              )}
+
               {isEscalated && (
                 <span
                   data-tour="conversation-escalated-badge"
@@ -286,6 +379,21 @@ export default function InboxItem({ lead, userId }: InboxItemProps) {
             Antworten
           </button>
 
+          {hasPendingApproval && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleClick({ focusApproval: true });
+              }}
+              className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold border border-amber-300 bg-white text-amber-900 hover:bg-amber-50"
+              title="Zur Freigabe öffnen"
+              type="button"
+            >
+              <Clock className="mr-1.5 h-4 w-4" />
+              Zur Freigabe
+            </button>
+          )}
+
           {isEscalated ? (
             <button
               data-tour="conversation-deescalate"
@@ -317,7 +425,7 @@ export default function InboxItem({ lead, userId }: InboxItemProps) {
           )}
 
           <div data-tour="conversation-card-hint" className="text-[11px] text-gray-500 text-right">
-            Enter öffnet Konversation
+            Enter öffnet Chat
           </div>
 
           <div className="hidden md:flex items-center pl-2">

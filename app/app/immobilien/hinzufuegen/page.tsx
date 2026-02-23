@@ -157,6 +157,34 @@ function isProbablyUrl(v: string): boolean {
   }
 }
 
+function isUniqueUrlError(e: any): boolean {
+  const msg = String(e?.message ?? e ?? "");
+  return (
+    msg.includes("properties_url_unique") ||
+    msg.includes("duplicate key") ||
+    (msg.includes("unique constraint") && msg.toLowerCase().includes("url"))
+  );
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, idx: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length) as any;
+  let nextIndex = 0;
+
+  const runners = new Array(Math.max(1, limit)).fill(0).map(async () => {
+    while (nextIndex < items.length) {
+      const idx = nextIndex++;
+      results[idx] = await worker(items[idx], idx);
+    }
+  });
+
+  await Promise.all(runners);
+  return results;
+}
+
 function toVermarktungKey(v: VermarktungUI): "rent" | "sale" | null {
   if (v === "Vermietung") return "rent";
   if (v === "Verkauf") return "sale";
@@ -202,12 +230,25 @@ function toDbPatch(patch: Partial<PropertyDraft>): Record<string, any> {
   }
 
   // pets_allowed column is TEXT in DB
-  if ("pets_allowed" in out) out.pets_allowed = toDbPetsAllowed(!!(out as any).pets_allowed);
+  if ("pets_allowed" in out)
+    out.pets_allowed = toDbPetsAllowed(!!(out as any).pets_allowed);
+
+  // Keep new enum column in sync if present in DB.
+  // UI uses `price_type` as Vermarktung ("Vermietung" | "Verkauf"); DB also has `vermarktung` enum.
+  if ("price_type" in out) {
+    const pt = String((out as any).price_type ?? "").trim();
+    if (pt === "Vermietung") (out as any).vermarktung = "rent";
+    else if (pt === "Verkauf") (out as any).vermarktung = "sale";
+    else (out as any).vermarktung = null;
+  }
 
   // image_urls must always be string[] of storage paths
   if ("image_urls" in out) {
     out.image_urls = Array.isArray(out.image_urls)
-      ? out.image_urls.filter((x: any) => typeof x === "string" && x && !String(x).startsWith("http"))
+      ? out.image_urls.filter(
+          (x: any) =>
+            typeof x === "string" && x && !String(x).startsWith("http"),
+        )
       : [];
   }
 
@@ -215,7 +256,8 @@ function toDbPatch(patch: Partial<PropertyDraft>): Record<string, any> {
   if ("requirements_checklist" in out) {
     out.requirements_checklist = out.requirements_checklist || {};
   }
-
+  // Track last edit timestamp (enterprise-friendly)
+  (out as any).last_edit_at = new Date().toISOString();
   return out;
 }
 
@@ -257,7 +299,9 @@ async function removeStoragePathsViaApi(bucket: string, paths: string[]) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      errors.push(String((data as any)?.error || `Konnte Datei nicht löschen: ${path}`));
+      errors.push(
+        String((data as any)?.error || `Konnte Datei nicht löschen: ${path}`),
+      );
     }
   }
 
@@ -274,7 +318,7 @@ async function removeStoragePathsViaApi(bucket: string, paths: string[]) {
  */
 function extractSignedUrlMap(
   payload: any,
-  paths: string[]
+  paths: string[],
 ): Record<string, string> {
   const root = payload ?? {};
   const candidate =
@@ -303,13 +347,13 @@ function extractSignedUrlMap(
   ) {
     for (const item of candidate) {
       const p = String(
-        (item as any)?.path ?? (item as any)?.filePath ?? ""
+        (item as any)?.path ?? (item as any)?.filePath ?? "",
       ).trim();
       const u = String(
         (item as any)?.url ??
           (item as any)?.signedUrl ??
           (item as any)?.signed_url ??
-          ""
+          "",
       ).trim();
       if (p && u && u.startsWith("http")) map[p] = u;
     }
@@ -419,8 +463,61 @@ export default function HinzufuegenPage() {
       });
       setFiles(canonical);
     },
-    [signedUrlToPath]
+    [signedUrlToPath],
   );
+
+  useEffect(() => {
+    propertyIdRef.current = property.id;
+  }, [property.id]);
+
+  useEffect(() => {
+    signedUrlToPathRef.current = signedUrlToPath;
+  }, [signedUrlToPath]);
+
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
+  // Cleanup autosave timer on unmount + best-effort flush
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+
+      // Best-effort final save (do not block navigation)
+      void (async () => {
+        try {
+          const id = propertyIdRef.current;
+          if (!id) return;
+
+          const currentFiles = filesRef.current || [];
+          const map = signedUrlToPathRef.current || {};
+
+          const canonicalPaths = currentFiles
+            .filter((f): f is string => typeof f === "string")
+            .map((s) => map[s] ?? s)
+            .filter((p) => !!p && !p.startsWith("http"));
+
+          await supabase
+            .from("properties")
+            .update({
+              image_urls: canonicalPaths,
+              last_edit_at: new Date().toISOString(),
+            } as any)
+            .eq("id", id);
+        } catch {
+          // ignore
+        }
+      })();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Track previous canonical paths so we can delete removed images from storage
   const prevImagePathsRef = useRef<string[]>([]);
@@ -431,14 +528,23 @@ export default function HinzufuegenPage() {
   const [uploadingImages, setUploadingImages] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [flashField, setFlashField] = useState<string | null>(null);
 
   const [followupPolicy, setFollowupPolicy] = useState<FollowupPolicyDraft>(
-    defaultFollowupPolicyDraft()
+    defaultFollowupPolicyDraft(),
   );
   const [followupPolicyLoading, setFollowupPolicyLoading] = useState(false);
   const [followupPolicySaving, setFollowupPolicySaving] = useState(false);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep latest references to avoid stale closures in effects
+  const propertyIdRef = useRef<string | null>(null);
+  const signedUrlToPathRef = useRef<Record<string, string>>({});
+  const filesRef = useRef<(File | string)[]>([]);
+
+  // Track if component is still mounted (avoid setState after unmount)
+  const mountedRef = useRef(true);
 
   const statusBadge = useMemo(() => {
     if (deleting)
@@ -521,7 +627,8 @@ export default function HinzufuegenPage() {
           internal_notes: property.internal_notes || "",
           contact_instructions: property.contact_instructions || "",
 
-          requirements_checklist: property.requirements_checklist || defaultChecklist(),
+          requirements_checklist:
+            property.requirements_checklist || defaultChecklist(),
           requirements_notes: property.requirements_notes || "",
 
           image_urls: [],
@@ -536,7 +643,13 @@ export default function HinzufuegenPage() {
 
       if (error || !data?.id) {
         console.error("❌ Draft insert error:", error?.message, error);
-        toast.error("Entwurf konnte nicht erstellt werden.");
+        if (isUniqueUrlError(error)) {
+          toast.error(
+            "Diese Listing-URL wird bereits von einer anderen Immobilie verwendet.",
+          );
+        } else {
+          toast.error("Entwurf konnte nicht erstellt werden.");
+        }
         return null;
       }
 
@@ -563,7 +676,13 @@ export default function HinzufuegenPage() {
 
         if (error) {
           console.error("❌ Update error:", error);
-          toast.error("Speichern fehlgeschlagen.");
+          if (isUniqueUrlError(error)) {
+            toast.error(
+              "Diese Listing-URL wird bereits von einer anderen Immobilie verwendet.",
+            );
+          } else {
+            toast.error("Speichern fehlgeschlagen.");
+          }
           return;
         }
         setLastSavedAt(new Date().toISOString());
@@ -571,17 +690,21 @@ export default function HinzufuegenPage() {
         setSaving(false);
       }
     },
-    [createDraftIfNeeded]
+    [createDraftIfNeeded],
   );
 
   const schedulePersist = useCallback(
     (updatedFields: Partial<PropertyDraft>) => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
       saveTimer.current = setTimeout(() => {
+        if (!mountedRef.current) return;
         void persistUpdate(updatedFields);
       }, 500);
     },
-    [persistUpdate]
+    [persistUpdate],
   );
 
   useEffect(() => {
@@ -605,7 +728,7 @@ export default function HinzufuegenPage() {
         const { data, error } = await supabase
           .from("property_followup_policies")
           .select(
-            "enabled, max_stage_rent, max_stage_buy, stage1_delay_hours, stage2_delay_hours"
+            "enabled, max_stage_rent, max_stage_buy, stage1_delay_hours, stage2_delay_hours",
           )
           .eq("agent_id", user.id)
           .eq("property_id", property.id)
@@ -696,7 +819,9 @@ export default function HinzufuegenPage() {
 
         if (error) {
           console.error("followup policy upsert error", error);
-          toast.error("Follow-up Einstellungen konnten nicht gespeichert werden.");
+          toast.error(
+            "Follow-up Einstellungen konnten nicht gespeichert werden.",
+          );
           return;
         }
 
@@ -706,13 +831,13 @@ export default function HinzufuegenPage() {
         setFollowupPolicySaving(false);
       }
     },
-    [property.id, createDraftIfNeeded, followupPolicy]
+    [property.id, createDraftIfNeeded, followupPolicy],
   );
 
   const handleChange = (
     e: React.ChangeEvent<
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >
+    >,
   ) => {
     const { name, value, type } = e.target;
     const newValue =
@@ -733,7 +858,7 @@ export default function HinzufuegenPage() {
   const setChecklistBool = (
     section: "rent" | "sale",
     key: string,
-    val: boolean
+    val: boolean,
   ) => {
     const current = property.requirements_checklist || defaultChecklist();
     const next: RequirementsChecklist = {
@@ -783,7 +908,7 @@ export default function HinzufuegenPage() {
 
       return filePath;
     },
-    []
+    [],
   );
 
   /**
@@ -858,15 +983,16 @@ export default function HinzufuegenPage() {
       if (hasNew) {
         setUploadingImages(true);
         try {
-          const out: (File | string)[] = [];
-          for (const item of files) {
-            if (typeof item === "string") {
-              out.push(item);
-              continue;
-            }
-            const path = await uploadImageToSupabase(item, id);
-            out.push(path);
-          }
+          const out = await mapWithConcurrency<File | string, File | string>(
+            files,
+            3,
+            async (item) => {
+              if (typeof item === "string") return item;
+              const path = await uploadImageToSupabase(item, id);
+              return path;
+            },
+          );
+
           nextFiles = out;
           if (!cancelled) setFiles(out);
         } catch (e: any) {
@@ -941,7 +1067,9 @@ export default function HinzufuegenPage() {
       } catch (e: any) {
         console.error(e);
         if (!cancelled)
-          toast.error(e?.message ?? "Bild löschen fehlgeschlagen.");
+          toast.error(
+            "Bild wurde entfernt – Storage-Cleanup wird beim nächsten Sync erneut versucht.",
+          );
       }
     };
 
@@ -962,7 +1090,10 @@ export default function HinzufuegenPage() {
         .filter((f): f is string => typeof f === "string")
         .map((s) => signedUrlToPath[s] ?? s)
         .filter((p) => !!p && !p.startsWith("http")) || [];
-
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
     await persistUpdate({
       status: "draft",
       image_urls: canonicalPaths,
@@ -974,6 +1105,18 @@ export default function HinzufuegenPage() {
     });
 
     toast.success("Entwurf gespeichert.");
+  };
+
+  const scrollToField = (name: string) => {
+    const el = document.querySelector(
+      `[data-field="${name}"]`,
+    ) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlashField(name);
+    window.setTimeout(() => {
+      setFlashField((cur) => (cur === name ? null : cur));
+    }, 1200);
   };
 
   const canPublish = useMemo(() => {
@@ -992,8 +1135,20 @@ export default function HinzufuegenPage() {
     if (!id) return;
 
     if (!canPublish) {
+      const missingOrder: Array<keyof PropertyDraft> = [
+        "title",
+        "city",
+        "type",
+        "price_type",
+        "price",
+      ];
+      const firstMissing = missingOrder.find(
+        (k) => !safeTrim((property as any)[k]),
+      );
+      if (firstMissing) scrollToField(String(firstMissing));
+
       toast.error(
-        "Bitte fülle mindestens Titel, Stadt, Typ, Preis & Vermarktung aus."
+        "Bitte fülle mindestens Titel, Stadt, Typ, Preis & Vermarktung aus.",
       );
       return;
     }
@@ -1015,7 +1170,7 @@ export default function HinzufuegenPage() {
     }
 
     const ok = confirm(
-      "Entwurf wirklich verwerfen? Der Eintrag und alle hochgeladenen Bilder werden gelöscht."
+      "Entwurf wirklich verwerfen? Der Eintrag und alle hochgeladenen Bilder werden gelöscht.",
     );
     if (!ok) return;
 
@@ -1077,7 +1232,10 @@ export default function HinzufuegenPage() {
           <div className="flex items-start justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl md:text-2xl font-semibold" data-tour="property-add-title">
+                <h1
+                  className="text-xl md:text-2xl font-semibold"
+                  data-tour="property-add-title"
+                >
                   Immobilie hinzufügen
                 </h1>
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
@@ -1184,7 +1342,7 @@ export default function HinzufuegenPage() {
                 <div className="text-xs text-gray-500">
                   {lastSavedAt
                     ? `Zuletzt gespeichert: ${new Date(
-                        lastSavedAt
+                        lastSavedAt,
                       ).toLocaleTimeString("de-DE", {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -1199,25 +1357,41 @@ export default function HinzufuegenPage() {
                     label="Kurztitel"
                     hint="z.B. Moderne Wohnung mit Balkon"
                   >
-                    <input
-                      name="title"
-                      placeholder="Kurztitel"
-                      onChange={handleChange}
-                      value={property.title}
-                      data-tour="property-add-title-input"
-                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                    />
+                    <div
+                      data-field="title"
+                      className={
+                        flashField === "title"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="title"
+                        placeholder="Kurztitel"
+                        onChange={handleChange}
+                        value={property.title}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
                   </Field>
 
                   <Field label="Stadt" hint="z.B. Hamburg">
-                    <input
-                      name="city"
-                      placeholder="Stadt"
-                      onChange={handleChange}
-                      value={property.city}
-                      data-tour="property-add-city"
-                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                    />
+                    <div
+                      data-field="city"
+                      className={
+                        flashField === "city"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="city"
+                        placeholder="Stadt"
+                        onChange={handleChange}
+                        value={property.city}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
                   </Field>
 
                   <Field label="Stadtteil" hint="z.B. Eimsbüttel">
@@ -1241,26 +1415,62 @@ export default function HinzufuegenPage() {
                   </Field>
 
                   <Field label="Typ" hint="z.B. Wohnung, Haus, Grundstück">
-                    <input
-                      name="type"
-                      placeholder="Typ"
-                      onChange={handleChange}
-                      value={property.type}
-                      data-tour="property-add-type"
-                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                    />
+                    <div
+                      data-field="type"
+                      className={
+                        flashField === "type"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="type"
+                        placeholder="Typ"
+                        onChange={handleChange}
+                        value={property.type}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
                   </Field>
 
-                  <Field label="Preis" hint="z.B. 1250">
-                    <input
-                      name="price"
-                      type="number"
-                      placeholder="Preis"
-                      onChange={handleChange}
-                      value={property.price}
-                      data-tour="property-add-price"
-                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                    />
+                  <Field
+                    label={
+                      property.price_type === "Vermietung"
+                        ? "Preis (€/Monat)"
+                        : property.price_type === "Verkauf"
+                          ? "Preis (€)"
+                          : "Preis"
+                    }
+                    hint={
+                      property.price_type === "Vermietung"
+                        ? "z.B. 1250"
+                        : "z.B. 450000"
+                    }
+                  >
+                    <div
+                      data-field="price"
+                      className={
+                        flashField === "price"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="price"
+                        type="number"
+                        placeholder={
+                          property.price_type === "Vermietung"
+                            ? "z.B. 1250"
+                            : property.price_type === "Verkauf"
+                              ? "z.B. 450000"
+                              : "Preis"
+                        }
+                        onChange={handleChange}
+                        value={property.price}
+                        data-tour="property-add-price"
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
                   </Field>
 
                   <Field label="Vermarktung" hint="Vermietung oder Verkauf">
@@ -1483,7 +1693,7 @@ export default function HinzufuegenPage() {
                               setChecklistBool(
                                 "sale",
                                 "reservation_possible",
-                                v
+                                v,
                               )
                             }
                           />
@@ -1644,14 +1854,20 @@ export default function HinzufuegenPage() {
                   )}
                 </div>
                 <div className="p-4">
-                  <div className="text-xs text-gray-600 mb-3" data-tour="property-add-images-hint">
+                  <div
+                    className="text-xs text-gray-600 mb-3"
+                    data-tour="property-add-images-hint"
+                  >
                     Bilder werden privat gespeichert (signed URLs im Frontend).
                     Du kannst Reihenfolge ändern und Bilder löschen.
                   </div>
 
                   {/* IMPORTANT: UI gets signed URLs, internal state stays storage paths */}
                   <div data-tour="property-add-images-list">
-                    <SortablePreviewList files={uiFiles} setFiles={setUiFiles} />
+                    <SortablePreviewList
+                      files={uiFiles}
+                      setFiles={setUiFiles}
+                    />
                   </div>
 
                   <div className="mt-3 text-xs text-gray-500 inline-flex items-center gap-2">
@@ -1668,7 +1884,9 @@ export default function HinzufuegenPage() {
                 data-tour="property-add-followups-policy"
               >
                 <div className="px-4 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
-                  <div className="text-sm font-medium text-gray-800">Follow-up Regeln</div>
+                  <div className="text-sm font-medium text-gray-800">
+                    Follow-up Regeln
+                  </div>
                   <div className="flex items-center gap-2">
                     {followupPolicyLoading && (
                       <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700">
@@ -1685,14 +1903,18 @@ export default function HinzufuegenPage() {
 
                 <div className="p-4">
                   <div className="text-xs text-gray-600 mb-3">
-                    Property-spezifisch (optional). „Standard“ nutzt deine globalen Follow-up Settings.
+                    Property-spezifisch (optional). „Standard“ nutzt deine
+                    globalen Follow-up Settings.
                   </div>
 
                   {!property.id && (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-3">
-                      <div className="text-sm text-amber-900 font-medium">Hinweis</div>
+                      <div className="text-sm text-amber-900 font-medium">
+                        Hinweis
+                      </div>
                       <div className="text-sm text-amber-800 mt-1">
-                        Um property-spezifische Follow-up Regeln zu speichern, muss zuerst ein Entwurf angelegt werden.
+                        Um property-spezifische Follow-up Regeln zu speichern,
+                        muss zuerst ein Entwurf angelegt werden.
                       </div>
                       <button
                         type="button"
@@ -1706,7 +1928,9 @@ export default function HinzufuegenPage() {
 
                   <div className="space-y-3">
                     <div>
-                      <div className="text-xs font-medium text-gray-700 mb-1">Follow-ups</div>
+                      <div className="text-xs font-medium text-gray-700 mb-1">
+                        Follow-ups
+                      </div>
                       <select
                         value={followupPolicy.enabled}
                         onChange={(e) => {
@@ -1724,13 +1948,19 @@ export default function HinzufuegenPage() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
-                        <div className="text-xs font-medium text-gray-700 mb-1">Max. Follow-ups (Miete)</div>
+                        <div className="text-xs font-medium text-gray-700 mb-1">
+                          Max. Follow-ups (Miete)
+                        </div>
                         <select
                           value={followupPolicy.max_stage_rent ?? ""}
                           onChange={(e) => {
                             const raw = e.target.value;
-                            const v = raw === "" ? null : clampInt(Number(raw), 0, 2);
-                            setFollowupPolicy((p) => ({ ...p, max_stage_rent: v }));
+                            const v =
+                              raw === "" ? null : clampInt(Number(raw), 0, 2);
+                            setFollowupPolicy((p) => ({
+                              ...p,
+                              max_stage_rent: v,
+                            }));
                             void upsertFollowupPolicy({ max_stage_rent: v });
                           }}
                           className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
@@ -1743,13 +1973,19 @@ export default function HinzufuegenPage() {
                       </div>
 
                       <div>
-                        <div className="text-xs font-medium text-gray-700 mb-1">Max. Follow-ups (Kauf)</div>
+                        <div className="text-xs font-medium text-gray-700 mb-1">
+                          Max. Follow-ups (Kauf)
+                        </div>
                         <select
                           value={followupPolicy.max_stage_buy ?? ""}
                           onChange={(e) => {
                             const raw = e.target.value;
-                            const v = raw === "" ? null : clampInt(Number(raw), 0, 2);
-                            setFollowupPolicy((p) => ({ ...p, max_stage_buy: v }));
+                            const v =
+                              raw === "" ? null : clampInt(Number(raw), 0, 2);
+                            setFollowupPolicy((p) => ({
+                              ...p,
+                              max_stage_buy: v,
+                            }));
                             void upsertFollowupPolicy({ max_stage_buy: v });
                           }}
                           className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
@@ -1764,7 +2000,9 @@ export default function HinzufuegenPage() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
-                        <div className="text-xs font-medium text-gray-700 mb-1">Delay Stage 1 (Stunden)</div>
+                        <div className="text-xs font-medium text-gray-700 mb-1">
+                          Delay Stage 1 (Stunden)
+                        </div>
                         <input
                           type="number"
                           min={1}
@@ -1773,16 +2011,24 @@ export default function HinzufuegenPage() {
                           value={followupPolicy.stage1_delay_hours ?? ""}
                           onChange={(e) => {
                             const raw = e.target.value;
-                            const v = raw === "" ? null : clampInt(Number(raw), 1, 336);
-                            setFollowupPolicy((p) => ({ ...p, stage1_delay_hours: v }));
-                            void upsertFollowupPolicy({ stage1_delay_hours: v });
+                            const v =
+                              raw === "" ? null : clampInt(Number(raw), 1, 336);
+                            setFollowupPolicy((p) => ({
+                              ...p,
+                              stage1_delay_hours: v,
+                            }));
+                            void upsertFollowupPolicy({
+                              stage1_delay_hours: v,
+                            });
                           }}
                           className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                         />
                       </div>
 
                       <div>
-                        <div className="text-xs font-medium text-gray-700 mb-1">Delay Stage 2 (Stunden)</div>
+                        <div className="text-xs font-medium text-gray-700 mb-1">
+                          Delay Stage 2 (Stunden)
+                        </div>
                         <input
                           type="number"
                           min={1}
@@ -1791,9 +2037,15 @@ export default function HinzufuegenPage() {
                           value={followupPolicy.stage2_delay_hours ?? ""}
                           onChange={(e) => {
                             const raw = e.target.value;
-                            const v = raw === "" ? null : clampInt(Number(raw), 1, 336);
-                            setFollowupPolicy((p) => ({ ...p, stage2_delay_hours: v }));
-                            void upsertFollowupPolicy({ stage2_delay_hours: v });
+                            const v =
+                              raw === "" ? null : clampInt(Number(raw), 1, 336);
+                            setFollowupPolicy((p) => ({
+                              ...p,
+                              stage2_delay_hours: v,
+                            }));
+                            void upsertFollowupPolicy({
+                              stage2_delay_hours: v,
+                            });
                           }}
                           className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                         />
@@ -1801,7 +2053,8 @@ export default function HinzufuegenPage() {
                     </div>
 
                     <div className="text-[11px] text-gray-500">
-                      Tipp: Lass die Werte auf „Standard“, wenn du nur global steuern willst.
+                      Tipp: Lass die Werte auf „Standard“, wenn du nur global
+                      steuern willst.
                     </div>
                   </div>
                 </div>

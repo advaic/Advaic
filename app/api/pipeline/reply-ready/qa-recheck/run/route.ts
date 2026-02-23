@@ -292,6 +292,54 @@ async function getAutosendEnabled(supabase: any, agentId: string) {
   }
 }
 
+function mustInternalSecret() {
+  const v = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
+  if (!v) throw new Error("Missing env var: ADVAIC_INTERNAL_PIPELINE_SECRET");
+  return v;
+}
+
+function siteUrl() {
+  // Prefer explicit site url, fallback to Vercel URL
+  const a = process.env.NEXT_PUBLIC_SITE_URL;
+  if (a) return a.replace(/\/$/, "");
+  const b = process.env.SITE_URL;
+  if (b) return b.replace(/\/$/, "");
+  const c = process.env.VERCEL_URL;
+  if (c) return `https://${c}`.replace(/\/$/, "");
+  // Local fallback
+  return "http://localhost:3000";
+}
+
+async function enqueueNotificationBestEffort(body: Record<string, any>) {
+  try {
+    const url = `${siteUrl()}/api/notifications/enqueue`;
+    await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-advaic-internal-secret": mustInternalSecret(),
+      },
+      body: JSON.stringify(body ?? {}),
+    });
+  } catch {
+    // swallow
+  }
+}
+
+function mapQaOutcomeToNotificationType(args: {
+  verdict: "pass" | "warn" | "fail";
+  autosendEnabled: boolean;
+}) {
+  // Align with notification dispatcher types.
+  // - approval_required_created -> /app/zur-freigabe
+  // - escalation_created -> /app/escalations
+  // - autosend_ready -> optional (falls back to generic title/body)
+  if (args.verdict === "fail") return "escalation_created";
+  if (args.verdict === "warn") return "approval_required_created";
+  if (args.verdict === "pass" && !args.autosendEnabled) return "approval_required_created";
+  return "autosend_ready";
+}
+
 /**
  * =========================
  * Handler
@@ -636,6 +684,34 @@ export async function POST() {
         .update(update)
         .eq("id", draftId)
         .not("send_status", "in", "(sent,sending)");
+
+      // Notifications
+      const notificationType = mapQaOutcomeToNotificationType({
+        verdict: "pass",
+        autosendEnabled,
+      });
+
+      await enqueueNotificationBestEffort({
+        agent_id: agentId,
+        type: notificationType,
+        entity_type: "message",
+        entity_id: draftId,
+        payload: {
+          lead_id: leadId,
+          draft_message_id: draftId,
+          inbound_message_id: inboundMessageId,
+          source: "qa_recheck",
+          verdict: "pass",
+          autosend_enabled: autosendEnabled,
+          deep_link:
+            notificationType === "approval_required_created"
+              ? "/app/zur-freigabe"
+              : notificationType === "escalation_created"
+              ? "/app/escalations"
+              : "/app",
+        },
+        dispatch_now: true,
+      });
     } else if (finalVerdict === "warn") {
       // warn after rewrite: be conservative -> needs approval (no rewrite loops)
       await (supabase.from("messages") as any)
@@ -645,6 +721,22 @@ export async function POST() {
           visible_to_agent: true,
         })
         .eq("id", draftId);
+
+      await enqueueNotificationBestEffort({
+        agent_id: agentId,
+        type: "approval_required_created",
+        entity_type: "message",
+        entity_id: draftId,
+        payload: {
+          lead_id: leadId,
+          draft_message_id: draftId,
+          inbound_message_id: inboundMessageId,
+          source: "qa_recheck",
+          verdict: "warn",
+          deep_link: "/app/zur-freigabe",
+        },
+        dispatch_now: true,
+      });
     } else {
       // fail
       await (supabase.from("messages") as any)
@@ -654,10 +746,28 @@ export async function POST() {
           visible_to_agent: true,
         })
         .eq("id", draftId);
+
+      await enqueueNotificationBestEffort({
+        agent_id: agentId,
+        type: "escalation_created",
+        entity_type: "message",
+        entity_id: draftId,
+        payload: {
+          lead_id: leadId,
+          draft_message_id: draftId,
+          inbound_message_id: inboundMessageId,
+          source: "qa_recheck",
+          verdict: "fail",
+          deep_link: "/app/escalations",
+        },
+        dispatch_now: true,
+      });
     }
 
     processed.push({ draftId, verdict: finalVerdict, autosendEnabled });
   }
+
+
 
   return NextResponse.json({
     ok: true,
