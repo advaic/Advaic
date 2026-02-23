@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import crypto from "crypto";
 
 export const runtime = "nodejs";
 
@@ -10,18 +11,34 @@ function mustEnv(name: string): string {
   return v;
 }
 
-function isInternal(req: NextRequest) {
-  const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
-  if (!secret) return false;
-  const got = req.headers.get("x-advaic-internal-secret");
-  return !!got && got === secret;
+function isAuthorized(req: Request) {
+  const cronSecret = process.env.CRON_SECRET || "";
+  const internalSecret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET || "";
+
+  const auth = req.headers.get("authorization") || "";
+  const bearerToken = auth.startsWith("Bearer ")
+    ? auth.slice("Bearer ".length)
+    : "";
+  const url = new URL(req.url);
+  const queryToken = url.searchParams.get("secret") || "";
+  const headerInternal = req.headers.get("x-advaic-internal-secret") || "";
+
+  const headerOk =
+    (!!bearerToken &&
+      (bearerToken === cronSecret || bearerToken === internalSecret)) ||
+    (!!headerInternal && headerInternal === internalSecret);
+  const queryOk =
+    !!queryToken &&
+    (queryToken === cronSecret || queryToken === internalSecret);
+
+  return headerOk || queryOk;
 }
 
 function supabaseAdmin() {
   return createClient<Database>(
     mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
     mustEnv("SUPABASE_SERVICE_ROLE_KEY"),
-    { auth: { persistSession: false, autoRefreshToken: false } }
+    { auth: { persistSession: false, autoRefreshToken: false } },
   );
 }
 
@@ -30,8 +47,7 @@ function nowIso() {
 }
 
 function addHoursIso(hours: number) {
-  const d = new Date(Date.now() + hours * 60 * 60 * 1000);
-  return d.toISOString();
+  return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
 }
 
 function toDate(x: any): Date | null {
@@ -45,41 +61,58 @@ function isExpiringSoon(exp: Date | null, withinHours: number) {
   return ms <= withinHours * 60 * 60 * 1000;
 }
 
-type OutlookTokenResponse = {
-  token_type?: string;
-  scope?: string;
-  expires_in?: number;
-  ext_expires_in?: number;
-  access_token?: string;
-  refresh_token?: string;
-};
+function isValidHttpsOrLocalhost(urlValue: string) {
+  try {
+    const u = new URL(urlValue);
+    if (u.protocol === "https:") return true;
+    return u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1");
+  } catch {
+    return false;
+  }
+}
 
-async function refreshOutlookAccessToken(args: {
-  refreshToken: string;
-}): Promise<
-  | {
-      ok: true;
-      accessToken: string;
-      refreshToken?: string;
-      expiresAtIso: string;
-    }
-  | { ok: false; error: string }
-> {
-  const clientId = mustEnv("MICROSOFT_CLIENT_ID");
-  const clientSecret = mustEnv("MICROSOFT_CLIENT_SECRET");
-  const tenant = process.env.MICROSOFT_TENANT_ID || "common";
+function safeClientState(v: unknown) {
+  const s = String(v || "").trim();
+  return s ? s.slice(0, 128) : "";
+}
+
+function randomClientState() {
+  return crypto.randomBytes(16).toString("hex");
+}
+
+function safeErrorMessage(error: unknown, max = 5000) {
+  return String((error as any)?.message || error || "unknown_error").slice(0, max);
+}
+
+async function refreshOutlookAccessToken(args: { refreshToken: string }) {
+  const clientId =
+    process.env.OUTLOOK_CLIENT_ID ||
+    process.env.MICROSOFT_CLIENT_ID ||
+    process.env.AZURE_AD_CLIENT_ID;
+  const clientSecret =
+    process.env.OUTLOOK_CLIENT_SECRET ||
+    process.env.MICROSOFT_CLIENT_SECRET ||
+    process.env.AZURE_AD_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error("missing_outlook_client_env");
+  }
+
+  const tenant =
+    process.env.OUTLOOK_TENANT_ID ||
+    process.env.MICROSOFT_TENANT_ID ||
+    process.env.AZURE_AD_TENANT_ID ||
+    "common";
+
   const tokenUrl = `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`;
-
   const form = new URLSearchParams();
   form.set("client_id", clientId);
   form.set("client_secret", clientSecret);
   form.set("grant_type", "refresh_token");
   form.set("refresh_token", args.refreshToken);
-  // Important: request Graph scopes again (must match what you requested in auth)
-  // Keep as broad as your app needs. These are typical for reading mail + webhooks.
   form.set(
     "scope",
-    "https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read offline_access"
+    process.env.OUTLOOK_REFRESH_SCOPE ||
+      "https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read offline_access",
   );
 
   const res = await fetch(tokenUrl, {
@@ -87,86 +120,65 @@ async function refreshOutlookAccessToken(args: {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form.toString(),
   }).catch(() => null);
-
   if (!res || !res.ok) {
     const t = await res?.text().catch(() => "");
-    return {
-      ok: false,
-      error: `token_refresh_failed:${res?.status ?? "no_res"}:${t.slice(
-        0,
-        300
-      )}`,
-    };
+    throw new Error(`token_refresh_failed:${res?.status ?? 0}:${t.slice(0, 220)}`);
   }
 
-  const data = (await res
-    .json()
-    .catch(() => null)) as OutlookTokenResponse | null;
-  const accessToken = data?.access_token;
-  if (!accessToken)
-    return { ok: false, error: "token_refresh_no_access_token" };
+  const json = (await res.json().catch(() => null)) as any;
+  const accessToken = typeof json?.access_token === "string" ? json.access_token : "";
+  const refreshToken = typeof json?.refresh_token === "string" ? json.refresh_token : null;
+  const expiresIn = Number(json?.expires_in);
+  if (!accessToken || !Number.isFinite(expiresIn)) {
+    throw new Error("token_refresh_invalid_payload");
+  }
 
-  const expiresIn = Number(data?.expires_in ?? 3600);
-  const expiresAtIso = new Date(
-    Date.now() + Math.max(300, expiresIn - 60) * 1000
-  ).toISOString();
-
+  const expiresAtIso = new Date(Date.now() + Math.max(300, expiresIn - 60) * 1000).toISOString();
   return {
-    ok: true,
     accessToken,
-    refreshToken: data?.refresh_token,
+    refreshToken,
     expiresAtIso,
   };
 }
 
-type AccessTokenResult =
-  | { ok: true; accessToken: string }
-  | { ok: false; error: string };
-
-async function getValidOutlookAccessToken(
-  supabase: any,
-  conn: any
-): Promise<AccessTokenResult> {
-  const accessToken =
+async function getValidOutlookAccessToken(supabase: any, conn: any) {
+  const currentAccessToken =
     typeof conn?.access_token === "string" ? conn.access_token : "";
-  const refreshToken =
+  const currentRefreshToken =
     typeof conn?.refresh_token === "string" ? conn.refresh_token : "";
-  const expiresAt = toDate(conn?.expires_at);
+  const currentExpiresAt = toDate(conn?.expires_at);
 
-  // If we have a token that’s valid for at least 2 minutes, keep it.
   if (
-    accessToken &&
-    expiresAt &&
-    expiresAt.getTime() - Date.now() > 2 * 60 * 1000
+    currentAccessToken &&
+    currentExpiresAt &&
+    currentExpiresAt.getTime() - Date.now() > 2 * 60 * 1000
   ) {
-    return { ok: true, accessToken };
+    return { ok: true as const, accessToken: currentAccessToken };
   }
 
-  if (!refreshToken) {
-    return { ok: false, error: "missing_refresh_token" };
+  if (!currentRefreshToken) {
+    return { ok: false as const, error: "missing_refresh_token" };
   }
 
-  const refreshed = await refreshOutlookAccessToken({ refreshToken });
-  if (refreshed.ok === false) {
-    return { ok: false, error: refreshed.error };
-  }
-
-  // Persist new tokens
   try {
+    const refreshed = await refreshOutlookAccessToken({
+      refreshToken: currentRefreshToken,
+    });
+
     await (supabase.from("email_connections") as any)
       .update({
         access_token: refreshed.accessToken,
-        refresh_token: refreshed.refreshToken ?? refreshToken,
+        refresh_token: refreshed.refreshToken || currentRefreshToken,
         expires_at: refreshed.expiresAtIso,
         last_error: null,
         updated_at: nowIso(),
       })
       .eq("id", conn.id);
-  } catch {
-    // ignore – we can still use the new access token for this run
-  }
 
-  return { ok: true, accessToken: refreshed.accessToken };
+    return { ok: true as const, accessToken: refreshed.accessToken };
+  } catch (e: any) {
+    return { ok: false as const, error: safeErrorMessage(e, 400) };
+  }
 }
 
 async function graphPatchSubscription(args: {
@@ -175,175 +187,267 @@ async function graphPatchSubscription(args: {
   newExpirationIso: string;
 }) {
   const url = `https://graph.microsoft.com/v1.0/subscriptions/${encodeURIComponent(
-    args.subscriptionId
+    args.subscriptionId,
   )}`;
-
   const res = await fetch(url, {
     method: "PATCH",
     headers: {
       Authorization: `Bearer ${args.accessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ expirationDateTime: args.newExpirationIso }),
+    body: JSON.stringify({
+      expirationDateTime: args.newExpirationIso,
+    }),
   }).catch(() => null);
 
-  if (!res) return { ok: false as const, status: 0, error: "network_error" };
-
-  // Graph returns 200 with updated subscription
-  if (res.ok) {
-    const data = await res.json().catch(() => ({} as any));
-    return { ok: true as const, data };
+  if (!res) return { ok: false as const, status: 0, error: "graph_patch_network_error" };
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    return {
+      ok: false as const,
+      status: res.status,
+      error: `graph_patch_failed:${res.status}:${body.slice(0, 220)}`,
+    };
   }
 
-  const txt = await res.text().catch(() => "");
+  const data = (await res.json().catch(() => ({}))) as any;
+  return { ok: true as const, data };
+}
+
+async function graphCreateSubscription(args: {
+  accessToken: string;
+  notificationUrl: string;
+  expirationIso: string;
+  clientState: string;
+}) {
+  const resource =
+    process.env.OUTLOOK_SUBSCRIPTION_RESOURCE ||
+    "/me/mailFolders('Inbox')/messages";
+
+  const res = await fetch("https://graph.microsoft.com/v1.0/subscriptions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${args.accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      changeType: "created,updated",
+      notificationUrl: args.notificationUrl,
+      resource,
+      expirationDateTime: args.expirationIso,
+      clientState: args.clientState,
+      latestSupportedTlsVersion: "v1_2",
+    }),
+  }).catch(() => null);
+
+  if (!res) return { ok: false as const, status: 0, error: "graph_create_network_error" };
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    return {
+      ok: false as const,
+      status: res.status,
+      error: `graph_create_failed:${res.status}:${body.slice(0, 220)}`,
+    };
+  }
+
+  const data = (await res.json().catch(() => ({}))) as any;
+  const id = String(data?.id || "").trim();
+  const expiration = String(data?.expirationDateTime || "").trim();
+  if (!id || !expiration) {
+    return { ok: false as const, status: 200, error: "graph_create_invalid_payload" };
+  }
   return {
-    ok: false as const,
-    status: res.status,
-    error: `graph_patch_failed:${res.status}:${txt.slice(0, 300)}`,
+    ok: true as const,
+    subscriptionId: id,
+    expiration,
   };
 }
 
-export async function POST(req: NextRequest) {
-  // This is an internal pipeline route (cron / server-to-server)
-  if (!isInternal(req)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+async function runOutlookRenewals() {
   const supabase = supabaseAdmin();
+  const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL");
+  const notificationUrl = new URL("/api/outlook/webhook", siteUrl).toString();
 
-  // Strategy:
-  // - Renew only subscriptions that are expiring soon (<= 24h) or missing expiration.
-  // - If Graph says subscription is gone (404/410), mark watch inactive and require backfill.
-  // - Keep it idempotent: safe to run multiple times per day.
+  if (!isValidHttpsOrLocalhost(notificationUrl)) {
+    throw new Error("invalid_outlook_notification_url");
+  }
 
   const RENEW_WITHIN_HOURS = 24;
-  // Outlook/Graph message subscriptions typically allow up to ~3 days.
-  // We renew to +48h to stay comfortably inside limits.
   const TARGET_EXPIRATION_HOURS = 48;
 
-  const { data: conns, error } = await (
-    supabase.from("email_connections") as any
-  )
+  const { data: conns, error } = await (supabase.from("email_connections") as any)
     .select(
-      "id, agent_id, provider, status, watch_active, watch_topic, last_error, access_token, refresh_token, expires_at, outlook_subscription_id, outlook_subscription_expiration"
+      "id, agent_id, provider, status, watch_active, watch_topic, last_error, access_token, refresh_token, expires_at, outlook_subscription_id, outlook_subscription_expiration",
     )
     .eq("provider", "outlook")
-    .eq("watch_active", true)
-    .not("outlook_subscription_id", "is", null)
-    .order("outlook_subscription_expiration", {
-      ascending: true,
-      nullsFirst: true,
-    })
-    .limit(200);
+    .in("status", ["connected", "active", "watching"])
+    .limit(500);
 
-  if (error) {
-    return NextResponse.json(
-      { error: "Failed to load outlook connections", details: error.message },
-      { status: 500 }
-    );
-  }
+  if (error) throw new Error(`load_connections_failed:${error.message}`);
 
   const results: any[] = [];
+  let renewed = 0;
+  let created = 0;
+  let skipped = 0;
+  let failed = 0;
 
   for (const conn of conns || []) {
-    const id = String(conn.id);
+    const id = String(conn.id || "");
     const agentId = String(conn.agent_id || "");
-    const subId = String(conn.outlook_subscription_id || "");
-
-    if (!agentId || !subId) {
-      results.push({ id, agentId, subId, status: "skipped_missing_ids" });
-      continue;
-    }
-
-    const expDate = toDate(conn.outlook_subscription_expiration);
-    if (!isExpiringSoon(expDate, RENEW_WITHIN_HOURS)) {
-      results.push({ id, agentId, subId, status: "skipped_not_expiring" });
-      continue;
-    }
+    const currentSubId = String(conn.outlook_subscription_id || "").trim();
+    const exp = toDate(conn.outlook_subscription_expiration);
+    const watchActive = !!conn.watch_active;
 
     const token = await getValidOutlookAccessToken(supabase, conn);
-
-    // Use an explicit comparison so TS narrows the union correctly.
-    if (token.ok === false) {
+    if (!token.ok) {
+      failed++;
+      const reason = `token_error:${token.error}`;
       await (supabase.from("email_connections") as any)
         .update({
-          last_error: `renew_token_error:${token.error}`.slice(0, 5000),
           watch_active: false,
-          needs_backfill: true,
-          outlook_subscription_expiration: null,
+          last_error: reason.slice(0, 5000),
           watch_last_renewed_at: nowIso(),
         })
-        .eq("id", conn.id);
-
-      results.push({
-        id,
-        agentId,
-        subId,
-        status: "failed_token",
-        error: token.error,
-      });
+        .eq("id", id);
+      results.push({ id, agentId, status: "failed_token", error: token.error });
       continue;
     }
 
-    const newExpIso = addHoursIso(TARGET_EXPIRATION_HOURS);
-    const patched = await graphPatchSubscription({
+    const shouldRenewExisting =
+      !!currentSubId && (isExpiringSoon(exp, RENEW_WITHIN_HOURS) || !watchActive);
+
+    if (currentSubId && !shouldRenewExisting) {
+      skipped++;
+      results.push({ id, agentId, status: "skipped_healthy" });
+      continue;
+    }
+
+    const targetExpirationIso = addHoursIso(TARGET_EXPIRATION_HOURS);
+
+    if (currentSubId) {
+      const patched = await graphPatchSubscription({
+        accessToken: token.accessToken,
+        subscriptionId: currentSubId,
+        newExpirationIso: targetExpirationIso,
+      });
+
+      if (patched.ok) {
+        const finalExp = String(patched.data?.expirationDateTime || targetExpirationIso);
+        renewed++;
+        await (supabase.from("email_connections") as any)
+          .update({
+            watch_active: true,
+            status: "active",
+            outlook_subscription_id: currentSubId,
+            outlook_subscription_expiration: finalExp,
+            watch_expiration: finalExp,
+            watch_last_renewed_at: nowIso(),
+            last_error: null,
+          })
+          .eq("id", id);
+        results.push({ id, agentId, status: "renewed", expiration: finalExp });
+        continue;
+      }
+
+      const gone = patched.status === 404 || patched.status === 410;
+      if (!gone) {
+        failed++;
+        await (supabase.from("email_connections") as any)
+          .update({
+            watch_active: false,
+            last_error: patched.error.slice(0, 5000),
+            watch_last_renewed_at: nowIso(),
+          })
+          .eq("id", id);
+        results.push({
+          id,
+          agentId,
+          status: "renew_failed",
+          error: patched.error,
+          httpStatus: patched.status,
+        });
+        continue;
+      }
+    }
+
+    const clientState =
+      safeClientState(conn.watch_topic) || randomClientState();
+    const createdSub = await graphCreateSubscription({
       accessToken: token.accessToken,
-      subscriptionId: subId,
-      newExpirationIso: newExpIso,
+      notificationUrl,
+      expirationIso: targetExpirationIso,
+      clientState,
     });
 
-    if (patched.ok) {
-      const gotExp = patched.data?.expirationDateTime;
-      const finalExpIso =
-        typeof gotExp === "string" && gotExp ? gotExp : newExpIso;
-
+    if (!createdSub.ok) {
+      failed++;
       await (supabase.from("email_connections") as any)
         .update({
-          outlook_subscription_expiration: finalExpIso,
-          watch_active: true,
-          last_error: null,
+          watch_active: false,
+          last_error: createdSub.error.slice(0, 5000),
           watch_last_renewed_at: nowIso(),
-          // keep needs_backfill as-is; renewal does not imply we’re fully in sync
         })
-        .eq("id", conn.id);
-
+        .eq("id", id);
       results.push({
         id,
         agentId,
-        subId,
-        status: "renewed",
-        expiration: finalExpIso,
+        status: "create_failed",
+        error: createdSub.error,
+        httpStatus: createdSub.status,
       });
       continue;
     }
 
-    // If subscription no longer exists
-    const gone = patched.status === 404 || patched.status === 410;
-
+    created++;
     await (supabase.from("email_connections") as any)
       .update({
-        last_error: patched.error.slice(0, 5000),
-        watch_active: false,
-        needs_backfill: true,
-        outlook_subscription_id: gone ? null : conn.outlook_subscription_id,
-        outlook_subscription_expiration: null,
+        watch_active: true,
+        status: "active",
+        watch_topic: clientState,
+        outlook_subscription_id: createdSub.subscriptionId,
+        outlook_subscription_expiration: createdSub.expiration,
+        watch_expiration: createdSub.expiration,
         watch_last_renewed_at: nowIso(),
+        last_error: null,
       })
-      .eq("id", conn.id);
+      .eq("id", id);
 
     results.push({
       id,
       agentId,
-      subId,
-      status: gone ? "subscription_gone" : "renew_failed",
-      error: patched.error,
-      httpStatus: patched.status,
+      status: "created",
+      subscriptionId: createdSub.subscriptionId,
+      expiration: createdSub.expiration,
     });
   }
 
-  return NextResponse.json({
+  return {
     ok: true,
     processed: results.length,
+    renewed,
+    created,
+    skipped,
+    failed,
     results,
-  });
+  };
+}
+
+export async function POST(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const result = await runOutlookRenewals();
+    return NextResponse.json(result);
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: String(e?.message || e || "renew_failed") },
+      { status: 500 },
+    );
+  }
+}
+
+export async function GET(req: NextRequest) {
+  return POST(req);
 }

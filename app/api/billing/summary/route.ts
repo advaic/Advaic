@@ -18,6 +18,18 @@ type BillingSummary = {
   customer: {
     stripe_customer_id: string | null;
   };
+  dunning: {
+    is_active: boolean;
+    status: string;
+    amount_due_cents: number | null;
+    currency: string | null;
+    failure_message: string | null;
+    last_failed_at: string | null;
+    next_payment_attempt_at: string | null;
+    hosted_invoice_url: string | null;
+    invoice_pdf: string | null;
+    last_email_sent_at: string | null;
+  } | null;
   invoices: Array<{
     id: string;
     status: string | null;
@@ -69,6 +81,21 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(20);
 
+  let dunning: any = null;
+  try {
+    const dunningRes = await (supabase.from("billing_dunning_cases") as any)
+      .select(
+        "is_active, status, amount_due, currency, failure_message, last_failed_at, next_payment_attempt_at, hosted_invoice_url, invoice_pdf, last_email_sent_at",
+      )
+      .eq("agent_id", agentId)
+      .maybeSingle();
+    if (!dunningRes.error && dunningRes.data) {
+      dunning = dunningRes.data;
+    }
+  } catch {
+    // fail-open for projects where migration is not deployed yet
+  }
+
   const planKey = String(subscription?.plan_key || "free");
   const summary: BillingSummary = {
     plan: {
@@ -92,6 +119,29 @@ export async function GET(req: NextRequest) {
         ? String(customer.stripe_customer_id)
         : null,
     },
+    dunning: dunning
+      ? {
+          is_active: !!dunning.is_active,
+          status: String(dunning.status || "unknown"),
+          amount_due_cents:
+            typeof dunning.amount_due === "number" ? Number(dunning.amount_due) : null,
+          currency: dunning.currency ? String(dunning.currency) : null,
+          failure_message: dunning.failure_message
+            ? String(dunning.failure_message)
+            : null,
+          last_failed_at: dunning.last_failed_at ? String(dunning.last_failed_at) : null,
+          next_payment_attempt_at: dunning.next_payment_attempt_at
+            ? String(dunning.next_payment_attempt_at)
+            : null,
+          hosted_invoice_url: dunning.hosted_invoice_url
+            ? String(dunning.hosted_invoice_url)
+            : null,
+          invoice_pdf: dunning.invoice_pdf ? String(dunning.invoice_pdf) : null,
+          last_email_sent_at: dunning.last_email_sent_at
+            ? String(dunning.last_email_sent_at)
+            : null,
+        }
+      : null,
     invoices: Array.isArray(invoices)
       ? invoices.map((inv: any) => ({
           id: String(inv.stripe_invoice_id || ""),

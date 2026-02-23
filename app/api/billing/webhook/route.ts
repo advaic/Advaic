@@ -3,6 +3,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/routeAuth";
 import { stripeRequest, unixToIso, verifyStripeWebhook } from "@/lib/billing/stripe";
 
 export const runtime = "nodejs";
+const DUNNING_EMAIL_RETRY_HOURS = 24;
+const OUTBOUND_TIMEOUT_MS = 15_000;
 
 type StripeEvent = {
   id: string;
@@ -16,6 +18,28 @@ type WebhookEventRow = {
   status: string | null;
   attempt_count: number | null;
   last_attempt_at: string | null;
+};
+
+type DunningCaseRow = {
+  agent_id: string;
+  is_active: boolean | null;
+  status: string | null;
+  last_failed_invoice_id: string | null;
+  last_failed_at: string | null;
+  last_payment_attempt_at: string | null;
+  next_payment_attempt_at: string | null;
+  attempt_count: number | null;
+  amount_due: number | null;
+  currency: string | null;
+  hosted_invoice_url: string | null;
+  invoice_pdf: string | null;
+  failure_code: string | null;
+  failure_message: string | null;
+  last_email_sent_at: string | null;
+  email_send_count: number | null;
+  last_email_error: string | null;
+  resolved_at: string | null;
+  updated_at: string | null;
 };
 
 async function upsertCustomer(args: {
@@ -127,6 +151,310 @@ async function upsertInvoice(args: {
     },
     { onConflict: "stripe_invoice_id" },
   );
+}
+
+function isLikelyEmail(v: unknown) {
+  const s = String(v || "").trim();
+  if (!s || s.length > 254) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+function envOrNull(name: string) {
+  const v = String(process.env[name] || "").trim();
+  return v || null;
+}
+
+function isoFromAny(v: unknown): string | null {
+  if (typeof v === "number" && Number.isFinite(v)) return unixToIso(v);
+  if (typeof v === "string" && v.trim()) {
+    const d = new Date(v);
+    if (Number.isFinite(d.getTime())) return d.toISOString();
+  }
+  return null;
+}
+
+function isDunningTableMissingError(error: any) {
+  const code = String(error?.code || "").toUpperCase();
+  const msg = String(error?.message || "").toLowerCase();
+  return code === "42P01" || msg.includes("billing_dunning_cases");
+}
+
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs = OUTBOUND_TIMEOUT_MS,
+) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function getDunningCaseByAgentId(supabase: any, agentId: string) {
+  const { data, error } = await (supabase.from("billing_dunning_cases") as any)
+    .select(
+      "agent_id, is_active, status, last_failed_invoice_id, last_failed_at, last_payment_attempt_at, next_payment_attempt_at, attempt_count, amount_due, currency, hosted_invoice_url, invoice_pdf, failure_code, failure_message, last_email_sent_at, email_send_count, last_email_error, resolved_at, updated_at",
+    )
+    .eq("agent_id", agentId)
+    .maybeSingle();
+
+  return { data: (data || null) as DunningCaseRow | null, error };
+}
+
+function shouldSendDunningEmail(args: {
+  current: DunningCaseRow | null;
+  invoiceId: string;
+}) {
+  const { current, invoiceId } = args;
+  if (!current) return true;
+  if (String(current.last_failed_invoice_id || "") !== String(invoiceId || "")) {
+    return true;
+  }
+
+  const last = current.last_email_sent_at ? new Date(current.last_email_sent_at) : null;
+  if (!last || !Number.isFinite(last.getTime())) return true;
+  const elapsedMs = Date.now() - last.getTime();
+  if (elapsedMs < 0) return false;
+  return elapsedMs >= DUNNING_EMAIL_RETRY_HOURS * 60 * 60 * 1000;
+}
+
+async function resolveDunningCase(args: {
+  supabase: any;
+  agentId: string;
+  reason: string;
+  invoiceId?: string | null;
+}) {
+  const { supabase, agentId, reason, invoiceId } = args;
+  const now = new Date().toISOString();
+  return (supabase.from("billing_dunning_cases") as any).upsert(
+    {
+      agent_id: agentId,
+      is_active: false,
+      status: String(reason || "resolved"),
+      resolved_at: now,
+      last_failed_invoice_id: invoiceId ? String(invoiceId) : null,
+      failure_code: null,
+      failure_message: null,
+      last_email_error: null,
+      updated_at: now,
+    },
+    { onConflict: "agent_id" },
+  );
+}
+
+async function upsertDunningCaseFromFailedInvoice(args: {
+  supabase: any;
+  agentId: string;
+  invoice: any;
+}) {
+  const { supabase, agentId, invoice } = args;
+  const now = new Date().toISOString();
+  const invoiceId = String(invoice?.id || "");
+  const attemptCountRaw = Number(invoice?.attempt_count);
+  const existing = await getDunningCaseByAgentId(supabase, agentId);
+
+  const attemptCount =
+    Number.isFinite(attemptCountRaw) && attemptCountRaw >= 0
+      ? Math.floor(attemptCountRaw)
+      : Math.max(Number(existing.data?.attempt_count || 0) + 1, 1);
+
+  const failureCode =
+    String(
+      invoice?.last_finalization_error?.code ||
+        invoice?.last_payment_error?.code ||
+        invoice?.payment_intent?.last_payment_error?.code ||
+        "",
+    ).trim() || null;
+
+  const failureMessage =
+    String(
+      invoice?.last_finalization_error?.message ||
+        invoice?.last_payment_error?.message ||
+        invoice?.payment_intent?.last_payment_error?.message ||
+        "Zahlung konnte nicht eingezogen werden.",
+    )
+      .trim()
+      .slice(0, 1500);
+
+  const update = await (supabase.from("billing_dunning_cases") as any).upsert(
+    {
+      agent_id: agentId,
+      is_active: true,
+      status: "payment_failed",
+      last_failed_invoice_id: invoiceId || null,
+      last_failed_at: now,
+      last_payment_attempt_at: isoFromAny(invoice?.status_transitions?.finalized_at) || now,
+      next_payment_attempt_at: isoFromAny(invoice?.next_payment_attempt),
+      attempt_count: attemptCount,
+      amount_due:
+        typeof invoice?.amount_due === "number" ? Number(invoice.amount_due) : null,
+      currency: invoice?.currency ? String(invoice.currency).toUpperCase() : null,
+      hosted_invoice_url: invoice?.hosted_invoice_url
+        ? String(invoice.hosted_invoice_url)
+        : null,
+      invoice_pdf: invoice?.invoice_pdf ? String(invoice.invoice_pdf) : null,
+      failure_code: failureCode,
+      failure_message: failureMessage,
+      resolved_at: null,
+      raw: invoice || null,
+      updated_at: now,
+    },
+    { onConflict: "agent_id" },
+  );
+
+  return {
+    update,
+    caseBeforeUpdate: existing.data,
+    invoiceId,
+    failureMessage,
+  };
+}
+
+function formatAmount(cents: number | null, currency: string | null) {
+  if (typeof cents !== "number") return null;
+  const c = String(currency || "EUR").toUpperCase();
+  try {
+    return new Intl.NumberFormat("de-DE", {
+      style: "currency",
+      currency: c,
+    }).format(cents / 100);
+  } catch {
+    return `${(cents / 100).toFixed(2)} ${c}`;
+  }
+}
+
+async function findBillingEmail(args: {
+  supabase: any;
+  agentId: string;
+  fallbackFromInvoice?: string | null;
+}) {
+  const { supabase, agentId, fallbackFromInvoice } = args;
+  const fromInvoice = String(fallbackFromInvoice || "").trim();
+  if (isLikelyEmail(fromInvoice)) return fromInvoice;
+
+  const { data: customer } = await (supabase.from("billing_customers") as any)
+    .select("email")
+    .eq("agent_id", agentId)
+    .maybeSingle();
+  const fromCustomer = String(customer?.email || "").trim();
+  if (isLikelyEmail(fromCustomer)) return fromCustomer;
+
+  const { data: agent } = await (supabase.from("agents") as any)
+    .select("email")
+    .eq("id", agentId)
+    .maybeSingle();
+  const fromAgent = String(agent?.email || "").trim();
+  if (isLikelyEmail(fromAgent)) return fromAgent;
+
+  try {
+    const lookup = await supabase.auth.admin.getUserById(agentId);
+    const fromAuth = String(lookup?.data?.user?.email || "").trim();
+    if (isLikelyEmail(fromAuth)) return fromAuth;
+  } catch {
+    // ignore
+  }
+
+  return "";
+}
+
+async function sendDunningEmailResend(args: {
+  to: string;
+  amountDueCents: number | null;
+  currency: string | null;
+  hostedInvoiceUrl: string | null;
+  accountUrl: string;
+  failureMessage: string;
+}) {
+  const apiKey = envOrNull("RESEND_API_KEY");
+  const from = envOrNull("ADVAIC_EMAIL_FROM");
+  if (!apiKey || !from) {
+    return {
+      ok: false as const,
+      error: "resend_not_configured",
+    };
+  }
+  if (!isLikelyEmail(args.to)) {
+    return {
+      ok: false as const,
+      error: "invalid_recipient_email",
+    };
+  }
+
+  const amount = formatAmount(args.amountDueCents, args.currency);
+  const primaryCta = args.hostedInvoiceUrl || args.accountUrl;
+  const subject = "Zahlung fehlgeschlagen: Bitte Zahlungsmethode aktualisieren";
+  const bodyText = [
+    "Hallo,",
+    "",
+    "wir konnten die letzte Zahlung für dein Advaic-Abo nicht erfolgreich abbuchen.",
+    amount ? `Offener Betrag: ${amount}` : null,
+    args.failureMessage ? `Grund: ${args.failureMessage}` : null,
+    "",
+    "Bitte aktualisiere jetzt deine Zahlungsmethode:",
+    primaryCta,
+    "",
+    `Alternativ im Konto-Bereich: ${args.accountUrl}`,
+    "",
+    "Wenn du bereits aktualisiert hast, kannst du diese Nachricht ignorieren.",
+    "",
+    "Viele Grüße",
+    "Advaic",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111">
+      <h2 style="margin:0 0 12px 0">Zahlung fehlgeschlagen</h2>
+      <p>Wir konnten die letzte Zahlung für dein Advaic-Abo nicht erfolgreich abbuchen.</p>
+      ${amount ? `<p><strong>Offener Betrag:</strong> ${amount}</p>` : ""}
+      ${args.failureMessage ? `<p><strong>Grund:</strong> ${args.failureMessage}</p>` : ""}
+      <p style="margin:18px 0">
+        <a href="${primaryCta}" style="background:#111;color:#fff;padding:10px 14px;border-radius:6px;text-decoration:none;display:inline-block">Zahlungsmethode aktualisieren</a>
+      </p>
+      <p>Alternativ im Konto-Bereich: <a href="${args.accountUrl}">${args.accountUrl}</a></p>
+      <p>Wenn du bereits aktualisiert hast, kannst du diese Nachricht ignorieren.</p>
+      <p>Viele Grüße<br/>Advaic</p>
+    </div>
+  `.trim();
+
+  try {
+    const resp = await fetchWithTimeout("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: [args.to],
+        subject,
+        text: bodyText,
+        html,
+      }),
+    });
+
+    const body = (await resp.json().catch(() => null)) as any;
+    if (!resp.ok || !body?.id) {
+      const reason = String(
+        body?.error?.message || body?.message || body?.error || `http_${resp.status}`,
+      )
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 300);
+      return { ok: false as const, error: reason || "unknown_send_error" };
+    }
+
+    return { ok: true as const, messageId: String(body.id) };
+  } catch (e: any) {
+    return {
+      ok: false as const,
+      error: String(e?.message || e || "send_failed").slice(0, 300),
+    };
+  }
 }
 
 async function enrichAndUpsertSubscription(args: {
@@ -455,14 +783,23 @@ export async function POST(req: Request) {
           stripeCustomerId,
           sub: obj,
         });
+
+        const subStatus = String(obj?.status || "").toLowerCase();
+        if (subStatus === "active" || subStatus === "trialing") {
+          const clear = await resolveDunningCase({
+            supabase,
+            agentId,
+            reason: "subscription_ok",
+            invoiceId: null,
+          });
+          if (clear?.error && !isDunningTableMissingError(clear.error)) {
+            console.error("billing_dunning_cases clear on subscription failed:", clear.error);
+          }
+        }
       }
     }
 
-    if (
-      type === "invoice.paid" ||
-      type === "invoice.payment_failed" ||
-      type === "invoice.finalized"
-    ) {
+    if (type === "invoice.paid" || type === "invoice.payment_failed" || type === "invoice.finalized") {
       handled = true;
       const stripeCustomerId = String(obj?.customer || "");
       const agentId = await findAgentIdByCustomerId(supabase, stripeCustomerId);
@@ -470,6 +807,112 @@ export async function POST(req: Request) {
         result.skipped = "missing_mapping";
       } else {
         await upsertInvoice({ supabase, agentId, invoice: obj });
+
+        if (type === "invoice.payment_failed") {
+          const dunningUpdate = await upsertDunningCaseFromFailedInvoice({
+            supabase,
+            agentId,
+            invoice: obj,
+          });
+          if (dunningUpdate.update?.error) {
+            if (!isDunningTableMissingError(dunningUpdate.update.error)) {
+              console.error(
+                "billing_dunning_cases upsert payment_failed failed:",
+                dunningUpdate.update.error,
+              );
+            }
+            result.dunning = "table_missing_or_write_failed";
+          } else {
+            const invoiceId = String(obj?.id || "");
+            const shouldSendMail = shouldSendDunningEmail({
+              current: dunningUpdate.caseBeforeUpdate,
+              invoiceId,
+            });
+
+            if (shouldSendMail) {
+              const baseSiteUrl = envOrNull("NEXT_PUBLIC_SITE_URL") || "";
+              const accountUrl = baseSiteUrl
+                ? `${baseSiteUrl.replace(/\/$/, "")}/app/konto/abo`
+                : "/app/konto/abo";
+              const toEmail = await findBillingEmail({
+                supabase,
+                agentId,
+                fallbackFromInvoice: obj?.customer_email || null,
+              });
+
+              if (toEmail) {
+                const send = await sendDunningEmailResend({
+                  to: toEmail,
+                  amountDueCents:
+                    typeof obj?.amount_due === "number" ? Number(obj.amount_due) : null,
+                  currency: obj?.currency ? String(obj.currency) : null,
+                  hostedInvoiceUrl: obj?.hosted_invoice_url
+                    ? String(obj.hosted_invoice_url)
+                    : null,
+                  accountUrl,
+                  failureMessage: dunningUpdate.failureMessage,
+                });
+
+                if (send.ok) {
+                  const sentAt = new Date().toISOString();
+                  const prevCount = Number(
+                    dunningUpdate.caseBeforeUpdate?.email_send_count || 0,
+                  );
+                  const mark = await (supabase.from("billing_dunning_cases") as any)
+                    .update({
+                      last_email_sent_at: sentAt,
+                      email_send_count: Math.max(prevCount + 1, 1),
+                      last_email_error: null,
+                      updated_at: sentAt,
+                    })
+                    .eq("agent_id", agentId);
+                  if (mark?.error && !isDunningTableMissingError(mark.error)) {
+                    console.error(
+                      "billing_dunning_cases update email sent state failed:",
+                      mark.error,
+                    );
+                  }
+                  result.dunning_email = "sent";
+                } else {
+                  const err = String(send.error || "send_failed").slice(0, 500);
+                  const mark = await (supabase.from("billing_dunning_cases") as any)
+                    .update({
+                      last_email_error: err,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq("agent_id", agentId);
+                  if (mark?.error && !isDunningTableMissingError(mark.error)) {
+                    console.error(
+                      "billing_dunning_cases update email error failed:",
+                      mark.error,
+                    );
+                  }
+                  result.dunning_email = `failed:${err}`;
+                }
+              } else {
+                result.dunning_email = "skipped:no_recipient";
+              }
+            } else {
+              result.dunning_email = "skipped:recently_sent";
+            }
+
+            result.dunning = "active";
+          }
+        }
+
+        if (type === "invoice.paid") {
+          const clear = await resolveDunningCase({
+            supabase,
+            agentId,
+            reason: "payment_recovered",
+            invoiceId: String(obj?.id || "").trim() || null,
+          });
+          if (clear?.error && !isDunningTableMissingError(clear.error)) {
+            console.error("billing_dunning_cases resolve on invoice.paid failed:", clear.error);
+          } else {
+            result.dunning = "resolved";
+          }
+        }
       }
     }
 

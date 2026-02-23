@@ -10,6 +10,9 @@ type Body = {
   cancel_path?: string;
 };
 
+const DEFAULT_TRIAL_DAYS = 14;
+const MAX_TRIAL_DAYS = 90;
+
 function mustEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
@@ -31,6 +34,16 @@ function priceIdForPlan(planKey: string) {
     starter_monthly: process.env.STRIPE_PRICE_STARTER_MONTHLY,
   };
   return map[planKey] || "";
+}
+
+function configuredTrialDays() {
+  const raw = String(process.env.STRIPE_TRIAL_DAYS || "").trim();
+  if (!raw) return DEFAULT_TRIAL_DAYS;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > MAX_TRIAL_DAYS) {
+    return DEFAULT_TRIAL_DAYS;
+  }
+  return n;
 }
 
 export async function POST(req: NextRequest) {
@@ -63,6 +76,7 @@ export async function POST(req: NextRequest) {
     const agentId = String(auth.user.id);
     const email = String(auth.user.email || "").trim() || undefined;
     const supabase = createSupabaseAdminClient();
+    const trialDays = configuredTrialDays();
 
     let stripeCustomerId = "";
     const { data: customerRow } = await (supabase.from("billing_customers") as any)
@@ -92,6 +106,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Trial is only granted for first subscription checkout to prevent unlimited re-trials.
+    let hasSubscriptionHistory = true;
+    const historyRes = await (supabase.from("billing_subscriptions") as any)
+      .select("stripe_subscription_id", { count: "exact", head: true })
+      .eq("agent_id", agentId);
+    if (!historyRes.error) {
+      hasSubscriptionHistory = Number(historyRes.count || 0) > 0;
+    }
+
+    const subscriptionData: Record<string, any> = {
+      metadata: {
+        agent_id: agentId,
+        plan_key: planKey,
+      },
+    };
+    if (!hasSubscriptionHistory && trialDays > 0) {
+      subscriptionData.trial_period_days = trialDays;
+    }
+
     const session = await stripeRequest<{ id: string; url: string | null }>({
       path: "/checkout/sessions",
       method: "POST",
@@ -107,12 +140,7 @@ export async function POST(req: NextRequest) {
           agent_id: agentId,
           plan_key: planKey,
         },
-        subscription_data: {
-          metadata: {
-            agent_id: agentId,
-            plan_key: planKey,
-          },
-        },
+        subscription_data: subscriptionData,
       },
     });
 
@@ -127,6 +155,8 @@ export async function POST(req: NextRequest) {
       ok: true,
       checkout_url: String(session.url),
       session_id: String(session.id || ""),
+      trial_days_applied:
+        !hasSubscriptionHistory && trialDays > 0 ? Number(trialDays) : 0,
     });
   } catch (e: any) {
     return NextResponse.json(

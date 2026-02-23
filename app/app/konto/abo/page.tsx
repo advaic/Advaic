@@ -17,6 +17,18 @@ type BillingSummaryResponse = {
       current_period_end: string | null;
       cancel_at_period_end: boolean;
     };
+    dunning: {
+      is_active: boolean;
+      status: string;
+      amount_due_cents: number | null;
+      currency: string | null;
+      failure_message: string | null;
+      last_failed_at: string | null;
+      next_payment_attempt_at: string | null;
+      hosted_invoice_url: string | null;
+      invoice_pdf: string | null;
+      last_email_sent_at: string | null;
+    } | null;
     invoices: Array<{
       id: string;
       status: string | null;
@@ -82,6 +94,7 @@ export default function AboPage() {
   }, []);
 
   const plan = summary?.plan;
+  const dunning = summary?.dunning || null;
   const isFree = (plan?.key || "free") === "free";
 
   const statusLabel = useMemo(() => {
@@ -94,6 +107,12 @@ export default function AboPage() {
     if (s === "incomplete") return "Unvollständig";
     return "Kein aktives Abo";
   }, [plan?.status]);
+
+  const showDunningWarning =
+    !!dunning?.is_active ||
+    ["past_due", "unpaid", "incomplete"].includes(
+      String(plan?.status || "").toLowerCase(),
+    );
 
   const openCheckout = async () => {
     setBusy("checkout");
@@ -157,6 +176,43 @@ export default function AboPage() {
               <p className="text-sm text-amber-700">
                 Kündigung zum Periodenende aktiv.
               </p>
+            ) : null}
+
+            {showDunningWarning ? (
+              <div className="mt-3 border border-red-300 bg-red-50 rounded-lg p-4 space-y-2">
+                <p className="text-sm font-semibold text-red-800">
+                  Zahlung fehlgeschlagen. Bitte Zahlungsmethode aktualisieren.
+                </p>
+                {typeof dunning?.amount_due_cents === "number" ? (
+                  <p className="text-sm text-red-800">
+                    Offener Betrag:{" "}
+                    {formatMoney(dunning.amount_due_cents, dunning.currency || plan?.currency || null)}
+                  </p>
+                ) : null}
+                {dunning?.failure_message ? (
+                  <p className="text-sm text-red-800">Grund: {dunning.failure_message}</p>
+                ) : null}
+                {dunning?.next_payment_attempt_at ? (
+                  <p className="text-xs text-red-700">
+                    Nächster Zahlungsversuch: {formatDate(dunning.next_payment_attempt_at)}
+                  </p>
+                ) : null}
+                {dunning?.last_email_sent_at ? (
+                  <p className="text-xs text-red-700">
+                    E-Mail-Hinweis gesendet am: {formatDate(dunning.last_email_sent_at)}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button variant="outline" onClick={openPortal} disabled={busy !== null}>
+                    Zahlungsmethode aktualisieren
+                  </Button>
+                  {dunning?.hosted_invoice_url ? (
+                    <a href={dunning.hosted_invoice_url} target="_blank" rel="noreferrer">
+                      <Button variant="outline">Rechnung öffnen</Button>
+                    </a>
+                  ) : null}
+                </div>
+              </div>
             ) : null}
 
             <div className="mt-4 flex flex-wrap gap-2">

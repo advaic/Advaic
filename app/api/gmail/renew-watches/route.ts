@@ -33,12 +33,15 @@ function isAuthorized(req: Request) {
   const bearerToken = auth.startsWith("Bearer ")
     ? auth.slice("Bearer ".length)
     : "";
+  const internalHeader = req.headers.get("x-advaic-internal-secret") || "";
 
   const url = new URL(req.url);
   const secret = url.searchParams.get("secret") || "";
 
   const headerOk =
-    !!bearerToken && (bearerToken === cronSecret || bearerToken === internalSecret);
+    (!!bearerToken &&
+      (bearerToken === cronSecret || bearerToken === internalSecret)) ||
+    (!!internalHeader && internalHeader === internalSecret);
   const queryOk = !!secret && (secret === cronSecret || secret === internalSecret);
 
   return headerOk || queryOk;
@@ -86,7 +89,7 @@ async function runRenewWatches() {
       "id, agent_id, provider, status, refresh_token, email_address, last_history_id, watch_expiration, watch_active, watch_topic, last_error"
     )
     .eq("provider", "gmail")
-    .in("status", ["connected", "active"])
+    .in("status", ["connected", "active", "watching"])
     .limit(500);
 
   if (error) throw new Error(error.message);
@@ -97,12 +100,15 @@ async function runRenewWatches() {
   // Keep 36h buffer so a single missed day doesn't kill pushes.
   const renewBeforeMs = 36 * 60 * 60 * 1000; // 36h
 
-  const defaultProjectNumber = process.env.GCP_PROJECT_NUMBER || "";
+  const explicitTopicName = process.env.GMAIL_PUBSUB_TOPIC_NAME || "";
+  const defaultProjectNumber =
+    process.env.GCP_PROJECT_NUMBER || process.env.GCP_PROJECT_ID || "";
   const defaultTopicId = process.env.GMAIL_PUBSUB_TOPIC_ID || "";
   const defaultTopicName =
-    defaultProjectNumber && defaultTopicId
+    explicitTopicName ||
+    (defaultProjectNumber && defaultTopicId
       ? `projects/${defaultProjectNumber}/topics/${defaultTopicId}`
-      : "";
+      : "");
 
   // Redirect URI is irrelevant for refresh_token usage, but googleapis expects it.
   // Prefer building from NEXT_PUBLIC_SITE_URL to avoid env drift.
@@ -136,7 +142,12 @@ async function runRenewWatches() {
       const topicName = (conn.watch_topic ? String(conn.watch_topic) : "").trim() || defaultTopicName;
       if (!topicName) {
         failed++;
-        failures.push({ id: connId, email, error: "missing_topicName (set email_connections.watch_topic or env GCP_PROJECT_NUMBER + GMAIL_PUBSUB_TOPIC_ID)" });
+        failures.push({
+          id: connId,
+          email,
+          error:
+            "missing_topicName (set email_connections.watch_topic or env GMAIL_PUBSUB_TOPIC_NAME or GCP_PROJECT_NUMBER/GCP_PROJECT_ID + GMAIL_PUBSUB_TOPIC_ID)",
+        });
         continue;
       }
 
