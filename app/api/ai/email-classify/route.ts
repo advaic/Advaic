@@ -408,7 +408,16 @@ function enforceHardRules(
   return null;
 }
 
+function isInternal(req: NextRequest) {
+  const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
+  if (!secret) return false;
+  const got = req.headers.get("x-advaic-internal-secret");
+  return !!got && got === secret;
+}
+
 export async function POST(req: NextRequest) {
+  if (!isInternal(req)) return jsonError("Unauthorized", 401);
+
   const body = (await req.json().catch(() => null)) as Body | null;
   if (!body) return jsonError("Missing body", 400);
 

@@ -1,0 +1,58 @@
+name: Smoke E2E
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BASE_URL: http://127.0.0.1:4010
+      INTERNAL_SECRET: ci-smoke-secret
+      CHECK_APP_REDIRECT: "false"
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:4010
+      ADVAIC_INTERNAL_PIPELINE_SECRET: ci-smoke-secret
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Start server
+        run: npm run start -- -p 4010 > /tmp/next-smoke.log 2>&1 &
+
+      - name: Wait for server
+        run: |
+          for i in {1..40}; do
+            if curl -sSf "$BASE_URL/" > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server did not start in time"
+          cat /tmp/next-smoke.log || true
+          exit 1
+
+      - name: Run smoke checks
+        run: npm run smoke:e2e
+
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/next-smoke.log || true

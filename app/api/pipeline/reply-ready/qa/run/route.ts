@@ -24,6 +24,13 @@ function supabaseAdmin() {
   );
 }
 
+function isInternal(req: Request) {
+  const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
+  if (!secret) return false;
+  const got = req.headers.get("x-advaic-internal-secret");
+  return !!got && got === secret;
+}
+
 function clamp01(x: any) {
   const n = Number(x);
   if (!Number.isFinite(n)) return null;
@@ -262,7 +269,11 @@ async function enqueueNotificationBestEffort(args: {
  * Handler
  * =========================
  */
-export async function POST() {
+export async function POST(req: Request) {
+  if (!isInternal(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const supabase = supabaseAdmin();
   const nowIso = new Date().toISOString();
 
@@ -359,7 +370,7 @@ export async function POST() {
       "id, agent_id, lead_id, text, timestamp, sender, status, send_status, approval_required, was_followup"
     )
     .eq("was_followup", true)
-    .eq("sender", "agent")
+    .in("sender", ["agent", "assistant"])
     .eq("status", "qa_pending")
     .order("timestamp", { ascending: true })
     .limit(50);
@@ -510,8 +521,8 @@ export async function POST() {
 
     // Must be correct roles based on your pipeline
     if (String(inbound.sender) !== "user") continue;
-    // Your draft runner inserts sender: "agent"
-    if (String(draft.sender) !== "agent") continue;
+    // Draft rows may be either "agent" or "assistant" depending on runner version.
+    if (!["agent", "assistant"].includes(String(draft.sender))) continue;
 
     // Stage-gate: only QA drafts pending QA
     if (String(draft.status || "") !== "qa_pending") continue;

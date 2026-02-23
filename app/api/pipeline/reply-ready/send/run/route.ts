@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
 
 export const runtime = "nodejs";
@@ -15,6 +16,33 @@ function supabaseAdmin() {
     mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
     mustEnv("SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+}
+
+function isInternal(req: Request) {
+  const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
+  if (!secret) return false;
+  const got = req.headers.get("x-advaic-internal-secret");
+  return !!got && got === secret;
+}
+
+function supabaseFromReq(req: NextRequest, res: NextResponse) {
+  return createServerClient<Database>(
+    mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    mustEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    {
+      cookies: {
+        get(name: string) {
+          return req.cookies.get(name)?.value;
+        },
+        set(name: string, value: string, options: any) {
+          res.cookies.set({ name, value, ...options });
+        },
+        remove(name: string, options: any) {
+          res.cookies.set({ name, value: "", ...options, maxAge: 0 });
+        },
+      },
+    }
   );
 }
 
@@ -37,16 +65,36 @@ function buildSubject(lead: any) {
   return `Re: ${String(s).slice(0, 140)}`;
 }
 
-export async function POST() {
+export async function POST(req: NextRequest) {
+  const internal = isInternal(req);
+  let scopedAgentId: string | null = null;
+
+  if (!internal) {
+    const authRes = NextResponse.next();
+    const supabaseAuth = supabaseFromReq(req, authRes);
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabaseAuth.auth.getUser();
+
+    if (authErr || !user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    scopedAgentId = String(user.id);
+  }
+
   const supabase = supabaseAdmin();
 
   const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL");
   const secret = mustEnv("ADVAIC_INTERNAL_PIPELINE_SECRET");
+  const body = (await req.json().catch(() => null)) as
+    | { id?: string; message_id?: string }
+    | null;
+  const onlyMessageId = String(body?.message_id || body?.id || "").trim();
 
   // 1) Pull ready_to_send drafts
-  const { data: drafts, error: draftsErr } = await (
-    supabase.from("messages") as any
-  )
+  let draftsQ = (supabase.from("messages") as any)
     .select(
       "id, agent_id, lead_id, text, status, approval_required, send_status, timestamp, was_followup"
     )
@@ -56,6 +104,15 @@ export async function POST() {
     .in("send_status", ["pending", "failed"])
     .order("timestamp", { ascending: true })
     .limit(25);
+
+  if (scopedAgentId) {
+    draftsQ = draftsQ.eq("agent_id", scopedAgentId);
+  }
+  if (onlyMessageId) {
+    draftsQ = draftsQ.eq("id", onlyMessageId);
+  }
+
+  const { data: drafts, error: draftsErr } = await draftsQ;
 
   if (draftsErr) {
     return NextResponse.json(

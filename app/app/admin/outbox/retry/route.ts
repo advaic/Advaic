@@ -98,7 +98,12 @@ export async function POST(req: Request) {
             "Content-Type": "application/json",
             "x-advaic-internal-secret": secret,
           },
-          body: JSON.stringify({ reason: "admin_retry_runNow" }),
+          // Scope runner to this single message to avoid unintended batch sends.
+          body: JSON.stringify({
+            reason: "admin_retry_runNow",
+            id: messageId,
+            message_id: messageId,
+          }),
         },
       ).catch(() => null);
     }

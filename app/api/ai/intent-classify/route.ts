@@ -217,7 +217,16 @@ function clamp01(n: any) {
   return Math.max(0, Math.min(1, x));
 }
 
+function isInternal(req: Request) {
+  const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
+  if (!secret) return false;
+  const got = req.headers.get("x-advaic-internal-secret");
+  return !!got && got === secret;
+}
+
 export async function POST(req: Request) {
+  if (!isInternal(req)) return jsonError("Unauthorized", 401);
+
   const body = (await req.json().catch(() => null)) as Body | null;
   if (!body?.text) return jsonError("Missing text", 400);
 

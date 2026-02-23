@@ -44,6 +44,12 @@ function uniq<T>(arr: T[]) {
   return Array.from(new Set(arr));
 }
 
+function isUuid(v: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    v,
+  );
+}
+
 async function dispatchBestEffort(eventId?: string) {
   try {
     await fetch(`${siteUrl()}/api/notifications/dispatch`, {
@@ -224,6 +230,21 @@ export async function POST(req: Request) {
   const type = String(body.type).trim();
   const entityType = body.entity_type ? String(body.entity_type) : null;
   const entityId = body.entity_id ? String(body.entity_id) : null;
+
+  if (!isUuid(agentId)) {
+    return NextResponse.json(
+      { error: "invalid_agent_id", details: "agent_id must be a UUID" },
+      { status: 400 },
+    );
+  }
+
+  if (entityId && !isUuid(entityId)) {
+    return NextResponse.json(
+      { error: "invalid_entity_id", details: "entity_id must be a UUID" },
+      { status: 400 },
+    );
+  }
+
   const payload =
     body.payload && typeof body.payload === "object" ? body.payload : {};
   const dispatchNow = body.dispatch_now !== false;

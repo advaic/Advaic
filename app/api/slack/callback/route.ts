@@ -52,11 +52,11 @@ export async function GET(req: NextRequest) {
 
   // Slack sometimes sends `error=access_denied` when the user cancels
   if (error) {
-    return redirect(`/benachrichtigungen?error=${encodeURIComponent(error)}`);
+    return redirect(`/app/benachrichtigungen?error=${encodeURIComponent(error)}`);
   }
 
   if (!code) {
-    return redirect("/benachrichtigungen?error=missing_code");
+    return redirect("/app/benachrichtigungen?error=missing_code");
   }
 
   // ✅ Use env vars (never hardcode secrets)
@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
   const redirectUri = mustEnv("SLACK_REDIRECT_URI");
 
   // We want to preserve Supabase session cookies if Supabase needs to refresh them
-  const res = redirect("/benachrichtigungen?slack_connected=1");
+  const res = redirect("/app/benachrichtigungen?slack_connected=1");
   const supabase = supabaseFromReq(req, res);
 
   // Ensure we know which agent connected Slack
@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (authErr || !user?.id) {
-    return redirect("/benachrichtigungen?error=not_logged_in");
+    return redirect("/app/benachrichtigungen?error=not_logged_in");
   }
 
   try {
@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
 
     if (!data || data.ok !== true) {
       console.error("Slack OAuth error:", data);
-      return redirect("/benachrichtigungen?error=oauth_failed");
+      return redirect("/app/benachrichtigungen?error=oauth_failed");
     }
 
     const accessToken: string | null = typeof data.access_token === "string" ? data.access_token : null;
@@ -128,25 +128,42 @@ export async function GET(req: NextRequest) {
     // This upsert will only work if you created `slack_connections`.
     // Schema suggestion: (agent_id pk, access_token, team_id, team_name, authed_user_id, updated_at)
     if (accessToken) {
-      await safeUpsert(
+      const base = {
+        agent_id: user.id,
+        access_token: accessToken,
+        team_id: teamId,
+        team_name: teamName,
+        updated_at: new Date().toISOString(),
+      };
+
+      const modern = await safeUpsert(
         supabase,
         "slack_connections",
         {
-          agent_id: user.id,
-          access_token: accessToken,
-          team_id: teamId,
-          team_name: teamName,
-          slack_authed_user_id: authedUserId,
-          updated_at: new Date().toISOString(),
+          ...base,
+          authed_user_id: authedUserId,
         },
         "agent_id"
       );
+
+      // Backward-compatible fallback for older schemas.
+      if (!modern.ok) {
+        await safeUpsert(
+          supabase,
+          "slack_connections",
+          {
+            ...base,
+            slack_authed_user_id: authedUserId,
+          },
+          "agent_id"
+        );
+      }
     }
 
     // If we got here, we keep the success redirect
     return res;
   } catch (err) {
     console.error("Slack OAuth Callback Error:", err);
-    return redirect("/benachrichtigungen?error=server_error");
+    return redirect("/app/benachrichtigungen?error=server_error");
   }
 }

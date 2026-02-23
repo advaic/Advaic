@@ -24,6 +24,13 @@ function supabaseAdmin() {
   );
 }
 
+function isInternal(req: Request) {
+  const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
+  if (!secret) return false;
+  const got = req.headers.get("x-advaic-internal-secret");
+  return !!got && got === secret;
+}
+
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
@@ -142,7 +149,11 @@ type RewriteLogRow = {
  * Handler
  * =========================
  */
-export async function POST() {
+export async function POST(req: Request) {
+  if (!isInternal(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const supabase = supabaseAdmin();
   const nowIso = new Date().toISOString();
 
@@ -217,12 +228,12 @@ export async function POST() {
   }
 
   // 2) Load drafts that are waiting for rewrite
-  // IMPORTANT: your system uses sender="agent" (not "assistant") for drafts.
+  // Draft rows may be either sender="agent" or sender="assistant" depending on runner version.
   const { data: drafts, error: draftsErr } = await (
     supabase.from("messages") as any
   )
     .select("id, lead_id, agent_id, text, status, sender, timestamp, was_followup")
-    .eq("sender", "agent")
+    .in("sender", ["agent", "assistant"])
     .eq("status", "rewrite_pending")
     .order("timestamp", { ascending: true })
     .limit(25);

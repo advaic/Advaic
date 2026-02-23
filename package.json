@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "smoke:e2e": "node scripts/smoke-e2e.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

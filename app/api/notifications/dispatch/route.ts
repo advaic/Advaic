@@ -3,6 +3,85 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 
 export const runtime = "nodejs";
+const OUTBOUND_TIMEOUT_MS = 15_000;
+
+function isLikelyEmail(v: string) {
+  const s = String(v || "").trim();
+  if (!s || s.length > 254) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs = OUTBOUND_TIMEOUT_MS,
+) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: ctrl.signal });
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      throw new Error("request_timeout");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+type SlackConnection = {
+  accessToken: string;
+  authedUserId: string;
+};
+
+async function loadSlackConnection(args: {
+  supabase: any;
+  agentId: string;
+}): Promise<{ data: SlackConnection | null; error: string | null }> {
+  const { supabase, agentId } = args;
+
+  const candidates = [
+    {
+      select: "access_token, authed_user_id",
+      map: (r: any) => ({
+        accessToken: String(r?.access_token || "").trim(),
+        authedUserId: String(r?.authed_user_id || "").trim(),
+      }),
+    },
+    {
+      select: "access_token, slack_authed_user_id",
+      map: (r: any) => ({
+        accessToken: String(r?.access_token || "").trim(),
+        authedUserId: String(r?.slack_authed_user_id || "").trim(),
+      }),
+    },
+  ];
+
+  let lastErr: string | null = null;
+  for (const c of candidates) {
+    const { data, error } = await (supabase.from("slack_connections") as any)
+      .select(c.select)
+      .eq("agent_id", agentId)
+      .maybeSingle();
+
+    if (error) {
+      lastErr = String(error.message || "slack_query_failed");
+      continue;
+    }
+
+    if (!data) {
+      return { data: null, error: null };
+    }
+
+    const mapped = c.map(data);
+    if (mapped.accessToken && mapped.authedUserId) {
+      return { data: mapped, error: null };
+    }
+  }
+
+  return { data: null, error: lastErr || "missing_slack_credentials" };
+}
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -229,7 +308,7 @@ async function sendSlackMessage(args: {
   blocks?: any[];
 }) {
   // 1) open DM
-  const openResp = await fetch("https://slack.com/api/conversations.open", {
+  const openResp = await fetchWithTimeout("https://slack.com/api/conversations.open", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${args.accessToken}`,
@@ -246,7 +325,7 @@ async function sendSlackMessage(args: {
   const channelId = String(openJson.channel.id);
 
   // 2) post message (supports Block Kit)
-  const postResp = await fetch("https://slack.com/api/chat.postMessage", {
+  const postResp = await fetchWithTimeout("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${args.accessToken}`,
@@ -273,10 +352,14 @@ async function sendEmailResend(args: {
   bodyText: string;
   html?: string;
 }) {
+  if (!isLikelyEmail(args.to)) {
+    throw new Error("resend_send_failed:invalid_recipient_email");
+  }
+
   const apiKey = mustEnv("RESEND_API_KEY");
   const from = mustEnv("ADVAIC_EMAIL_FROM"); // e.g. "Advaic <no-reply@updates.advaic.com>"
 
-  const resp = await fetch("https://api.resend.com/emails", {
+  const resp = await fetchWithTimeout("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -291,11 +374,28 @@ async function sendEmailResend(args: {
     }),
   });
 
+  const retryAfterHeader = Number(resp.headers.get("retry-after") || "");
+  const retryAfterSeconds =
+    Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+      ? Math.floor(retryAfterHeader)
+      : null;
+  const data = (await resp.json().catch(() => null)) as any;
+
   if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(
-      `resend_send_failed:http_${resp.status}:${text.slice(0, 300)}`,
-    );
+    const resendErr = String(
+      data?.error?.message || data?.message || data?.error || "",
+    )
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 220);
+
+    const retryPart = retryAfterSeconds ? `:retry_after_${retryAfterSeconds}` : "";
+    const errPart = resendErr ? `:${resendErr}` : "";
+    throw new Error(`resend_send_failed:http_${resp.status}${retryPart}${errPart}`);
+  }
+
+  if (!data?.id) {
+    throw new Error("resend_send_failed:missing_message_id");
   }
 }
 
@@ -578,6 +678,18 @@ export async function POST(req: Request) {
         backoffSeconds = Math.max(backoffSeconds, RATE_LIMIT_BACKOFF_SECONDS);
       }
 
+      // Respect explicit retry_after hints if provided by providers.
+      const retryAfterMatch = lower.match(/retry_after[_:=](\d{1,6})/i);
+      if (retryAfterMatch) {
+        const retryAfterSeconds = Number(retryAfterMatch[1]);
+        if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+          backoffSeconds = Math.max(
+            backoffSeconds,
+            Math.min(MAX_BACKOFF_SECONDS, retryAfterSeconds),
+          );
+        }
+      }
+
       const nextAttemptAtIso = shouldRetry
         ? new Date(Date.now() + backoffSeconds * 1000).toISOString()
         : null;
@@ -713,14 +825,13 @@ export async function POST(req: Request) {
           continue;
         }
 
-        const { data: slack } = await (
-          supabase.from("slack_connections") as any
-        )
-          .select("access_token, authed_user_id")
-          .eq("agent_id", agentId)
-          .maybeSingle();
+        const slackConn = await loadSlackConnection({ supabase, agentId });
+        if (slackConn.error) {
+          await fail(slackConn.error);
+          continue;
+        }
 
-        if (!slack?.access_token || !slack?.authed_user_id) {
+        if (!slackConn.data?.accessToken || !slackConn.data?.authedUserId) {
           await fail("missing_slack_credentials");
           continue;
         }
@@ -754,8 +865,8 @@ export async function POST(req: Request) {
         }
 
         await sendSlackMessage({
-          accessToken: String(slack.access_token),
-          authedUserId: String(slack.authed_user_id),
+          accessToken: slackConn.data.accessToken,
+          authedUserId: slackConn.data.authedUserId,
           text,
           blocks,
         });
@@ -768,6 +879,10 @@ export async function POST(req: Request) {
         const to = String(settings?.contact_email || "").trim();
         if (!to) {
           await fail("missing_contact_email");
+          continue;
+        }
+        if (!isLikelyEmail(to)) {
+          await fail("invalid_contact_email");
           continue;
         }
 

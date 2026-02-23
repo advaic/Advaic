@@ -35,7 +35,18 @@ function supabaseAdmin() {
   );
 }
 
+function isInternal(req: Request) {
+  const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
+  if (!secret) return false;
+  const got = req.headers.get("x-advaic-internal-secret");
+  return !!got && got === secret;
+}
+
 export async function POST(req: Request) {
+  if (!isInternal(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const supabase = supabaseAdmin();
 
   // Pull a small batch of inbound messages that are ready for intent
@@ -89,7 +100,10 @@ export async function POST(req: Request) {
         ).toString(),
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-advaic-internal-secret": mustEnv("ADVAIC_INTERNAL_PIPELINE_SECRET"),
+          },
           body: JSON.stringify({
             text: m.text,
             context: (ctx || []).map((x: any) => ({

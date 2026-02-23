@@ -298,6 +298,13 @@ function mustInternalSecret() {
   return v;
 }
 
+function isInternal(req: Request) {
+  const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
+  if (!secret) return false;
+  const got = req.headers.get("x-advaic-internal-secret");
+  return !!got && got === secret;
+}
+
 function siteUrl() {
   // Prefer explicit site url, fallback to Vercel URL
   const a = process.env.NEXT_PUBLIC_SITE_URL;
@@ -332,7 +339,7 @@ function mapQaOutcomeToNotificationType(args: {
 }) {
   // Align with notification dispatcher types.
   // - approval_required_created -> /app/zur-freigabe
-  // - escalation_created -> /app/escalations
+  // - escalation_created -> /app/eskalationen
   // - autosend_ready -> optional (falls back to generic title/body)
   if (args.verdict === "fail") return "escalation_created";
   if (args.verdict === "warn") return "approval_required_created";
@@ -345,7 +352,11 @@ function mapQaOutcomeToNotificationType(args: {
  * Handler
  * =========================
  */
-export async function POST() {
+export async function POST(req: Request) {
+  if (!isInternal(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const supabase = supabaseAdmin();
 
   const PROMPT_KEY_REPLY = "qa_recheck_v1";
@@ -707,7 +718,7 @@ export async function POST() {
             notificationType === "approval_required_created"
               ? "/app/zur-freigabe"
               : notificationType === "escalation_created"
-              ? "/app/escalations"
+              ? "/app/eskalationen"
               : "/app",
         },
         dispatch_now: true,
@@ -758,7 +769,7 @@ export async function POST() {
           inbound_message_id: inboundMessageId,
           source: "qa_recheck",
           verdict: "fail",
-          deep_link: "/app/escalations",
+          deep_link: "/app/eskalationen",
         },
         dispatch_now: true,
       });

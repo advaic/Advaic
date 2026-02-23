@@ -19,6 +19,13 @@ function supabaseAdmin() {
   );
 }
 
+function isInternal(req: Request) {
+  const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
+  if (!secret) return false;
+  const got = req.headers.get("x-advaic-internal-secret");
+  return !!got && got === secret;
+}
+
 type IntentArtifact = {
   intent: string;
   confidence: number;
@@ -198,7 +205,11 @@ async function insertRouteArtifact(supabase: any, row: any) {
   await (supabase.from("message_routes") as any).insert(row);
 }
 
-export async function POST() {
+export async function POST(req: Request) {
+  if (!isInternal(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const supabase = supabaseAdmin();
 
   // 1) Pull inbound user messages that need routing.

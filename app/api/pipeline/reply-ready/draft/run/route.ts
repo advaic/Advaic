@@ -24,6 +24,13 @@ function supabaseAdmin() {
   );
 }
 
+function isInternal(req: Request) {
+  const secret = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
+  if (!secret) return false;
+  const got = req.headers.get("x-advaic-internal-secret");
+  return !!got && got === secret;
+}
+
 function clamp01(x: any) {
   const n = Number(x);
   if (!Number.isFinite(n)) return 0;
@@ -235,7 +242,11 @@ async function safeUpdate(
  * Handler
  * =========================
  */
-export async function POST() {
+export async function POST(req: Request) {
+  if (!isInternal(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const supabase = supabaseAdmin();
 
   const PROMPT_KEY = "reply_writer_v1";

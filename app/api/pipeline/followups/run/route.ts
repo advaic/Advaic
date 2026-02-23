@@ -859,8 +859,7 @@ export async function POST(req: NextRequest) {
       const text = ai.text.trim();
 
       // 6) Enqueue draft for unified sender pipeline.
-      // We create a draft message row (required for Outlook; also keeps audit trail consistent)
-      // and mark it `ready_to_send` so `/api/pipeline/reply-ready/send/run` can pick it up.
+      // We create a draft row and send it through QA first. Only after QA-pass it becomes ready_to_send.
       const now = nowIso();
 
       const { data: inserted, error: insErr } = await (
@@ -876,7 +875,7 @@ export async function POST(req: NextRequest) {
           email_provider: provider,
           send_status: "pending",
           approval_required: false,
-          status: "ready_to_qa",
+          status: "qa_pending",
           // best-effort threading hints (safe for providers that ignore)
           gmail_thread_id: raw.gmail_thread_id ?? null,
           outlook_conversation_id: raw.outlook_conversation_id ?? null,
@@ -990,8 +989,11 @@ export async function POST(req: NextRequest) {
             "Content-Type": "application/json",
             "x-advaic-internal-secret": internalSecret,
           },
-          // This route currently pulls from DB; body is optional.
-          body: JSON.stringify({}),
+          // Scope sender run to the drafted follow-up to avoid unintended batch sends.
+          body: JSON.stringify({
+            id: String(inserted.id),
+            message_id: String(inserted.id),
+          }),
         },
       ).catch(() => null);
 
