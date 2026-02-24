@@ -516,6 +516,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
 
     const initialLocalSentId = `local-${leadId}-${Date.now()}`;
     let localSentId = initialLocalSentId;
+    let createdMessageId: string | null = null;
 
     setSendPendingFor(leadId, true);
     setSendErrorFor(leadId, null);
@@ -561,8 +562,19 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
         ? baseSubject
         : `Re: ${baseSubject}`;
 
-      // Outlook send route requires a `messages.id` (draft row). For Gmail we can send without it.
-      async function ensureOutlookDraftMessageId(): Promise<string> {
+      const provider =
+        String(
+          (leadRow as any).email_provider ||
+            ((leadRow as any).outlook_conversation_id ? "outlook" : "gmail"),
+        )
+          .toLowerCase()
+          .trim() === "outlook"
+          ? "outlook"
+          : "gmail";
+
+      async function ensureDraftMessageId(
+        currentProvider: "gmail" | "outlook",
+      ): Promise<string> {
         const nowIso = new Date().toISOString();
 
         const { data: inserted, error: insErr } = await (
@@ -575,10 +587,10 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
             text,
             timestamp: nowIso,
             was_followup: true,
-            email_provider: "outlook",
+            email_provider: currentProvider,
             send_status: "pending",
             approval_required: false,
-            status: "approved",
+            status: "ready_to_send",
           })
           .select("id")
           .single();
@@ -593,11 +605,20 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
         return String(inserted.id);
       }
 
-      const provider = (leadRow as any).email_provider ?? "gmail";
       const endpoint =
         provider === "outlook" ? "/api/outlook/send" : "/api/gmail/send";
 
+      const draftMessageId = await ensureDraftMessageId(provider);
+      createdMessageId = draftMessageId;
+      localSentId = draftMessageId;
+      setSent((prev) =>
+        prev.map((m) =>
+          m.id === initialLocalSentId ? { ...m, id: draftMessageId } : m,
+        ),
+      );
+
       const payload: Record<string, any> = {
+        id: draftMessageId,
         lead_id: leadId,
         to: lead.email,
         subject,
@@ -608,16 +629,6 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
       if (provider === "outlook") {
         payload.outlook_conversation_id =
           (leadRow as any).outlook_conversation_id ?? null;
-
-        const draftMessageId = await ensureOutlookDraftMessageId();
-        payload.id = draftMessageId;
-
-        setSent((prev) =>
-          prev.map((m) =>
-            m.id === initialLocalSentId ? { ...m, id: draftMessageId } : m,
-          ),
-        );
-        localSentId = draftMessageId;
       } else {
         payload.gmail_thread_id = (leadRow as any).gmail_thread_id ?? null;
       }
@@ -663,6 +674,23 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
       const msg = e?.message ?? "Senden fehlgeschlagen.";
       toast.error(msg);
       setSendErrorFor(leadId, msg);
+
+      if (createdMessageId) {
+        try {
+          await (supabase.from("messages") as any)
+            .update({
+              send_status: "failed",
+              send_error: "client_send_failed",
+              status: "needs_human",
+              approval_required: true,
+            })
+            .eq("id", createdMessageId)
+            .eq("agent_id", userId)
+            .eq("send_status", "pending");
+        } catch (cleanupErr) {
+          console.error("follow-up draft cleanup failed", cleanupErr);
+        }
+      }
 
       // Reinsert the lead into queue
       setQueue((prev) => {

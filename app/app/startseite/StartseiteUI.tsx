@@ -366,8 +366,13 @@ export default function StartseiteUI({
       });
       const data = await res.json();
       if (!res.ok || data?.ok !== true) {
+        const firstReason = Array.isArray(data?.autosend_gate?.reasons)
+          ? String(data.autosend_gate.reasons[0] || "").trim()
+          : "";
         throw new Error(
-          data?.error || "Serverfehler beim Ändern von Auto-Senden.",
+          firstReason
+            ? `${data?.error || "Auto-Senden noch nicht freigegeben."}: ${firstReason}`
+            : data?.error || "Serverfehler beim Ändern von Auto-Senden.",
         );
       }
       if (typeof data?.settings?.autosend_enabled === "boolean") {

@@ -75,6 +75,15 @@ function shortId(id: string): string {
   return `${s.slice(0, 6)}…${s.slice(-4)}`;
 }
 
+function fileSafePart(input: string): string {
+  return String(input || "")
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+}
+
 type LeadPropertyStateRow = {
   lead_id: string;
   agent_id: string;
@@ -863,6 +872,55 @@ export default function LeadChatView({
     } catch (e) {
       console.warn("Could not update lead status", e);
     }
+  };
+
+  const handleExportConversation = () => {
+    if (!lead) return;
+
+    const rows = [...messages, ...systemEvents].sort((a, b) => {
+      const ta = new Date(a.timestamp as any).getTime();
+      const tb = new Date(b.timestamp as any).getTime();
+      return (isNaN(ta) ? 0 : ta) - (isNaN(tb) ? 0 : tb);
+    });
+
+    const senderLabel = (sender: unknown) => {
+      const s = String(sender ?? "").toLowerCase();
+      if (s === "user") return "Interessent";
+      if (s === "agent") return "Agent";
+      if (s === "assistant") return "Advaic";
+      return "System";
+    };
+
+    const lines: string[] = [
+      "Advaic Konversationsexport",
+      `Erstellt: ${new Date().toLocaleString("de-DE")}`,
+      `Lead: ${String(lead.name || "Unbekannt")}`,
+      `E-Mail: ${String(lead.email || "–")}`,
+      `Lead-ID: ${String(leadId)}`,
+      "",
+    ];
+
+    for (const m of rows) {
+      lines.push(`[${formatDateTimeDE(m.timestamp)}] ${senderLabel(m.sender)}`);
+      lines.push(String(m.text ?? "").trim() || "(leer)");
+      lines.push("");
+    }
+
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/plain;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    const leadPart = fileSafePart(String(lead.name || "")) || "lead";
+    a.href = url;
+    a.download = `advaic-export-${leadPart}-${stamp}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    pushSystemEvent("📄 Verlauf exportiert.");
   };
 
   const handlePickFile = () => {
@@ -1820,7 +1878,7 @@ export default function LeadChatView({
 
               <button
                 type="button"
-                onClick={() => alert("Export folgt – kommt als nächstes.")}
+                onClick={handleExportConversation}
                 className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
                 title="Verlauf exportieren"
                 data-tour="export-button"
@@ -3314,7 +3372,7 @@ export default function LeadChatView({
               <div className="mt-6 space-y-3">
                 <button
                   type="button"
-                  onClick={() => alert("Export folgt – kommt als nächstes.")}
+                  onClick={handleExportConversation}
                   className="w-full text-sm bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2 rounded-xl"
                 >
                   Verlauf exportieren

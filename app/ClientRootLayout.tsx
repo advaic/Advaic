@@ -6,7 +6,6 @@ import type { SupabaseClient, Session } from "@supabase/supabase-js";
 import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import { Database } from "@/types/supabase";
 import Sidebar from "@/components/Sidebar";
-import Navbar from "@/components/Navbar";
 import { TourProvider } from "@/components/tour/Tour-Provider";
 import TourOverlay from "@/components/tour/Tour-Overlay";
 import { TourLauncherIcon } from "@/components/tour/TourLauncherIcon";
@@ -60,12 +59,12 @@ export default function ClientRootLayout({
 
   if (!hydrated) return null;
   const isAppRoute = pathname === "/app" || pathname.startsWith("/app/");
-  const showPublicNavbar = !isAppRoute;
+  const showSkipLink = !isAppRoute;
 
   return (
     <TourProvider>
       <SupabaseContext.Provider value={{ supabase, session }}>
-        {showPublicNavbar ? (
+        {showSkipLink ? (
           <a
             href="#main-content"
             className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[1100] focus:rounded-md focus:bg-black focus:px-4 focus:py-2 focus:text-white"
@@ -74,7 +73,7 @@ export default function ClientRootLayout({
           </a>
         ) : null}
         <div className={isAppRoute ? "flex h-screen" : "min-h-screen"}>
-          {isAppRoute ? <Sidebar /> : <Navbar />}
+          {isAppRoute ? <Sidebar /> : null}
           <div
             id="main-content"
             className={isAppRoute ? "flex-1 p-6 overflow-y-auto relative" : "relative flex-1"}

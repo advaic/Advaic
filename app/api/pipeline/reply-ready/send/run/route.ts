@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
+import { getAutosendBaseline, getLeadPropertyGate } from "@/lib/security/autosend-gate";
 
 export const runtime = "nodejs";
 
@@ -151,6 +152,9 @@ export async function POST(req: NextRequest) {
     autosendMap.set(String(s.agent_id), !!s.autosend_enabled);
   }
 
+  const autosendBaselineCache = new Map<string, Awaited<ReturnType<typeof getAutosendBaseline>>>();
+  const leadPropertyGateCache = new Map<string, Awaited<ReturnType<typeof getLeadPropertyGate>>>();
+
   const results: any[] = [];
 
   for (const d of drafts) {
@@ -182,6 +186,43 @@ export async function POST(req: NextRequest) {
         .eq("id", messageId);
 
       results.push({ messageId, leadId, status: "skipped_autosend_disabled" });
+      continue;
+    }
+
+    if (!autosendBaselineCache.has(agentId)) {
+      autosendBaselineCache.set(agentId, await getAutosendBaseline(supabase, agentId));
+    }
+    const autosendBaseline = autosendBaselineCache.get(agentId)!;
+    if (!autosendBaseline.eligible) {
+      await (supabase.from("messages") as any)
+        .update({ status: "needs_approval", approval_required: true })
+        .eq("id", messageId);
+
+      results.push({
+        messageId,
+        leadId,
+        status: "skipped_autosend_gate_not_ready",
+        reasons: autosendBaseline.reasons,
+      });
+      continue;
+    }
+
+    const leadKey = `${agentId}:${leadId}`;
+    if (!leadPropertyGateCache.has(leadKey)) {
+      leadPropertyGateCache.set(leadKey, await getLeadPropertyGate(supabase, agentId, leadId));
+    }
+    const leadPropertyGate = leadPropertyGateCache.get(leadKey)!;
+    if (!leadPropertyGate.ready) {
+      await (supabase.from("messages") as any)
+        .update({ status: "needs_approval", approval_required: true })
+        .eq("id", messageId);
+
+      results.push({
+        messageId,
+        leadId,
+        status: "skipped_missing_property_context",
+        reason: leadPropertyGate.reason,
+      });
       continue;
     }
 

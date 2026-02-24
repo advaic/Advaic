@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import {
+  decryptSecretFromStorage,
+  encryptSecretForStorage,
+} from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -185,12 +189,12 @@ async function getGraphAccessToken(supabaseAdmin: any, agentId: string) {
     return { ok: false as const, error: "outlook_not_connected" };
   }
 
-  const refreshToken = String(conn.refresh_token || "");
+  const refreshToken = decryptSecretFromStorage(conn.refresh_token || "");
   if (!refreshToken)
     return { ok: false as const, error: "missing_refresh_token" };
 
   const expiresAtIso = parseIsoOrNull(conn.expires_at);
-  const accessToken = String(conn.access_token || "");
+  const accessToken = decryptSecretFromStorage(conn.access_token || "");
 
   if (accessToken && !isTokenExpired(expiresAtIso)) {
     return { ok: true as const, accessToken };
@@ -207,10 +211,10 @@ async function getGraphAccessToken(supabaseAdmin: any, agentId: string) {
   // Store new tokens
   await (supabaseAdmin.from("email_connections") as any)
     .update({
-      access_token: refreshed.accessToken,
+      access_token: encryptSecretForStorage(refreshed.accessToken),
       expires_at: refreshed.expiresAtIso,
       ...(refreshed.refreshToken
-        ? { refresh_token: refreshed.refreshToken }
+        ? { refresh_token: encryptSecretForStorage(refreshed.refreshToken) }
         : {}),
       last_error: null,
       status: "active",

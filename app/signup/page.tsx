@@ -3,11 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/browserClient";
+import { Eye, EyeOff } from "lucide-react";
+import AuthShell from "@/components/marketing/AuthShell";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -40,7 +43,7 @@ export default function SignupPage() {
     });
 
     if (error) {
-      setErrorMsg(error.message);
+      setErrorMsg("Registrierung fehlgeschlagen. Bitte prüfen Sie Ihre Angaben.");
       setLoading(false);
       return;
     }
@@ -52,30 +55,40 @@ export default function SignupPage() {
     }
 
     setSuccessMsg(
-      "Konto erstellt. Bitte bestätige deine E-Mail-Adresse und logge dich danach ein.",
+      "Konto erstellt. Bitte bestätigen Sie Ihre E-Mail-Adresse und loggen Sie sich danach ein.",
     );
     setLoading(false);
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen px-4 bg-gray-50">
+    <AuthShell
+      title="Konto erstellen"
+      subtitle="Starten Sie mit klaren Regeln, sicherem Autopilot und vollständiger Nachvollziehbarkeit."
+      points={[
+        "Schneller Start mit konservativen Standardeinstellungen.",
+        "Freigabe-Workflow für unklare oder heikle Fälle.",
+        "Follow-ups sind optional und stufenweise steuerbar.",
+      ]}
+    >
       <form
         onSubmit={handleSignup}
-        className="w-full max-w-sm p-6 bg-white rounded shadow-md"
+        className="mx-auto w-full max-w-md"
       >
-        <h1 className="mb-2 text-2xl font-bold text-center">Konto erstellen</h1>
-        <p className="mb-6 text-xs text-center text-gray-500">
-          Starte mit Advaic und richte dein Konto in wenigen Schritten ein.
+        <h1 className="h2">Konto erstellen</h1>
+        <p className="helper mt-2">
+          Starten Sie mit Advaic und richten Sie Ihr Konto in wenigen Schritten ein.
         </p>
 
         {errorMsg ? (
-          <p className="mb-4 text-sm text-red-600 text-center">{errorMsg}</p>
+          <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMsg}</p>
         ) : null}
         {successMsg ? (
-          <p className="mb-4 text-sm text-green-700 text-center">{successMsg}</p>
+          <p className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {successMsg}
+          </p>
         ) : null}
 
-        <label className="block mb-2 text-sm font-medium text-gray-700">
+        <label className="mt-6 block mb-2 text-sm font-medium text-[var(--text)]">
           E-Mail
         </label>
         <input
@@ -83,48 +96,62 @@ export default function SignupPage() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full px-3 py-2 mb-4 border rounded shadow-sm focus:outline-none focus:ring focus:border-blue-300"
+          className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
+          autoComplete="email"
         />
 
-        <label className="block mb-2 text-sm font-medium text-gray-700">
+        <label className="mt-4 block mb-2 text-sm font-medium text-[var(--text)]">
           Passwort
         </label>
-        <input
-          type="password"
-          required
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full px-3 py-2 mb-4 border rounded shadow-sm focus:outline-none focus:ring focus:border-blue-300"
-        />
+        <div className="relative">
+          <input
+            type={showPassword ? "text" : "password"}
+            required
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 pr-10 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
+            autoComplete="new-password"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((prev) => !prev)}
+            className="focus-ring absolute inset-y-0 right-2 inline-flex items-center rounded-lg px-2 text-[var(--muted)] hover:text-[var(--text)]"
+            aria-label={showPassword ? "Passwort verbergen" : "Passwort anzeigen"}
+          >
+            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-[var(--muted)]">Mindestens 8 Zeichen.</p>
 
-        <label className="block mb-2 text-sm font-medium text-gray-700">
+        <label className="mt-4 block mb-2 text-sm font-medium text-[var(--text)]">
           Passwort wiederholen
         </label>
         <input
-          type="password"
+          type={showPassword ? "text" : "password"}
           required
           minLength={8}
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
-          className="w-full px-3 py-2 mb-6 border rounded shadow-sm focus:outline-none focus:ring focus:border-blue-300"
+          className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
+          autoComplete="new-password"
         />
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full px-4 py-2 text-white bg-black rounded hover:bg-gray-800 disabled:opacity-50"
+          className="btn-primary mt-7 w-full"
         >
           {loading ? "Erstelle Konto..." : "Konto erstellen"}
         </button>
 
-        <p className="mt-4 text-xs text-gray-500 text-center">
+        <p className="mt-4 text-xs text-[var(--muted)] text-center">
           Bereits registriert?{" "}
-          <Link href="/login" className="underline hover:text-gray-700">
+          <Link href="/login" className="focus-ring underline hover:text-[var(--text)]">
             Zum Login
           </Link>
         </p>
       </form>
-    </div>
+    </AuthShell>
   );
 }

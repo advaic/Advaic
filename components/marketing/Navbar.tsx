@@ -1,0 +1,107 @@
+"use client";
+
+import Link from "next/link";
+import { Menu, X } from "lucide-react";
+import { useState } from "react";
+import { usePathname } from "next/navigation";
+import Container from "./Container";
+
+const navLinks = [
+  { label: "Produkt", href: "/produkt" },
+  { label: "So funktioniert's", href: "/so-funktionierts" },
+  { label: "Sicherheit", href: "/sicherheit" },
+  { label: "Preise", href: "/preise" },
+  { label: "FAQ", href: "/faq" },
+];
+
+export default function MarketingNavbar() {
+  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  return (
+    <header className="sticky top-0 z-50 h-[72px] border-b border-[var(--border)] bg-white/70 backdrop-blur-md">
+      <Container className="flex h-full items-center justify-between">
+        <Link href="/" className="focus-ring text-3xl font-bold leading-none tracking-[-0.03em]">
+          Adv<span className="text-[var(--gold)]">aic</span>
+        </Link>
+
+        <nav className="hidden items-center gap-8 lg:flex">
+          {navLinks.map((link) => {
+            const isActive = pathname === link.href;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`focus-ring relative text-sm font-medium transition-colors ${
+                  isActive ? "text-[var(--text)]" : "text-[var(--text)]/85 hover:text-[var(--text)]"
+                }`}
+                aria-current={isActive ? "page" : undefined}
+              >
+                {link.label}
+                <span
+                  className={`absolute -bottom-2 left-0 h-[2px] rounded-full bg-[var(--gold)] transition-all ${
+                    isActive ? "w-full opacity-100" : "w-0 opacity-0"
+                  }`}
+                />
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="hidden items-center gap-3 lg:flex">
+          <Link href="/login" className="btn-secondary">
+            Login
+          </Link>
+          <Link href="/signup" className="btn-primary">
+            Kostenlos testen
+          </Link>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className="focus-ring rounded-lg border border-[var(--border)] p-2 text-[var(--text)] lg:hidden"
+          aria-label={open ? "Menü schließen" : "Menü öffnen"}
+          aria-expanded={open}
+        >
+          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </button>
+      </Container>
+
+      {open ? (
+        <div className="border-t border-[var(--border)] bg-white/95 lg:hidden">
+          <Container className="py-4">
+            <nav className="flex flex-col gap-3">
+              {navLinks.map((link) => {
+                const isActive = pathname === link.href;
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setOpen(false)}
+                    className={`focus-ring rounded-lg px-2 py-2 text-sm font-medium transition-colors ${
+                      isActive
+                        ? "bg-[var(--surface)] text-[var(--text)] ring-1 ring-[var(--gold-soft)]"
+                        : "text-[var(--text)]/85 hover:bg-[var(--surface)] hover:text-[var(--text)]"
+                    }`}
+                    aria-current={isActive ? "page" : undefined}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </nav>
+            <div className="mt-4 grid gap-3">
+              <Link href="/login" onClick={() => setOpen(false)} className="btn-secondary w-full">
+                Login
+              </Link>
+              <Link href="/signup" onClick={() => setOpen(false)} className="btn-primary w-full">
+                Kostenlos testen
+              </Link>
+            </div>
+          </Container>
+        </div>
+      ) : null}
+    </header>
+  );
+}

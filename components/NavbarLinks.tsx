@@ -29,19 +29,18 @@ const NavbarLinks = ({
   const linkClasses = `
     relative transition-colors duration-200 hover:text-black
     before:content-[''] before:absolute before:-bottom-1 before:left-0 
-    before:h-[1.5px] before:bg-black before:transition-all before:duration-300
+    before:h-[2px] before:bg-[var(--gold)] before:transition-all before:duration-300
     before:w-0 hover:before:w-full
   `;
 
   return (
-    <div className="flex items-center gap-12">
-      {/* Navigation links */}
+    <div className="flex items-center">
       <nav
         className={`flex ${
           direction === "vertical"
-            ? "flex-col gap-6 items-start"
-            : "flex-row gap-20 justify-center"
-        } text-[17px] font-medium text-neutral-800`}
+            ? "flex-col items-start gap-6"
+            : "flex-row justify-center gap-12"
+        } text-[16px] font-medium text-slate-800`}
       >
         {links.map((link) => (
           <Link
@@ -49,7 +48,7 @@ const NavbarLinks = ({
             href={link.href}
             onClick={onLinkClick}
             aria-current={isActive(link) ? "page" : undefined}
-            className={`${linkClasses} ${
+            className={`rounded-md px-0.5 py-0.5 ${linkClasses} ${
               isActive(link) ? "before:w-full text-black" : ""
             }`}
           >

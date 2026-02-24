@@ -3,6 +3,7 @@ import { google } from "googleapis";
 import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
 import { cookies } from "next/headers";
+import { decryptSecretFromStorage } from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -73,7 +74,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!conn || !conn.refresh_token) {
+    const refreshToken = decryptSecretFromStorage(conn?.refresh_token || "");
+    if (!conn || !refreshToken) {
       return NextResponse.json(
         { error: "No Gmail connection found. Please connect Gmail first." },
         { status: 400 }
@@ -97,7 +99,7 @@ export async function POST(req: NextRequest) {
     );
 
     oauth2.setCredentials({
-      refresh_token: conn.refresh_token,
+      refresh_token: refreshToken,
       // Do NOT set access_token here; let googleapis refresh it on-demand.
     });
 

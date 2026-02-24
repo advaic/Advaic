@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -58,11 +59,13 @@ function ageMinutes(dt?: string | null) {
 }
 
 export default function AdminOutboxPage() {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<TabKey>("failed");
   const [rows, setRows] = useState<OutboxRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [q, setQ] = useState("");
+  const agentIdFilter = String(searchParams?.get("agent_id") || "").trim();
 
   const setBusyFor = (id: string, v: boolean) =>
     setBusy((p) => ({ ...p, [id]: v }));
@@ -71,7 +74,11 @@ export default function AdminOutboxPage() {
     try {
       if (!opts?.silent) setLoading(true);
 
-      const res = await fetch(`/app/admin/outbox/list?tab=${encodeURIComponent(tab)}`, {
+      const qs = new URLSearchParams();
+      qs.set("tab", tab);
+      if (agentIdFilter) qs.set("agent_id", agentIdFilter);
+
+      const res = await fetch(`/app/admin/outbox/list?${qs.toString()}`, {
         method: "GET",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
@@ -93,14 +100,14 @@ export default function AdminOutboxPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  }, [tab, agentIdFilter]);
 
   // auto-refresh (light)
   useEffect(() => {
     const t = setInterval(() => load({ silent: true }), 8000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  }, [tab, agentIdFilter]);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -198,6 +205,14 @@ export default function AdminOutboxPage() {
             <div className="mt-1 text-sm text-gray-600">
               Failed / Stuck / Pending — inkl. Aktionen (Unlock, Retry).
             </div>
+            {agentIdFilter ? (
+              <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-900">
+                Agent-Filter aktiv: {agentIdFilter.slice(0, 8)}…
+                <Link href="/app/admin/outbox" className="underline">
+                  Filter entfernen
+                </Link>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-2">

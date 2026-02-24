@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { encryptSecretForStorage } from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -191,8 +192,8 @@ export async function GET(req: NextRequest) {
       agent_id: user.id,
       environment: env,
       status: "pending",
-      request_token: oauthToken,
-      request_token_secret: oauthTokenSecret,
+      request_token: encryptSecretForStorage(oauthToken),
+      request_token_secret: encryptSecretForStorage(oauthTokenSecret),
       request_token_created_at: new Date().toISOString(),
       last_error: null,
       updated_at: new Date().toISOString(),

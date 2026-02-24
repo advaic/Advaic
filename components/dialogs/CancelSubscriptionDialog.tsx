@@ -2,24 +2,33 @@
 
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import React from "react";
+import React, { useState } from "react";
 
 interface Props {
   open: boolean;
   onClose: () => void;
   onOpen: () => void;
-  children: React.ReactElement<any>; // ✅ FIX HERE
+  onConfirm?: () => void | Promise<void>;
+  children: React.ReactElement<any>;
 }
 
 export const CancelSubscriptionDialog = ({
   open,
   onClose,
   onOpen,
+  onConfirm,
   children,
 }: Props) => {
-  const handleConfirm = () => {
-    alert("Kündigung eingeleitet");
-    onClose();
+  const [busy, setBusy] = useState(false);
+
+  const handleConfirm = async () => {
+    setBusy(true);
+    try {
+      await onConfirm?.();
+      onClose();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -34,8 +43,8 @@ export const CancelSubscriptionDialog = ({
           <Button variant="ghost" onClick={onClose}>
             Abbrechen
           </Button>
-          <Button variant="destructive" onClick={handleConfirm}>
-            Kündigen
+          <Button variant="destructive" onClick={handleConfirm} disabled={busy}>
+            {busy ? "Wird gekündigt..." : "Kündigen"}
           </Button>
         </div>
       </Dialog>

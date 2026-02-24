@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { getAutosendBaseline, getLeadPropertyGate } from "@/lib/security/autosend-gate";
 
 export const runtime = "nodejs";
 
@@ -280,18 +281,6 @@ async function callAzureQaReasonJson(args: {
   return { ok: false as const, error: lastErr, raw: "", parsed: null as any };
 }
 
-async function getAutosendEnabled(supabase: any, agentId: string) {
-  try {
-    const { data } = await (supabase.from("agent_settings") as any)
-      .select("autosend_enabled")
-      .eq("agent_id", agentId)
-      .maybeSingle();
-    return !!data?.autosend_enabled;
-  } catch {
-    return false;
-  }
-}
-
 function mustInternalSecret() {
   const v = process.env.ADVAIC_INTERNAL_PIPELINE_SECRET;
   if (!v) throw new Error("Missing env var: ADVAIC_INTERNAL_PIPELINE_SECRET");
@@ -465,6 +454,51 @@ export async function POST(req: Request) {
   }
 
   const processed: any[] = [];
+  const autosendSettingCache = new Map<string, boolean>();
+  const autosendBaselineCache = new Map<string, Awaited<ReturnType<typeof getAutosendBaseline>>>();
+  const leadPropertyGateCache = new Map<string, Awaited<ReturnType<typeof getLeadPropertyGate>>>();
+
+  async function resolveAutosendForDraft(agentId: string, leadId: string) {
+    if (!autosendSettingCache.has(agentId)) {
+      try {
+        const { data } = await (supabase.from("agent_settings") as any)
+          .select("autosend_enabled")
+          .eq("agent_id", agentId)
+          .maybeSingle();
+        autosendSettingCache.set(agentId, Boolean(data?.autosend_enabled));
+      } catch {
+        autosendSettingCache.set(agentId, false);
+      }
+    }
+
+    if (!autosendBaselineCache.has(agentId)) {
+      autosendBaselineCache.set(agentId, await getAutosendBaseline(supabase, agentId));
+    }
+
+    const leadKey = `${agentId}:${leadId}`;
+    if (!leadPropertyGateCache.has(leadKey)) {
+      leadPropertyGateCache.set(leadKey, await getLeadPropertyGate(supabase, agentId, leadId));
+    }
+
+    const settingEnabled = Boolean(autosendSettingCache.get(agentId));
+    const baseline = autosendBaselineCache.get(agentId)!;
+    const leadProperty = leadPropertyGateCache.get(leadKey)!;
+    const effectiveEnabled = settingEnabled && baseline.eligible && leadProperty.ready;
+
+    const reasons: string[] = [];
+    if (settingEnabled && !baseline.eligible) {
+      reasons.push(...baseline.reasons);
+    }
+    if (settingEnabled && !leadProperty.ready && leadProperty.reason) {
+      reasons.push(leadProperty.reason);
+    }
+
+    return {
+      settingEnabled,
+      effectiveEnabled,
+      reasons,
+    };
+  }
 
   for (const d of drafts || []) {
     const draftId = String(d.id);
@@ -676,7 +710,8 @@ export async function POST(req: Request) {
     }
 
     // 8) Autosend gate
-    const autosendEnabled = await getAutosendEnabled(supabase, agentId);
+    const autosend = await resolveAutosendForDraft(agentId, leadId);
+    const autosendEnabled = autosend.effectiveEnabled;
 
     // 9) Update draft status + approval + send_status (when autosend)
     if (finalVerdict === "pass") {
@@ -713,7 +748,9 @@ export async function POST(req: Request) {
           inbound_message_id: inboundMessageId,
           source: "qa_recheck",
           verdict: "pass",
+          autosend_configured: autosend.settingEnabled,
           autosend_enabled: autosendEnabled,
+          autosend_block_reasons: autosend.reasons,
           deep_link:
             notificationType === "approval_required_created"
               ? "/app/zur-freigabe"
@@ -775,7 +812,13 @@ export async function POST(req: Request) {
       });
     }
 
-    processed.push({ draftId, verdict: finalVerdict, autosendEnabled });
+    processed.push({
+      draftId,
+      verdict: finalVerdict,
+      autosendEnabled,
+      autosendConfigured: autosend.settingEnabled,
+      autosendBlockReasons: autosend.reasons,
+    });
   }
 
 

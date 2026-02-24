@@ -27,10 +27,11 @@ export default async function EskalationenPage() {
   );
 
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
 
-  if (!session || !session.user) {
+  if (authError || !user) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-gray-500">
         <p className="mb-4 text-lg">Nicht eingeloggt.</p>
@@ -44,7 +45,7 @@ export default async function EskalationenPage() {
     );
   }
 
-  const userId = session.user.id;
+  const userId = user.id;
 
   const { data: leads, error } = await supabase
     .from("leads")

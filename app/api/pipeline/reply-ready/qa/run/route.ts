@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { getAutosendBaseline, getLeadPropertyGate } from "@/lib/security/autosend-gate";
 
 export const runtime = "nodejs";
 
@@ -197,18 +198,6 @@ function normalizeRiskFlags(v: any): string[] | null {
     .filter((x) => x.length > 0)
     .slice(0, 20);
   return out.length ? out : null;
-}
-
-async function getAutosendEnabled(supabase: any, agentId: string) {
-  try {
-    const { data } = await (supabase.from("agent_settings") as any)
-      .select("autosend_enabled")
-      .eq("agent_id", agentId)
-      .maybeSingle();
-    return !!data?.autosend_enabled;
-  } catch {
-    return false;
-  }
 }
 
 async function safeUpdate(
@@ -479,6 +468,54 @@ export async function POST(req: Request) {
     }
   }
 
+  const autosendSettingCache = new Map<string, boolean>();
+  const autosendBaselineCache = new Map<string, Awaited<ReturnType<typeof getAutosendBaseline>>>();
+  const leadPropertyGateCache = new Map<string, Awaited<ReturnType<typeof getLeadPropertyGate>>>();
+
+  async function resolveAutosendForDraft(agentId: string, leadId: string) {
+    if (!autosendSettingCache.has(agentId)) {
+      try {
+        const { data } = await (supabase.from("agent_settings") as any)
+          .select("autosend_enabled")
+          .eq("agent_id", agentId)
+          .maybeSingle();
+        autosendSettingCache.set(agentId, Boolean(data?.autosend_enabled));
+      } catch {
+        autosendSettingCache.set(agentId, false);
+      }
+    }
+
+    if (!autosendBaselineCache.has(agentId)) {
+      autosendBaselineCache.set(agentId, await getAutosendBaseline(supabase, agentId));
+    }
+
+    const leadKey = `${agentId}:${leadId}`;
+    if (!leadPropertyGateCache.has(leadKey)) {
+      leadPropertyGateCache.set(leadKey, await getLeadPropertyGate(supabase, agentId, leadId));
+    }
+
+    const settingEnabled = Boolean(autosendSettingCache.get(agentId));
+    const baseline = autosendBaselineCache.get(agentId)!;
+    const leadProperty = leadPropertyGateCache.get(leadKey)!;
+    const effectiveEnabled = settingEnabled && baseline.eligible && leadProperty.ready;
+
+    const reasons: string[] = [];
+    if (settingEnabled && !baseline.eligible) {
+      reasons.push(...baseline.reasons);
+    }
+    if (settingEnabled && !leadProperty.ready && leadProperty.reason) {
+      reasons.push(leadProperty.reason);
+    }
+
+    return {
+      settingEnabled,
+      effectiveEnabled,
+      baseline,
+      leadProperty,
+      reasons,
+    };
+  }
+
   for (const item of work) {
     const agentId = item.agentId;
     const leadId = item.leadId;
@@ -624,7 +661,8 @@ export async function POST(req: Request) {
     // - pass -> needs_approval (default) OR ready_to_send if autosend enabled
     // - warn -> rewrite_pending (rewrite runner will fix, then QA again)
     // - fail -> needs_human
-    const autosendEnabled = await getAutosendEnabled(supabase, agentId);
+    const autosend = await resolveAutosendForDraft(agentId, leadId);
+    const autosendEnabled = autosend.effectiveEnabled;
 
     if (qa.verdict === "pass") {
       await (supabase.from("messages") as any)
@@ -746,7 +784,9 @@ export async function POST(req: Request) {
       qa_confidence: qa.engine?.confidence ?? null,
       qa_prompt_key: prompt.key,
       qa_prompt_version: prompt.versionTag,
+      autosendConfigured: autosend.settingEnabled,
       autosendEnabled,
+      autosendBlockReasons: autosend.reasons,
       notification_event_type:
         qa.verdict === "pass"
           ? (autosendEnabled ? "autosend_ready" : "approval_required_created")

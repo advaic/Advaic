@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
 import type { Database } from "@/types/supabase";
+import { decryptSecretFromStorage } from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -385,7 +386,8 @@ export async function POST(req: NextRequest) {
 
   const gmailConn = conn as GmailConnection | null;
 
-  if (!gmailConn || !gmailConn.refresh_token) {
+  const refreshToken = decryptSecretFromStorage(gmailConn?.refresh_token || "");
+  if (!gmailConn || !refreshToken) {
     return jsonError(400, "Gmail not connected");
   }
 
@@ -402,7 +404,7 @@ export async function POST(req: NextRequest) {
   );
 
   oauth2.setCredentials({
-    refresh_token: gmailConn.refresh_token,
+    refresh_token: refreshToken,
   });
 
   const gmail = google.gmail({ version: "v1", auth: oauth2 });

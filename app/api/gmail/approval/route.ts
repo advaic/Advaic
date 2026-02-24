@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { upsertHumanApprovalReview } from "@/lib/security/approval-review";
 
 export const runtime = "nodejs";
 
@@ -123,6 +124,19 @@ export async function POST(req: NextRequest) {
 
     if (leadErr) return jsonError(leadErr.message, 400);
     if (!lead?.email) return jsonError("Lead has no email", 400);
+
+    const track = await upsertHumanApprovalReview(admin, {
+      agentId: String(user.id),
+      leadId,
+      messageId: String((msg as any).id),
+      edited: false,
+      originalText: String((msg as any).text || ""),
+      finalText: String((msg as any).text || ""),
+      source: "other",
+    });
+    if (!track.ok) {
+      console.warn("⚠️ approval review tracking failed in /api/gmail/approval:", track.error);
+    }
 
     const origin = req.nextUrl.origin;
     const sendUrl = new URL("/api/gmail/send", origin).toString();

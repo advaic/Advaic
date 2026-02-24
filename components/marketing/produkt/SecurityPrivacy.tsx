@@ -1,0 +1,81 @@
+import Container from "@/components/marketing/Container";
+
+export default function SecurityPrivacy() {
+  return (
+    <section id="sicherheit" className="produkt-band-surface py-20 md:py-28">
+      <Container>
+        <div className="max-w-[70ch]">
+          <h2 className="h2">Klarer Zugriff. Klare Regeln. Klare Grenzen.</h2>
+          <p className="body mt-4 text-[var(--muted)]">
+            Advaic arbeitet mit DSGVO-konformer Verarbeitungslogik: nicht auf beliebige E-Mails antworten, sondern
+            nur auf echte Interessenten-Anfragen mit klarer Entscheidungslage.
+          </p>
+          <p className="body mt-4 text-[var(--muted)]">
+            Nicht relevante E-Mails werden nicht automatisch beantwortet. Bei unklarem oder technischem Absender geht
+            der Fall in die Freigabe, damit Sie die letzte Entscheidung treffen.
+          </p>
+        </div>
+
+        <div className="mt-8 grid gap-4 md:grid-cols-2">
+          <article className="card-hover rounded-[var(--radius)] bg-white p-5 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
+            <h3 className="text-[1.1rem] font-semibold tracking-[-0.01em] text-[var(--text)]">Technische Schutzebenen</h3>
+            <ul className="mt-3 space-y-2 text-sm text-[var(--muted)]">
+              <li>Postfach-Anbindung über OAuth (kein manuelles Passwort-Sharing).</li>
+              <li>Agentenbezogene Trennung von Regeln, Entwürfen und Status.</li>
+              <li>Fail-Safe-Logik: Bei Unsicherheit keine Auto-Antwort.</li>
+            </ul>
+          </article>
+
+          <article className="card-hover rounded-[var(--radius)] bg-white p-5 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
+            <h3 className="text-[1.1rem] font-semibold tracking-[-0.01em] text-[var(--text)]">Nachvollziehbarkeit</h3>
+            <ul className="mt-3 space-y-2 text-sm text-[var(--muted)]">
+              <li>Verlauf mit Status und Zeitstempeln für jede Entscheidung.</li>
+              <li>Freigabe-Inbox für alle unklaren oder risikoreichen Fälle.</li>
+              <li>Verarbeitungsübersicht und Exporte im Onboarding.</li>
+            </ul>
+          </article>
+        </div>
+
+        <div className="mt-10 grid gap-4 md:grid-cols-3">
+          <article className="card-hover rounded-[var(--radius)] bg-white p-6 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
+            <h3 className="h3">Ignoriert</h3>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              <li>Newsletter / Rundmails</li>
+              <li>System- und Bounce-Mails</li>
+              <li>Werbung / Spam</li>
+            </ul>
+          </article>
+
+          <article className="card-hover rounded-[var(--radius)] bg-white p-6 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
+            <h3 className="h3">Auto (klar)</h3>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              <li>Eindeutige Interessenten-Anfrage</li>
+              <li>Standard-Situation</li>
+              <li>Keine kritischen Informationen fehlen</li>
+            </ul>
+          </article>
+
+          <article className="card-hover rounded-[var(--radius)] bg-white p-6 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
+            <h3 className="h3">Freigabe (unklar)</h3>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              <li>Sonderfälle oder ungewöhnliche Anliegen</li>
+              <li>Beschwerden / Konflikte / heikle Themen</li>
+              <li>Objektbezug unklar oder wichtige Infos fehlen</li>
+              <li>no-reply ohne sicheren Reply-To</li>
+            </ul>
+          </article>
+        </div>
+
+        <p className="body mt-6 max-w-[70ch] text-[var(--muted)]">
+          Für Follow-ups gelten zusätzliche Stop-Regeln: Wenn der Interessent zuletzt geantwortet hat, eine Pause aktiv
+          ist oder die maximale Follow-up-Stufe erreicht wurde, stoppt Advaic automatisch.
+        </p>
+
+        <p className="helper mt-6">
+          Im Onboarding erhalten Sie auf Anfrage die Dokumentation (z. B. AVV, TOM-Übersicht,
+          Verarbeitungsübersicht sowie Export- und Löschprozess). Keine Rechtsberatung.
+        </p>
+      </Container>
+    </section>
+  );
+}

@@ -3,6 +3,10 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import { google } from "googleapis";
+import {
+  decryptSecretFromStorage,
+  encryptSecretForStorage,
+} from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -202,8 +206,8 @@ export async function GET(req: NextRequest) {
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
     // Choose refresh token safely: prefer new token, else keep existing
-    const refreshToken =
-      (tokens.refresh_token ?? undefined) || (existingConn?.refresh_token ?? undefined);
+    const existingRefreshToken = decryptSecretFromStorage(existingConn?.refresh_token || "");
+    const refreshToken = (tokens.refresh_token ?? undefined) || existingRefreshToken || undefined;
 
     // Upsert connection WITHOUT wiping refresh_token
     // - if Google sent refresh_token → persist it
@@ -213,12 +217,12 @@ export async function GET(req: NextRequest) {
       provider: "gmail",
       email_address: email,
       status: "connected",
-      access_token: tokens.access_token,
+      access_token: encryptSecretForStorage(tokens.access_token),
       expires_at: expiresAt,
     };
 
     if (refreshToken) {
-      upsertPayload.refresh_token = refreshToken;
+      upsertPayload.refresh_token = encryptSecretForStorage(refreshToken);
     }
 
     const { error: upsertErr } = await supabaseAdmin
@@ -253,7 +257,8 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const finalRefreshToken = persistedConn.refresh_token ?? refreshToken;
+    const persistedRefreshToken = decryptSecretFromStorage(persistedConn.refresh_token || "");
+    const finalRefreshToken = persistedRefreshToken || refreshToken;
 
     if (!finalRefreshToken) {
       // Without a refresh token we cannot reliably renew watch or access Gmail long-term.
@@ -306,7 +311,7 @@ export async function GET(req: NextRequest) {
       last_error: null,
       status: "active",
       // ensure refresh_token is persisted even if Google omitted it this time
-      refresh_token: finalRefreshToken,
+      refresh_token: encryptSecretForStorage(finalRefreshToken),
       // optional: persist the Pub/Sub topic if your table has the column
       watch_topic: topicName,
     };

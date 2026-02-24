@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { encryptSecretForStorage } from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -207,7 +208,11 @@ export async function GET(req: NextRequest) {
   const expiresIn = Number(tokenResp.json?.expires_in || 0);
 
   if (!accessToken || !refreshToken || !Number.isFinite(expiresIn) || expiresIn <= 0) {
-    console.error("[outlook/callback] Token response incomplete:", tokenResp.json);
+    console.error("[outlook/callback] Token response incomplete", {
+      hasAccessToken: !!accessToken,
+      hasRefreshToken: !!refreshToken,
+      expiresIn,
+    });
     return NextResponse.json(
       { error: "Token response incomplete" },
       { status: 502 }
@@ -242,8 +247,8 @@ export async function GET(req: NextRequest) {
     provider: "outlook",
     email_address: emailAddress || null,
     status: "connected",
-    access_token: accessToken,
-    refresh_token: refreshToken,
+    access_token: encryptSecretForStorage(accessToken),
+    refresh_token: encryptSecretForStorage(refreshToken),
     expires_at: expiresAt,
     last_error: null,
     outlook_mailbox_id: outlookMailboxId || null,

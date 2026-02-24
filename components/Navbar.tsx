@@ -10,15 +10,15 @@ const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 w-full bg-white shadow-md">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 md:py-4">
-        <Link href="/" className="flex items-center gap-2">
+    <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-white/80 shadow-[0_10px_36px_rgba(15,23,42,0.08)] backdrop-blur-md">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 md:px-6">
+        <Link href="/" className="flex items-center gap-2 focus-visible:rounded-md">
           <Image
             src="/Advaic_Logo_Cropped.webp"
             alt="Advaic Logo"
             width={60}
             height={60}
-            className="h-6 w-auto object-contain"
+            className="h-7 w-auto object-contain"
           />
         </Link>
 
@@ -26,23 +26,23 @@ const Navbar = () => {
           <NavbarLinks />
         </div>
 
-        <div className="hidden lg:flex items-center gap-4">
+        <div className="hidden items-center gap-4 lg:flex">
           <Link
             href="/login"
-            className="text-sm font-medium text-neutral-700 hover:text-black transition"
+            className="rounded-lg px-2 py-1 text-sm font-medium text-slate-700 transition duration-200 hover:bg-white hover:text-slate-950"
           >
             Einloggen
           </Link>
           <Link
             href="/signup"
-            className="rounded-full bg-black px-6 py-2 text-sm font-medium text-white hover:bg-gray-800 transition"
+            className="btn-primary rounded-full px-6 py-2 text-sm font-semibold"
           >
             Kostenlos testen
           </Link>
         </div>
 
         <button
-          className="lg:hidden text-black"
+          className="rounded-lg p-1 text-slate-900 lg:hidden"
           type="button"
           aria-label={menuOpen ? "Menü schließen" : "Menü öffnen"}
           aria-expanded={menuOpen}
@@ -53,7 +53,7 @@ const Navbar = () => {
       </div>
 
       {menuOpen && (
-        <div className="block lg:hidden border-t border-gray-200 bg-white px-6 pb-6 pt-4">
+        <div className="block border-t border-slate-200/90 bg-white/95 px-6 pb-6 pt-4 shadow-[0_12px_32px_rgba(15,23,42,0.1)] lg:hidden">
           <NavbarLinks
             direction="vertical"
             onLinkClick={() => setMenuOpen(false)}
@@ -61,14 +61,14 @@ const Navbar = () => {
           <Link
             href="/login"
             onClick={() => setMenuOpen(false)}
-            className="mt-6 w-full rounded-full border border-gray-300 px-6 py-3 text-neutral-700 font-medium hover:text-black transition text-center block"
+            className="mt-6 block w-full rounded-full border border-slate-300 bg-white px-6 py-3 text-center font-medium text-slate-700 transition duration-200 hover:bg-slate-50 hover:text-slate-950"
           >
             Einloggen
           </Link>
           <Link
             href="/signup"
             onClick={() => setMenuOpen(false)}
-            className="mt-3 w-full rounded-full bg-black px-6 py-3 text-white font-medium hover:bg-gray-800 transition text-center block"
+            className="btn-primary mt-3 block w-full rounded-full px-6 py-3 text-center font-semibold"
           >
             Kostenlos testen
           </Link>

@@ -4,6 +4,10 @@ import crypto from "crypto";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import {
+  decryptSecretFromStorage,
+  encryptSecretForStorage,
+} from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -125,10 +129,11 @@ export async function GET(req: NextRequest) {
     .eq("agent_id", user.id)
     .maybeSingle();
 
-  if (
-    !conn?.request_token_secret ||
-    String(conn.request_token || "") !== String(oauthToken)
-  ) {
+  const decryptedRequestToken = decryptSecretFromStorage(conn?.request_token || "");
+  const decryptedRequestSecret = decryptSecretFromStorage(
+    conn?.request_token_secret || "",
+  );
+  if (!decryptedRequestSecret || decryptedRequestToken !== String(oauthToken)) {
     next.searchParams.set("immoscout", "error");
     next.searchParams.set("reason", "no_pending_request_token");
     return redirectWithCookieClear(req, next.toString());
@@ -141,7 +146,7 @@ export async function GET(req: NextRequest) {
 
   const token = {
     key: oauthToken,
-    secret: String(conn.request_token_secret),
+    secret: decryptedRequestSecret,
   };
 
   const requestData = {
@@ -193,8 +198,8 @@ export async function GET(req: NextRequest) {
     .update({
       environment: env,
       status: "connected",
-      access_token: accessToken,
-      access_token_secret: accessTokenSecret,
+      access_token: encryptSecretForStorage(accessToken),
+      access_token_secret: encryptSecretForStorage(accessTokenSecret),
       access_token_created_at: new Date().toISOString(),
       // clear request token
       request_token: null,

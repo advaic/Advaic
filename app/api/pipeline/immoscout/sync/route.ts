@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import { XMLParser } from "fast-xml-parser";
+import { decryptSecretFromStorage } from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -763,8 +764,8 @@ export async function POST(req: NextRequest) {
     const agentId = String(c.agent_id);
     const environment = String(c.environment || "sandbox");
 
-    const accessToken = String(c.access_token || "");
-    const accessTokenSecret = String(c.access_token_secret || "");
+    const accessToken = decryptSecretFromStorage(c.access_token || "");
+    const accessTokenSecret = decryptSecretFromStorage(c.access_token_secret || "");
     const lastSyncedMod = parseImmoDate(c.last_synced_modification);
 
     if (!accessToken || !accessTokenSecret) {

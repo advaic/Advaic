@@ -317,11 +317,38 @@ async function readSendResponse(
   if (!res.ok) {
     return {
       ok: false,
-      error: String((data as any)?.error || "Gmail Send fehlgeschlagen."),
+      error: String((data as any)?.error || "Versand fehlgeschlagen."),
       ...data,
     };
   }
   return { ok: true, status: String((data as any)?.status || "ok"), ...data };
+}
+
+async function trackApprovalReviewEvent(args: {
+  messageId: string;
+  edited: boolean;
+  originalText?: string;
+  finalText?: string;
+}) {
+  try {
+    const res = await fetch("/api/messages/approval-review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message_id: args.messageId,
+        edited: args.edited,
+        original_text: args.originalText ?? "",
+        final_text: args.finalText ?? "",
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      const msg = String(body?.error || "approval_review_track_failed");
+      throw new Error(msg);
+    }
+  } catch (e: any) {
+    console.warn("⚠️ approval review tracking failed:", e?.message || e);
+  }
 }
 
 interface ZurFreigabeUIProps {
@@ -543,7 +570,9 @@ export default function ZurFreigabeUI({
     try {
       const { data: lead, error: leadErr } = await supabase
         .from("leads")
-        .select("id, email, gmail_thread_id, type, subject")
+        .select(
+          "id, email, gmail_thread_id, outlook_conversation_id, email_provider, type, subject",
+        )
         .eq("id", message.lead_id)
         .single();
 
@@ -552,26 +581,51 @@ export default function ZurFreigabeUI({
       }
 
       const subject = buildReplySubject(lead);
+      const provider =
+        String(
+          (lead as any).email_provider ||
+            ((lead as any).outlook_conversation_id ? "outlook" : "gmail"),
+        )
+          .toLowerCase()
+          .trim() === "outlook"
+          ? "outlook"
+          : "gmail";
+      const endpoint =
+        provider === "outlook" ? "/api/outlook/send" : "/api/gmail/send";
+      const payload: Record<string, any> = {
+        id: message.id,
+        lead_id: lead.id,
+        to: lead.email,
+        subject,
+        text: message.text,
+        attachments: normalizeAttachments(message as any),
+      };
 
-      const res = await fetch("/api/gmail/send", {
+      if (provider === "outlook") {
+        payload.outlook_conversation_id =
+          (lead as any).outlook_conversation_id ?? null;
+      } else {
+        payload.gmail_thread_id = (lead as any).gmail_thread_id ?? null;
+      }
+
+      await trackApprovalReviewEvent({
+        messageId: message.id,
+        edited: false,
+        originalText: message.text,
+        finalText: message.text,
+      });
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: message.id,
-          lead_id: lead.id,
-          gmail_thread_id: lead.gmail_thread_id,
-          to: lead.email,
-          subject,
-          text: message.text,
-          attachments: normalizeAttachments(message as any),
-        }),
+        body: JSON.stringify(payload),
       });
 
       const send = await readSendResponse(res);
 
       // Idempotency outcomes
       if (!send.ok) {
-        throw new Error(send.error || "Gmail Send fehlgeschlagen.");
+        throw new Error(send.error || "Versand fehlgeschlagen.");
       }
 
       // If another worker/process is currently sending, rollback and surface a friendly note.
@@ -657,7 +711,9 @@ export default function ZurFreigabeUI({
     try {
       const { data: lead, error: leadErr } = await supabase
         .from("leads")
-        .select("id, email, gmail_thread_id, type, subject")
+        .select(
+          "id, email, gmail_thread_id, outlook_conversation_id, email_provider, type, subject",
+        )
         .eq("id", message.lead_id)
         .single();
 
@@ -666,24 +722,49 @@ export default function ZurFreigabeUI({
       }
 
       const subject = buildReplySubject(lead);
+      const provider =
+        String(
+          (lead as any).email_provider ||
+            ((lead as any).outlook_conversation_id ? "outlook" : "gmail"),
+        )
+          .toLowerCase()
+          .trim() === "outlook"
+          ? "outlook"
+          : "gmail";
+      const endpoint =
+        provider === "outlook" ? "/api/outlook/send" : "/api/gmail/send";
+      const payload: Record<string, any> = {
+        id: message.id,
+        lead_id: lead.id,
+        to: lead.email,
+        subject,
+        text: nextText,
+        attachments: normalizeAttachments(message as any),
+      };
 
-      const res = await fetch("/api/gmail/send", {
+      if (provider === "outlook") {
+        payload.outlook_conversation_id =
+          (lead as any).outlook_conversation_id ?? null;
+      } else {
+        payload.gmail_thread_id = (lead as any).gmail_thread_id ?? null;
+      }
+
+      await trackApprovalReviewEvent({
+        messageId: message.id,
+        edited: true,
+        originalText: message.text,
+        finalText: nextText,
+      });
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: message.id,
-          lead_id: lead.id,
-          gmail_thread_id: lead.gmail_thread_id,
-          to: lead.email,
-          subject,
-          text: nextText,
-          attachments: normalizeAttachments(message as any),
-        }),
+        body: JSON.stringify(payload),
       });
 
       const send = await readSendResponse(res);
       if (!send.ok) {
-        throw new Error(send.error || "Gmail Send fehlgeschlagen.");
+        throw new Error(send.error || "Versand fehlgeschlagen.");
       }
       if (send.status === "locked_or_in_progress") {
         throw new Error(

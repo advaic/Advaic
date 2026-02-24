@@ -48,6 +48,32 @@ export async function POST(req: NextRequest) {
 
   const admin = supabaseAdmin();
   const agentId = user.id;
+  const userMeta =
+    user.user_metadata && typeof user.user_metadata === "object"
+      ? (user.user_metadata as Record<string, any>)
+      : {};
+  const displayName =
+    String(userMeta.full_name || userMeta.name || "").trim() || null;
+  const company = String(userMeta.company || "").trim() || null;
+
+  // Ensure legacy/public.agents row exists before writing onboarding.
+  // Some environments rely on this FK relation and may not have DB triggers enabled.
+  const { error: agentSeedErr } = await (admin.from("agents") as any).upsert(
+    {
+      id: agentId,
+      email: user.email || null,
+      name: displayName,
+      company,
+    },
+    { onConflict: "id" }
+  );
+
+  if (agentSeedErr) {
+    return NextResponse.json(
+      { error: "Failed to seed agent profile", details: agentSeedErr.message },
+      { status: 500 }
+    );
+  }
 
   // Create row if missing, then return it
   const { data, error } = await (admin.from("agent_onboarding") as any)

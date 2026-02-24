@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { OAuth2Client } from "google-auth-library";
 import { createClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
+import { decryptSecretFromStorage } from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,25 @@ type LeadIdRow = { id: string };
 
 const ATTACHMENTS_BUCKET =
   process.env.NEXT_PUBLIC_SUPABASE_ATTACHMENTS_BUCKET || "attachments";
+const DEBUG_GMAIL_PUSH = process.env.ADVAIC_DEBUG_GMAIL_PUSH === "1";
+
+function maskEmail(value: unknown) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw || !raw.includes("@")) return "";
+  const [local, domain] = raw.split("@");
+  if (!local || !domain) return "";
+  const localMasked = local.length <= 2 ? `${local[0] || "*"}*` : `${local.slice(0, 2)}***`;
+  return `${localMasked}@${domain}`;
+}
+
+function logPushDebug(message: string, details?: Record<string, unknown>) {
+  if (!DEBUG_GMAIL_PUSH) return;
+  if (details) {
+    console.log(message, details);
+    return;
+  }
+  console.log(message);
+}
 
 type EmailMessageBodyRow = {
   agent_id: string;
@@ -875,8 +895,7 @@ export async function POST(req: Request) {
 
   try {
     const host = req.headers.get("host");
-    console.log("📩 Gmail Push HIT", {
-      url: req.url,
+    logPushDebug("gmail_push_hit", {
       host,
       at: new Date().toISOString(),
     });
@@ -939,11 +958,12 @@ export async function POST(req: Request) {
     const historyId = data?.historyId;
 
     if (!emailAddress || !historyId) {
-      console.error("❌ Gmail Push: Missing emailAddress/historyId", { data });
+      console.error("❌ Gmail Push: Missing emailAddress/historyId");
       return ok200();
     }
 
-    console.log("✅ Gmail Push payload", { emailAddress, historyId });
+    const maskedEmail = maskEmail(emailAddress);
+    logPushDebug("gmail_push_payload", { email: maskedEmail, historyId: String(historyId) });
 
     // --- 4) Fetch connection from Supabase (service role, bypass RLS) ---
     const supabase = supabaseAdmin();
@@ -962,7 +982,7 @@ export async function POST(req: Request) {
 
     if (connErr || !conn) {
       console.error("❌ Gmail Push: email_connections not found", {
-        emailAddress,
+        email: maskedEmail,
         connErr: connErr?.message,
       });
       return ok200();
@@ -993,9 +1013,16 @@ export async function POST(req: Request) {
       redirectUri
     );
 
+    const decryptedRefreshToken = decryptSecretFromStorage(connection.refresh_token);
+    const decryptedAccessToken = decryptSecretFromStorage(connection.access_token ?? "");
+    if (!decryptedRefreshToken) {
+      await markConnError(supabase, connection.id, "missing_refresh_token");
+      return ok200();
+    }
+
     oauth2.setCredentials({
-      refresh_token: connection.refresh_token,
-      access_token: connection.access_token ?? undefined,
+      refresh_token: decryptedRefreshToken,
+      access_token: decryptedAccessToken || undefined,
     });
 
     const gmail = google.gmail({ version: "v1", auth: oauth2 });
@@ -1024,8 +1051,8 @@ export async function POST(req: Request) {
         );
       }
 
-      console.log("🧷 Set baseline last_history_id (no diff on first push)", {
-        emailAddress,
+      logPushDebug("gmail_push_baseline_set", {
+        email: maskedEmail,
         historyId,
       });
 
@@ -1065,7 +1092,7 @@ export async function POST(req: Request) {
         msg.includes("requested entity was not found");
 
       console.error("❌ Gmail Push: gmail.history.list failed", {
-        emailAddress,
+        email: maskedEmail,
         startHistoryId,
         code,
         err: e?.message || String(e),
@@ -1093,13 +1120,10 @@ export async function POST(req: Request) {
             baselineErr.message
           );
         } else {
-          console.log(
-            "🧷 Reset baseline last_history_id after stale/invalid startHistoryId",
-            {
-              emailAddress,
-              historyId,
-            }
-          );
+          logPushDebug("gmail_push_baseline_reset_after_stale_history", {
+            email: maskedEmail,
+            historyId,
+          });
         }
         // Best-effort: backfill recent messages so we don't miss leads while resetting baseline.
         await backfillRecentMessages({
@@ -1115,7 +1139,7 @@ export async function POST(req: Request) {
     }
 
     const history = allHistory;
-    console.log("📚 Gmail history items", { count: history.length });
+    logPushDebug("gmail_push_history_items", { count: history.length });
 
     // --- 6) Insert/update Leads + Messages using Gmail threadId mapping ---
     // Assumes you added:
@@ -1558,7 +1582,7 @@ export async function POST(req: Request) {
       }
     }
 
-    console.log("✅ Inserted/Upserted Gmail messages", {
+    logPushDebug("gmail_push_messages_upserted", {
       count: insertedMessageIds.length,
       sample: insertedMessageIds.slice(0, 20),
     });
@@ -1581,7 +1605,7 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log("✅ Gmail Push done", {
+    logPushDebug("gmail_push_done", {
       ms: Date.now() - startedAt,
     });
 

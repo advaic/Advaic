@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import crypto from "crypto";
+import {
+  decryptSecretFromStorage,
+  encryptSecretForStorage,
+} from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -143,9 +147,9 @@ async function refreshOutlookAccessToken(args: { refreshToken: string }) {
 
 async function getValidOutlookAccessToken(supabase: any, conn: any) {
   const currentAccessToken =
-    typeof conn?.access_token === "string" ? conn.access_token : "";
+    decryptSecretFromStorage(conn?.access_token || "");
   const currentRefreshToken =
-    typeof conn?.refresh_token === "string" ? conn.refresh_token : "";
+    decryptSecretFromStorage(conn?.refresh_token || "");
   const currentExpiresAt = toDate(conn?.expires_at);
 
   if (
@@ -167,8 +171,10 @@ async function getValidOutlookAccessToken(supabase: any, conn: any) {
 
     await (supabase.from("email_connections") as any)
       .update({
-        access_token: refreshed.accessToken,
-        refresh_token: refreshed.refreshToken || currentRefreshToken,
+        access_token: encryptSecretForStorage(refreshed.accessToken),
+        refresh_token: encryptSecretForStorage(
+          refreshed.refreshToken || currentRefreshToken,
+        ),
         expires_at: refreshed.expiresAtIso,
         last_error: null,
         updated_at: nowIso(),

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
 import type { Database } from "@/types/supabase";
+import { decryptSecretFromStorage } from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -49,6 +50,15 @@ function isAuthorized(req: Request) {
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function maskEmail(value: unknown) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw || !raw.includes("@")) return "";
+  const [local, domain] = raw.split("@");
+  if (!local || !domain) return "";
+  const localMasked = local.length <= 2 ? `${local[0] || "*"}*` : `${local.slice(0, 2)}***`;
+  return `${localMasked}@${domain}`;
 }
 
 async function withBackoff<T>(fn: () => Promise<T>, label: string) {
@@ -124,9 +134,14 @@ async function runRenewWatches() {
     const email = (conn.email_address ? String(conn.email_address) : null) as string | null;
 
     try {
-      if (!conn.refresh_token) {
+      const refreshToken = decryptSecretFromStorage(conn.refresh_token || "");
+      if (!refreshToken) {
         failed++;
-        failures.push({ id: connId, email, error: "missing_refresh_token" });
+        failures.push({
+          id: connId,
+          email: maskEmail(email),
+          error: "missing_refresh_token",
+        });
         continue;
       }
 
@@ -144,7 +159,7 @@ async function runRenewWatches() {
         failed++;
         failures.push({
           id: connId,
-          email,
+          email: maskEmail(email),
           error:
             "missing_topicName (set email_connections.watch_topic or env GMAIL_PUBSUB_TOPIC_NAME or GCP_PROJECT_NUMBER/GCP_PROJECT_ID + GMAIL_PUBSUB_TOPIC_ID)",
         });
@@ -157,7 +172,7 @@ async function runRenewWatches() {
         redirectUri
       );
 
-      oauth2.setCredentials({ refresh_token: String(conn.refresh_token) });
+      oauth2.setCredentials({ refresh_token: refreshToken });
 
       const gmail = google.gmail({ version: "v1", auth: oauth2 });
 
@@ -206,9 +221,13 @@ async function runRenewWatches() {
       renewed++;
     } catch (e: any) {
       const msg = String(e?.message || e || "unknown_error").slice(0, 300);
-      console.error("[renew-watches] renew failed", { connId, email, error: msg });
+      console.error("[renew-watches] renew failed", {
+        connId,
+        email: maskEmail(email),
+        error: msg,
+      });
       failed++;
-      failures.push({ id: connId, email, error: msg });
+      failures.push({ id: connId, email: maskEmail(email), error: msg });
 
       // Best-effort: mark as degraded so UI/monitoring can detect it.
       try {

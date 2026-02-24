@@ -90,9 +90,6 @@ export default function ToneSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // File upload placeholder (not wired yet)
-  const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
-
   const formulationStrings = useMemo(() => {
     // Only feed "positive" examples into the denormalized list used for previews/exports.
     // No-Go examples are handled via dont_rules (separately).
@@ -106,10 +103,6 @@ export default function ToneSettingsPage() {
       })
       .map((f) => f.text);
   }, [formulations]);
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSelectedFiles(event.target.files);
-  };
 
   async function getUserId(): Promise<string | null> {
     const {
@@ -734,31 +727,6 @@ export default function ToneSettingsPage() {
             )}
 
             <Separator className="my-6" />
-
-            {/* File Upload */}
-            <h2
-              className="text-lg font-semibold mb-1"
-              data-tour="tone-style-upload-title"
-            >
-              Ton-Beispiele hochladen (optional)
-            </h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              Laden Sie PDF-, TXT-, PNG- oder Word-Dateien mit
-              Gesprächsbeispielen hoch, die den gewünschten Stil zeigen.
-            </p>
-            <Input
-              type="file"
-              multiple
-              onChange={handleFileChange}
-              data-tour="tone-style-upload-input"
-            />
-            <p className="text-xs text-muted-foreground mt-2">
-              Hinweis: Upload/Parsing ist noch nicht angebunden – wir speichern
-              zunächst nur die Ton-Einstellungen & Formulierungen.
-              {selectedFiles?.length
-                ? ` (${selectedFiles.length} Datei(en) ausgewählt)`
-                : ""}
-            </p>
 
             <div className="mt-6" data-tour="tone-style-bottom-save">
               <Button

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ExternalLink, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
+import SupportHub from "@/components/admin/SupportHub";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,24 @@ export default async function AdminOverviewPage() {
   const stuckSending = outboxItems.filter(
     (m) => String(m.send_status || "").toLowerCase() === "sending",
   );
+
+  const approvalQuality = (health.approval_quality_week || {}) as any;
+  const aqTotal = Number(approvalQuality.total_reviews ?? 0);
+  const aqNoEdit = Number(approvalQuality.no_edit_count ?? 0);
+  const aqEdited = Number(approvalQuality.edited_count ?? 0);
+  const aqRate = typeof approvalQuality.no_edit_rate === "number"
+    ? approvalQuality.no_edit_rate
+    : null;
+  const aqPrevRate = typeof approvalQuality.previous_no_edit_rate === "number"
+    ? approvalQuality.previous_no_edit_rate
+    : null;
+  const aqRatePct = aqRate === null ? null : Math.round(aqRate * 1000) / 10;
+  const aqPrevRatePct =
+    aqPrevRate === null ? null : Math.round(aqPrevRate * 1000) / 10;
+  const aqDeltaPp =
+    aqRatePct !== null && aqPrevRatePct !== null
+      ? Math.round((aqRatePct - aqPrevRatePct) * 10) / 10
+      : null;
 
   // heuristic health level (V1):
   // red if failed sends >= 3 or needs_human >= 5
@@ -159,6 +178,35 @@ export default async function AdminOverviewPage() {
             href="/app/admin/outbox?status=sending"
             tone={stuckSending.length > 0 ? "warning" : "neutral"}
           />
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
+          <Card
+            title="Freigaben ohne Korrektur (7 Tage)"
+            value={aqRatePct === null ? "–" : `${aqRatePct}%`}
+            tone={aqRatePct !== null && aqRatePct < 70 ? "warning" : "neutral"}
+          />
+          <Card title="Geprüfte Freigaben (7 Tage)" value={aqTotal} />
+          <Card
+            title="Mit Korrektur (7 Tage)"
+            value={aqEdited}
+            tone={aqEdited > 0 ? "warning" : "neutral"}
+          />
+          <Card
+            title="Trend zur Vorwoche"
+            value={
+              aqDeltaPp === null
+                ? "–"
+                : `${aqDeltaPp >= 0 ? "+" : ""}${aqDeltaPp} pp`
+            }
+            tone={aqDeltaPp !== null && aqDeltaPp < 0 ? "warning" : "neutral"}
+          />
+        </div>
+
+        <div className="mt-2 text-xs text-gray-600">
+          Basis: nur Freigaben mit menschlicher Entscheidung aus{" "}
+          <code>approval_review_v1</code>. Ohne Korrektur = direkt freigegeben;
+          mit Korrektur = Text vor Versand geändert.
         </div>
 
         <div className="mt-6 rounded-2xl border border-gray-200 bg-white overflow-hidden">
@@ -334,6 +382,8 @@ export default async function AdminOverviewPage() {
             )}
           </div>
         </div>
+
+        <SupportHub />
       </div>
     </div>
   );

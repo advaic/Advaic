@@ -4,6 +4,10 @@ import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
 import { google } from "googleapis";
 import { stripeRequest } from "@/lib/billing/stripe";
+import {
+  decryptSecretFromStorage,
+  encryptSecretForStorage,
+} from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -53,6 +57,46 @@ function createVerifierClient() {
 
 function jsonError(status: number, message: string) {
   return NextResponse.json({ error: message }, { status });
+}
+
+function stripQueryAndHash(value: string) {
+  return String(value || "").split("?")[0].split("#")[0];
+}
+
+function normalizeStoragePath(input: string, bucket: string): string {
+  const raw = stripQueryAndHash(String(input || "").trim());
+  if (!raw) return "";
+
+  try {
+    const url = new URL(raw);
+    const path = url.pathname;
+    const marker = "/storage/v1/object/";
+    const idx = path.indexOf(marker);
+    if (idx >= 0) {
+      const after = path.slice(idx + marker.length);
+      const parts = after.split("/").filter(Boolean);
+      if (parts.length >= 3) {
+        const b = parts[1];
+        const rest = parts.slice(2).join("/");
+        if (b === bucket) return rest;
+      }
+      const needle = `/${bucket}/`;
+      const nIdx = after.indexOf(needle);
+      if (nIdx >= 0) return after.slice(nIdx + needle.length);
+    }
+  } catch {
+    // not a URL
+  }
+
+  if (raw.startsWith(`${bucket}/`)) return raw.slice(bucket.length + 1);
+  if (raw.startsWith("/")) return raw.slice(1);
+  return raw;
+}
+
+function chunked<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
 function tokenStillValid(expiresAt: string | null | undefined) {
@@ -203,8 +247,8 @@ async function deprovisionExternalIntegrations(
 
   for (const conn of conns || []) {
     const provider = String(conn?.provider || "").toLowerCase();
-    const refreshToken = String(conn?.refresh_token || "").trim();
-    const accessToken = String(conn?.access_token || "").trim();
+    const refreshToken = decryptSecretFromStorage(conn?.refresh_token || "");
+    const accessToken = decryptSecretFromStorage(conn?.access_token || "");
     const expiresAt = conn?.expires_at ? String(conn.expires_at) : null;
 
     if (provider === "gmail") {
@@ -224,8 +268,10 @@ async function deprovisionExternalIntegrations(
             usableToken = refreshed.accessToken;
             await (admin.from("email_connections") as any)
               .update({
-                access_token: refreshed.accessToken,
-                refresh_token: refreshed.refreshToken || refreshToken,
+                access_token: encryptSecretForStorage(refreshed.accessToken),
+                refresh_token: encryptSecretForStorage(
+                  refreshed.refreshToken || refreshToken,
+                ),
                 expires_at: refreshed.expiresAtIso,
                 updated_at: new Date().toISOString(),
               })
@@ -247,6 +293,179 @@ async function deprovisionExternalIntegrations(
   }
 
   await cancelStripeSubscriptions(admin, agentId);
+}
+
+async function removeStoragePaths(
+  admin: ReturnType<typeof createAdminClient>,
+  bucket: string,
+  paths: string[],
+) {
+  const unique = Array.from(
+    new Set(
+      paths
+        .map((p) => String(p || "").trim())
+        .filter((p) => p && !p.startsWith("/") && !p.includes("..")),
+    ),
+  );
+  if (!unique.length) return;
+
+  for (const part of chunked(unique, 100)) {
+    const { error } = await admin.storage.from(bucket).remove(part);
+    if (error) {
+      console.warn("[account/delete] storage remove warning", {
+        bucket,
+        count: part.length,
+        message: error.message,
+      });
+    }
+  }
+}
+
+async function listStorageFilesByPrefix(
+  admin: ReturnType<typeof createAdminClient>,
+  bucket: string,
+  prefix: string,
+) {
+  const root = String(prefix || "").trim().replace(/^\/+|\/+$/g, "");
+  if (!root) return [] as string[];
+
+  const files: string[] = [];
+  const queue = [root];
+  const seen = new Set<string>();
+
+  while (queue.length) {
+    const folder = queue.shift()!;
+    if (seen.has(folder)) continue;
+    seen.add(folder);
+
+    let offset = 0;
+    while (true) {
+      const { data, error } = await (admin.storage.from(bucket) as any).list(folder, {
+        limit: 100,
+        offset,
+        sortBy: { column: "name", order: "asc" },
+      });
+      if (error || !Array.isArray(data) || data.length === 0) break;
+
+      for (const item of data as any[]) {
+        const name = String(item?.name || "").trim();
+        if (!name || name === "." || name === "..") continue;
+        const fullPath = `${folder}/${name}`;
+        // Folder objects typically don't have an id in Supabase list results.
+        if (!item?.id) queue.push(fullPath);
+        else files.push(fullPath);
+      }
+
+      if (data.length < 100) break;
+      offset += 100;
+      if (offset > 5000) break;
+    }
+  }
+
+  return files;
+}
+
+async function tryDeleteByPropertyIds(
+  admin: ReturnType<typeof createAdminClient>,
+  table: string,
+  propertyIds: string[],
+) {
+  if (!propertyIds.length) return;
+  const { error } = await (admin.from(table as any) as any).delete().in("property_id", propertyIds);
+  if (error) {
+    const m = String(error.message || "");
+    if (
+      m.includes("does not exist") ||
+      m.includes("relation") ||
+      (m.includes("column") && m.includes("property_id"))
+    ) {
+      return;
+    }
+  }
+}
+
+async function purgeAgentStorageObjects(
+  admin: ReturnType<typeof createAdminClient>,
+  agentId: string,
+) {
+  const attachmentsBucket =
+    process.env.NEXT_PUBLIC_SUPABASE_ATTACHMENTS_BUCKET || "attachments";
+  const propertyImagesBucket =
+    process.env.NEXT_PUBLIC_SUPABASE_PROPERTY_IMAGES_BUCKET ||
+    process.env.PROPERTY_IMAGES_BUCKET ||
+    "property-images";
+
+  const { data: properties } = await (admin.from("properties") as any)
+    .select("id, image_urls")
+    .eq("agent_id", agentId);
+
+  const propertyIds = (properties || [])
+    .map((p: any) => String(p?.id || "").trim())
+    .filter(Boolean);
+
+  const imagePathsFromProperties: string[] = [];
+  for (const row of properties || []) {
+    const urls = Array.isArray((row as any)?.image_urls) ? (row as any).image_urls : [];
+    for (const raw of urls) {
+      const normalized = normalizeStoragePath(String(raw || ""), propertyImagesBucket);
+      if (normalized) imagePathsFromProperties.push(normalized);
+    }
+  }
+
+  const { data: propertyImageRows } = propertyIds.length
+    ? await (admin.from("property_images") as any)
+        .select("image_url")
+        .in("property_id", propertyIds)
+    : ({ data: [] } as any);
+
+  const imagePathsFromPropertyTable = (propertyImageRows || [])
+    .map((r: any) => normalizeStoragePath(String(r?.image_url || ""), propertyImagesBucket))
+    .filter(Boolean);
+
+  const { data: emailAttRows } = await (admin.from("email_attachments") as any)
+    .select("storage_bucket, storage_path, path")
+    .eq("agent_id", agentId);
+
+  const attachmentByBucket: Record<string, string[]> = {};
+  for (const row of emailAttRows || []) {
+    const bucket = String(row?.storage_bucket || attachmentsBucket).trim();
+    const rawPath = String(row?.storage_path || row?.path || "").trim();
+    if (!bucket || !rawPath) continue;
+    attachmentByBucket[bucket] = attachmentByBucket[bucket] || [];
+    attachmentByBucket[bucket].push(normalizeStoragePath(rawPath, bucket));
+  }
+
+  for (const [bucket, paths] of Object.entries(attachmentByBucket)) {
+    await removeStoragePaths(admin, bucket, paths);
+  }
+
+  await removeStoragePaths(admin, propertyImagesBucket, [
+    ...imagePathsFromProperties,
+    ...imagePathsFromPropertyTable,
+  ]);
+
+  const attachmentPrefixPaths = await listStorageFilesByPrefix(
+    admin,
+    attachmentsBucket,
+    `agents/${agentId}/leads`,
+  );
+  await removeStoragePaths(admin, attachmentsBucket, attachmentPrefixPaths);
+
+  const propertyPrefixPaths = await listStorageFilesByPrefix(
+    admin,
+    propertyImagesBucket,
+    `agents/${agentId}/properties`,
+  );
+  await removeStoragePaths(admin, propertyImagesBucket, propertyPrefixPaths);
+
+  for (const propertyId of propertyIds) {
+    const legacyPaths = await listStorageFilesByPrefix(admin, propertyImagesBucket, propertyId);
+    await removeStoragePaths(admin, propertyImagesBucket, legacyPaths);
+  }
+
+  await tryDeleteByPropertyIds(admin, "property_images", propertyIds);
+  await tryDeleteByPropertyIds(admin, "property_sources", propertyIds);
+  await tryDeleteByPropertyIds(admin, "property_followup_policies", propertyIds);
 }
 
 async function tryDeleteByAgentId(
@@ -309,24 +528,46 @@ export async function POST(req: NextRequest) {
     // Deprovisioning is best-effort and must not block account deletion.
     console.warn("[account/delete] external deprovision failed:", e);
   }
+  try {
+    await purgeAgentStorageObjects(admin, user.id);
+  } catch (e) {
+    console.warn("[account/delete] storage purge failed:", e);
+  }
 
   // Best effort cleanup for app tables before deleting auth user.
   const agentScopedTables = [
+    "agent_notification_settings",
     "billing_customers",
     "billing_subscriptions",
     "billing_invoices",
     "agent_style",
+    "agent_style_examples",
     "agent_settings",
     "agent_onboarding",
+    "agent_tour_state",
+    "agent_tour_step_events",
+    "agent_tours",
+    "documents",
+    "email_attachments",
+    "email_classifications",
+    "email_message_bodies",
     "followup_configs",
+    "followups_queue_v1",
     "followup_history",
+    "lead_copilot_state",
+    "lead_property_state",
+    "message_intents",
     "notification_events",
     "notification_deliveries",
     "email_connections",
+    "immoscout_connections",
     "message_drafts",
     "message_qas",
+    "message_routes",
     "messages",
+    "properties",
     "leads",
+    "slack_connections",
   ];
   for (const table of agentScopedTables) {
     await tryDeleteByAgentId(admin, table, user.id);

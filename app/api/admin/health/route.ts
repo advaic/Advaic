@@ -10,6 +10,8 @@ export async function GET(req: NextRequest) {
 
   const supa = supabaseAdmin();
   const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const weekSinceIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const prevWeekStartIso = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
 
   // 1) Emails ingested last 24h (best-effort: count inbound user messages)
   const { count: inbound24h } = await (supa.from("messages") as any)
@@ -62,6 +64,40 @@ export async function GET(req: NextRequest) {
     .select("id", { count: "exact", head: true })
     .eq("status", "needs_human");
 
+  // 6) Approval quality (7d): human approvals without edits vs with edits
+  const { count: approvalReviews7d } = await (supa.from("message_qas") as any)
+    .select("id", { count: "exact", head: true })
+    .eq("prompt_key", "approval_review_v1")
+    .gte("created_at", weekSinceIso);
+
+  const { count: noEditReviews7d } = await (supa.from("message_qas") as any)
+    .select("id", { count: "exact", head: true })
+    .eq("prompt_key", "approval_review_v1")
+    .eq("verdict", "pass")
+    .gte("created_at", weekSinceIso);
+
+  const { count: approvalReviewsPrev7d } = await (supa.from("message_qas") as any)
+    .select("id", { count: "exact", head: true })
+    .eq("prompt_key", "approval_review_v1")
+    .gte("created_at", prevWeekStartIso)
+    .lt("created_at", weekSinceIso);
+
+  const { count: noEditReviewsPrev7d } = await (supa.from("message_qas") as any)
+    .select("id", { count: "exact", head: true })
+    .eq("prompt_key", "approval_review_v1")
+    .eq("verdict", "pass")
+    .gte("created_at", prevWeekStartIso)
+    .lt("created_at", weekSinceIso);
+
+  const total7d = Number(approvalReviews7d ?? 0);
+  const pass7d = Number(noEditReviews7d ?? 0);
+  const edited7d = Math.max(0, total7d - pass7d);
+  const rate7d = total7d > 0 ? pass7d / total7d : null;
+
+  const totalPrev7d = Number(approvalReviewsPrev7d ?? 0);
+  const passPrev7d = Number(noEditReviewsPrev7d ?? 0);
+  const ratePrev7d = totalPrev7d > 0 ? passPrev7d / totalPrev7d : null;
+
   return NextResponse.json({
     ok: true,
     since: sinceIso,
@@ -71,6 +107,16 @@ export async function GET(req: NextRequest) {
       ready_to_send: readyToSend ?? 0,
       needs_approval: needsApproval ?? 0,
       needs_human: needsHuman ?? 0,
+    },
+    approval_quality_week: {
+      since: weekSinceIso,
+      total_reviews: total7d,
+      no_edit_count: pass7d,
+      edited_count: edited7d,
+      no_edit_rate: rate7d,
+      previous_total_reviews: totalPrev7d,
+      previous_no_edit_count: passPrev7d,
+      previous_no_edit_rate: ratePrev7d,
     },
     send_status: sendCounts,
     last_failed: lastFailed || [],

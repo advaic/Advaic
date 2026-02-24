@@ -5,6 +5,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+const CHAT_SESSION_KEY = "advaic_chat_session";
+const CHAT_WEBHOOK_URL = process.env.NEXT_PUBLIC_CHAT_WEBHOOK_URL || "";
+
 // 💬 Chatbot Component
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
@@ -21,9 +24,9 @@ export default function ChatWidget() {
   // Create persistent session ID
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!window.localStorage.getItem("advaic_session")) {
+    if (!window.sessionStorage.getItem(CHAT_SESSION_KEY)) {
       const newId = crypto.randomUUID();
-      window.localStorage.setItem("advaic_session", newId);
+      window.sessionStorage.setItem(CHAT_SESSION_KEY, newId);
     }
   }, []);
 
@@ -64,20 +67,29 @@ export default function ChatWidget() {
     try {
       const sessionId =
         typeof window !== "undefined"
-          ? window.localStorage.getItem("advaic_session")
+          ? window.sessionStorage.getItem(CHAT_SESSION_KEY)
           : null;
 
-      const response = await fetch(
-        "https://hook.eu2.make.com/f06jt1knx6bhwt0ftpp6wmfpedqfwm2a",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: userMessage,
-            session_id: sessionId,
-          }),
-        }
-      );
+      if (!CHAT_WEBHOOK_URL) {
+        setIsBotTyping(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            sender: "bot",
+            text: "Chat ist aktuell nicht verfügbar. Bitte schreiben Sie uns an support@advaic.com.",
+          },
+        ]);
+        return;
+      }
+
+      const response = await fetch(CHAT_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userMessage,
+          session_id: sessionId,
+        }),
+      });
 
       // always read as text first
       const raw = await response.text();
@@ -99,8 +111,6 @@ export default function ChatWidget() {
         const match = raw.match(/"reply"\s*:\s*"([\s\S]*)"/);
         if (match && match[1]) {
           replyText = match[1];
-        } else {
-          console.warn("Invalid JSON from webhook, using raw text:", raw);
         }
       }
 

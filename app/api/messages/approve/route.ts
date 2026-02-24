@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { upsertHumanApprovalReview } from "@/lib/security/approval-review";
 
 export const runtime = "nodejs";
 
@@ -148,6 +149,19 @@ export async function POST(req: Request) {
       { ok: false, error: "empty_draft_text" },
       { status: 400 },
     );
+  }
+
+  const reviewTrack = await upsertHumanApprovalReview(supabase, {
+    agentId,
+    leadId: String((msgRow as any).lead_id || ""),
+    messageId,
+    edited: false,
+    originalText: text,
+    finalText: text,
+    source: "api_approve",
+  });
+  if (!reviewTrack.ok) {
+    console.warn("⚠️ approval review tracking failed in /api/messages/approve:", reviewTrack.error);
   }
 
   const site = mustEnv("NEXT_PUBLIC_SITE_URL").replace(/\/$/, "");

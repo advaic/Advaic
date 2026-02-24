@@ -1,14 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/browserClient";
+
+function safeNextPath(rawNext: string | null | undefined): string {
+  const fallback = "/app/startseite";
+  const value = String(rawNext ?? "").trim();
+  if (!value) return fallback;
+  if (!value.startsWith("/") || value.startsWith("//")) return fallback;
+  if (/[\r\n]/.test(value)) return fallback;
+  if (value === "/login" || value === "/app/login") return fallback;
+  return value;
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    const redirectIfSessionExists = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!mounted) return;
+      if (data.session) {
+        const next = new URLSearchParams(window.location.search).get("next");
+        const target = safeNextPath(next);
+        window.location.replace(target);
+      }
+    };
+
+    void redirectIfSessionExists();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +58,8 @@ export default function LoginPage() {
 
     // Full reload so middleware + server components see the new auth cookie
     const next = new URLSearchParams(window.location.search).get("next");
-    window.location.href = next || "/app/startseite";
+    const target = safeNextPath(next);
+    window.location.href = target;
   };
 
   return (

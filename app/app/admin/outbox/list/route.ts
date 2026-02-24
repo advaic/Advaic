@@ -74,6 +74,7 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
     const tab = String(url.searchParams.get("tab") || "failed").toLowerCase();
+    const agentIdFilter = String(url.searchParams.get("agent_id") || "").trim();
 
     const supabase = supabaseAdmin();
 
@@ -81,15 +82,19 @@ export async function GET(req: Request) {
     // We include:
     // - send_status in (pending, sending, failed)
     // - AND drafts that are ready_to_send (extra safety)
-    const { data: msgs, error: msgErr } = await (
-      supabase.from("messages") as any
-    )
+    let q = (supabase.from("messages") as any)
       .select(
         "id, agent_id, lead_id, text, timestamp, status, approval_required, send_status, send_locked_at, send_error, sent_at",
       )
       .in("send_status", ["pending", "sending", "failed"])
       .order("timestamp", { ascending: false })
       .limit(250);
+
+    if (agentIdFilter) {
+      q = q.eq("agent_id", agentIdFilter);
+    }
+
+    const { data: msgs, error: msgErr } = await q;
 
     if (msgErr) {
       return NextResponse.json(
@@ -187,7 +192,7 @@ export async function GET(req: Request) {
       return sendStatus === "failed";
     });
 
-    return NextResponse.json({ ok: true, rows: filtered });
+    return NextResponse.json({ ok: true, rows: filtered, agent_id: agentIdFilter || null });
   } catch (e: any) {
     console.error(e);
     return NextResponse.json(

@@ -20,10 +20,11 @@ export default async function NachrichtenPage() {
   );
 
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
 
-  if (!session || !session.user) {
+  if (authError || !user) {
     return (
       <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
         <div className="max-w-6xl mx-auto px-4 md:px-6 py-10">
@@ -46,7 +47,7 @@ export default async function NachrichtenPage() {
     );
   }
 
-  const userId = session.user.id;
+  const userId = user.id;
 
   const { data: leads, error } = await supabase
     .from("leads")

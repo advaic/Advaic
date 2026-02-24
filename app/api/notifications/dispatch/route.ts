@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { decryptSecretFromStorage } from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 const OUTBOUND_TIMEOUT_MS = 15_000;
@@ -45,14 +46,14 @@ async function loadSlackConnection(args: {
     {
       select: "access_token, authed_user_id",
       map: (r: any) => ({
-        accessToken: String(r?.access_token || "").trim(),
+        accessToken: decryptSecretFromStorage(r?.access_token),
         authedUserId: String(r?.authed_user_id || "").trim(),
       }),
     },
     {
       select: "access_token, slack_authed_user_id",
       map: (r: any) => ({
-        accessToken: String(r?.access_token || "").trim(),
+        accessToken: decryptSecretFromStorage(r?.access_token),
         authedUserId: String(r?.slack_authed_user_id || "").trim(),
       }),
     },

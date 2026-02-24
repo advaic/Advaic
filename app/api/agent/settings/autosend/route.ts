@@ -1,7 +1,9 @@
 // app/api/agent/settings/autosend/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { getAutosendBaseline } from "@/lib/security/autosend-gate";
 
 export const runtime = "nodejs";
 
@@ -28,6 +30,14 @@ function supabaseFromReq(req: NextRequest, res: NextResponse) {
         },
       },
     }
+  );
+}
+
+function supabaseAdmin() {
+  return createClient<Database>(
+    mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    mustEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    { auth: { persistSession: false, autoRefreshToken: false } },
   );
 }
 
@@ -81,6 +91,13 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  const wantsAuto =
+    body.reply_mode === "auto" || body.autosend_enabled === true;
+  const autosendGate = await getAutosendBaseline(supabaseAdmin(), String(user.id));
+  if (wantsAuto && !autosendGate.eligible) {
+    return jsonError(409, "autosend_not_ready", { autosend_gate: autosendGate });
+  }
+
   // If autosend_enabled is provided but reply_mode is not, map it deterministically
   const inferredReplyMode: "approval" | "auto" | undefined =
     typeof body.autosend_enabled === "boolean"
@@ -118,7 +135,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({ ok: true, settings: data });
+  return NextResponse.json({ ok: true, settings: data, autosend_gate: autosendGate });
 }
 
 export async function GET(req: NextRequest) {
@@ -131,6 +148,8 @@ export async function GET(req: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (authErr || !user) return jsonError(401, "Unauthorized");
+
+  const autosendGate = await getAutosendBaseline(supabaseAdmin(), String(user.id));
 
   const { data, error } = await (supabase.from("agent_settings") as any)
     .select("agent_id, autosend_enabled, reply_mode, auto_send_min_confidence")
@@ -145,6 +164,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    autosend_gate: autosendGate,
     settings:
       data ||
       ({

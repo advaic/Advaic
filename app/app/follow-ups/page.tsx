@@ -19,10 +19,11 @@ export default async function FollowUpsPage() {
   );
 
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
 
-  if (!session?.user) {
+  if (authError || !user) {
     return (
       <div className="flex h-full items-center justify-center text-gray-600">
         <div className="text-center space-y-3">
@@ -38,5 +39,5 @@ export default async function FollowUpsPage() {
     );
   }
 
-  return <FollowUpsUI userId={session.user.id} />;
+  return <FollowUpsUI userId={user.id} />;
 }

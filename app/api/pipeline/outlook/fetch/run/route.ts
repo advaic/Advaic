@@ -2,6 +2,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import {
+  decryptSecretFromStorage,
+  encryptSecretForStorage,
+} from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -593,8 +597,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Token handling
-    let accessToken = c.access_token || null;
-    let refreshToken = c.refresh_token || null;
+    let accessToken = decryptSecretFromStorage(c.access_token || "");
+    let refreshToken = decryptSecretFromStorage(c.refresh_token || "");
     let expiresAt = c.expires_at || null;
 
     try {
@@ -622,8 +626,8 @@ export async function POST(req: NextRequest) {
         // Persist refreshed tokens
         await (supabase.from("email_connections") as any)
           .update({
-            access_token: accessToken,
-            refresh_token: refreshToken,
+            access_token: encryptSecretForStorage(accessToken),
+            refresh_token: encryptSecretForStorage(refreshToken),
             expires_at: expiresAt,
             last_error: null,
           })

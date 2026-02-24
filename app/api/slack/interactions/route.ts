@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { decryptSecretFromStorage } from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 const OUTBOUND_TIMEOUT_MS = 15_000;
@@ -158,7 +159,7 @@ async function loadSlackConnection(args: {
     {
       select: "access_token, authed_user_id, team_id",
       map: (r: any) => ({
-        accessToken: String(r?.access_token || "").trim(),
+        accessToken: decryptSecretFromStorage(r?.access_token),
         authedUserId: String(r?.authed_user_id || "").trim(),
         teamId: String(r?.team_id || "").trim() || null,
       }),
@@ -166,7 +167,7 @@ async function loadSlackConnection(args: {
     {
       select: "access_token, slack_authed_user_id, team_id",
       map: (r: any) => ({
-        accessToken: String(r?.access_token || "").trim(),
+        accessToken: decryptSecretFromStorage(r?.access_token),
         authedUserId: String(r?.slack_authed_user_id || "").trim(),
         teamId: String(r?.team_id || "").trim() || null,
       }),
@@ -174,7 +175,7 @@ async function loadSlackConnection(args: {
     {
       select: "access_token, authed_user_id, slack_team_id",
       map: (r: any) => ({
-        accessToken: String(r?.access_token || "").trim(),
+        accessToken: decryptSecretFromStorage(r?.access_token),
         authedUserId: String(r?.authed_user_id || "").trim(),
         teamId: String(r?.slack_team_id || "").trim() || null,
       }),
@@ -182,7 +183,7 @@ async function loadSlackConnection(args: {
     {
       select: "access_token, slack_authed_user_id, slack_team_id",
       map: (r: any) => ({
-        accessToken: String(r?.access_token || "").trim(),
+        accessToken: decryptSecretFromStorage(r?.access_token),
         authedUserId: String(r?.slack_authed_user_id || "").trim(),
         teamId: String(r?.slack_team_id || "").trim() || null,
       }),

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
+import { encryptSecretForStorage } from "@/lib/security/secrets";
 
 export const runtime = "nodejs";
 
@@ -130,7 +131,7 @@ export async function GET(req: NextRequest) {
     if (accessToken) {
       const base = {
         agent_id: user.id,
-        access_token: accessToken,
+        access_token: encryptSecretForStorage(accessToken),
         team_id: teamId,
         team_name: teamName,
         updated_at: new Date().toISOString(),
