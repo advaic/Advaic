@@ -6,6 +6,21 @@ import { Button } from "@/components/ui/button";
 type BillingSummaryResponse = {
   ok: boolean;
   summary?: {
+    access: {
+      state: "paid_active" | "trial_active" | "trial_expired";
+      trial_days_total: number;
+      trial_day_number: number;
+      trial_days_remaining: number;
+      trial_started_at: string | null;
+      trial_ends_at: string | null;
+      is_urgent: boolean;
+      upgrade_required: boolean;
+      billing: {
+        plan_key: string;
+        status: string;
+        entitled: boolean;
+      };
+    };
     plan: {
       key: string;
       name: string;
@@ -94,6 +109,7 @@ export default function AboPage() {
   }, []);
 
   const plan = summary?.plan;
+  const access = summary?.access;
   const dunning = summary?.dunning || null;
   const isFree = (plan?.key || "free") === "free";
 
@@ -120,7 +136,7 @@ export default function AboPage() {
     const res = await fetch("/api/billing/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plan_key: "pro_monthly" }),
+      body: JSON.stringify({ plan_key: "starter_monthly" }),
     });
     const data = (await res.json().catch(() => ({}))) as any;
     if (!res.ok || !data?.checkout_url) {
@@ -168,6 +184,30 @@ export default function AboPage() {
             <p className="text-sm">
               {plan?.name || "Advaic Free"} {plan?.price_monthly_cents ? `• ${formatMoney(plan.price_monthly_cents, plan.currency)}/${plan.interval === "year" ? "Jahr" : "Monat"}` : ""}
             </p>
+            {access?.state === "trial_active" ? (
+              <div
+                className={`mt-2 rounded-lg border p-3 text-sm ${
+                  access.is_urgent
+                    ? "border-amber-300 bg-amber-50 text-amber-900"
+                    : "border-sky-200 bg-sky-50 text-sky-900"
+                }`}
+              >
+                <p className="font-medium">
+                  Testphase Tag {access.trial_day_number} von {access.trial_days_total}
+                </p>
+                <p className="mt-1">
+                  Noch {access.trial_days_remaining} Tage bis zur Aktivierung von Starter.
+                </p>
+              </div>
+            ) : null}
+            {access?.state === "trial_expired" ? (
+              <div className="mt-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+                <p className="font-medium">Testphase beendet</p>
+                <p className="mt-1">
+                  Auto-Senden und Follow-ups sind pausiert, bis Starter aktiv ist.
+                </p>
+              </div>
+            ) : null}
             <p className="text-sm text-muted-foreground">Status: {statusLabel}</p>
             <p className="text-sm text-muted-foreground">
               Nächste Verlängerung: {formatDate(plan?.current_period_end || null)}
@@ -224,8 +264,8 @@ export default function AboPage() {
                 {busy === "checkout"
                   ? "Weiterleiten..."
                   : isFree
-                    ? "Abo abschließen"
-                    : "Plan wechseln"}
+                    ? "Starter aktivieren"
+                    : "Starter verwalten"}
               </Button>
               <Button
                 variant="outline"

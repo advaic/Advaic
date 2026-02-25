@@ -285,13 +285,21 @@ export default function SupportHub() {
               Kritische Accounts priorisieren, eingreifen und Fälle mit Ticket-Verlauf sauber lösen.
             </div>
           </div>
-          <button
-            onClick={() => void runFetch(undefined, true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
-          >
-            {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Aktualisieren
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/app/admin/tickets"
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Tickets öffnen
+            </Link>
+            <button
+              onClick={() => void runFetch(undefined, true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Aktualisieren
+            </button>
+          </div>
         </div>
 
         <form

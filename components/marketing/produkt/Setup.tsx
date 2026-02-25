@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import Container from "@/components/marketing/Container";
 
 const setupSteps = [
@@ -41,7 +42,7 @@ export default function Setup() {
             {setupSteps.map((step, index) => (
               <article
                 key={step.title}
-                className="card-hover rounded-xl bg-[var(--surface-2)] p-5 ring-1 ring-[var(--border)]"
+                className="card-hover relative rounded-xl bg-[var(--surface-2)] p-5 ring-1 ring-[var(--border)]"
               >
                 <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-xs font-semibold text-[var(--text)] ring-1 ring-[var(--gold-soft)]">
                   {index + 1}
@@ -50,6 +51,9 @@ export default function Setup() {
                   {step.title}
                 </h3>
                 <p className="helper mt-3">{step.detail}</p>
+                {index < setupSteps.length - 1 ? (
+                  <ArrowRight className="absolute -right-2 top-1/2 hidden h-4 w-4 -translate-y-1/2 text-[var(--gold)] xl:block" />
+                ) : null}
               </article>
             ))}
           </div>
@@ -62,14 +66,24 @@ export default function Setup() {
           Dasselbe gilt für Follow-ups: zuerst konservativ starten, dann schrittweise erweitern.
         </p>
 
+        <div className="mt-6 rounded-[var(--radius)] bg-white p-5 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
+          <p className="text-sm font-semibold text-[var(--text)]">Safe-Start Zielbild</p>
+          <ul className="mt-3 space-y-2 text-sm text-[var(--muted)]">
+            <li>1) Erste echte Anfrage über Freigabe sauber beantworten.</li>
+            <li>2) Ton und Objektdaten nachjustieren, bis Antworten stabil passen.</li>
+            <li>3) Erst danach Autopilot oder Follow-up-Stufen schrittweise erhöhen.</li>
+          </ul>
+        </div>
+
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
           <Link href="/signup" className="btn-primary">
-            Kostenlos testen
+            14 Tage kostenlos testen
           </Link>
           <a href="#faq" className="btn-secondary">
             Fragen stellen
           </a>
         </div>
+        <p className="helper mt-3">Danach läuft Starter monatlich weiter. Sie können jederzeit kündigen.</p>
       </Container>
     </section>
   );

@@ -25,7 +25,7 @@ export default function ImpressumPage() {
   const contactPhone = fieldOrFallback(process.env.NEXT_PUBLIC_LEGAL_CONTACT_PHONE);
 
   return (
-    <PageShell>
+    <PageShell withProofLayer={false}>
       <PageIntro
         kicker="Impressum"
         title="Anbieterkennzeichnung gemäß § 5 DDG"

@@ -5,11 +5,14 @@ import { Menu, X } from "lucide-react";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 import Container from "./Container";
+import { trackPublicEvent } from "@/lib/funnel/public-track";
 
 const navLinks = [
   { label: "Produkt", href: "/produkt" },
+  { label: "Branchen", href: "/branchen" },
   { label: "So funktioniert's", href: "/so-funktionierts" },
   { label: "Sicherheit", href: "/sicherheit" },
+  { label: "Trust", href: "/trust" },
   { label: "Preise", href: "/preise" },
   { label: "FAQ", href: "/faq" },
 ];
@@ -17,6 +20,19 @@ const navLinks = [
 export default function MarketingNavbar() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const trackNav = (event: string, destination: string, area: "desktop" | "mobile") => {
+    void trackPublicEvent({
+      event,
+      source: "website",
+      pageGroup: "marketing",
+      meta: {
+        section: "navbar",
+        area,
+        current_path: pathname || "/",
+        destination,
+      },
+    });
+  };
 
   return (
     <header className="sticky top-0 z-50 h-[72px] border-b border-[var(--border)] bg-white/70 backdrop-blur-md">
@@ -27,11 +43,12 @@ export default function MarketingNavbar() {
 
         <nav className="hidden items-center gap-8 lg:flex">
           {navLinks.map((link) => {
-            const isActive = pathname === link.href;
+            const isActive = pathname === link.href || pathname?.startsWith(`${link.href}/`);
             return (
               <Link
                 key={link.href}
                 href={link.href}
+                onClick={() => trackNav("marketing_nav_click", link.href, "desktop")}
                 className={`focus-ring relative text-sm font-medium transition-colors ${
                   isActive ? "text-[var(--text)]" : "text-[var(--text)]/85 hover:text-[var(--text)]"
                 }`}
@@ -49,11 +66,19 @@ export default function MarketingNavbar() {
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
-          <Link href="/login" className="btn-secondary">
+          <Link
+            href="/login"
+            className="btn-secondary"
+            onClick={() => trackNav("marketing_nav_login_click", "/login", "desktop")}
+          >
             Login
           </Link>
-          <Link href="/signup" className="btn-primary">
-            Kostenlos testen
+          <Link
+            href="/signup"
+            className="btn-primary"
+            onClick={() => trackNav("marketing_nav_signup_click", "/signup", "desktop")}
+          >
+            14 Tage testen
           </Link>
         </div>
 
@@ -73,12 +98,15 @@ export default function MarketingNavbar() {
           <Container className="py-4">
             <nav className="flex flex-col gap-3">
               {navLinks.map((link) => {
-                const isActive = pathname === link.href;
+                const isActive = pathname === link.href || pathname?.startsWith(`${link.href}/`);
                 return (
                   <Link
                     key={link.href}
                     href={link.href}
-                    onClick={() => setOpen(false)}
+                    onClick={() => {
+                      trackNav("marketing_nav_click", link.href, "mobile");
+                      setOpen(false);
+                    }}
                     className={`focus-ring rounded-lg px-2 py-2 text-sm font-medium transition-colors ${
                       isActive
                         ? "bg-[var(--surface)] text-[var(--text)] ring-1 ring-[var(--gold-soft)]"
@@ -92,11 +120,25 @@ export default function MarketingNavbar() {
               })}
             </nav>
             <div className="mt-4 grid gap-3">
-              <Link href="/login" onClick={() => setOpen(false)} className="btn-secondary w-full">
+              <Link
+                href="/login"
+                onClick={() => {
+                  trackNav("marketing_nav_login_click", "/login", "mobile");
+                  setOpen(false);
+                }}
+                className="btn-secondary w-full"
+              >
                 Login
               </Link>
-              <Link href="/signup" onClick={() => setOpen(false)} className="btn-primary w-full">
-                Kostenlos testen
+              <Link
+                href="/signup"
+                onClick={() => {
+                  trackNav("marketing_nav_signup_click", "/signup", "mobile");
+                  setOpen(false);
+                }}
+                className="btn-primary w-full"
+              >
+                14 Tage testen
               </Link>
             </div>
           </Container>

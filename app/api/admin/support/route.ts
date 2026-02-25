@@ -84,10 +84,15 @@ type SupportTicket = {
   source_message_id: string | null;
   source_lead_id: string | null;
   source_agent_id: string | null;
+  source_agent_name?: string | null;
+  source_agent_email?: string | null;
+  source_agent_company?: string | null;
   source_status: string | null;
   source_send_status: string | null;
   source_send_error: string | null;
   source_created_at: string | null;
+  source_lead_name?: string | null;
+  source_lead_email?: string | null;
   history: TicketHistoryEntry[];
 };
 
@@ -588,6 +593,50 @@ export async function GET(req: NextRequest) {
   const leadMap = new Map<string, any>();
   for (const l of leadsForIncidents || []) leadMap.set(String(l.id), l);
 
+  const ticketAgentIds = Array.from(
+    new Set(ticketIndex.list.map((t) => String(t?.source_agent_id || "").trim()).filter(Boolean)),
+  );
+  const missingTicketAgentIds = ticketAgentIds.filter((id) => !agentMap.has(id));
+  if (missingTicketAgentIds.length > 0) {
+    const { data: missingAgents } = await (supa.from("agents") as any)
+      .select("id, email, name, company, created_at")
+      .in("id", missingTicketAgentIds);
+    for (const a of missingAgents || []) agentMap.set(String(a.id), a);
+  }
+
+  const ticketLeadIds = Array.from(
+    new Set(ticketIndex.list.map((t) => String(t?.source_lead_id || "").trim()).filter(Boolean)),
+  );
+  const missingTicketLeadIds = ticketLeadIds.filter((id) => !leadMap.has(id));
+  if (missingTicketLeadIds.length > 0) {
+    const { data: missingLeads } = await (supa.from("leads") as any)
+      .select("id, name, email")
+      .in("id", missingTicketLeadIds);
+    for (const l of missingLeads || []) leadMap.set(String(l.id), l);
+  }
+
+  const enrichedTickets: SupportTicket[] = ticketIndex.list.map((t) => {
+    const agent = t.source_agent_id ? agentMap.get(String(t.source_agent_id)) : null;
+    const lead = t.source_lead_id ? leadMap.get(String(t.source_lead_id)) : null;
+    return {
+      ...t,
+      source_agent_name: agent?.name ?? null,
+      source_agent_email: agent?.email ?? null,
+      source_agent_company: agent?.company ?? null,
+      source_lead_name: lead?.name ?? null,
+      source_lead_email: lead?.email ?? null,
+    };
+  });
+  const ticketByMessageId = new Map<string, SupportTicket>();
+  for (const t of enrichedTickets) {
+    const mid = String(t?.source_message_id || "").trim();
+    if (!mid) continue;
+    const prev = ticketByMessageId.get(mid);
+    if (!prev || isNewerIso(t.updated_at, prev.updated_at)) {
+      ticketByMessageId.set(mid, t);
+    }
+  }
+
   const incidents = incidentRows.map((m) => {
     const agentId = String(m?.agent_id || "");
     const leadId = String(m?.lead_id || "");
@@ -610,7 +659,7 @@ export async function GET(req: NextRequest) {
       timestamp: m?.timestamp ?? null,
       stuck,
       minutes_locked: lockedMins,
-      ticket: ticketIndex.byMessageId.get(messageId) || null,
+      ticket: ticketByMessageId.get(messageId) || null,
     };
   });
 
@@ -679,10 +728,14 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
+    viewer: {
+      id: String((gate as any)?.user?.id || "") || null,
+      email: String((gate as any)?.user?.email || "") || null,
+    },
     q: qRaw || null,
     summary,
     ticket_summary: ticketIndex.summary,
-    tickets: ticketIndex.list.slice(0, 80),
+    tickets: enrichedTickets.slice(0, 240),
     critical_agents: criticalAgents,
     incidents,
     search: {

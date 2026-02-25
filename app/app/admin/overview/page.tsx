@@ -117,6 +117,48 @@ export default async function AdminOverviewPage() {
               Agents
             </Link>
             <Link
+              href="/app/admin/quality"
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Quality
+            </Link>
+            <Link
+              href="/app/admin/funnel"
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Funnel
+            </Link>
+            <Link
+              href="/app/admin/rollout"
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Rollout
+            </Link>
+            <Link
+              href="/app/admin/readiness"
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Readiness
+            </Link>
+            <Link
+              href="/app/admin/compliance"
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Compliance
+            </Link>
+            <Link
+              href="/app/admin/tickets"
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Tickets
+            </Link>
+            <Link
+              href="/app/admin/ops"
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Ops
+            </Link>
+            <Link
               href="/app/admin/outbox"
               className="inline-flex items-center justify-center rounded-xl border border-gray-900 bg-gray-900 px-3 py-2 text-sm font-medium text-amber-200 hover:bg-gray-800"
             >
@@ -217,7 +259,7 @@ export default async function AdminOverviewPage() {
               Navbar nötig.
             </div>
           </div>
-          <div className="p-4 md:p-6 grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="p-4 md:p-6 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3">
             <Link
               href="/app/admin/agents"
               className="group rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50 transition"
@@ -247,6 +289,20 @@ export default async function AdminOverviewPage() {
             </Link>
 
             <Link
+              href="/app/admin/tickets"
+              className="group rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50 transition"
+            >
+              <div className="text-sm text-gray-600">Support</div>
+              <div className="mt-1 text-lg font-semibold">Tickets</div>
+              <div className="mt-2 text-sm text-gray-600">
+                Owner, SLA, Verlauf und Notizen für jeden Vorfall.
+              </div>
+              <div className="mt-3 text-xs text-gray-500 group-hover:text-gray-900">
+                Öffnen →
+              </div>
+            </Link>
+
+            <Link
               href="/app/admin/decisions"
               className="group rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50 transition"
             >
@@ -254,6 +310,90 @@ export default async function AdminOverviewPage() {
               <div className="mt-1 text-lg font-semibold">Decisions</div>
               <div className="mt-2 text-sm text-gray-600">
                 Inspector: Classification → Draft → QA → Rewrite → Send.
+              </div>
+              <div className="mt-3 text-xs text-gray-500 group-hover:text-gray-900">
+                Öffnen →
+              </div>
+            </Link>
+
+            <Link
+              href="/app/admin/quality"
+              className="group rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50 transition"
+            >
+              <div className="text-sm text-gray-600">Performance</div>
+              <div className="mt-1 text-lg font-semibold">Quality</div>
+              <div className="mt-2 text-sm text-gray-600">
+                Korrekturquote, Fehlerrate und Antwortverhalten pro Agent.
+              </div>
+              <div className="mt-3 text-xs text-gray-500 group-hover:text-gray-900">
+                Öffnen →
+              </div>
+            </Link>
+
+            <Link
+              href="/app/admin/ops"
+              className="group rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50 transition"
+            >
+              <div className="text-sm text-gray-600">Monitoring</div>
+              <div className="mt-1 text-lg font-semibold">Ops</div>
+              <div className="mt-2 text-sm text-gray-600">
+                Alert-Regeln, Pipeline-Status und Notfall-Pause zentral steuern.
+              </div>
+              <div className="mt-3 text-xs text-gray-500 group-hover:text-gray-900">
+                Öffnen →
+              </div>
+            </Link>
+
+            <Link
+              href="/app/admin/funnel"
+              className="group rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50 transition"
+            >
+              <div className="text-sm text-gray-600">Onboarding</div>
+              <div className="mt-1 text-lg font-semibold">Funnel</div>
+              <div className="mt-2 text-sm text-gray-600">
+                Start, Drop-off, Abschlussrate und Event-Verteilung pro Agent.
+              </div>
+              <div className="mt-3 text-xs text-gray-500 group-hover:text-gray-900">
+                Öffnen →
+              </div>
+            </Link>
+
+            <Link
+              href="/app/admin/rollout"
+              className="group rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50 transition"
+            >
+              <div className="text-sm text-gray-600">Steuerung</div>
+              <div className="mt-1 text-lg font-semibold">Rollout</div>
+              <div className="mt-2 text-sm text-gray-600">
+                Beobachten, Assist oder Autopilot je Agent kontrollieren.
+              </div>
+              <div className="mt-3 text-xs text-gray-500 group-hover:text-gray-900">
+                Öffnen →
+              </div>
+            </Link>
+
+            <Link
+              href="/app/admin/readiness"
+              className="group rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50 transition"
+            >
+              <div className="text-sm text-gray-600">Datenlage</div>
+              <div className="mt-1 text-lg font-semibold">Readiness</div>
+              <div className="mt-2 text-sm text-gray-600">
+                Immobilien-Datenqualität und Autopilot-Eignung je Agent.
+              </div>
+              <div className="mt-3 text-xs text-gray-500 group-hover:text-gray-900">
+                Öffnen →
+              </div>
+            </Link>
+
+            <Link
+              href="/app/admin/compliance"
+              className="group rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50 transition"
+            >
+              <div className="text-sm text-gray-600">Trust</div>
+              <div className="mt-1 text-lg font-semibold">Compliance</div>
+              <div className="mt-2 text-sm text-gray-600">
+                Audit-Feed, Guardrails und CSV-Exporte für Nachweise.
               </div>
               <div className="mt-3 text-xs text-gray-500 group-hover:text-gray-900">
                 Öffnen →

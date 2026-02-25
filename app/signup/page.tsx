@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/browserClient";
 import { Eye, EyeOff } from "lucide-react";
 import AuthShell from "@/components/marketing/AuthShell";
+import { useSearchParams } from "next/navigation";
+import {
+  parseSafeStartPresetFromParams,
+  saveSafeStartPreset,
+  serializeSafeStartPresetToQuery,
+} from "@/lib/onboarding/safe-start-preset";
 
 export default function SignupPage() {
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -14,6 +21,24 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const safeStartPreset = useMemo(
+    () => parseSafeStartPresetFromParams(searchParams, "signup"),
+    [searchParams],
+  );
+  const safeStartQuery = useMemo(() => {
+    if (!safeStartPreset) return "";
+    return serializeSafeStartPresetToQuery({
+      preset: safeStartPreset.preset,
+      autoShare: safeStartPreset.autoShare,
+      approvalShare: safeStartPreset.approvalShare,
+      followupMode: safeStartPreset.followupMode,
+    });
+  }, [safeStartPreset]);
+
+  useEffect(() => {
+    if (!safeStartPreset) return;
+    saveSafeStartPreset(safeStartPreset);
+  }, [safeStartPreset]);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +58,7 @@ export default function SignupPage() {
     setLoading(true);
     const emailRedirectTo =
       typeof window !== "undefined"
-        ? `${window.location.origin}/login`
+        ? `${window.location.origin}/login${safeStartQuery ? `?${safeStartQuery}` : ""}`
         : undefined;
 
     const { data, error } = await supabase.auth.signUp({
@@ -147,7 +172,10 @@ export default function SignupPage() {
 
         <p className="mt-4 text-xs text-[var(--muted)] text-center">
           Bereits registriert?{" "}
-          <Link href="/login" className="focus-ring underline hover:text-[var(--text)]">
+          <Link
+            href={safeStartQuery ? `/login?${safeStartQuery}` : "/login"}
+            className="focus-ring underline hover:text-[var(--text)]"
+          >
             Zum Login
           </Link>
         </p>

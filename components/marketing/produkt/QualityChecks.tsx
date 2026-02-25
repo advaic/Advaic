@@ -1,4 +1,5 @@
 import Container from "@/components/marketing/Container";
+import Link from "next/link";
 
 const checkPhases = [
   {
@@ -67,6 +68,11 @@ export default function QualityChecks() {
             Bevor Advaic sendet, laufen automatische Prüfungen. Sie verhindern genau die Fehler, vor denen Makler zu
             Recht Angst haben: unpassender Ton, fehlende Infos oder falscher Kontext.
           </p>
+          <div className="mt-4">
+            <Link href="/qualitaetschecks" className="btn-secondary">
+              Alle Checks mit Beispielen
+            </Link>
+          </div>
         </div>
 
         <div className="mt-8 grid gap-3 md:grid-cols-3">

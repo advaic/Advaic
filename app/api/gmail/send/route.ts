@@ -4,6 +4,10 @@ import { createClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
 import type { Database } from "@/types/supabase";
 import { decryptSecretFromStorage } from "@/lib/security/secrets";
+import {
+  computeFollowupNextAt,
+  normalizeFollowupSendWindow,
+} from "@/lib/followups/scheduling";
 
 export const runtime = "nodejs";
 
@@ -156,6 +160,19 @@ export async function POST(req: NextRequest) {
     return new Date().toISOString();
   }
 
+  function inferIntent(raw: unknown): "rent" | "buy" {
+    const s = String(raw ?? "").toLowerCase();
+    if (s.includes("miet") || s.includes("rent") || s.includes("rental")) return "rent";
+    if (s.includes("kauf") || s.includes("buy") || s.includes("sale") || s.includes("verkauf")) return "buy";
+    return "rent";
+  }
+
+  function clampInt(n: unknown, min: number, max: number, fallback: number) {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return fallback;
+    return Math.max(min, Math.min(max, Math.round(v)));
+  }
+
   // Admin client for DB reads/writes (service role)
   const supabaseAdmin = createClient<Database>(
     mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
@@ -245,7 +262,9 @@ export async function POST(req: NextRequest) {
   const { data: leadRow, error: leadErr } = await (
     supabaseAdmin.from("leads") as any
   )
-    .select("id, agent_id, email, gmail_thread_id")
+    .select(
+      "id, agent_id, email, gmail_thread_id, type, property_id, followups_max_stage_override, followups_enabled",
+    )
     .eq("id", lead_id)
     .maybeSingle();
 
@@ -720,10 +739,8 @@ export async function POST(req: NextRequest) {
   // If this email is a follow-up, advance follow-up state (new data model)
   if (was_followup) {
     // Read current state
-    const { data: st, error: stErr } = await (
-      supabaseAdmin.from("leads") as any
-    )
-      .select("followup_stage, followups_enabled")
+    const { data: st, error: stErr } = await (supabaseAdmin.from("leads") as any)
+      .select("followup_stage, followups_enabled, followups_max_stage_override, type, property_id")
       .eq("id", lead_id)
       .maybeSingle();
 
@@ -737,17 +754,64 @@ export async function POST(req: NextRequest) {
     const currentStage = Math.max(0, Number((st as any)?.followup_stage ?? 0));
     const nextStage = Math.min(currentStage + 1, 2);
     const autoEnabled = Boolean((st as any)?.followups_enabled ?? true);
+    const intent = inferIntent((st as any)?.type ?? (leadRow as any)?.type);
 
-    // If stage 1 was just sent (0->1) and auto is enabled, plan stage 2 for +72h. Otherwise clear next_at.
-    const nextAt =
-      autoEnabled && nextStage === 1
-        ? new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString()
-        : null;
+    const { data: agentSettings } = await (supabaseAdmin.from("agent_settings") as any)
+      .select(
+        "followups_max_stage_rent, followups_max_stage_buy, followups_delay_hours_stage2, followups_send_start_hour, followups_send_end_hour, followups_send_on_weekends, followups_timezone",
+      )
+      .eq("agent_id", user.id)
+      .maybeSingle();
+
+    const propertyId = String((st as any)?.property_id ?? (leadRow as any)?.property_id ?? "").trim();
+    let propertyPolicy: any = null;
+    if (propertyId) {
+      const { data: policy } = await (supabaseAdmin.from("property_followup_policies") as any)
+        .select("max_stage_rent, max_stage_buy, stage2_delay_hours")
+        .eq("agent_id", user.id)
+        .eq("property_id", propertyId)
+        .maybeSingle();
+      propertyPolicy = policy || null;
+    }
+
+    const leadOverride = (st as any)?.followups_max_stage_override;
+    const maxStage = clampInt(
+      leadOverride ??
+        (intent === "rent"
+          ? propertyPolicy?.max_stage_rent ?? agentSettings?.followups_max_stage_rent
+          : propertyPolicy?.max_stage_buy ?? agentSettings?.followups_max_stage_buy),
+      0,
+      2,
+      2,
+    );
+
+    const delayStage2 = clampInt(
+      propertyPolicy?.stage2_delay_hours ?? agentSettings?.followups_delay_hours_stage2,
+      1,
+      336,
+      72,
+    );
+
+    const sendWindow = normalizeFollowupSendWindow({
+      followups_send_start_hour: agentSettings?.followups_send_start_hour,
+      followups_send_end_hour: agentSettings?.followups_send_end_hour,
+      followups_send_on_weekends: agentSettings?.followups_send_on_weekends,
+      followups_timezone: agentSettings?.followups_timezone,
+    });
+
+    const shouldScheduleNext = autoEnabled && nextStage < maxStage;
+    const nextAt = shouldScheduleNext
+      ? computeFollowupNextAt({
+          baseIso: nowIso,
+          delayHours: delayStage2,
+          window: sendWindow,
+        })
+      : null;
 
     const followupUpdate: Record<string, any> = {
       followup_last_sent_at: nowIso,
       followup_stage: nextStage,
-      followup_status: "sent",
+      followup_status: nextAt ? "planned" : "sent",
       followup_stop_reason: null,
       followup_paused_until: null,
       followup_next_at: nextAt,

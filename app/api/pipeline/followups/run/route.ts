@@ -2,6 +2,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import {
+  normalizeFollowupSendWindow,
+  type FollowupSendWindowConfig,
+} from "@/lib/followups/scheduling";
+import { getCommercialAccess } from "@/lib/billing/commercial-access";
+import { isPipelinePaused, readRuntimeControl } from "@/lib/ops/runtime-control";
+import { logPipelineRun } from "@/lib/ops/pipeline-runs";
 
 export const runtime = "nodejs";
 
@@ -47,10 +54,6 @@ function isFutureIso(v: string | null) {
 
 function addMinutesIso(minutes: number) {
   return new Date(Date.now() + minutes * 60 * 1000).toISOString();
-}
-
-function addHoursIso(hours: number) {
-  return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
 }
 
 function baseUrlFromReq(req: NextRequest) {
@@ -132,6 +135,10 @@ type AgentFollowupDefaults = {
   followups_max_stage_buy: number;
   followups_delay_hours_stage1: number;
   followups_delay_hours_stage2: number;
+  followups_send_start_hour: number;
+  followups_send_end_hour: number;
+  followups_send_on_weekends: boolean;
+  followups_timezone: string;
 };
 
 type AgentStyleRow = {
@@ -170,6 +177,7 @@ type EffectiveFollowupPolicy = {
   delayHoursStage1: number;
   delayHoursStage2: number;
   intent: "rent" | "buy";
+  sendWindow: FollowupSendWindowConfig;
 };
 
 function clampInt(n: any, min: number, max: number, fallback: number) {
@@ -245,13 +253,19 @@ function computeEffectivePolicy(args: {
     72,
   );
 
-  return { enabled, maxStage, delayHoursStage1: d1, delayHoursStage2: d2, intent };
-}
-
-function computeNextAtForStage(policy: EffectiveFollowupPolicy, nextStage: number) {
-  // nextStage: 1 -> stage1 delay; 2 -> stage2 delay
-  if (nextStage <= 1) return addHoursIso(policy.delayHoursStage1);
-  return addHoursIso(policy.delayHoursStage2);
+  return {
+    enabled,
+    maxStage,
+    delayHoursStage1: d1,
+    delayHoursStage2: d2,
+    intent,
+    sendWindow: normalizeFollowupSendWindow({
+      followups_send_start_hour: args.agent.followups_send_start_hour,
+      followups_send_end_hour: args.agent.followups_send_end_hour,
+      followups_send_on_weekends: args.agent.followups_send_on_weekends,
+      followups_timezone: args.agent.followups_timezone,
+    }),
+  };
 }
 
 async function loadActivePrompt(
@@ -508,49 +522,120 @@ async function lockLeadForSending(
 }
 
 export async function POST(req: NextRequest) {
+  const startedAtMs = Date.now();
+  const pipeline = "followups";
   if (!isInternal(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const supabase = supabaseAdmin();
+  const control = await readRuntimeControl(supabase);
+  if (isPipelinePaused(control, "followups")) {
+    await logPipelineRun(supabase, {
+      pipeline,
+      status: "paused",
+      startedAtMs,
+      meta: {
+        reason: control.reason,
+        control_source: control.source,
+      },
+    });
+    return NextResponse.json({
+      ok: true,
+      paused: true,
+      reason: control.reason || "pipeline_paused",
+      processed: 0,
+      results: [],
+    });
+  }
 
   const body = (await req.json().catch(() => null)) as any;
   const limit = Math.max(1, Math.min(50, Number(body?.limit ?? 20)));
   const baseUrl = baseUrlFromReq(req);
 
   // 1) Load candidate leads that are due
-  const { data: leads, error: leadsErr } = await (supabase.from("leads") as any)
-    .select(
-      [
-        "id",
-        "agent_id",
-        "email",
-        "name",
-        "type",
-        "property_id",
-        "email_provider",
-        "gmail_thread_id",
-        "outlook_conversation_id",
-        "followups_enabled",
-        "followups_max_stage_override",
-        "followup_paused_until",
-        "followup_stage",
-        "followup_next_at",
-        "followup_status",
-        "followup_stop_reason",
-        "followup_last_sent_at",
-        "last_user_message_at",
-        "last_agent_message_at",
-      ].join(","),
-    )
-    .or("followups_enabled.is.null,followups_enabled.eq.true")
-    .in("followup_status", ["planned", "due", "failed"])
-    .not("followup_next_at", "is", null)
-    .lte("followup_next_at", nowIso())
-    .order("followup_next_at", { ascending: true })
-    .limit(limit);
+  const leadSelectExtended = [
+    "id",
+    "agent_id",
+    "email",
+    "name",
+    "type",
+    "property_id",
+    "email_provider",
+    "gmail_thread_id",
+    "outlook_conversation_id",
+    "followups_enabled",
+    "followups_max_stage_override",
+    "followup_paused_until",
+    "followup_stage",
+    "followup_next_at",
+    "followup_status",
+    "followup_stop_reason",
+    "followup_last_sent_at",
+    "last_user_message_at",
+    "last_agent_message_at",
+  ].join(",");
+  const leadSelectLegacy = [
+    "id",
+    "agent_id",
+    "email",
+    "name",
+    "type",
+    "email_provider",
+    "gmail_thread_id",
+    "outlook_conversation_id",
+    "followups_enabled",
+    "followup_paused_until",
+    "followup_stage",
+    "followup_next_at",
+    "followup_status",
+    "followup_stop_reason",
+    "followup_last_sent_at",
+    "last_user_message_at",
+    "last_agent_message_at",
+  ].join(",");
+
+  let leads: LeadRow[] | null = null;
+  let leadsErr: any = null;
+  try {
+    const ext = await (supabase.from("leads") as any)
+      .select(leadSelectExtended)
+      .or("followups_enabled.is.null,followups_enabled.eq.true")
+      .in("followup_status", ["planned", "due", "failed"])
+      .not("followup_next_at", "is", null)
+      .lte("followup_next_at", nowIso())
+      .order("followup_next_at", { ascending: true })
+      .limit(limit);
+    leads = (ext?.data as LeadRow[] | null) ?? null;
+    leadsErr = ext?.error ?? null;
+  } catch (e: any) {
+    leadsErr = e;
+  }
 
   if (leadsErr) {
+    const legacy = await (supabase.from("leads") as any)
+      .select(leadSelectLegacy)
+      .or("followups_enabled.is.null,followups_enabled.eq.true")
+      .in("followup_status", ["planned", "due", "failed"])
+      .not("followup_next_at", "is", null)
+      .lte("followup_next_at", nowIso())
+      .order("followup_next_at", { ascending: true })
+      .limit(limit);
+    leads = (legacy?.data as LeadRow[] | null) ?? null;
+    leadsErr = legacy?.error ?? null;
+  }
+
+  if (leadsErr) {
+    await logPipelineRun(supabase, {
+      pipeline,
+      status: "error",
+      startedAtMs,
+      failed: 1,
+      meta: {
+        step: "load_due_leads",
+        details: leadsErr.message,
+      },
+    });
     return NextResponse.json(
       { error: "Failed to load due leads", details: leadsErr.message },
       { status: 500 },
@@ -558,6 +643,13 @@ export async function POST(req: NextRequest) {
   }
 
   if (!leads || leads.length === 0) {
+    await logPipelineRun(supabase, {
+      pipeline,
+      status: "ok",
+      startedAtMs,
+      processed: 0,
+      meta: { reason: "no_due_leads" },
+    });
     return NextResponse.json({ ok: true, processed: 0, results: [] });
   }
 
@@ -571,13 +663,24 @@ export async function POST(req: NextRequest) {
   const agentDefaultsMap = new Map<string, AgentFollowupDefaults>();
   const agentStyleMap = new Map<string, AgentStyleRow>();
   const agentStyleExamplesMap = new Map<string, AgentStyleExampleRow[]>();
+  const commercialAccessMap = new Map<
+    string,
+    Awaited<ReturnType<typeof getCommercialAccess>>["access"]
+  >();
+
+  await Promise.all(
+    agentIds.map(async (agentId) => {
+      const accessRes = await getCommercialAccess({ supabase, agentId });
+      commercialAccessMap.set(agentId, accessRes.access);
+    }),
+  );
 
   if (agentIds.length > 0) {
     const { data: agentSettingsRows, error: asErr } = await (
       supabase.from("agent_settings") as any
     )
       .select(
-        "agent_id, followups_enabled_default, followups_max_stage_rent, followups_max_stage_buy, followups_delay_hours_stage1, followups_delay_hours_stage2",
+        "agent_id, followups_enabled_default, followups_max_stage_rent, followups_max_stage_buy, followups_delay_hours_stage1, followups_delay_hours_stage2, followups_send_start_hour, followups_send_end_hour, followups_send_on_weekends, followups_timezone",
       )
       .in("agent_id", agentIds);
 
@@ -587,12 +690,22 @@ export async function POST(req: NextRequest) {
 
     for (const r of agentSettingsRows || []) {
       const id = String(r.agent_id);
+      const sendWindow = normalizeFollowupSendWindow({
+        followups_send_start_hour: r.followups_send_start_hour,
+        followups_send_end_hour: r.followups_send_end_hour,
+        followups_send_on_weekends: r.followups_send_on_weekends,
+        followups_timezone: r.followups_timezone,
+      });
       agentDefaultsMap.set(id, {
         followups_enabled_default: !!r.followups_enabled_default,
         followups_max_stage_rent: clampInt(r.followups_max_stage_rent, 0, 2, 2),
         followups_max_stage_buy: clampInt(r.followups_max_stage_buy, 0, 2, 2),
         followups_delay_hours_stage1: clampInt(r.followups_delay_hours_stage1, 1, 336, 24),
         followups_delay_hours_stage2: clampInt(r.followups_delay_hours_stage2, 1, 336, 72),
+        followups_send_start_hour: sendWindow.sendStartHour,
+        followups_send_end_hour: sendWindow.sendEndHour,
+        followups_send_on_weekends: sendWindow.sendOnWeekends,
+        followups_timezone: sendWindow.timezone,
       });
     }
   }
@@ -667,8 +780,28 @@ export async function POST(req: NextRequest) {
   for (const raw of leads as LeadRow[]) {
     const leadId = String(raw.id);
     const agentId = String(raw.agent_id);
+    const commercialAccess = commercialAccessMap.get(agentId) || null;
 
     try {
+      if (commercialAccess?.upgrade_required) {
+        await (supabase.from("leads") as any)
+          .update({
+            followup_status: "paused",
+            followup_next_at: null,
+            followup_stop_reason: "billing_trial_expired",
+          })
+          .eq("id", leadId)
+          .eq("agent_id", agentId);
+
+        results.push({
+          leadId,
+          ok: true,
+          skipped: true,
+          reason: "billing_trial_expired",
+        });
+        continue;
+      }
+
       // Resolve agent defaults (fail-open to safe defaults)
       const agentDefaults: AgentFollowupDefaults =
         agentDefaultsMap.get(agentId) ||
@@ -678,6 +811,10 @@ export async function POST(req: NextRequest) {
           followups_max_stage_buy: 2,
           followups_delay_hours_stage1: 24,
           followups_delay_hours_stage2: 72,
+          followups_send_start_hour: 8,
+          followups_send_end_hour: 20,
+          followups_send_on_weekends: false,
+          followups_timezone: "Europe/Berlin",
         } as AgentFollowupDefaults);
 
       // Optional property overrides (only if lead.property_id is present)
@@ -1060,6 +1197,25 @@ export async function POST(req: NextRequest) {
       results.push({ leadId, ok: false, error: errMsg });
     }
   }
+
+  const success = results.filter((r) => Boolean(r?.ok) && Boolean(r?.enqueued)).length;
+  const failed = results.filter((r) => r?.ok === false).length;
+  const skipped = Math.max(0, results.length - success - failed);
+  const status = failed > 0 ? (success > 0 ? "warning" : "error") : "ok";
+
+  await logPipelineRun(supabase, {
+    pipeline,
+    status,
+    startedAtMs,
+    processed: results.length,
+    success,
+    failed,
+    skipped,
+    meta: {
+      limit,
+      candidates: leads.length,
+    },
+  });
 
   return NextResponse.json({
     ok: true,

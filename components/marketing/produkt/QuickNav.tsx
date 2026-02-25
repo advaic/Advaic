@@ -3,6 +3,7 @@ import Container from "@/components/marketing/Container";
 const links = [
   { href: "#ablauf", label: "Ablauf" },
   { href: "#regeln", label: "Regeln" },
+  { href: "#simulator", label: "Simulator" },
   { href: "#qualitaet", label: "Qualität" },
   { href: "#freigabe", label: "Freigabe" },
   { href: "#followups", label: "Follow-ups" },

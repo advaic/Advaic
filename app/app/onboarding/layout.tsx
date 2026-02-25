@@ -1,8 +1,13 @@
 // app/app/onboarding/layout.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { trackFunnelEvent } from "@/lib/funnel/track";
+import {
+  clearSafeStartPreset,
+  readSafeStartPreset,
+} from "@/lib/onboarding/safe-start-preset";
 
 type OnboardingRow = {
   agent_id: string;
@@ -244,6 +249,8 @@ export default function OnboardingLayout({
   const [listingsConnected, setListingsConnected] = useState<boolean | null>(
     null
   );
+  const lastTrackedStep = useRef<number | null>(null);
+  const safeStartAppliedRef = useRef(false);
 
   const totalSteps = useMemo(() => onboarding?.total_steps ?? 6, [onboarding]);
   const currentStep = useMemo(
@@ -263,6 +270,45 @@ export default function OnboardingLayout({
     async function run() {
       setLoading(true);
       setError(null);
+
+      if (!safeStartAppliedRef.current) {
+        safeStartAppliedRef.current = true;
+        const preset = readSafeStartPreset();
+        if (preset) {
+          try {
+            const applyRes = await fetch("/api/onboarding/safe-start/apply", {
+              method: "POST",
+              credentials: "include",
+              cache: "no-store",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                preset: preset.preset,
+                auto_share: preset.autoShare,
+                approval_share: preset.approvalShare,
+                followup_mode: preset.followupMode,
+                source: preset.source,
+              }),
+            }).catch(() => null);
+            if (applyRes?.ok) {
+              clearSafeStartPreset();
+              void trackFunnelEvent({
+                event: "safe_start_preset_applied",
+                source: "onboarding_layout",
+                step: 1,
+                meta: {
+                  auto_share: preset.autoShare,
+                  approval_share: preset.approvalShare,
+                  followup_mode: preset.followupMode,
+                },
+              });
+            } else {
+              safeStartAppliedRef.current = false;
+            }
+          } catch {
+            safeStartAppliedRef.current = false;
+          }
+        }
+      }
 
       // 1) status
       let st = await fetchStatus();
@@ -322,6 +368,20 @@ export default function OnboardingLayout({
       cancelled = true;
     };
   }, [router, pathname]);
+
+  useEffect(() => {
+    if (loading || !onboarding) return;
+    const step = clamp(Number(onboarding.current_step) || 1, 1, 6);
+    if (lastTrackedStep.current === step) return;
+    lastTrackedStep.current = step;
+
+    void trackFunnelEvent({
+      event: "onboarding_step_viewed",
+      source: "onboarding_layout",
+      step,
+      meta: { total_steps: Number(onboarding.total_steps || 6) },
+    });
+  }, [loading, onboarding]);
 
   const safeTotal = Math.max(1, Number(totalSteps) || 6);
   const safeStep = clamp(Number(currentStep) || 1, 1, safeTotal);
@@ -619,6 +679,31 @@ export default function OnboardingLayout({
               style={{ color: "var(--textFaint, rgba(14,14,17,0.45))" }}
             >
               Tipp: Du kannst alle Regeln später im Dashboard anpassen.
+            </div>
+
+            <div
+              className="mt-4 rounded-[14px] border p-4"
+              style={{
+                background: "var(--card, #FFFFFF)",
+                borderColor: "rgba(201,162,63,0.28)",
+              }}
+            >
+              <div className="text-[13px] font-semibold">Safe Start (empfohlen)</div>
+              <p
+                className="mt-2 text-[12px] leading-relaxed"
+                style={{ color: "var(--textMuted, rgba(14,14,17,0.65))" }}
+              >
+                Starten Sie bewusst konservativ: zuerst Freigabe, dann kontrolliert ausweiten. Ziel ist ein sicherer
+                erster Versand statt sofort maximale Automatisierung.
+              </p>
+              <ul
+                className="mt-3 space-y-1 text-[12px]"
+                style={{ color: "var(--textMuted, rgba(14,14,17,0.65))" }}
+              >
+                <li>• Schritt 1–3: Postfach verbinden und auf Freigabe starten</li>
+                <li>• Schritt 4–5: Ton und Objektdaten präzisieren</li>
+                <li>• Danach: erst dann Auto-Senden aktivieren, wenn Gate freigegeben ist</li>
+              </ul>
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import Container from "@/components/marketing/Container";
 import { Ban, CircleHelp, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 
 const flowSteps = [
   "Eingang prüfen",
@@ -17,6 +18,11 @@ export default function PolicyRules() {
           <p className="body mt-4 text-[var(--muted)]">
             Das ist der wichtigste Teil. Damit Sie immer wissen, was passiert.
           </p>
+          <div className="mt-4">
+            <Link href="/autopilot-regeln" className="btn-secondary">
+              Entscheidungslogik im Detail
+            </Link>
+          </div>
         </div>
 
         <div className="mt-6 rounded-[var(--radius)] bg-[var(--surface-2)] p-5 ring-1 ring-[var(--border)]">

@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import type { Database } from "@/types/supabase";
 import { useSearchParams } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import AuthShell from "@/components/marketing/AuthShell";
+import {
+  parseSafeStartPresetFromParams,
+  saveSafeStartPreset,
+  serializeSafeStartPresetToQuery,
+} from "@/lib/onboarding/safe-start-preset";
 
 function safeNextPath(rawNext: string | null | undefined): string {
   const fallback = "/app/startseite";
@@ -21,13 +26,32 @@ function safeNextPath(rawNext: string | null | undefined): string {
 export default function LoginPage() {
   const supabase = useSupabaseClient<Database>();
   const searchParams = useSearchParams();
-  const nextUrl = safeNextPath(searchParams.get("next"));
+  const safeStartPreset = useMemo(
+    () => parseSafeStartPresetFromParams(searchParams, "login"),
+    [searchParams],
+  );
+  const safeStartQuery = useMemo(() => {
+    if (!safeStartPreset) return "";
+    return serializeSafeStartPresetToQuery({
+      preset: safeStartPreset.preset,
+      autoShare: safeStartPreset.autoShare,
+      approvalShare: safeStartPreset.approvalShare,
+      followupMode: safeStartPreset.followupMode,
+    });
+  }, [safeStartPreset]);
+  const nextRaw = searchParams.get("next");
+  const nextUrl = safeStartPreset && !nextRaw ? "/app/onboarding" : safeNextPath(nextRaw);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    if (!safeStartPreset) return;
+    saveSafeStartPreset(safeStartPreset);
+  }, [safeStartPreset]);
 
   useEffect(() => {
     let mounted = true;
@@ -134,7 +158,10 @@ export default function LoginPage() {
 
         <p className="mt-4 text-xs text-[var(--muted)] text-center">
           Noch kein Konto?{" "}
-          <Link href="/signup" className="focus-ring underline hover:text-[var(--text)]">
+          <Link
+            href={safeStartQuery ? `/signup?${safeStartQuery}` : "/signup"}
+            className="focus-ring underline hover:text-[var(--text)]"
+          >
             Jetzt erstellen
           </Link>
         </p>

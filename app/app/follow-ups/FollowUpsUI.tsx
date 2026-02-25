@@ -23,6 +23,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { snoozeFollowUp, suggestFollowUpText } from "@/app/actions/followups";
+import { trackFunnelEvent } from "@/lib/funnel/track";
 
 /** View-Zeile aus `followups_queue_v1` */
 type FollowupQueueRow = {
@@ -79,6 +80,15 @@ type FollowupAgentSettings = {
   followups_enabled_default: boolean;
 };
 
+type FollowupPerformance = {
+  sent30d: number;
+  replied30d: number;
+  replyRatePct: number;
+  stoppedUserReplied: number;
+  stoppedMaxStage: number;
+  stoppedPaused: number;
+};
+
 // ---- Draft meta (Enterprise clarity: KI vs Manuell + Ton) ----
 type DraftEngine = "ai" | "manual" | "default";
 type DraftMeta = {
@@ -127,6 +137,13 @@ function isFuture(v: string | null | undefined): boolean {
   return Number.isFinite(t) && t > Date.now();
 }
 
+function nextActionMs(row: FollowupQueueRow): number | null {
+  const ts = row.followup_next_at ?? row.computed_due_at ?? null;
+  if (!ts) return null;
+  const ms = new Date(ts).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
 export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
   const supabase = useSupabaseClient<Database>();
   const [tab, setTab] = useState<TabKey>("waiting");
@@ -156,6 +173,14 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
   const [fuSettings, setFuSettings] = useState<FollowupAgentSettings | null>(
     null,
   );
+  const [performance, setPerformance] = useState<FollowupPerformance>({
+    sent30d: 0,
+    replied30d: 0,
+    replyRatePct: 0,
+    stoppedUserReplied: 0,
+    stoppedMaxStage: 0,
+    stoppedPaused: 0,
+  });
   const [savingSettings, setSavingSettings] = useState(false);
 
   async function fetchFollowupSettings(): Promise<FollowupAgentSettings | null> {
@@ -196,7 +221,9 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
           });
           const j = await res.json().catch(() => ({}));
           if (!res.ok) {
-            lastErr = new Error(j?.error || "Speichern fehlgeschlagen.");
+            lastErr = new Error(
+              j?.details || j?.error || "Speichern fehlgeschlagen.",
+            );
             continue;
           }
           const enabled = j?.settings?.followups_enabled_default;
@@ -236,6 +263,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
   const [snoozeBusy, setSnoozeBusy] = useState<Record<string, boolean>>({});
   const [sendPending, setSendPending] = useState<Record<string, boolean>>({});
   const [sendError, setSendError] = useState<Record<string, string | null>>({});
+  const [plannerHelpOpen, setPlannerHelpOpen] = useState(false);
 
   const setSuggestBusyFor = (id: string, v: boolean) =>
     setSuggestBusy((p) => ({ ...p, [id]: v }));
@@ -345,6 +373,65 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
         setSent(msgs);
         setSentLeadMap(leadMap);
       }
+
+      // 3) Performance-Kennzahlen (30 Tage)
+      try {
+        const sinceIso = new Date(
+          Date.now() - 30 * 24 * 60 * 60 * 1000,
+        ).toISOString();
+
+        const [{ count: sent30Count }, { data: leadPerfRows }] = await Promise.all([
+          (supabase.from("messages") as any)
+            .select("id", { count: "exact", head: true })
+            .eq("agent_id", userId)
+            .eq("was_followup", true)
+            .eq("send_status", "sent")
+            .gte("timestamp", sinceIso),
+          (supabase.from("leads") as any)
+            .select("id, followup_last_sent_at, last_user_message_at, followup_stop_reason")
+            .eq("agent_id", userId)
+            .not("followup_last_sent_at", "is", null)
+            .limit(5000),
+        ]);
+
+        const leadRows = Array.isArray(leadPerfRows) ? leadPerfRows : [];
+        const within30 = leadRows.filter((row: any) => {
+          const ts = new Date(String(row?.followup_last_sent_at || "")).getTime();
+          return Number.isFinite(ts) && ts >= new Date(sinceIso).getTime();
+        });
+
+        const replied30 = within30.filter((row: any) => {
+          const sentAt = new Date(String(row?.followup_last_sent_at || "")).getTime();
+          const userAt = new Date(String(row?.last_user_message_at || "")).getTime();
+          return Number.isFinite(sentAt) && Number.isFinite(userAt) && userAt > sentAt;
+        }).length;
+
+        const stoppedUserReplied = leadRows.filter(
+          (row: any) => String(row?.followup_stop_reason || "") === "user_replied_last",
+        ).length;
+        const stoppedMaxStage = leadRows.filter(
+          (row: any) =>
+            String(row?.followup_stop_reason || "") === "max_stage_reached" ||
+            String(row?.followup_stop_reason || "") === "max_stage_0",
+        ).length;
+        const stoppedPaused = leadRows.filter(
+          (row: any) => String(row?.followup_stop_reason || "") === "paused",
+        ).length;
+
+        const sent30d = typeof sent30Count === "number" ? sent30Count : 0;
+        const replyRatePct = sent30d > 0 ? Math.round((replied30 / sent30d) * 100) : 0;
+
+        setPerformance({
+          sent30d,
+          replied30d: replied30,
+          replyRatePct,
+          stoppedUserReplied,
+          stoppedMaxStage,
+          stoppedPaused,
+        });
+      } catch (perfErr) {
+        console.warn("follow-up performance calculation failed", perfErr);
+      }
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message ?? "Unbekannter Fehler beim Laden.");
@@ -357,6 +444,13 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  useEffect(() => {
+    void trackFunnelEvent({
+      event: "followups_inbox_viewed",
+      source: "followups_inbox",
+    });
+  }, []);
 
   const applySearchLead = (rows: FollowupQueueRow[]) => {
     const q = search.trim().toLowerCase();
@@ -444,6 +538,50 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
       return hay.toLowerCase().includes(q);
     });
   }, [sent, sentLeadMap, search]);
+
+  const plannerStats = useMemo(() => {
+    const now = Date.now();
+    const in24 = now + 24 * 60 * 60 * 1000;
+    const in72 = now + 72 * 60 * 60 * 1000;
+
+    let due24 = 0;
+    let due72 = 0;
+    let paused = 0;
+
+    let stage0 = 0;
+    let stage1 = 0;
+    let stage2Plus = 0;
+
+    for (const row of queue) {
+      const nextMs = nextActionMs(row);
+      if (nextMs !== null) {
+        if (nextMs <= in24) due24 += 1;
+        if (nextMs <= in72) due72 += 1;
+      }
+      if (isFuture(row.followup_paused_until)) paused += 1;
+
+      const stage = Math.max(0, Number(row.followup_stage ?? 0));
+      if (stage <= 0) stage0 += 1;
+      else if (stage === 1) stage1 += 1;
+      else stage2Plus += 1;
+    }
+
+    const dueNow = queue.filter((r) => r.computed_is_due).length;
+    const total = queue.length || 1;
+
+    return {
+      dueNow,
+      due24,
+      due72,
+      paused,
+      stage0,
+      stage1,
+      stage2Plus,
+      stage0Pct: Math.round((stage0 / total) * 100),
+      stage1Pct: Math.round((stage1 / total) * 100),
+      stage2PlusPct: Math.round((stage2Plus / total) * 100),
+    };
+  }, [queue]);
 
   const onToggleEditor = (id: string) =>
     setExpanded((p) => ({ ...p, [id]: !p[id] }));
@@ -643,6 +781,15 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
       if (!res.ok) throw new Error(data?.error || "Senden fehlgeschlagen.");
 
       toast.success("Follow-up gesendet.");
+      void trackFunnelEvent({
+        event: "followup_sent",
+        source: "followups_inbox",
+        meta: {
+          lead_id: leadId,
+          provider,
+          stage: Number(lead.followup_stage ?? 0),
+        },
+      });
 
       const returnedId =
         data?.gmail_message_id ??
@@ -714,6 +861,11 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
       setSnoozeBusyFor(leadId, true);
 
       await snoozeFollowUp(leadId, 24);
+      void trackFunnelEvent({
+        event: "followup_snoozed",
+        source: "followups_inbox",
+        meta: { lead_id: leadId, hours: 24 },
+      });
 
       const nextLocal = new Date(Date.now() + 24 * 60 * 60 * 1000);
       toast.success(
@@ -1005,7 +1157,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
           )}
 
           {/* Analytics Overview */}
-          <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <div className="rounded-2xl border border-gray-200 bg-white p-4">
               <div className="text-xs text-gray-500">Aktiv</div>
               <div className="text-lg font-semibold text-gray-900">
@@ -1021,11 +1173,133 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
             </div>
 
             <div className="rounded-2xl border border-gray-200 bg-white p-4">
-              <div className="text-xs text-gray-500">Gesendet (Historie)</div>
+              <div className="text-xs text-gray-500">Gesendet (30 Tage)</div>
               <div className="text-lg font-semibold text-gray-900">
-                {sent.length}
+                {performance.sent30d}
               </div>
             </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4">
+              <div className="text-xs text-gray-500">Antwortquote (30 Tage)</div>
+              <div className="text-lg font-semibold text-gray-900">
+                {performance.replyRatePct}%
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4">
+              <div className="text-xs text-gray-500">Stop: Interessent hat geantwortet</div>
+              <div className="text-lg font-semibold text-gray-900">
+                {performance.stoppedUserReplied}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4">
+              <div className="text-xs text-gray-500">Stop: Max-Stufe/Pause</div>
+              <div className="text-lg font-semibold text-gray-900">
+                {performance.stoppedMaxStage + performance.stoppedPaused}
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-4 rounded-2xl border border-gray-200 bg-white p-4 text-xs text-gray-700">
+            Follow-up-Performance wird konservativ berechnet: Antwortquote basiert auf Leads mit Nutzerantwort nach dem
+            letzten gesendeten Follow-up in den letzten 30 Tagen.
+          </div>
+
+          <div className="mb-4 rounded-2xl border border-gray-200 bg-white p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-gray-900">
+                  Planner Board
+                </div>
+                <div className="text-xs text-gray-600 mt-1">
+                  Schneller Überblick für die nächsten Stunden und Tage.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPlannerHelpOpen((v) => !v)}
+                className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+              >
+                {plannerHelpOpen ? "Hilfe ausblenden" : "Wie lesen?"}
+              </button>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                <div className="text-[11px] text-gray-500">Überfällig</div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {plannerStats.dueNow}
+                </div>
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                <div className="text-[11px] text-gray-500">Fällig ≤ 24h</div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {plannerStats.due24}
+                </div>
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                <div className="text-[11px] text-gray-500">Fällig ≤ 72h</div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {plannerStats.due72}
+                </div>
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                <div className="text-[11px] text-gray-500">Pausiert</div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {plannerStats.paused}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="text-[11px] text-gray-500 mb-2">
+                Stage-Verteilung
+              </div>
+              <div className="h-2 w-full rounded-full overflow-hidden bg-gray-100">
+                <div className="h-full flex">
+                  <div
+                    className="h-full bg-gray-900"
+                    style={{ width: `${plannerStats.stage0Pct}%` }}
+                  />
+                  <div
+                    className="h-full bg-amber-400"
+                    style={{ width: `${plannerStats.stage1Pct}%` }}
+                  />
+                  <div
+                    className="h-full bg-amber-200"
+                    style={{ width: `${plannerStats.stage2PlusPct}%` }}
+                  />
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-gray-600">
+                <span className="px-2 py-0.5 rounded-full border border-gray-200 bg-white">
+                  Stage 0: {plannerStats.stage0}
+                </span>
+                <span className="px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-900">
+                  Stage 1: {plannerStats.stage1}
+                </span>
+                <span className="px-2 py-0.5 rounded-full border border-amber-200 bg-white">
+                  Stage 2+: {plannerStats.stage2Plus}
+                </span>
+              </div>
+            </div>
+
+            {plannerHelpOpen && (
+              <div className="mt-3 rounded-xl border border-gray-200 bg-[#fbfbfc] p-3 text-xs text-gray-700">
+                <div className="font-medium text-gray-900 mb-1">
+                  Operative Priorisierung (empfohlen)
+                </div>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li>Zuerst „Überfällig“ prüfen und entscheiden.</li>
+                  <li>Dann Fälle ≤ 24h vorbereiten, damit kein Rückstau entsteht.</li>
+                  <li>
+                    Stage 2+ bewusst knapp halten, damit Follow-ups nicht
+                    unnatürlich häufig wirken.
+                  </li>
+                </ul>
+              </div>
+            )}
           </div>
 
           <div
@@ -1111,6 +1385,11 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
                               ? filteredWaiting
                               : filteredPlanned;
                           const ids = selectedIds;
+                          void trackFunnelEvent({
+                            event: "followup_bulk_snooze_started",
+                            source: "followups_inbox",
+                            meta: { count: ids.length, hours: 24 },
+                          });
                           const byId = new Map(
                             visible.map((r) => [r.id, r] as const),
                           );

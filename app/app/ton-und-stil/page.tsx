@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { Pin, PinOff, Tag, Trash2 } from "lucide-react";
+import { Pin, PinOff, Tag, Trash2, Sparkles } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,44 @@ type StyleExampleRow = {
   updated_at: string;
 };
 
+type SuggestionPatch = {
+  length_pref?: "kurz" | "mittel" | "detailliert";
+  add_do_rules?: string[];
+  add_dont_rules?: string[];
+  add_examples?: Array<{
+    text: string;
+    label: string;
+    kind: "style_anchor" | "scenario" | "no_go";
+    is_pinned?: boolean;
+  }>;
+};
+
+type StyleSuggestion = {
+  id: string;
+  title: string;
+  reason: string;
+  impact: string;
+  confidence: number;
+  already_applied: boolean;
+  source?: "heuristic" | "ai";
+  patch: SuggestionPatch;
+};
+
+type SuggestionMetrics = {
+  total_reviews: number;
+  edited_reviews: number;
+  edited_rate: number;
+  short_edit_rate: number;
+  large_edit_rate: number;
+  avg_diff_chars: number;
+};
+
+type SuggestionAiMeta = {
+  enabled: boolean;
+  used: boolean;
+  error: string | null;
+};
+
 const DEFAULT_FORMALITY = "Sie-Form";
 const DEFAULT_LENGTH = "mittel";
 const DEFAULT_EMOJI = "none";
@@ -68,6 +106,29 @@ function normalizeKind(v: unknown): StyleExampleKind {
   return "style_anchor";
 }
 
+function toPct(v: number) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "0%";
+  return `${Math.round(n * 1000) / 10}%`;
+}
+
+function previewFromPatch(patch: SuggestionPatch): string[] {
+  const lines: string[] = [];
+  if (patch.length_pref) {
+    lines.push(`Antwortlänge auf „${patch.length_pref}“ setzen`);
+  }
+  for (const line of patch.add_do_rules || []) {
+    lines.push(`Do: ${line}`);
+  }
+  for (const line of patch.add_dont_rules || []) {
+    lines.push(`Don't: ${line}`);
+  }
+  for (const ex of patch.add_examples || []) {
+    lines.push(`Beispiel hinzufügen (${kindLabel(ex.kind as StyleExampleKind)}): ${ex.text}`);
+  }
+  return lines;
+}
+
 export default function ToneSettingsPage() {
   // Core style
   const [selectedStyle, setSelectedStyle] = useState("freundlich");
@@ -89,6 +150,12 @@ export default function ToneSettingsPage() {
   // Loading / saving
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(true);
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<StyleSuggestion[]>([]);
+  const [suggestionMetrics, setSuggestionMetrics] = useState<SuggestionMetrics | null>(null);
+  const [suggestionAiMeta, setSuggestionAiMeta] = useState<SuggestionAiMeta | null>(null);
+  const [applyingSuggestionId, setApplyingSuggestionId] = useState<string | null>(null);
 
   const formulationStrings = useMemo(() => {
     // Only feed "positive" examples into the denormalized list used for previews/exports.
@@ -163,6 +230,29 @@ export default function ToneSettingsPage() {
           updated_at: String(r.updated_at ?? r.created_at ?? new Date().toISOString()),
         })) as StyleExampleRow[];
         setFormulations(cleaned);
+      }
+
+      try {
+        setSuggestionsLoading(true);
+        setSuggestionsError(null);
+        const res = await fetch("/api/agent/insights/style-suggestions", {
+          method: "GET",
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) {
+          throw new Error(String(json?.error || "style_suggestions_failed"));
+        }
+        setSuggestions(Array.isArray(json?.suggestions) ? (json.suggestions as StyleSuggestion[]) : []);
+        setSuggestionMetrics((json?.metrics || null) as SuggestionMetrics | null);
+        setSuggestionAiMeta((json?.ai || null) as SuggestionAiMeta | null);
+      } catch (e: any) {
+        setSuggestions([]);
+        setSuggestionMetrics(null);
+        setSuggestionAiMeta(null);
+        setSuggestionsError(String(e?.message || "style_suggestions_failed"));
+      } finally {
+        setSuggestionsLoading(false);
       }
     } finally {
       setLoading(false);
@@ -373,6 +463,39 @@ export default function ToneSettingsPage() {
     }
   };
 
+  const handleApplySuggestion = async (suggestionId: string) => {
+    if (!suggestionId) return;
+    setApplyingSuggestionId(suggestionId);
+    try {
+      const res = await fetch("/api/agent/insights/style-suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suggestion_id: suggestionId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(String(json?.error || "style_suggestion_apply_failed"));
+      }
+
+      if (Array.isArray(json?.suggestions)) {
+        setSuggestions(json.suggestions as StyleSuggestion[]);
+      }
+      if (json?.metrics) {
+        setSuggestionMetrics(json.metrics as SuggestionMetrics);
+      }
+      if (json?.ai) {
+        setSuggestionAiMeta(json.ai as SuggestionAiMeta);
+      }
+
+      toast.success(json?.applied ? "Vorschlag übernommen." : "Vorschlag war bereits vorhanden.");
+      await loadAll();
+    } catch (e: any) {
+      toast.error(String(e?.message || "Vorschlag konnte nicht übernommen werden."));
+    } finally {
+      setApplyingSuggestionId(null);
+    }
+  };
+
   const handleQuickSaveOnEnter = async (
     e: React.KeyboardEvent<HTMLInputElement>
   ) => {
@@ -427,6 +550,142 @@ export default function ToneSettingsPage() {
                 {saving ? "Speichern…" : "Einstellungen speichern"}
               </Button>
             </div>
+          </div>
+
+          <div className="mb-6 rounded-2xl border bg-white p-5 shadow-sm">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <div className="inline-flex items-center gap-2 text-sm font-semibold text-gray-900">
+                  <Sparkles className="h-4 w-4" />
+                  Automatische Stil-Verbesserungen aus deinen Freigaben
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Wir analysieren deine manuellen Änderungen und schlagen konkrete Regeln für Ton & Stil vor.
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                onClick={() => void loadAll()}
+                disabled={loading || saving || suggestionsLoading}
+              >
+                Aktualisieren
+              </Button>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+              <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
+                <div className="text-muted-foreground">Geprüfte Freigaben</div>
+                <div className="mt-1 font-semibold text-gray-900">
+                  {suggestionMetrics?.total_reviews ?? 0}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
+                <div className="text-muted-foreground">Mit Änderung</div>
+                <div className="mt-1 font-semibold text-gray-900">
+                  {suggestionMetrics?.edited_reviews ?? 0}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
+                <div className="text-muted-foreground">Änderungsquote</div>
+                <div className="mt-1 font-semibold text-gray-900">
+                  {toPct(suggestionMetrics?.edited_rate ?? 0)}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
+                <div className="text-muted-foreground">Ø Diff-Zeichen</div>
+                <div className="mt-1 font-semibold text-gray-900">
+                  {suggestionMetrics?.avg_diff_chars ?? 0}
+                </div>
+              </div>
+            </div>
+
+            {suggestionAiMeta && (
+              <div className="mt-2 text-xs text-gray-600">
+                {suggestionAiMeta.enabled
+                  ? suggestionAiMeta.used
+                    ? "KI-gestützte Vorschläge aktiv."
+                    : "KI aktiv, aktuell ohne zusätzliche Vorschläge."
+                  : "Nur Regel-Engine aktiv (KI nicht konfiguriert)."}
+              </div>
+            )}
+            {suggestionAiMeta?.error ? (
+              <div className="mt-2 text-xs text-amber-700">
+                KI-Hinweis: {suggestionAiMeta.error}
+              </div>
+            ) : null}
+
+            {suggestionsLoading ? (
+              <div className="mt-4 text-sm text-muted-foreground">Vorschläge werden geladen…</div>
+            ) : suggestionsError ? (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                Vorschläge konnten nicht geladen werden: {suggestionsError}
+              </div>
+            ) : suggestions.length === 0 ? (
+              <div className="mt-4 text-sm text-muted-foreground">
+                Aktuell liegen keine konkreten Vorschläge vor.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {suggestions.map((s) => {
+                  const preview = previewFromPatch(s.patch);
+                  const applying = applyingSuggestionId === s.id;
+                  return (
+                    <div key={s.id} className="rounded-xl border bg-white p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-gray-900">
+                            {s.title}
+                          </div>
+                          <div className="mt-1 text-xs text-gray-600">{s.reason}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-[11px] px-2 py-1 rounded-full border ${
+                              s.source === "ai"
+                                ? "border-violet-200 bg-violet-50 text-violet-800"
+                                : "border-gray-200 bg-[#fbfbfc] text-gray-700"
+                            }`}
+                          >
+                            {s.source === "ai" ? "KI-Vorschlag" : "Regel-Vorschlag"}
+                          </span>
+                          <span className="text-[11px] px-2 py-1 rounded-full border bg-[#fbfbfc] text-gray-700">
+                            Sicherheit {toPct(s.confidence)}
+                          </span>
+                          {s.already_applied ? (
+                            <span className="text-[11px] px-2 py-1 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800">
+                              Bereits aktiv
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="mt-2 text-xs text-gray-700">{s.impact}</div>
+
+                      {preview.length > 0 ? (
+                        <ul className="mt-2 list-disc pl-5 space-y-1 text-xs text-gray-700">
+                          {preview.map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+
+                      <div className="mt-3">
+                        <Button
+                          onClick={() => void handleApplySuggestion(s.id)}
+                          disabled={s.already_applied || !!applyingSuggestionId}
+                        >
+                          {applying
+                            ? "Übernehme…"
+                            : s.already_applied
+                              ? "Bereits übernommen"
+                              : "Mit 1 Klick übernehmen"}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div

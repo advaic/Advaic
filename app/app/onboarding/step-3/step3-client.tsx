@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { trackFunnelEvent } from "@/lib/funnel/track";
 
 /**
  * IMPORTANT:
@@ -371,6 +372,17 @@ export default function Step3Client() {
         throw new Error("Auto-Send ist erst möglich, wenn alle Trust-Gate-Punkte erfüllt sind.");
       }
 
+      void trackFunnelEvent({
+        event: "onboarding_control_saved",
+        source: "onboarding_step_3",
+        step: 3,
+        meta: {
+          selected_mode: mode,
+          autosend_enabled: autosendEnabled,
+          auto_unlocked: autoUnlocked,
+        },
+      });
+
       const saved = await saveSettings({
         // API expects exactly this key
         autosend_enabled: autosendEnabled,
@@ -440,8 +452,8 @@ export default function Step3Client() {
           className="mt-3 text-[15px] leading-relaxed"
           style={{ color: "var(--textMuted, rgba(14,14,17,0.65))" }}
         >
-          Standard ist Freigabe: Du siehst jede Antwort zuerst selbst. Auto-Send
-          wird erst freigeschaltet, wenn deine Sicherheitskriterien erfüllt sind.
+          Standard ist Freigabe: Du siehst jede Antwort zuerst selbst. Das ist der sichere Start. Auto-Send wird erst
+          freigeschaltet, wenn deine Sicherheitskriterien erfüllt sind.
         </p>
       </div>
 

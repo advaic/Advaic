@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { PauseCircle, ShieldCheck, TriangleAlert } from "lucide-react";
 import Container from "@/components/marketing/Container";
+import TrackedLink from "@/components/marketing/TrackedLink";
 import PremiumVideoFrame from "./PremiumVideoFrame";
 
 const trustChips = [
@@ -37,13 +37,25 @@ export default function Hero() {
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/signup" className="btn-primary">
-                Kostenlos testen
-              </Link>
+              <TrackedLink
+                href="/signup"
+                className="btn-primary"
+                event="marketing_produkt_hero_primary_click"
+                source="website"
+                pageGroup="produkt"
+                section="produkt-hero"
+                meta={{ section: "produkt-hero" }}
+              >
+                14 Tage kostenlos testen
+              </TrackedLink>
               <a href="#ablauf" className="btn-secondary">
                 Video ansehen
               </a>
             </div>
+
+            <p className="helper mt-3">
+              Danach läuft Starter monatlich weiter. Jederzeit kündbar.
+            </p>
 
             <div className="mt-8 grid gap-2 sm:grid-cols-2">
               {trustChips.map((chip) => (
@@ -64,6 +76,7 @@ export default function Hero() {
               webm="/loops/product-hero.webm"
               mp4="/loops/product-hero.mp4"
               poster="/loops/product-hero.jpg"
+              priority
               ariaLabel="Produktvideo: Eingang, Entscheidung und Versand"
               caption="Eingang → Entscheidung → Versand. Voll sichtbar im Verlauf."
             />

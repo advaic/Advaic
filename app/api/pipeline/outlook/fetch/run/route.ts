@@ -6,6 +6,12 @@ import {
   decryptSecretFromStorage,
   encryptSecretForStorage,
 } from "@/lib/security/secrets";
+import {
+  computeFollowupNextAt,
+  normalizeFollowupSendWindow,
+} from "@/lib/followups/scheduling";
+import { isPipelinePaused, readRuntimeControl } from "@/lib/ops/runtime-control";
+import { logPipelineRun } from "@/lib/ops/pipeline-runs";
 
 export const runtime = "nodejs";
 
@@ -74,12 +80,6 @@ function isFutureIso(v: string | null) {
   if (!v) return false;
   const t = Date.parse(v);
   return Number.isFinite(t) && t > Date.now();
-}
-
-function addHoursIso(baseIso: string, hours: number) {
-  const t = Date.parse(baseIso);
-  if (!Number.isFinite(t)) return null;
-  return new Date(t + hours * 60 * 60 * 1000).toISOString();
 }
 
 type OutlookConnectionRow = {
@@ -331,6 +331,8 @@ function computeFollowupPlan(args: {
   nowIso: string;
   followupsEnabled: boolean;
   pausedUntil: string | null;
+  delayHoursStage1?: number | null;
+  sendWindow?: ReturnType<typeof normalizeFollowupSendWindow>;
 }) {
   if (!args.followupsEnabled) {
     return {
@@ -350,8 +352,24 @@ function computeFollowupPlan(args: {
     };
   }
 
-  // Default: stage 1 planned for +24h from last inbound user message
-  const nextAt = addHoursIso(args.nowIso, 24);
+  const delayHours = Number.isFinite(Number(args.delayHoursStage1))
+    ? Math.max(1, Math.min(336, Math.round(Number(args.delayHoursStage1))))
+    : 24;
+  const sendWindow =
+    args.sendWindow ||
+    normalizeFollowupSendWindow({
+      followups_send_start_hour: 8,
+      followups_send_end_hour: 20,
+      followups_send_on_weekends: false,
+      followups_timezone: "Europe/Berlin",
+    });
+
+  // Default: stage 1 planned with delay + send-window guardrails.
+  const nextAt = computeFollowupNextAt({
+    baseIso: args.nowIso,
+    delayHours,
+    window: sendWindow,
+  });
   return {
     followup_status: nextAt
       ? ("planned" as const)
@@ -361,24 +379,68 @@ function computeFollowupPlan(args: {
   };
 }
 
-async function getAgentFollowupsEnabled(supabase: any, agentId: string) {
-  // We want follow-ups to respect the agent's real setting.
-  // If the setting/table is missing or unreadable, we fail open to `true` to avoid breaking the pipeline.
+type AgentFollowupRuntimeConfig = {
+  enabledDefault: boolean;
+  delayHoursStage1: number;
+  sendWindow: ReturnType<typeof normalizeFollowupSendWindow>;
+};
+
+async function getAgentFollowupRuntimeConfig(
+  supabase: any,
+  agentId: string,
+): Promise<AgentFollowupRuntimeConfig> {
+  const fallback: AgentFollowupRuntimeConfig = {
+    enabledDefault: true,
+    delayHoursStage1: 24,
+    sendWindow: normalizeFollowupSendWindow({
+      followups_send_start_hour: 8,
+      followups_send_end_hour: 20,
+      followups_send_on_weekends: false,
+      followups_timezone: "Europe/Berlin",
+    }),
+  };
+
   try {
     const { data, error } = await (supabase.from("agent_settings") as any)
-      .select("followups_enabled")
+      .select(
+        "followups_enabled_default, followups_enabled, followups_delay_hours_stage1, followups_send_start_hour, followups_send_end_hour, followups_send_on_weekends, followups_timezone",
+      )
       .eq("agent_id", agentId)
       .maybeSingle();
 
-    if (error) return true;
+    if (error || !data) return fallback;
 
-    const v = (data as any)?.followups_enabled;
-    if (typeof v === "boolean") return v;
-    if (typeof v === "number") return v === 1;
+    const rawEnabled =
+      (data as any)?.followups_enabled_default ?? (data as any)?.followups_enabled;
+    const enabledDefault =
+      typeof rawEnabled === "boolean"
+        ? rawEnabled
+        : typeof rawEnabled === "number"
+          ? rawEnabled === 1
+          : true;
 
-    return true;
+    const delayHoursStage1 = Number.isFinite(
+      Number((data as any)?.followups_delay_hours_stage1),
+    )
+      ? Math.max(
+          1,
+          Math.min(
+            336,
+            Math.round(Number((data as any)?.followups_delay_hours_stage1)),
+          ),
+        )
+      : 24;
+
+    const sendWindow = normalizeFollowupSendWindow({
+      followups_send_start_hour: (data as any)?.followups_send_start_hour,
+      followups_send_end_hour: (data as any)?.followups_send_end_hour,
+      followups_send_on_weekends: (data as any)?.followups_send_on_weekends,
+      followups_timezone: (data as any)?.followups_timezone,
+    });
+
+    return { enabledDefault, delayHoursStage1, sendWindow };
   } catch {
-    return true;
+    return fallback;
   }
 }
 
@@ -464,12 +526,17 @@ async function findOrCreateLead(args: {
   }
 
   // 2) Create new lead
-  const agentFollowupsEnabled = await getAgentFollowupsEnabled(supabase, agentId);
+  const agentFollowupConfig = await getAgentFollowupRuntimeConfig(
+    supabase,
+    agentId,
+  );
 
   const initialPlan = computeFollowupPlan({
     nowIso: args.inboundIso,
-    followupsEnabled: agentFollowupsEnabled,
+    followupsEnabled: agentFollowupConfig.enabledDefault,
     pausedUntil: null,
+    delayHoursStage1: agentFollowupConfig.delayHoursStage1,
+    sendWindow: agentFollowupConfig.sendWindow,
   });
 
   const { data: created } = await (supabase.from("leads") as any)
@@ -483,7 +550,7 @@ async function findOrCreateLead(args: {
       last_message_at: args.inboundIso,
       last_user_message_at: args.inboundIso,
 
-      followups_enabled: agentFollowupsEnabled,
+      followups_enabled: agentFollowupConfig.enabledDefault,
       followup_stage: 0,
       followup_status: initialPlan.followup_status,
       followup_next_at: initialPlan.followup_next_at,
@@ -554,11 +621,32 @@ async function upsertInboundMessage(args: {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAtMs = Date.now();
+  const pipeline = "outlook_fetch";
   // Protect pipeline runner: only callable by internal cron/queue
   if (!isInternal(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const supabase = supabaseAdmin();
+  const control = await readRuntimeControl(supabase);
+  if (isPipelinePaused(control, "outlook_fetch")) {
+    await logPipelineRun(supabase, {
+      pipeline,
+      status: "paused",
+      startedAtMs,
+      meta: {
+        reason: control.reason,
+        control_source: control.source,
+      },
+    });
+    return NextResponse.json({
+      ok: true,
+      paused: true,
+      reason: control.reason || "pipeline_paused",
+      processed: 0,
+      results: [],
+    });
+  }
 
   // Pull outlook connections that need backfill
   const { data: conns, error: connsErr } = await (
@@ -575,6 +663,16 @@ export async function POST(req: NextRequest) {
     .limit(20);
 
   if (connsErr) {
+    await logPipelineRun(supabase, {
+      pipeline,
+      status: "error",
+      startedAtMs,
+      failed: 1,
+      meta: {
+        step: "load_connections",
+        details: connsErr.message,
+      },
+    });
     return NextResponse.json(
       { error: "Failed to load email_connections", details: connsErr.message },
       { status: 500 },
@@ -582,6 +680,13 @@ export async function POST(req: NextRequest) {
   }
 
   if (!conns || conns.length === 0) {
+    await logPipelineRun(supabase, {
+      pipeline,
+      status: "ok",
+      startedAtMs,
+      processed: 0,
+      meta: { reason: "no_connections" },
+    });
     return NextResponse.json({ ok: true, processed: 0, results: [] });
   }
 
@@ -725,6 +830,10 @@ export async function POST(req: NextRequest) {
           // Follow-up sequencing should reset to stage 0 and plan next_at (+24h) if enabled and not paused.
           let followupsEnabled = true;
           let pausedUntil: string | null = null;
+          const agentFollowupConfig = await getAgentFollowupRuntimeConfig(
+            supabase,
+            agentId,
+          );
 
           const { data: fuState, error: fuStateErr } = await (
             supabase.from("leads") as any
@@ -736,17 +845,22 @@ export async function POST(req: NextRequest) {
 
           if (!fuStateErr && fuState) {
             followupsEnabled = Boolean(
-              (fuState as any).followups_enabled ?? true,
+              (fuState as any).followups_enabled ??
+                agentFollowupConfig.enabledDefault,
             );
             pausedUntil = (fuState as any).followup_paused_until
               ? toIsoOrNow(String((fuState as any).followup_paused_until))
               : null;
+          } else {
+            followupsEnabled = agentFollowupConfig.enabledDefault;
           }
 
           const plan = computeFollowupPlan({
             nowIso: inboundIso,
             followupsEnabled,
             pausedUntil,
+            delayHoursStage1: agentFollowupConfig.delayHoursStage1,
+            sendWindow: agentFollowupConfig.sendWindow,
           });
 
           const leadPatch: Record<string, any> = {
@@ -832,6 +946,23 @@ export async function POST(req: NextRequest) {
       continue;
     }
   }
+
+  const success = results.filter((r) => r?.ok === true).length;
+  const failed = results.filter((r) => r?.ok === false).length;
+  const skipped = Math.max(0, results.length - success - failed);
+  const status = failed > 0 ? (success > 0 ? "warning" : "error") : "ok";
+  await logPipelineRun(supabase, {
+    pipeline,
+    status,
+    startedAtMs,
+    processed: results.length,
+    success,
+    failed,
+    skipped,
+    meta: {
+      connections_loaded: conns.length,
+    },
+  });
 
   return NextResponse.json({
     ok: true,

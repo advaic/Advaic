@@ -96,5 +96,27 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const nowIso = new Date().toISOString();
+  const due1h = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const due24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: recoveryExisting } = await (admin.from("onboarding_recovery") as any)
+    .select("agent_id")
+    .eq("agent_id", agentId)
+    .maybeSingle();
+
+  if (!recoveryExisting?.agent_id) {
+    await (admin.from("onboarding_recovery") as any)
+      .insert({
+        agent_id: agentId,
+        onboarding_started_at: nowIso,
+        remind_1h_due_at: due1h,
+        remind_24h_due_at: due24h,
+        updated_at: nowIso,
+      })
+      .then(() => null)
+      .catch(() => null);
+  }
+
   return NextResponse.json({ ok: true, onboarding: data });
 }

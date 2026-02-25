@@ -238,13 +238,19 @@ h6 {
 .marketing-soft-cool::before {
   content: "";
   position: absolute;
-  inset: -68px 0;
+  inset: -92px 0;
   z-index: -1;
   pointer-events: none;
   background: var(--section-layer);
+  opacity: var(--section-opacity, 1);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 16%, #000 84%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 16%, #000 84%, transparent 100%);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
 }
 
 .marketing-hero-bg {
+  --section-opacity: 0.96;
   --section-layer:
     radial-gradient(
       880px 540px at 78% 18%,
@@ -266,6 +272,7 @@ h6 {
 }
 
 .marketing-section-clear {
+  --section-opacity: 0.88;
   --section-layer:
     radial-gradient(
       980px 430px at 50% 52%,
@@ -282,6 +289,7 @@ h6 {
 }
 
 .marketing-section-warm {
+  --section-opacity: 0.92;
   --section-layer:
     radial-gradient(
       1020px 500px at 72% 48%,
@@ -298,6 +306,7 @@ h6 {
 }
 
 .marketing-section-cool {
+  --section-opacity: 0.9;
   --section-layer:
     radial-gradient(
       1080px 540px at 22% 50%,
@@ -314,6 +323,7 @@ h6 {
 }
 
 .marketing-soft-warm {
+  --section-opacity: 0.9;
   --section-layer:
     radial-gradient(
       980px 520px at 50% 46%,
@@ -330,6 +340,7 @@ h6 {
 }
 
 .marketing-soft-cool {
+  --section-opacity: 0.9;
   --section-layer:
     radial-gradient(
       980px 520px at 50% 48%,
@@ -355,7 +366,7 @@ h6 {
 .produkt-band-surface-2::before {
   content: "";
   position: absolute;
-  inset: -78px 0;
+  inset: -92px 0;
   z-index: -1;
   pointer-events: none;
   background:
@@ -371,6 +382,10 @@ h6 {
       var(--band-fill) 82%,
       rgba(255, 255, 255, 0) 100%
     );
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 16%, #000 84%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 16%, #000 84%, transparent 100%);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
 }
 
 .produkt-band-surface {
@@ -394,15 +409,21 @@ h6 {
 #was,
 #ablauf,
 #regeln,
+#simulator,
 #qualitaet,
 #dashboard,
 #freigabe,
 #stil,
 #setup,
 #followups,
+#roi,
+#use-cases,
+#suchintention,
+#cta-variant,
 #sicherheit,
 #fuerwen,
 #faq,
+#einwaende,
 #cta {
   scroll-margin-top: 96px;
 }
@@ -441,12 +462,53 @@ h6 {
   filter: brightness(0.95);
 }
 
+:where(.body, .body-lg, .helper, p).measure,
+.text-measure {
+  max-width: 70ch;
+}
+
+.section-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.section-kicker::before {
+  content: "";
+  width: 18px;
+  height: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--gold), var(--gold-2));
+}
+
+.premium-divider {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(11, 15, 23, 0) 0%,
+    rgba(11, 15, 23, 0.16) 20%,
+    rgba(201, 162, 39, 0.42) 50%,
+    rgba(11, 15, 23, 0.16) 80%,
+    rgba(11, 15, 23, 0) 100%
+  );
+}
+
 :focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   * {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;

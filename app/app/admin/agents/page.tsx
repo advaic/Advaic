@@ -50,17 +50,25 @@ export default async function AdminAgentsPage({
             </div>
           </div>
 
-          <form className="flex items-center gap-2">
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="Suche (Name, Email, Company)…"
-              className="w-72 px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-            />
-            <button className="px-3 py-2 text-sm rounded-lg bg-gray-900 text-amber-200 hover:bg-gray-800">
-              Suchen
-            </button>
-          </form>
+          <div className="flex items-center gap-2">
+            <a
+              href="/app/admin/tickets"
+              className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+            >
+              Tickets
+            </a>
+            <form className="flex items-center gap-2">
+              <input
+                name="q"
+                defaultValue={q}
+                placeholder="Suche (Name, Email, Company)…"
+                className="w-72 px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+              />
+              <button className="px-3 py-2 text-sm rounded-lg bg-gray-900 text-amber-200 hover:bg-gray-800">
+                Suchen
+              </button>
+            </form>
+          </div>
         </div>
 
         <div className="mt-6 rounded-2xl border border-gray-200 bg-white overflow-hidden">

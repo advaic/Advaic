@@ -39,7 +39,7 @@ export default function Rules() {
       <Container>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h2 className="h2">Autopilot-Regeln auf einen Blick</h2>
-          <Link href="/autopilot" className="btn-secondary focus-ring">
+          <Link href="/autopilot-regeln" className="btn-secondary focus-ring">
             Regeln im Detail
           </Link>
         </div>

@@ -33,6 +33,16 @@ const faqItems = [
     answer: "Sie sehen den Verlauf: Eingang → Entscheidung → Versand, inklusive Status.",
   },
   {
+    question: "Was passiert nach den 14 Testtagen?",
+    answer:
+      "Nach der Testphase läuft Starter monatlich weiter. Sie können jederzeit kündigen und Autopilot zusätzlich pausieren.",
+  },
+  {
+    question: "Gibt es bereits veröffentlichte Kundenbeispiele?",
+    answer:
+      "Aktuell noch nicht. Deshalb zeigen wir auf dieser Seite bewusst die konkrete Entscheidungslogik und nicht nur Ergebnisversprechen.",
+  },
+  {
     question: "Was passiert bei Follow-ups, wenn ein Interessent antwortet?",
     answer: "Dann stoppt der automatische Nachfass-Ablauf. Follow-ups laufen nur, wenn Sie auf eine Antwort warten.",
   },

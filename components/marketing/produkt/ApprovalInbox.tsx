@@ -1,4 +1,5 @@
 import Container from "@/components/marketing/Container";
+import Link from "next/link";
 
 const inboxItems = [
   {
@@ -27,6 +28,11 @@ export default function ApprovalInbox() {
           <p className="body mt-4">
             Sie behalten bei Sonderfällen die Kontrolle — genau dort, wo menschliches Fingerspitzengefühl zählt.
           </p>
+          <div className="mt-4">
+            <Link href="/freigabe-inbox" className="btn-secondary">
+              Freigabe-Inbox im Detail
+            </Link>
+          </div>
         </div>
 
         <div className="mt-10 rounded-[var(--radius)] bg-white p-6 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)] md:p-7">

@@ -1,5 +1,5 @@
-import Link from "next/link";
 import Container from "@/components/marketing/Container";
+import TrackedLink from "@/components/marketing/TrackedLink";
 
 export default function FinalCTA() {
   return (
@@ -8,20 +8,36 @@ export default function FinalCTA() {
         <div className="rounded-[var(--radius)] bg-white p-8 text-center ring-1 ring-[var(--border)] shadow-[var(--shadow-md)] md:p-12">
           <h2 className="h2">Testen Sie Advaic 14 Tage kostenlos</h2>
           <p className="body mt-4 text-[var(--muted)]">
-            Weniger Postfach. Mehr Feierabend. Mit Autopilot-Sicherheitsnetz und klarer Freigabelogik.
+            Weniger Postfach. Mehr Feierabend. Danach läuft Starter monatlich weiter.
           </p>
 
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-            <Link href="/signup" className="btn-primary">
-              Kostenlos testen
-            </Link>
-            <a href="#faq" className="btn-secondary">
+            <TrackedLink
+              href="/signup"
+              className="btn-primary"
+              event="marketing_produkt_final_primary_click"
+              source="website"
+              pageGroup="produkt"
+              section="produkt-final-cta"
+              meta={{ section: "produkt-final-cta" }}
+            >
+              14 Tage kostenlos starten
+            </TrackedLink>
+            <TrackedLink
+              href="/produkt#faq"
+              className="btn-secondary"
+              event="marketing_produkt_final_secondary_click"
+              source="website"
+              pageGroup="produkt"
+              section="produkt-final-cta"
+              meta={{ section: "produkt-final-cta" }}
+            >
               Fragen stellen
-            </a>
+            </TrackedLink>
           </div>
 
           <p className="helper mt-5">
-            Kündbar · pausierbar · Unklar → Freigabe · Qualitätschecks vor Auto-Versand
+            14 Tage Testphase · danach Starter · kündbar · pausierbar · Unklar → Freigabe
           </p>
         </div>
       </Container>

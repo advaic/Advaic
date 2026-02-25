@@ -63,11 +63,11 @@ export default function CookieUndStoragePage() {
     "support@advaic.com";
 
   return (
-    <PageShell>
+    <PageShell withProofLayer={false}>
       <PageIntro
         kicker="Cookie- & Speicherhinweise"
         title="Welche Cookies und Browser-Speicher wir nutzen"
-        description="Hier findest du transparent, welche technisch notwendigen Einträge auf unserer Website und im Produkt verwendet werden."
+        description="Hier finden Sie transparent, welche technisch notwendigen Einträge auf unserer Website und im Produkt verwendet werden."
         actions={
           <>
             <Link href="/datenschutz" className="btn-secondary">
@@ -85,7 +85,7 @@ export default function CookieUndStoragePage() {
           <article className="card-base p-6 md:p-8">
             <h2 className="h2">Aktueller Stand</h2>
             <p className="helper mt-3">
-              Stand: 24. Februar 2026. Im aktuellen Code-Stand setzen wir keine zusätzlichen Marketing- oder
+              Stand: 25. Februar 2026. Im aktuellen Code-Stand setzen wir keine zusätzlichen Marketing- oder
               Werbe-Tracking-Skripte ein. Wenn sich das ändert, wird diese Seite vorab aktualisiert.
             </p>
           </article>
@@ -118,12 +118,12 @@ export default function CookieUndStoragePage() {
           </div>
 
           <article className="card-base mt-6 p-6 md:p-8">
-            <h3 className="h3">Wie du Einträge löschen kannst</h3>
+            <h3 className="h3">Wie Sie Einträge löschen können</h3>
             <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-              <li>Cookies sowie Local-/Session-Storage kannst du in den Browser-Einstellungen löschen.</li>
-              <li>Wenn du dich ausloggst, werden Auth-Sessions beendet.</li>
+              <li>Cookies sowie Local-/Session-Storage können Sie in den Browser-Einstellungen löschen.</li>
+              <li>Wenn Sie sich ausloggen, werden Auth-Sessions beendet.</li>
               <li>
-                Für datenschutzrechtliche Anfragen (z. B. Auskunft oder Löschung) schreib bitte an{" "}
+                Für datenschutzrechtliche Anfragen (z. B. Auskunft oder Löschung) schreiben Sie bitte an{" "}
                 <a className="underline underline-offset-4" href={`mailto:${privacyEmail}`}>
                   {privacyEmail}
                 </a>

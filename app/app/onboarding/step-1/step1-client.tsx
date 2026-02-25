@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { trackFunnelEvent } from "@/lib/funnel/track";
 
 type OnboardingRow = {
   current_step: number;
@@ -179,6 +180,11 @@ export default function Step1Client() {
     try {
       setSaving(true);
       setError(null);
+      void trackFunnelEvent({
+        event: "onboarding_started",
+        source: "onboarding_step_1",
+        step: 1,
+      });
 
       await updateOnboarding({
         step_welcome_done: true,
@@ -237,15 +243,15 @@ export default function Step1Client() {
           className="mt-3 text-[15px] leading-relaxed"
           style={{ color: "var(--textMuted, rgba(14,14,17,0.65))" }}
         >
-          Advaic beantwortet Anfragen automatisch — über deine eigene Adresse.
-          Du behältst Kontrolle, siehst klare Regeln, und sparst jeden Tag Zeit.
+          Advaic beantwortet Anfragen über deine eigene Adresse. Du startest bewusst mit Freigabe, siehst klare Regeln
+          und schaltest mehr Automatisierung erst frei, wenn alles sicher sitzt.
         </p>
 
         <p
           className="mt-2 text-[13px]"
           style={{ color: "var(--textFaint, rgba(14,14,17,0.45))" }}
         >
-          Einrichtung dauert ca. 5 Minuten. Alles transparent.
+          Ziel: erster sicherer Versand in 10–15 Minuten, ohne Risiko.
         </p>
       </div>
 

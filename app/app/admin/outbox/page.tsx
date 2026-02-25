@@ -216,6 +216,13 @@ export default function AdminOutboxPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              href="/app/admin/tickets"
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+              title="Tickets"
+            >
+              Tickets
+            </Link>
             <div className="relative hidden md:block">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
               <input

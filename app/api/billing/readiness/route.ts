@@ -25,8 +25,6 @@ export async function GET(req: NextRequest) {
   const env = {
     stripe_secret_key: present("STRIPE_SECRET_KEY"),
     stripe_webhook_secret: present("STRIPE_WEBHOOK_SECRET"),
-    stripe_price_pro_monthly: present("STRIPE_PRICE_PRO_MONTHLY"),
-    stripe_price_team_monthly: present("STRIPE_PRICE_TEAM_MONTHLY"),
     stripe_price_starter_monthly: present("STRIPE_PRICE_STARTER_MONTHLY"),
     next_public_site_url: present("NEXT_PUBLIC_SITE_URL"),
   };
@@ -61,7 +59,7 @@ export async function GET(req: NextRequest) {
   const requiredEnvReady =
     env.stripe_secret_key &&
     env.stripe_webhook_secret &&
-    env.stripe_price_pro_monthly &&
+    env.stripe_price_starter_monthly &&
     env.next_public_site_url;
   const tablesReady = Object.values(tables).every((t) => t.exists);
   const ready = requiredEnvReady && tablesReady;
@@ -74,9 +72,7 @@ export async function GET(req: NextRequest) {
       tables,
     },
     notes: {
-      optional_prices:
-        "TEAM/STARTER sind optional. PRO ist für den Default-Checkout erforderlich.",
+      pricing: "Aktuell ist Starter der aktive Checkout-Plan.",
     },
   });
 }
-

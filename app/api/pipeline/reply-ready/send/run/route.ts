@@ -3,6 +3,9 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
 import { getAutosendBaseline, getLeadPropertyGate } from "@/lib/security/autosend-gate";
+import { getCommercialAccess } from "@/lib/billing/commercial-access";
+import { isPipelinePaused, readRuntimeControl } from "@/lib/ops/runtime-control";
+import { logPipelineRun } from "@/lib/ops/pipeline-runs";
 
 export const runtime = "nodejs";
 
@@ -67,6 +70,8 @@ function buildSubject(lead: any) {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAtMs = Date.now();
+  const pipeline = "reply_ready_send";
   const internal = isInternal(req);
   let scopedAgentId: string | null = null;
 
@@ -86,6 +91,27 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = supabaseAdmin();
+  const control = await readRuntimeControl(supabase);
+  if (isPipelinePaused(control, "reply_ready_send")) {
+    await logPipelineRun(supabase, {
+      pipeline,
+      status: "paused",
+      startedAtMs,
+      meta: {
+        reason: control.reason,
+        control_source: control.source,
+        internal,
+      },
+    });
+    return NextResponse.json(
+      {
+        ok: true,
+        paused: true,
+        reason: control.reason || "pipeline_paused",
+      },
+      { status: 200 },
+    );
+  }
 
   const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL");
   const secret = mustEnv("ADVAIC_INTERNAL_PIPELINE_SECRET");
@@ -116,6 +142,16 @@ export async function POST(req: NextRequest) {
   const { data: drafts, error: draftsErr } = await draftsQ;
 
   if (draftsErr) {
+    await logPipelineRun(supabase, {
+      pipeline,
+      status: "error",
+      startedAtMs,
+      failed: 1,
+      meta: {
+        step: "load_drafts",
+        details: draftsErr.message,
+      },
+    });
     return NextResponse.json(
       {
         error: "Failed to load ready_to_send drafts",
@@ -126,6 +162,13 @@ export async function POST(req: NextRequest) {
   }
 
   if (!drafts || drafts.length === 0) {
+    await logPipelineRun(supabase, {
+      pipeline,
+      status: "ok",
+      startedAtMs,
+      processed: 0,
+      meta: { reason: "no_drafts" },
+    });
     return NextResponse.json({ ok: true, processed: 0, results: [] });
   }
 
@@ -140,6 +183,14 @@ export async function POST(req: NextRequest) {
   );
 
   if (agentIds.length === 0) {
+    await logPipelineRun(supabase, {
+      pipeline,
+      status: "warning",
+      startedAtMs,
+      processed: 0,
+      skipped: drafts.length,
+      meta: { reason: "missing_agent_ids" },
+    });
     return NextResponse.json({ ok: true, processed: 0, results: [] });
   }
 
@@ -154,6 +205,17 @@ export async function POST(req: NextRequest) {
 
   const autosendBaselineCache = new Map<string, Awaited<ReturnType<typeof getAutosendBaseline>>>();
   const leadPropertyGateCache = new Map<string, Awaited<ReturnType<typeof getLeadPropertyGate>>>();
+  const commercialAccessMap = new Map<
+    string,
+    Awaited<ReturnType<typeof getCommercialAccess>>["access"]
+  >();
+
+  await Promise.all(
+    agentIds.map(async (agentId) => {
+      const accessRes = await getCommercialAccess({ supabase, agentId });
+      commercialAccessMap.set(agentId, accessRes.access);
+    }),
+  );
 
   const results: any[] = [];
 
@@ -162,6 +224,7 @@ export async function POST(req: NextRequest) {
     const agentId = String(d.agent_id);
     const leadId = String(d.lead_id);
     const isFollowup = !!(d as any).was_followup;
+    const commercialAccess = commercialAccessMap.get(agentId) || null;
 
     const markFailed = async (
       send_error: string,
@@ -177,6 +240,16 @@ export async function POST(req: NextRequest) {
         })
         .eq("id", messageId);
     };
+
+    if (commercialAccess?.upgrade_required) {
+      await markFailed("payment_required_trial_expired");
+      results.push({
+        messageId,
+        leadId,
+        status: "blocked_trial_expired",
+      });
+      continue;
+    }
 
     // Safety: only send if autosend_enabled is still true
     if (!autosendMap.get(agentId)) {
@@ -222,6 +295,8 @@ export async function POST(req: NextRequest) {
         leadId,
         status: "skipped_missing_property_context",
         reason: leadPropertyGate.reason,
+        missing_fields: leadPropertyGate.missing_fields,
+        active_property_id: leadPropertyGate.active_property_id,
       });
       continue;
     }
@@ -359,6 +434,29 @@ export async function POST(req: NextRequest) {
       provider,
     });
   }
+
+  const success = results.filter((r) => String(r?.status || "") === "sent").length;
+  const failed = results.filter((r) => {
+    const s = String(r?.status || "").toLowerCase();
+    return s.includes("failed") || s.startsWith("error") || s.startsWith("blocked");
+  }).length;
+  const skipped = Math.max(0, results.length - success - failed);
+  const status = failed > 0 ? (success > 0 ? "warning" : "error") : "ok";
+
+  await logPipelineRun(supabase, {
+    pipeline,
+    status,
+    startedAtMs,
+    processed: results.length,
+    success,
+    failed,
+    skipped,
+    meta: {
+      internal,
+      scoped_agent: scopedAgentId,
+      only_message_id: onlyMessageId || null,
+    },
+  });
 
   return NextResponse.json({ ok: true, processed: results.length, results });
 }

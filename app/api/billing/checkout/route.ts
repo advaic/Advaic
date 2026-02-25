@@ -10,6 +10,8 @@ type Body = {
   cancel_path?: string;
 };
 
+const AVAILABLE_PLAN_KEYS = new Set(["starter_monthly"]);
+
 const DEFAULT_TRIAL_DAYS = 14;
 const MAX_TRIAL_DAYS = 90;
 
@@ -29,8 +31,6 @@ function siteUrl() {
 
 function priceIdForPlan(planKey: string) {
   const map: Record<string, string | undefined> = {
-    pro_monthly: process.env.STRIPE_PRICE_PRO_MONTHLY,
-    team_monthly: process.env.STRIPE_PRICE_TEAM_MONTHLY,
     starter_monthly: process.env.STRIPE_PRICE_STARTER_MONTHLY,
   };
   return map[planKey] || "";
@@ -52,7 +52,17 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = (await req.json().catch(() => null)) as Body | null;
-    const planKey = String(body?.plan_key || "pro_monthly").trim();
+    const planKey = String(body?.plan_key || "starter_monthly").trim();
+    if (!AVAILABLE_PLAN_KEYS.has(planKey)) {
+      return NextResponse.json(
+        {
+          error: "plan_not_available",
+          details: "Aktuell ist nur der Starter-Plan verfügbar.",
+          available: ["starter_monthly"],
+        },
+        { status: 400 },
+      );
+    }
     const priceId = priceIdForPlan(planKey);
 
     if (!priceId) {

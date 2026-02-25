@@ -8,6 +8,7 @@ type PremiumVideoFrameProps = {
   mp4?: string;
   poster?: string;
   ariaLabel?: string;
+  priority?: boolean;
   children?: ReactNode;
   className?: string;
 };
@@ -19,6 +20,7 @@ export default function PremiumVideoFrame({
   mp4,
   poster,
   ariaLabel,
+  priority = false,
   children,
   className = "",
 }: PremiumVideoFrameProps) {
@@ -41,6 +43,7 @@ export default function PremiumVideoFrame({
             webm={webm}
             mp4={mp4}
             poster={poster}
+            priority={priority}
             ariaLabel={ariaLabel ?? "Produktvideo"}
             className="aspect-video w-full rounded-[8px] object-cover"
             placeholderLabel="Video-Platzhalter"

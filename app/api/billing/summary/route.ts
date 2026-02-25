@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient, requireRouteUser } from "@/lib/supabase/routeAuth";
+import { deriveCommercialAccess } from "@/lib/billing/commercial-access";
 
 export const runtime = "nodejs";
 
 type BillingSummary = {
+  access: ReturnType<typeof deriveCommercialAccess>;
   plan: {
     key: string;
     status: string;
@@ -58,6 +60,10 @@ export async function GET(req: NextRequest) {
 
   const agentId = String(auth.user.id);
   const supabase = createSupabaseAdminClient();
+  const { data: agentRow } = await (supabase.from("agents") as any)
+    .select("created_at")
+    .eq("id", agentId)
+    .maybeSingle();
 
   const { data: customer } = await (supabase.from("billing_customers") as any)
     .select("stripe_customer_id")
@@ -66,7 +72,7 @@ export async function GET(req: NextRequest) {
 
   const { data: subscription } = await (supabase.from("billing_subscriptions") as any)
     .select(
-      "plan_key, status, amount_cents, currency, interval, current_period_start, current_period_end, cancel_at_period_end, updated_at",
+      "plan_key, status, amount_cents, currency, interval, current_period_start, current_period_end, cancel_at_period_end, trial_end, updated_at",
     )
     .eq("agent_id", agentId)
     .order("updated_at", { ascending: false })
@@ -98,6 +104,22 @@ export async function GET(req: NextRequest) {
 
   const planKey = String(subscription?.plan_key || "free");
   const summary: BillingSummary = {
+    access: deriveCommercialAccess({
+      agentCreatedAt: agentRow?.created_at ? String(agentRow.created_at) : null,
+      subscription: subscription
+        ? {
+            plan_key: subscription.plan_key ? String(subscription.plan_key) : null,
+            status: subscription.status ? String(subscription.status) : null,
+            current_period_start: subscription.current_period_start
+              ? String(subscription.current_period_start)
+              : null,
+            current_period_end: subscription.current_period_end
+              ? String(subscription.current_period_end)
+              : null,
+            trial_end: subscription.trial_end ? String(subscription.trial_end) : null,
+          }
+        : null,
+    }),
     plan: {
       key: planKey,
       status: String(subscription?.status || "inactive"),

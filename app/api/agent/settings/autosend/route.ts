@@ -4,6 +4,10 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import { getAutosendBaseline } from "@/lib/security/autosend-gate";
+import {
+  getCommercialAccess,
+  paymentRequiredMeta,
+} from "@/lib/billing/commercial-access";
 
 export const runtime = "nodejs";
 
@@ -93,7 +97,18 @@ export async function POST(req: NextRequest) {
 
   const wantsAuto =
     body.reply_mode === "auto" || body.autosend_enabled === true;
-  const autosendGate = await getAutosendBaseline(supabaseAdmin(), String(user.id));
+  const admin = supabaseAdmin();
+  const billingAccess = await getCommercialAccess({
+    supabase: admin,
+    agentId: String(user.id),
+  });
+  if (billingAccess.access.upgrade_required) {
+    return NextResponse.json(paymentRequiredMeta(billingAccess.access), {
+      status: 402,
+    });
+  }
+
+  const autosendGate = await getAutosendBaseline(admin, String(user.id));
   if (wantsAuto && !autosendGate.eligible) {
     return jsonError(409, "autosend_not_ready", { autosend_gate: autosendGate });
   }
@@ -135,7 +150,12 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({ ok: true, settings: data, autosend_gate: autosendGate });
+  return NextResponse.json({
+    ok: true,
+    settings: data,
+    autosend_gate: autosendGate,
+    billing_access: billingAccess.access,
+  });
 }
 
 export async function GET(req: NextRequest) {
@@ -149,7 +169,11 @@ export async function GET(req: NextRequest) {
 
   if (authErr || !user) return jsonError(401, "Unauthorized");
 
-  const autosendGate = await getAutosendBaseline(supabaseAdmin(), String(user.id));
+  const admin = supabaseAdmin();
+  const [autosendGate, billingAccess] = await Promise.all([
+    getAutosendBaseline(admin, String(user.id)),
+    getCommercialAccess({ supabase: admin, agentId: String(user.id) }),
+  ]);
 
   const { data, error } = await (supabase.from("agent_settings") as any)
     .select("agent_id, autosend_enabled, reply_mode, auto_send_min_confidence")
@@ -165,6 +189,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     autosend_gate: autosendGate,
+    billing_access: billingAccess.access,
     settings:
       data ||
       ({

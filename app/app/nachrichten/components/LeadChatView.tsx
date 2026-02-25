@@ -94,6 +94,28 @@ type LeadPropertyStateRow = {
   active_property_confidence?: number | null;
 };
 
+type DraftQaRow = {
+  id: string;
+  draft_message_id: string;
+  verdict: string | null;
+  reason: string | null;
+  reason_long?: string | null;
+  action?: string | null;
+  risk_flags?: string[] | null;
+  meta?: any;
+  created_at?: string | null;
+};
+
+type MessageFeedbackRow = {
+  id: string;
+  message_id: string;
+  rating: "helpful" | "not_helpful";
+  reason: string | null;
+  note: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 
 type PropertyMini = {
   id: string;
@@ -251,6 +273,28 @@ function computeRuleSource(
   }
   if (propertyPolicy) return "Immobilie";
   return "Standard";
+}
+
+function qaVerdictLabel(v: unknown) {
+  const s = String(v || "").toLowerCase().trim();
+  if (s === "pass") return "QA: Pass";
+  if (s === "warn") return "QA: Warnung";
+  if (s === "fail") return "QA: Fail";
+  return "QA: Unbekannt";
+}
+
+function qaVerdictTone(v: unknown) {
+  const s = String(v || "").toLowerCase().trim();
+  if (s === "pass")
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (s === "warn") return "border-amber-200 bg-amber-50 text-amber-900";
+  if (s === "fail") return "border-red-200 bg-red-50 text-red-700";
+  return "border-gray-200 bg-white text-gray-700";
+}
+
+function parseQaConfidence(meta: any): number | null {
+  const n = Number(meta?.confidence);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null;
 }
 
 const QUICK_TEMPLATES: Array<{ label: string; value: string }> = [
@@ -465,6 +509,7 @@ export default function LeadChatView({
   const [followupsEnabled, setFollowupsEnabled] = useState<boolean>(true);
   const [followupsBusy, setFollowupsBusy] = useState(false);
   const [followupsError, setFollowupsError] = useState<string | null>(null);
+  const [copilotHelpOpen, setCopilotHelpOpen] = useState(false);
   const [copilotLoading, setCopilotLoading] = useState<boolean>(true);
   const [agentFollowupsDefaults, setAgentFollowupsDefaults] = useState<
     any | null
@@ -481,6 +526,16 @@ export default function LeadChatView({
   const [recommendedProperties, setRecommendedProperties] = useState<
     PropertyMini[]
   >([]);
+  const [qaByDraftId, setQaByDraftId] = useState<Record<string, DraftQaRow>>(
+    {},
+  );
+  const [feedbackByMessageId, setFeedbackByMessageId] = useState<
+    Record<string, MessageFeedbackRow>
+  >({});
+  const [feedbackSavingByMessageId, setFeedbackSavingByMessageId] = useState<
+    Record<string, boolean>
+  >({});
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   // Manual property assignment state
   const [assignOpen, setAssignOpen] = useState(false);
@@ -637,6 +692,152 @@ export default function LeadChatView({
       is_system: true,
     } as any;
     setSystemEvents((prev) => [...prev, ev]);
+  };
+
+  const loadQasForDrafts = async (sourceMessages?: LocalMessage[]) => {
+    try {
+      const src = sourceMessages || messages;
+      const draftIds = Array.from(
+        new Set(
+          src
+            .map((m) => String((m as any)?.id || "").trim())
+            .filter(Boolean),
+        ),
+      );
+
+      if (draftIds.length === 0) {
+        setQaByDraftId({});
+        return;
+      }
+
+      const extendedSelect =
+        "id, draft_message_id, verdict, reason, reason_long, action, risk_flags, meta, created_at";
+      const minimalSelect =
+        "id, draft_message_id, verdict, reason, created_at";
+
+      let rows: any[] = [];
+      const ext = await (supabase.from("message_qas") as any)
+        .select(extendedSelect)
+        .in("draft_message_id", draftIds)
+        .order("created_at", { ascending: false })
+        .limit(400);
+
+      if (ext?.error) {
+        const min = await (supabase.from("message_qas") as any)
+          .select(minimalSelect)
+          .in("draft_message_id", draftIds)
+          .order("created_at", { ascending: false })
+          .limit(400);
+        if (min?.error) {
+          console.warn("⚠️ message_qas fetch failed", min.error);
+          return;
+        }
+        rows = (min.data || []) as any[];
+      } else {
+        rows = (ext.data || []) as any[];
+      }
+
+      const map: Record<string, DraftQaRow> = {};
+      for (const row of rows) {
+        const key = String(row?.draft_message_id || "").trim();
+        if (!key || map[key]) continue;
+        map[key] = {
+          id: String(row?.id || ""),
+          draft_message_id: key,
+          verdict: row?.verdict ?? null,
+          reason: row?.reason ?? null,
+          reason_long: row?.reason_long ?? null,
+          action: row?.action ?? null,
+          risk_flags: Array.isArray(row?.risk_flags) ? row.risk_flags : null,
+          meta: row?.meta ?? null,
+          created_at: row?.created_at ?? null,
+        };
+      }
+
+      setQaByDraftId(map);
+    } catch (e: any) {
+      console.warn("⚠️ Could not load QA explainability", e?.message || e);
+    }
+  };
+
+  const loadFeedbackForLead = async () => {
+    try {
+      setFeedbackError(null);
+      const res = await fetch(
+        `/api/messages/feedback?lead_id=${encodeURIComponent(leadId)}`,
+        { method: "GET" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(String(data?.error || "feedback_fetch_failed"));
+      }
+
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+      const map: Record<string, MessageFeedbackRow> = {};
+      for (const row of rows) {
+        const key = String(row?.message_id || "").trim();
+        if (!key || map[key]) continue;
+        const rating = String(row?.rating || "").toLowerCase();
+        if (rating !== "helpful" && rating !== "not_helpful") continue;
+        map[key] = {
+          id: String(row?.id || ""),
+          message_id: key,
+          rating,
+          reason: row?.reason ?? null,
+          note: row?.note ?? null,
+          created_at: row?.created_at ?? null,
+          updated_at: row?.updated_at ?? null,
+        };
+      }
+      setFeedbackByMessageId(map);
+    } catch (e: any) {
+      setFeedbackError(String(e?.message || "feedback_fetch_failed"));
+    }
+  };
+
+  const submitMessageFeedback = async (
+    messageId: string,
+    rating: "helpful" | "not_helpful",
+  ) => {
+    const id = String(messageId || "").trim();
+    if (!id) return;
+
+    setFeedbackSavingByMessageId((prev) => ({ ...prev, [id]: true }));
+    setFeedbackError(null);
+    try {
+      const res = await fetch("/api/messages/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message_id: id,
+          rating,
+          source: "lead_chat",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(String(data?.error || "feedback_save_failed"));
+      }
+      const row = data?.feedback || null;
+      if (row?.message_id) {
+        setFeedbackByMessageId((prev) => ({
+          ...prev,
+          [String(row.message_id)]: {
+            id: String(row.id || ""),
+            message_id: String(row.message_id),
+            rating,
+            reason: row.reason ?? null,
+            note: row.note ?? null,
+            created_at: row.created_at ?? null,
+            updated_at: row.updated_at ?? null,
+          },
+        }));
+      }
+    } catch (e: any) {
+      setFeedbackError(String(e?.message || "feedback_save_failed"));
+    } finally {
+      setFeedbackSavingByMessageId((prev) => ({ ...prev, [id]: false }));
+    }
   };
 
   const loadPropertyState = async (
@@ -1250,8 +1451,15 @@ export default function LeadChatView({
           setCopilotLoading(false);
         }
       }
-      if (messagesData) setMessages(messagesData as unknown as LocalMessage[]);
+      if (messagesData) {
+        const loadedMessages = messagesData as unknown as LocalMessage[];
+        setMessages(loadedMessages);
+        await loadQasForDrafts(loadedMessages);
+      } else {
+        setQaByDraftId({});
+      }
       if (documentData) setDocuments(documentData);
+      await loadFeedbackForLead();
 
       setLoading(false);
     };
@@ -1386,6 +1594,18 @@ export default function LeadChatView({
       supabase.removeChannel(channel);
     };
   }, [leadId, supabase]);
+
+  useEffect(() => {
+    if (!messages.length) {
+      setQaByDraftId({});
+      return;
+    }
+    const id = window.setTimeout(() => {
+      void loadQasForDrafts();
+    }, 120);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1659,6 +1879,158 @@ export default function LeadChatView({
     });
     return grouped;
   }, [filteredMessages, systemEvents]);
+
+  const trustLog = useMemo(() => {
+    type TrustEvent = {
+      id: string;
+      kind: "eingang" | "freigabe" | "versand" | "fehler" | "system";
+      title: string;
+      detail: string;
+      timestamp: string | null;
+      qa?: DraftQaRow | null;
+    };
+
+    const all = [...filteredMessages, ...systemEvents]
+      .filter(Boolean)
+      .sort((a, b) => {
+        const ta = new Date(String(a.timestamp || "")).getTime();
+        const tb = new Date(String(b.timestamp || "")).getTime();
+        return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+      });
+
+    const events: TrustEvent[] = [];
+    for (const msg of all) {
+      const sender = String(msg.sender || "").toLowerCase();
+      const isSystem = sender === "system" || !!(msg as any).is_system;
+      const isAgent = isAgentSender(sender);
+      const sendStatus = String((msg as any).send_status || "")
+        .toLowerCase()
+        .trim();
+      const approvalRequired = !!(msg as any).approval_required;
+      const wasFollowup = !!(msg as any).was_followup;
+      const emailType = String((msg as any).email_type || "").trim();
+      const confidence = (msg as any).classification_confidence;
+      const qa = qaByDraftId[String((msg as any).id || "").trim()] || null;
+      const qaReason = String(qa?.reason || "").trim();
+      const qaAction = String(qa?.action || "").trim();
+      const qaConfidence = parseQaConfidence(qa?.meta);
+
+      if (isSystem) {
+        events.push({
+          id: `system:${String((msg as any).id || msg.timestamp || msg.text || "na")}`,
+          kind: "system",
+          title: "Systemereignis",
+          detail: String(msg.text || "Interner Status aktualisiert."),
+          timestamp: String(msg.timestamp || ""),
+          qa,
+        });
+      } else if (!isAgent) {
+        events.push({
+          id: `in:${String((msg as any).id || msg.timestamp || msg.text || "na")}`,
+          kind: "eingang",
+          title: "Eingang",
+          detail:
+            emailType && typeof confidence === "number"
+              ? `${emailType} · Confidence ${Number(confidence).toFixed(2)}`
+              : emailType
+                ? emailType
+                : "Neue Nachricht vom Interessenten",
+          timestamp: String(msg.timestamp || ""),
+          qa,
+        });
+      } else if (sendStatus === "failed") {
+        events.push({
+          id: `failed:${String((msg as any).id || msg.timestamp || msg.text || "na")}`,
+          kind: "fehler",
+          title: "Versand fehlgeschlagen",
+          detail:
+            String((msg as any).send_error || "").trim() ||
+            "Technischer Fehler beim Senden.",
+          timestamp: String(msg.timestamp || ""),
+          qa,
+        });
+      } else if (sendStatus === "sent") {
+        const qaLine =
+          qaReason || qaAction
+            ? ` QA: ${qaReason || qaAction}`
+            : qaConfidence !== null
+              ? ` QA-Confidence ${qaConfidence.toFixed(2)}`
+              : "";
+        events.push({
+          id: `sent:${String((msg as any).id || msg.timestamp || msg.text || "na")}`,
+          kind: "versand",
+          title: wasFollowup ? "Follow-up gesendet" : "Antwort gesendet",
+          detail: `Über das verbundene Postfach verschickt.${qaLine}`.trim(),
+          timestamp: String((msg as any).sent_at || msg.timestamp || ""),
+          qa,
+        });
+      } else if (approvalRequired) {
+        const detailParts: string[] = [
+          "Entwurf wartet auf deine manuelle Prüfung.",
+        ];
+        if (qaReason) detailParts.push(`QA-Grund: ${qaReason}`);
+        if (qaAction) detailParts.push(`Nächster Schritt: ${qaAction}`);
+        events.push({
+          id: `approval:${String((msg as any).id || msg.timestamp || msg.text || "na")}`,
+          kind: "freigabe",
+          title: "Zur Freigabe",
+          detail: detailParts.join(" "),
+          timestamp: String(msg.timestamp || ""),
+          qa,
+        });
+      }
+
+      if (events.length >= 10) break;
+    }
+
+    return events.slice(0, 8);
+  }, [filteredMessages, qaByDraftId, systemEvents]);
+
+  const latestQaInsight = useMemo(() => {
+    const sorted = [...filteredMessages]
+      .filter((m) => isAgentSender(String(m.sender || "")))
+      .sort((a, b) => {
+        const ta = new Date(String(a.timestamp || "")).getTime();
+        const tb = new Date(String(b.timestamp || "")).getTime();
+        return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+      });
+
+    for (const msg of sorted) {
+      const qa = qaByDraftId[String((msg as any)?.id || "").trim()];
+      if (!qa) continue;
+      return {
+        messageId: String((msg as any)?.id || ""),
+        messageText: String((msg as any)?.text || "").trim(),
+        qa,
+      };
+    }
+    return null;
+  }, [filteredMessages, qaByDraftId]);
+
+  const latestSentAgentMessage = useMemo(() => {
+    const sorted = [...filteredMessages]
+      .filter((m) => isAgentSender(String(m.sender || "")))
+      .sort((a, b) => {
+        const ta = new Date(String(a.timestamp || "")).getTime();
+        const tb = new Date(String(b.timestamp || "")).getTime();
+        return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+      });
+
+    for (const msg of sorted) {
+      const status = String((msg as any)?.send_status || "")
+        .toLowerCase()
+        .trim();
+      if (status !== "sent") continue;
+      const id = String((msg as any)?.id || "").trim();
+      if (!id) continue;
+      return {
+        id,
+        text: String((msg as any)?.text || "").trim(),
+        timestamp: String((msg as any)?.sent_at || msg.timestamp || ""),
+      };
+    }
+    return null;
+  }, [filteredMessages]);
 
   const hasMessages = filteredMessages.length > 0;
 
@@ -2750,6 +3122,29 @@ export default function LeadChatView({
                     )
                   </span>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setCopilotHelpOpen((v) => !v)}
+                  className="mt-2 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                >
+                  {copilotHelpOpen ? "Hinweise ausblenden" : "Hinweise anzeigen"}
+                </button>
+                {copilotHelpOpen && (
+                  <div className="mt-2 rounded-xl border border-gray-200 bg-[#fbfbfc] px-3 py-2 text-xs text-gray-700 space-y-1">
+                    <div>
+                      <span className="font-medium text-gray-900">Regelquelle:</span>{" "}
+                      zeigt, ob Lead-, Immobilien- oder Standardregeln greifen.
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-900">Effektiv:</span>{" "}
+                      ist das tatsächliche Ergebnis nach allen Guardrails.
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-900">Trust-Log:</span>{" "}
+                      dokumentiert Eingang, Freigabe-Entscheidung und Versand.
+                    </div>
+                  </div>
+                )}
                 {followupsError && (
                   <div className="mt-2">
                     <div className="rounded-xl border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-xs">
@@ -3169,6 +3564,231 @@ export default function LeadChatView({
                     {copilotError}
                   </div>
                 )}
+
+                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs text-gray-500">Trust-Log</div>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-700">
+                      {trustLog.length} Einträge
+                    </span>
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {trustLog.length === 0 ? (
+                      <div className="text-xs text-gray-500">
+                        Noch keine nachvollziehbaren Statusereignisse vorhanden.
+                      </div>
+                    ) : (
+                      trustLog.map((event) => (
+                        <div
+                          key={event.id}
+                          className="rounded-lg border border-gray-200 bg-[#fbfbfc] px-2.5 py-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span
+                              className={`text-[11px] px-2 py-0.5 rounded-full border ${
+                                event.kind === "versand"
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                  : event.kind === "fehler"
+                                    ? "border-red-200 bg-red-50 text-red-700"
+                                    : event.kind === "freigabe"
+                                      ? "border-amber-200 bg-amber-50 text-amber-900"
+                                      : "border-gray-200 bg-white text-gray-700"
+                              }`}
+                            >
+                              {event.title}
+                            </span>
+                            <span className="text-[11px] text-gray-500">
+                              {formatDateTimeDE(event.timestamp)}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-xs text-gray-700">
+                            {event.detail}
+                          </div>
+                          {event.qa ? (
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <span
+                                className={`text-[10px] px-1.5 py-0.5 rounded-full border ${qaVerdictTone(
+                                  event.qa.verdict,
+                                )}`}
+                              >
+                                {qaVerdictLabel(event.qa.verdict)}
+                              </span>
+                              {Array.isArray(event.qa.risk_flags) &&
+                              event.qa.risk_flags.length > 0 ? (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-gray-200 bg-white text-gray-700">
+                                  Risiken:{" "}
+                                  {event.qa.risk_flags
+                                    .slice(0, 2)
+                                    .join(", ")}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs text-gray-500">Entscheidungslogik</div>
+                    {latestQaInsight?.qa ? (
+                      <span
+                        className={`text-[11px] px-2 py-0.5 rounded-full border ${qaVerdictTone(
+                          latestQaInsight.qa.verdict,
+                        )}`}
+                      >
+                        {qaVerdictLabel(latestQaInsight.qa.verdict)}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {!latestQaInsight?.qa ? (
+                    <div className="mt-2 text-xs text-gray-500">
+                      Noch keine QA-Details vorhanden.
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {latestQaInsight.qa.reason ? (
+                        <div className="rounded-lg border border-gray-200 bg-[#fbfbfc] px-2.5 py-2">
+                          <div className="text-[11px] text-gray-500">Grund</div>
+                          <div className="text-xs text-gray-800 mt-0.5">
+                            {latestQaInsight.qa.reason}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {latestQaInsight.qa.reason_long ? (
+                        <div className="rounded-lg border border-gray-200 bg-[#fbfbfc] px-2.5 py-2">
+                          <div className="text-[11px] text-gray-500">Details</div>
+                          <div className="text-xs text-gray-800 mt-0.5">
+                            {latestQaInsight.qa.reason_long}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {latestQaInsight.qa.action ? (
+                        <div className="rounded-lg border border-gray-200 bg-[#fbfbfc] px-2.5 py-2">
+                          <div className="text-[11px] text-gray-500">
+                            Empfohlene Aktion
+                          </div>
+                          <div className="text-xs text-gray-800 mt-0.5">
+                            {latestQaInsight.qa.action}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="flex flex-wrap gap-1.5">
+                        {Array.isArray(latestQaInsight.qa.risk_flags) &&
+                        latestQaInsight.qa.risk_flags.length > 0
+                          ? latestQaInsight.qa.risk_flags.slice(0, 4).map((flag) => (
+                              <span
+                                key={flag}
+                                className="text-[10px] px-1.5 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-900"
+                              >
+                                {flag}
+                              </span>
+                            ))
+                          : null}
+                        {parseQaConfidence(latestQaInsight.qa.meta) !== null ? (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-gray-200 bg-white text-gray-700">
+                            Confidence:{" "}
+                            {parseQaConfidence(latestQaInsight.qa.meta)!.toFixed(
+                              2,
+                            )}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                  <div className="text-xs text-gray-500">Qualitäts-Feedback</div>
+                  {!latestSentAgentMessage ? (
+                    <div className="mt-2 text-xs text-gray-500">
+                      Gib Feedback, sobald eine Antwort gesendet wurde.
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      <div className="rounded-lg border border-gray-200 bg-[#fbfbfc] px-2.5 py-2">
+                        <div className="text-[11px] text-gray-500">
+                          Letzte gesendete Antwort
+                        </div>
+                        <div className="text-xs text-gray-800 mt-0.5 line-clamp-3">
+                          {latestSentAgentMessage.text || "(leer)"}
+                        </div>
+                        <div className="text-[11px] text-gray-500 mt-1">
+                          {formatDateTimeDE(latestSentAgentMessage.timestamp)}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={
+                            !!feedbackSavingByMessageId[latestSentAgentMessage.id]
+                          }
+                          onClick={() =>
+                            submitMessageFeedback(
+                              latestSentAgentMessage.id,
+                              "helpful",
+                            )
+                          }
+                          className={`text-xs px-2.5 py-1.5 rounded-lg border ${
+                            feedbackByMessageId[latestSentAgentMessage.id]
+                              ?.rating === "helpful"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                          } disabled:opacity-60`}
+                        >
+                          Hilfreich
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            !!feedbackSavingByMessageId[latestSentAgentMessage.id]
+                          }
+                          onClick={() =>
+                            submitMessageFeedback(
+                              latestSentAgentMessage.id,
+                              "not_helpful",
+                            )
+                          }
+                          className={`text-xs px-2.5 py-1.5 rounded-lg border ${
+                            feedbackByMessageId[latestSentAgentMessage.id]
+                              ?.rating === "not_helpful"
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                          } disabled:opacity-60`}
+                        >
+                          Unpassend
+                        </button>
+                      </div>
+
+                      {feedbackByMessageId[latestSentAgentMessage.id] ? (
+                        <div className="text-[11px] text-gray-500">
+                          Letztes Feedback:{" "}
+                          {feedbackByMessageId[latestSentAgentMessage.id]
+                            .rating === "helpful"
+                            ? "Hilfreich"
+                            : "Unpassend"}{" "}
+                          ({formatDateTimeDE(
+                            feedbackByMessageId[latestSentAgentMessage.id]
+                              .updated_at,
+                          )}
+                          )
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                  {feedbackError ? (
+                    <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700">
+                      {feedbackError}
+                    </div>
+                  ) : null}
+                </div>
 
                 <div className="rounded-xl border border-gray-200 bg-white p-3">
                   <div className="text-xs text-gray-500">Follow-ups</div>

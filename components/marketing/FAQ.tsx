@@ -31,6 +31,16 @@ const items = [
       "Sie sehen den vollständigen Verlauf pro Nachricht: Eingang, Entscheidung, Freigabe und Versand inklusive Status.",
   },
   {
+    question: "Was passiert nach den 14 Testtagen?",
+    answer:
+      "Nach der Testphase läuft Starter monatlich weiter. Sie können jederzeit kündigen und Autopilot zusätzlich pausieren.",
+  },
+  {
+    question: "Gibt es schon veröffentlichte Kundenbeispiele?",
+    answer:
+      "Aktuell noch nicht. Deshalb kommunizieren wir bewusst konkrete Produktlogik und nachvollziehbare Statusabläufe statt isolierter Marketingzahlen.",
+  },
+  {
     question: "Datenschutz und Dokumentation?",
     answer:
       "Sie erhalten die Dokumentation im Onboarding. Die Verarbeitung ist transparent aufgebaut. Keine Rechtsberatung.",

@@ -17,7 +17,7 @@ const manrope = Manrope({
 
 export const metadata = {
   title: "Advaic",
-  description: "Dein AI-gestützter Maklerassistent",
+  description: "KI-gestützter Maklerassistent für sichere und nachvollziehbare E-Mail-Automatisierung",
 };
 
 export default function RootLayout({

@@ -3,6 +3,10 @@ import { OAuth2Client } from "google-auth-library";
 import { createClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
 import { decryptSecretFromStorage } from "@/lib/security/secrets";
+import {
+  computeFollowupNextAt,
+  normalizeFollowupSendWindow,
+} from "@/lib/followups/scheduling";
 
 export const runtime = "nodejs";
 
@@ -480,6 +484,8 @@ function computeFollowupPlan(args: {
   nowIso: string;
   followupsEnabled: boolean;
   pausedUntil: string | null;
+  delayHoursStage1?: number | null;
+  sendWindow?: ReturnType<typeof normalizeFollowupSendWindow>;
 }) {
   const nowMs = Date.parse(args.nowIso);
   const pausedMs = args.pausedUntil ? Date.parse(args.pausedUntil) : NaN;
@@ -503,12 +509,93 @@ function computeFollowupPlan(args: {
     };
   }
 
-  // Default: schedule stage 1 for +24h.
+  const delayHours = Number.isFinite(Number(args.delayHoursStage1))
+    ? Math.max(1, Math.min(336, Math.round(Number(args.delayHoursStage1))))
+    : 24;
+  const sendWindow =
+    args.sendWindow ||
+    normalizeFollowupSendWindow({
+      followups_send_start_hour: 8,
+      followups_send_end_hour: 20,
+      followups_send_on_weekends: false,
+      followups_timezone: "Europe/Berlin",
+    });
+
+  // Default: schedule stage 1 with delay + send-window guardrails.
   return {
     followup_status: "planned",
-    followup_next_at: new Date(nowMs + 24 * 60 * 60 * 1000).toISOString(),
+    followup_next_at: computeFollowupNextAt({
+      baseIso: args.nowIso,
+      delayHours,
+      window: sendWindow,
+    }),
     followup_paused_until: null as string | null,
   };
+}
+
+type AgentFollowupRuntimeConfig = {
+  enabledDefault: boolean;
+  delayHoursStage1: number;
+  sendWindow: ReturnType<typeof normalizeFollowupSendWindow>;
+};
+
+async function getAgentFollowupRuntimeConfig(
+  supabase: any,
+  agentId: string,
+): Promise<AgentFollowupRuntimeConfig> {
+  const fallback: AgentFollowupRuntimeConfig = {
+    enabledDefault: true,
+    delayHoursStage1: 24,
+    sendWindow: normalizeFollowupSendWindow({
+      followups_send_start_hour: 8,
+      followups_send_end_hour: 20,
+      followups_send_on_weekends: false,
+      followups_timezone: "Europe/Berlin",
+    }),
+  };
+
+  try {
+    const { data, error } = await (supabase.from("agent_settings") as any)
+      .select(
+        "followups_enabled_default, followups_enabled, followups_delay_hours_stage1, followups_send_start_hour, followups_send_end_hour, followups_send_on_weekends, followups_timezone",
+      )
+      .eq("agent_id", agentId)
+      .maybeSingle();
+
+    if (error || !data) return fallback;
+
+    const rawEnabled =
+      (data as any)?.followups_enabled_default ?? (data as any)?.followups_enabled;
+    const enabledDefault =
+      typeof rawEnabled === "boolean"
+        ? rawEnabled
+        : typeof rawEnabled === "number"
+          ? rawEnabled === 1
+          : true;
+
+    const delayHoursStage1 = Number.isFinite(
+      Number((data as any)?.followups_delay_hours_stage1),
+    )
+      ? Math.max(
+          1,
+          Math.min(
+            336,
+            Math.round(Number((data as any)?.followups_delay_hours_stage1)),
+          ),
+        )
+      : 24;
+
+    const sendWindow = normalizeFollowupSendWindow({
+      followups_send_start_hour: (data as any)?.followups_send_start_hour,
+      followups_send_end_hour: (data as any)?.followups_send_end_hour,
+      followups_send_on_weekends: (data as any)?.followups_send_on_weekends,
+      followups_timezone: (data as any)?.followups_timezone,
+    });
+
+    return { enabledDefault, delayHoursStage1, sendWindow };
+  } catch {
+    return fallback;
+  }
 }
 
 async function markConnError(
@@ -678,6 +765,11 @@ async function backfillRecentMessages(args: {
 
       if (decision === "ignore") continue;
 
+      const followupConfig = await getAgentFollowupRuntimeConfig(
+        supabase,
+        connection.agent_id,
+      );
+
       // Find or create lead by thread
       let leadId: string | null = null;
 
@@ -696,7 +788,10 @@ async function backfillRecentMessages(args: {
           leadContactEmail &&
           (!existingLeadEmail || isProbablyNoReplyAddress(existingLeadEmail));
 
-        const followupsEnabled = Boolean((existingLead as any)?.followups_enabled ?? true);
+        const followupsEnabled = Boolean(
+          (existingLead as any)?.followups_enabled ??
+            followupConfig.enabledDefault,
+        );
         const pausedUntil = ((existingLead as any)?.followup_paused_until
           ? String((existingLead as any).followup_paused_until)
           : null);
@@ -715,6 +810,8 @@ async function backfillRecentMessages(args: {
             nowIso: timestampIso,
             followupsEnabled,
             pausedUntil,
+            delayHoursStage1: followupConfig.delayHoursStage1,
+            sendWindow: followupConfig.sendWindow,
           });
 
           leadUpdatePayload.followup_stage = 0;
@@ -744,8 +841,10 @@ async function backfillRecentMessages(args: {
         if (sender === "agent") continue;
         const plan = computeFollowupPlan({
           nowIso: timestampIso,
-          followupsEnabled: true,
+          followupsEnabled: followupConfig.enabledDefault,
           pausedUntil: null,
+          delayHoursStage1: followupConfig.delayHoursStage1,
+          sendWindow: followupConfig.sendWindow,
         });
         const { data: newLead, error: leadInsErr } = await supabase
           .from("leads")
@@ -756,7 +855,7 @@ async function backfillRecentMessages(args: {
             last_message_at: timestampIso,
             last_user_message_at: timestampIso,
 
-            followups_enabled: true,
+            followups_enabled: followupConfig.enabledDefault,
             followup_stage: 0,
             followup_status: plan.followup_status,
             followup_next_at: plan.followup_next_at,
@@ -1292,6 +1391,11 @@ export async function POST(req: Request) {
           continue;
         }
 
+        const followupConfig = await getAgentFollowupRuntimeConfig(
+          supabase,
+          connection.agent_id,
+        );
+
         // 6a) Find or create Lead for (agent_id, gmail_thread_id)
         let leadId: string | null = null;
 
@@ -1319,7 +1423,10 @@ export async function POST(req: Request) {
             leadContactEmail &&
             (!existingLeadEmail || isProbablyNoReplyAddress(existingLeadEmail));
 
-          const followupsEnabled = Boolean((existingLead as any)?.followups_enabled ?? true);
+          const followupsEnabled = Boolean(
+            (existingLead as any)?.followups_enabled ??
+              followupConfig.enabledDefault,
+          );
           const pausedUntil = ((existingLead as any)?.followup_paused_until
             ? String((existingLead as any).followup_paused_until)
             : null);
@@ -1338,6 +1445,8 @@ export async function POST(req: Request) {
               nowIso: timestampIso,
               followupsEnabled,
               pausedUntil,
+              delayHoursStage1: followupConfig.delayHoursStage1,
+              sendWindow: followupConfig.sendWindow,
             });
 
             leadUpdatePayload.followup_stage = 0;
@@ -1377,8 +1486,10 @@ export async function POST(req: Request) {
           // Insert with initial follow-up state and timestamps.
           const plan = computeFollowupPlan({
             nowIso: timestampIso,
-            followupsEnabled: true,
+            followupsEnabled: followupConfig.enabledDefault,
             pausedUntil: null,
+            delayHoursStage1: followupConfig.delayHoursStage1,
+            sendWindow: followupConfig.sendWindow,
           });
           const { data: newLead, error: leadInsErr } = await supabase
             .from("leads")
@@ -1389,7 +1500,7 @@ export async function POST(req: Request) {
               last_message_at: timestampIso,
               last_user_message_at: timestampIso,
 
-              followups_enabled: true,
+              followups_enabled: followupConfig.enabledDefault,
               followup_stage: 0,
               followup_status: plan.followup_status,
               followup_next_at: plan.followup_next_at,

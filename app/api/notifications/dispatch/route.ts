@@ -104,6 +104,7 @@ function siteUrl() {
 }
 
 function buildTitleForEvent(type: string) {
+  if (type.startsWith("ops_alert_")) return "Ops-Alarm";
   switch (type) {
     case "approval_required_created":
       return "Neue Nachricht zur Freigabe";
@@ -111,12 +112,17 @@ function buildTitleForEvent(type: string) {
       return "Neue Eskalation";
     case "lead_escalated":
       return "Neue Eskalation";
+    case "onboarding_recovery_1h":
+      return "Onboarding fortsetzen";
+    case "onboarding_recovery_24h":
+      return "Onboarding: erster Wert noch offen";
     default:
       return "Advaic Update";
   }
 }
 
 function buildBodyForEvent(type: string) {
+  if (type.startsWith("ops_alert_")) return "Ein operativer Alarm wurde ausgelöst.";
   switch (type) {
     case "approval_required_created":
       return "Neue Nachricht zur Freigabe.";
@@ -124,6 +130,10 @@ function buildBodyForEvent(type: string) {
       return "Gespräch wurde eskaliert.";
     case "lead_escalated":
       return "Gespräch wurde eskaliert.";
+    case "onboarding_recovery_1h":
+      return "Ihr Safe-Start ist vorbereitet. Fahren Sie mit dem nächsten Schritt fort.";
+    case "onboarding_recovery_24h":
+      return "Der erste messbare Nutzen fehlt noch. Setzen Sie Ihr Onboarding fort.";
     default:
       return "Neues Update im Advaic Dashboard.";
   }
@@ -785,7 +795,9 @@ export async function POST(req: Request) {
         // swallow
       }
 
-      const title = buildTitleForEvent(type);
+      const payloadTitle = String(payload?.title || "").trim();
+      const payloadBody = String(payload?.body || "").trim();
+      const title = payloadTitle || buildTitleForEvent(type);
 
       // payload-aware details
       const leadName = String(payload?.lead_name || "").trim();
@@ -795,7 +807,7 @@ export async function POST(req: Request) {
       const draftAt = String(payload?.draft_message_at || "");
       const escalationReason = String(payload?.escalation_reason || payload?.reason || "").trim();
 
-      const bodyBase = buildBodyForEvent(type);
+      const bodyBase = payloadBody || buildBodyForEvent(type);
       const bodyParts: string[] = [];
       if (leadName) bodyParts.push(`Interessent: ${leadName}`);
       bodyParts.push(`Zeit: ${formatTs(inboundAt || draftAt || event?.created_at)}`);

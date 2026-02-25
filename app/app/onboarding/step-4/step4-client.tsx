@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { trackFunnelEvent } from "@/lib/funnel/track";
 
 type ToneFormality = "locker" | "neutral" | "formal";
 
@@ -436,6 +437,19 @@ export default function Step4Client() {
   async function onSaveAndContinue() {
     setSaving(true);
     setError(null);
+
+    void trackFunnelEvent({
+      event: "onboarding_tone_saved",
+      source: "onboarding_step_4",
+      step: 4,
+      meta: {
+        preset,
+        formality,
+        concise_level: conciseLevel,
+        ask_more_questions: askMoreQuestions,
+        more_warmth: moreWarmth,
+      },
+    });
 
     const payload: Partial<ToneSettings> = {
       tone_language: "de",

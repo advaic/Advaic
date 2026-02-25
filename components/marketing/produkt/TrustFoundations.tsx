@@ -35,6 +35,10 @@ export default function TrustFoundations() {
             jederzeit, warum automatisch gesendet wurde, warum etwas in der Freigabe landet oder warum eine E-Mail
             ignoriert wurde.
           </p>
+          <p className="helper mt-2">
+            Aktuell gibt es noch keine veröffentlichten Kundenbeispiele. Diese Seite zeigt deshalb bewusst konkrete
+            Produktmechanik statt unkonkreter Erfolgszahlen.
+          </p>
         </div>
 
         <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">

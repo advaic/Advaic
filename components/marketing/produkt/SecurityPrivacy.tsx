@@ -1,3 +1,4 @@
+import Link from "next/link";
 import Container from "@/components/marketing/Container";
 
 export default function SecurityPrivacy() {
@@ -75,6 +76,41 @@ export default function SecurityPrivacy() {
           Im Onboarding erhalten Sie auf Anfrage die Dokumentation (z. B. AVV, TOM-Übersicht,
           Verarbeitungsübersicht sowie Export- und Löschprozess). Keine Rechtsberatung.
         </p>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <article className="rounded-[var(--radius)] bg-white p-4 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
+            <h4 className="text-sm font-semibold text-[var(--text)]">Datenminimierung</h4>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Advaic verarbeitet nur die Inhalte, die für Erkennen, Entscheiden und Antworten im Lead-Prozess
+              erforderlich sind.
+            </p>
+          </article>
+          <article className="rounded-[var(--radius)] bg-white p-4 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
+            <h4 className="text-sm font-semibold text-[var(--text)]">Zugriffskontrolle</h4>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Zugriff ist rollen- und agentenbezogen getrennt. Änderungen und Versandstatus sind im Verlauf
+              nachvollziehbar.
+            </p>
+          </article>
+          <article className="rounded-[var(--radius)] bg-white p-4 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
+            <h4 className="text-sm font-semibold text-[var(--text)]">Betroffenenrechte</h4>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Export- und Löschprozesse sind vorgesehen. Details zu Fristen und Umsetzung erhalten Sie im Onboarding.
+            </p>
+          </article>
+        </div>
+
+        <div className="mt-6 flex flex-wrap gap-3 text-sm">
+          <Link href="/datenschutz" className="link-subtle underline underline-offset-4">
+            Datenschutz
+          </Link>
+          <Link href="/cookie-und-storage" className="link-subtle underline underline-offset-4">
+            Cookie & Storage
+          </Link>
+          <Link href="/app/konto/loeschen" className="link-subtle underline underline-offset-4">
+            Konto/Löschung
+          </Link>
+        </div>
       </Container>
     </section>
   );

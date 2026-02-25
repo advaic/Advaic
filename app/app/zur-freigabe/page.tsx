@@ -64,6 +64,7 @@ export default async function ZurFreigabePage() {
       snippet,
       email_type,
       classification_confidence,
+      classification_reason,
       attachments,
       
       leads (
@@ -94,36 +95,80 @@ export default async function ZurFreigabePage() {
     );
   }
 
-  const messages: ApprovalMessage[] = (rows ?? []).map((msg: any) => ({
-    id: String(msg.id),
-    lead_id: String(msg.lead_id),
-    agent_id: String(msg.agent_id),
+  const messageIds = (rows ?? [])
+    .map((x: any) => String(x?.id || ""))
+    .filter(Boolean);
+  let qaByMessageId = new Map<
+    string,
+    { verdict: string | null; reason: string | null; score: number | null }
+  >();
 
-    sender: msg.sender,
-    text: msg.text ?? "",
-    timestamp: msg.timestamp ?? new Date().toISOString(),
+  if (messageIds.length > 0) {
+    const { data: qaRows } = await (supabase.from("message_qas") as any)
+      .select("draft_message_id, verdict, reason, created_at")
+      .in("draft_message_id", messageIds)
+      .order("created_at", { ascending: false })
+      .limit(Math.max(1200, messageIds.length * 4));
 
-    visible_to_agent: !!msg.visible_to_agent,
-    approval_required: !!msg.approval_required,
+    if (Array.isArray(qaRows)) {
+      for (const row of qaRows) {
+        const id = String(row?.draft_message_id || "").trim();
+        if (!id || qaByMessageId.has(id)) continue;
+        const verdict = row?.verdict ? String(row.verdict) : null;
+        const reason = row?.reason ? String(row.reason) : null;
+        const lower = String(verdict || "").toLowerCase();
+        const score =
+          lower === "pass"
+            ? 1
+            : lower === "warn"
+              ? 0.6
+              : lower === "fail"
+                ? 0.25
+                : null;
+        qaByMessageId.set(id, { verdict, reason, score });
+      }
+    }
+  }
 
-    send_status: msg.send_status ?? null,
-    send_locked_at: msg.send_locked_at ?? null,
-    send_error: msg.send_error ?? null,
-    sent_at: msg.sent_at ?? null,
+  const messages: ApprovalMessage[] = (rows ?? []).map((msg: any) => {
+    const qa = qaByMessageId.get(String(msg.id));
+    return {
+      id: String(msg.id),
+      lead_id: String(msg.lead_id),
+      agent_id: String(msg.agent_id),
 
-    was_followup: msg.was_followup ?? null,
-    gpt_score: msg.gpt_score ?? null,
+      sender: msg.sender,
+      text: msg.text ?? "",
+      timestamp: msg.timestamp ?? new Date().toISOString(),
 
-    gmail_message_id: msg.gmail_message_id ?? null,
-    gmail_thread_id: msg.gmail_thread_id ?? null,
-    snippet: msg.snippet ?? null,
-    email_type: msg.email_type ?? null,
-    classification_confidence: msg.classification_confidence ?? null,
+      visible_to_agent: !!msg.visible_to_agent,
+      approval_required: !!msg.approval_required,
 
-    attachments: msg.attachments ?? null,
+      send_status: msg.send_status ?? null,
+      send_locked_at: msg.send_locked_at ?? null,
+      send_error: msg.send_error ?? null,
+      sent_at: msg.sent_at ?? null,
 
-    lead_name: (msg.leads as any)?.name ?? "Unbekannter Interessent",
-  }));
+      was_followup: msg.was_followup ?? null,
+      gpt_score: msg.gpt_score ?? null,
+
+      gmail_message_id: msg.gmail_message_id ?? null,
+      gmail_thread_id: msg.gmail_thread_id ?? null,
+      snippet: msg.snippet ?? null,
+      email_type: msg.email_type ?? null,
+      classification_confidence: msg.classification_confidence ?? null,
+      classification_reason: msg.classification_reason ?? null,
+      classification_reason_long: msg.classification_reason ?? null,
+      qa_verdict: qa?.verdict ?? null,
+      qa_reason: qa?.reason ?? null,
+      qa_reason_long: qa?.reason ?? null,
+      qa_score: qa?.score ?? null,
+
+      attachments: msg.attachments ?? null,
+
+      lead_name: (msg.leads as any)?.name ?? "Unbekannter Interessent",
+    };
+  });
 
   return <ZurFreigabeUI messages={messages} />;
 }

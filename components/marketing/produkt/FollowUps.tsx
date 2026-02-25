@@ -76,12 +76,15 @@ export default function FollowUps() {
         </div>
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <Link href="/app/follow-ups" className="btn-secondary">
-            Follow-up-Inbox ansehen
+          <Link href="/signup" className="btn-primary">
+            Follow-ups im Test ansehen
           </Link>
-          <Link href="/app/follow-ups/settings" className="btn-secondary">
-            Follow-up-Regeln öffnen
+          <Link href="/follow-up-logik" className="btn-secondary">
+            Follow-up-Logik im Detail
           </Link>
+          <a href="#setup" className="btn-secondary">
+            Setup-Details
+          </a>
         </div>
       </Container>
     </section>

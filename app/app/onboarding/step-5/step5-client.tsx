@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { trackFunnelEvent } from "@/lib/funnel/track";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -312,6 +313,12 @@ export default function Step5Client() {
   function startImmoScout() {
     setChoice("immoscout");
     rememberChoice("immoscout");
+    void trackFunnelEvent({
+      event: "onboarding_property_source_selected",
+      source: "onboarding_step_5",
+      step: 5,
+      meta: { source: "immoscout" },
+    });
     // ⬇️ falls dein Start-Endpoint anders heißt, hier ändern:
     window.location.href = "/api/auth/immoscout/start";
   }
@@ -319,6 +326,12 @@ export default function Step5Client() {
   function goManualCreate() {
     setChoice("manual");
     rememberChoice("manual");
+    void trackFunnelEvent({
+      event: "onboarding_property_source_selected",
+      source: "onboarding_step_5",
+      step: 5,
+      meta: { source: "manual" },
+    });
 
     // IMPORTANT: Do NOT route via /app/onboarding?next=... because the onboarding
     // layout guard can bounce to step 1. Go directly to the create page and
@@ -336,6 +349,16 @@ export default function Step5Client() {
       return;
     }
     if (!canContinue) return;
+
+    void trackFunnelEvent({
+      event: "onboarding_properties_confirmed",
+      source: "onboarding_step_5",
+      step: 5,
+      meta: {
+        choice: choice || (hasProperties ? "manual" : "unknown"),
+        property_count: properties.length,
+      },
+    });
 
     setSaving(true);
 

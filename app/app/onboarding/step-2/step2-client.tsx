@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { trackFunnelEvent } from "@/lib/funnel/track";
 
 type OnboardingRow = {
   agent_id: string;
@@ -361,6 +362,7 @@ export default function Step2Client() {
   const [pendingProvider, setPendingProvider] = useState<
     "gmail" | "outlook" | null
   >(null);
+  const didTrackConnected = useRef(false);
 
   const emailConnected = useMemo(
     () => !!row?.step_email_connected_done || !!emailConnectedFlag,
@@ -424,8 +426,23 @@ export default function Step2Client() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!emailConnected || didTrackConnected.current) return;
+    didTrackConnected.current = true;
+    void trackFunnelEvent({
+      event: "onboarding_email_connected_detected",
+      source: "onboarding_step_2",
+      step: 2,
+    });
+  }, [emailConnected]);
+
   async function onContinue() {
     try {
+      void trackFunnelEvent({
+        event: "onboarding_email_connected_confirmed",
+        source: "onboarding_step_2",
+        step: 2,
+      });
       await updateOnboarding({
         step_email_connected_done: true,
         current_step: 3,
@@ -437,6 +454,12 @@ export default function Step2Client() {
   }
 
   function startConnect(provider: "gmail" | "outlook") {
+    void trackFunnelEvent({
+      event: "onboarding_email_connect_clicked",
+      source: "onboarding_step_2",
+      step: 2,
+      meta: { provider },
+    });
     setPendingProvider(provider);
     setDisclaimerOpen(true);
   }
@@ -444,6 +467,12 @@ export default function Step2Client() {
   function confirmConnect() {
     if (!pendingProvider) return;
     const url = OAUTH_START[pendingProvider];
+    void trackFunnelEvent({
+      event: "onboarding_email_oauth_started",
+      source: "onboarding_step_2",
+      step: 2,
+      meta: { provider: pendingProvider },
+    });
     // Redirect to OAuth start
     window.location.href = url;
   }

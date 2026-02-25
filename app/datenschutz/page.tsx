@@ -11,11 +11,11 @@ const principles = [
 ];
 
 const recipients = [
-  "Hosting, Datenbank und Speicherinfrastruktur (Betrieb der Anwendung und Datenspeicherung).",
-  "E-Mail-Integrationen (z. B. Google oder Microsoft), wenn du eine Verknüpfung aktivierst.",
-  "Benachrichtigungsdienste (z. B. Slack), wenn du entsprechende Kanäle freischaltest.",
-  "Zahlungsabwicklung für Abonnement und Rechnungsprozesse.",
-  "KI-Verarbeitung für Klassifizierung, Entwürfe und Qualitätsprüfungen gemäß deinen Einstellungen.",
+  "Supabase für Hosting, Datenbank, Authentifizierung und Storage.",
+  "Google und Microsoft für E-Mail-Integrationen, wenn Sie diese aktiv verbinden.",
+  "Azure OpenAI für Klassifizierung, Entwürfe und Qualitätsprüfungen im Produktfluss.",
+  "Stripe für Abo-, Rechnungs- und Zahlungsprozesse.",
+  "Slack oder vergleichbare Benachrichtigungsdienste, wenn Sie sie aktiv freischalten.",
 ];
 
 const retentionRows = [
@@ -49,11 +49,11 @@ export default function DatenschutzPage() {
     "support@advaic.com";
 
   return (
-    <PageShell>
+    <PageShell withProofLayer={false}>
       <PageIntro
         kicker="Datenschutz"
         title="Datenschutzhinweise"
-        description="Diese Seite beschreibt, wie Advaic personenbezogene Daten in der Produktnutzung verarbeitet. Stand: 24. Februar 2026."
+        description="Diese Seite beschreibt, wie Advaic personenbezogene Daten in der Produktnutzung verarbeitet. Stand: 25. Februar 2026."
         actions={
           <>
             <Link href="/sicherheit" className="btn-secondary">
@@ -72,7 +72,7 @@ export default function DatenschutzPage() {
             <h2 className="h2">Verantwortlicher</h2>
             <p className="helper mt-4">
               Verantwortlich für die Datenverarbeitung im Rahmen dieses Webauftritts und der Produktnutzung ist{" "}
-              <strong>{companyName}</strong>. Datenschutzanfragen richtest du an{" "}
+              <strong>{companyName}</strong>. Datenschutzanfragen richten Sie an{" "}
               <a className="underline underline-offset-4" href={`mailto:${privacyEmail}`}>
                 {privacyEmail}
               </a>
@@ -123,7 +123,11 @@ export default function DatenschutzPage() {
             <p className="helper mt-3">
               Wenn Dienste außerhalb der EU/des EWR eingebunden sind, erfolgt die Verarbeitung nur auf Grundlage der
               jeweils erforderlichen Garantien (z. B. Angemessenheitsbeschluss oder Standardvertragsklauseln).
-              Die konkrete Anbieter- und Transferübersicht erhältst du im Onboarding und auf Anfrage.
+              Die konkrete Anbieter- und Transferübersicht finden Sie auf der Seite{" "}
+              <Link href="/unterauftragsverarbeiter" className="underline underline-offset-4">
+                Unterauftragsverarbeiter
+              </Link>
+              .
             </p>
           </article>
 
@@ -138,7 +142,7 @@ export default function DatenschutzPage() {
               ))}
             </div>
             <p className="helper mt-4">
-              Detaillierte technische Einträge findest du auf{" "}
+              Detaillierte technische Einträge finden Sie auf{" "}
               <Link href="/cookie-und-storage" className="underline underline-offset-4">
                 Cookie & Storage
               </Link>
@@ -159,19 +163,40 @@ export default function DatenschutzPage() {
           </article>
 
           <article className="card-base mt-6 p-6 md:p-8">
-            <h3 className="h3">Deine Rechte nach DSGVO</h3>
+            <h3 className="h3">Ihre Rechte nach DSGVO</h3>
             <p className="helper mt-3">
-              Du hast insbesondere Rechte auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung,
-              Datenübertragbarkeit sowie Widerspruch. Anfragen sendest du an{" "}
+              Sie haben insbesondere Rechte auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung,
+              Datenübertragbarkeit sowie Widerspruch. Anfragen senden Sie an{" "}
               <a className="underline underline-offset-4" href={`mailto:${privacyEmail}`}>
                 {privacyEmail}
               </a>
               .
             </p>
             <p className="helper mt-3">
-              Wenn du der Ansicht bist, dass eine Verarbeitung nicht DSGVO-konform erfolgt, kannst du dich zusätzlich
+              Wenn Sie der Ansicht sind, dass eine Verarbeitung nicht DSGVO-konform erfolgt, können Sie sich zusätzlich
               an eine Datenschutzaufsichtsbehörde wenden.
             </p>
+          </article>
+
+          <article className="card-base mt-6 p-6 md:p-8">
+            <h3 className="h3">Transparenz-Dokumente</h3>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              <li>
+                <Link href="/unterauftragsverarbeiter" className="underline underline-offset-4">
+                  Unterauftragsverarbeiter-Verzeichnis
+                </Link>
+              </li>
+              <li>
+                <Link href="/cookie-und-storage" className="underline underline-offset-4">
+                  Cookie & Storage Übersicht
+                </Link>
+              </li>
+              <li>
+                <Link href="/sicherheit" className="underline underline-offset-4">
+                  Sicherheits- und Guardrail-Logik
+                </Link>
+              </li>
+            </ul>
           </article>
 
           <article className="card-base mt-6 p-6">

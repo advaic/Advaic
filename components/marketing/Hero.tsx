@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, CheckCircle2, PlayCircle } from "lucide-react";
 import Container from "./Container";
 import LoopVideo from "./produkt/LoopVideo";
+import TrackedLink from "./TrackedLink";
 
 const microTrust = [
   "Autopilot jederzeit pausierbar",
@@ -25,15 +26,27 @@ export default function Hero() {
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/signup" className="btn-primary">
-                Kostenlos testen
+              <TrackedLink
+                href="/signup"
+                className="btn-primary"
+                event="marketing_hero_primary_click"
+                source="website"
+                pageGroup="marketing"
+                section="hero"
+                meta={{ section: "hero" }}
+              >
+                14 Tage kostenlos testen
                 <ArrowRight className="h-4 w-4" />
-              </Link>
+              </TrackedLink>
               <a href="#tour" className="btn-secondary">
                 <PlayCircle className="h-4 w-4" />
                 Ablauf ansehen
               </a>
             </div>
+
+            <p className="helper mt-3">
+              Danach läuft Starter monatlich weiter. Jederzeit kündbar.
+            </p>
 
             <ul className="mt-8 space-y-2">
               {microTrust.map((item) => (
@@ -55,8 +68,10 @@ export default function Hero() {
 
               <div className="mt-3 overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)]">
                 <LoopVideo
-                  webm="/loops/hero.webm"
-                  mp4="/loops/hero.mp4"
+                  webm="/loops/product-hero.webm"
+                  mp4="/loops/product-hero.mp4"
+                  poster="/loops/product-hero.jpg"
+                  priority
                   className="aspect-video w-full object-cover"
                   ariaLabel="Advaic Produktvorschau: Eingang, Entscheidung und Versand"
                   placeholderLabel="Produktvorschau"

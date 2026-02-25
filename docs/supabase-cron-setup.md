@@ -29,7 +29,11 @@ begin
     'advaic_outlook_fetch_5m',
     'advaic_outlook_subscriptions_renew_6h',
     'advaic_gmail_watches_renew_6h',
-    'advaic_immoscout_sync_5m'
+    'advaic_immoscout_sync_5m',
+    'advaic_reply_ready_send_1m',
+    'advaic_followups_5m',
+    'advaic_onboarding_recovery_10m',
+    'advaic_ops_alerts_5m'
   );
 
   -- 1) Outlook fetch/delta every 5 min
@@ -112,6 +116,86 @@ begin
       'Bearer ' || immoscout_sync_secret
     )
   );
+
+  -- 5) Reply-ready sender every minute
+  perform cron.schedule(
+    'advaic_reply_ready_send_1m',
+    '* * * * *',
+    format(
+      $job$
+      select net.http_post(
+        url := %L,
+        headers := jsonb_build_object(
+          'Content-Type', 'application/json',
+          'x-advaic-internal-secret', %L
+        ),
+        body := '{}'::jsonb
+      );
+      $job$,
+      base_url || '/api/pipeline/reply-ready/send/run',
+      internal_secret
+    )
+  );
+
+  -- 6) Follow-ups every 5 minutes
+  perform cron.schedule(
+    'advaic_followups_5m',
+    '*/5 * * * *',
+    format(
+      $job$
+      select net.http_post(
+        url := %L,
+        headers := jsonb_build_object(
+          'Content-Type', 'application/json',
+          'x-advaic-internal-secret', %L
+        ),
+        body := '{}'::jsonb
+      );
+      $job$,
+      base_url || '/api/pipeline/followups/run',
+      internal_secret
+    )
+  );
+
+  -- 7) Onboarding recovery every 10 minutes
+  perform cron.schedule(
+    'advaic_onboarding_recovery_10m',
+    '*/10 * * * *',
+    format(
+      $job$
+      select net.http_post(
+        url := %L,
+        headers := jsonb_build_object(
+          'Content-Type', 'application/json',
+          'x-advaic-internal-secret', %L
+        ),
+        body := jsonb_build_object('limit', 80)
+      );
+      $job$,
+      base_url || '/api/pipeline/onboarding-recovery/run',
+      internal_secret
+    )
+  );
+
+  -- 8) Ops alerts every 5 minutes (kann kritische Flows automatisch pausieren)
+  perform cron.schedule(
+    'advaic_ops_alerts_5m',
+    '*/5 * * * *',
+    format(
+      $job$
+      select net.http_post(
+        url := %L,
+        headers := jsonb_build_object(
+          'Content-Type', 'application/json',
+          'x-advaic-internal-secret', %L
+        ),
+        body := jsonb_build_object('auto_pause', true)
+      );
+      $job$,
+      base_url || '/api/pipeline/ops/alerts/run',
+      internal_secret
+    )
+  );
 end $$;
 ```
 
@@ -134,6 +218,24 @@ order by created desc
 limit 50;
 ```
 
+Pipeline-Run-Logs prüfen:
+
+```sql
+select created_at, pipeline, status, processed, success, failed, skipped, duration_ms
+from public.pipeline_runs
+order by created_at desc
+limit 100;
+```
+
+Offene Ops-Alerts prüfen:
+
+```sql
+select alert_key, severity, status, first_opened_at, last_fired_at
+from public.ops_alert_events
+where status = 'open'
+order by last_fired_at desc;
+```
+
 ## 4) Hinweis zu Gmail Topic
 
 Damit `api/gmail/renew-watches` erfolgreich ist, braucht jede Connection ein Topic:
@@ -141,3 +243,13 @@ Damit `api/gmail/renew-watches` erfolgreich ist, braucht jede Connection ein Top
 - `email_connections.watch_topic` gesetzt
 - oder `GMAIL_PUBSUB_TOPIC_NAME`
 - oder `GCP_PROJECT_ID`/`GCP_PROJECT_NUMBER` + `GMAIL_PUBSUB_TOPIC_ID`
+
+## 5) Notfall-Bedienung
+
+- UI: `/app/admin/ops`
+- API:
+  - `POST /api/admin/ops/control` (Pause/Fortsetzen)
+  - `POST /api/admin/ops/alerts/trigger` (Alert-Regeln manuell prüfen)
+
+Bei kritischen Alerts pausiert das System automatisch `reply_ready_send` und `followups`.
+Danach Ursache beheben, in `/app/admin/ops` prüfen und gezielt wieder freigeben.

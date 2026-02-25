@@ -167,6 +167,12 @@ export default async function AdminDecisionsPage({
               Overview
             </Link>
             <Link
+              href="/app/admin/tickets"
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Tickets
+            </Link>
+            <Link
               href="/app/admin/outbox"
               className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
             >

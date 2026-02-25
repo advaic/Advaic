@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 // import { Database } from "@/types/supabase";
 import { supabase } from "@/lib/supabaseClient";
 import { rejectMessage } from "../../actions/rejectMessage";
+import { trackFunnelEvent } from "@/lib/funnel/track";
 
 export type ApprovalMessage = {
   id: string;
@@ -71,6 +72,13 @@ function formatBytes(n?: number) {
     i++;
   }
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!target || !(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  if (target.isContentEditable) return true;
+  return tag === "input" || tag === "textarea" || tag === "select";
 }
 
 function normalizeAttachments(msg: any): AttachmentMeta[] {
@@ -176,37 +184,13 @@ function buildReasonRows(message: ApprovalMessage) {
     rows.push({ label: "Typ", value: "Follow-up" });
   }
 
-  // Fallback if nothing is present (common when the server query doesn't select/join these fields yet)
+  // Fallback: keep wording product-safe, never expose internal debug text in UI.
   if (rows.length === 0) {
     rows.push({
       label: "Grund",
       value:
-        "Noch kein Reasoning vorhanden / nicht mitgeladen. \n\n" +
-        "Wenn du Reasoning sehen willst, stelle sicher dass die Server-Query für die Zur-Freigabe-Liste diese Felder selektiert/joind und an dieses UI durchreicht: \n" +
-        "- messages.email_type, messages.classification_confidence, messages.classification_reason, messages.classification_reason_long\n" +
-        "- message_qas.qa_verdict, message_qas.qa_score, message_qas.qa_reason, message_qas.qa_reason_long, message_qas.qa_risk_flags\n",
-    });
-
-    // Small debug snapshot to confirm what the UI actually receives
-    const debug = {
-      id: message.id,
-      approval_required: message.approval_required,
-      email_type: (message as any).email_type ?? null,
-      classification_confidence:
-        (message as any).classification_confidence ?? null,
-      classification_reason: (message as any).classification_reason ?? null,
-      classification_reason_long:
-        (message as any).classification_reason_long ?? null,
-      qa_verdict: (message as any).qa_verdict ?? null,
-      qa_score: (message as any).qa_score ?? null,
-      qa_reason: (message as any).qa_reason ?? null,
-      qa_reason_long: (message as any).qa_reason_long ?? null,
-      qa_risk_flags: (message as any).qa_risk_flags ?? null,
-    };
-
-    rows.push({
-      label: "Debug (eingehende Props)",
-      value: JSON.stringify(debug, null, 2),
+        "Die Nachricht wurde vorsorglich zur manuellen Prüfung markiert. " +
+        "Sobald Klassifizierungs- und QA-Daten vorliegen, siehst du hier die detaillierte Begründung.",
     });
   }
 
@@ -308,6 +292,59 @@ function riskScore(m: ApprovalMessage): number {
   );
 }
 
+function recommendedAction(m: ApprovalMessage): {
+  label: string;
+  detail: string;
+  cls: string;
+} {
+  const rs = riskScore(m);
+  const verdict = String((m as any).qa_verdict || "").toLowerCase();
+  const conf = getConfidence(m);
+  const sendStatus = String(m.send_status || "").toLowerCase();
+
+  if (sendStatus === "failed") {
+    return {
+      label: "Technik prüfen",
+      detail: "Vor erneutem Versand kurz Fehlerursache prüfen.",
+      cls: "border-red-200 bg-red-50 text-red-800",
+    };
+  }
+  if (verdict === "fail" || rs >= 5) {
+    return {
+      label: "Bearbeiten vor Versand",
+      detail: "Risikofall: erst anpassen, dann freigeben.",
+      cls: "border-amber-300 bg-amber-50 text-amber-900",
+    };
+  }
+  if (verdict === "warn" || (conf !== null && conf < 0.8)) {
+    return {
+      label: "Kurz prüfen",
+      detail: "Objektbezug und Ton kurz validieren.",
+      cls: "border-amber-200 bg-amber-50 text-amber-900",
+    };
+  }
+
+  return {
+    label: "Direkt freigeben",
+    detail: "Klarer Standardfall mit niedrigem Risiko.",
+    cls: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  };
+}
+
+function ageMinutes(timestamp: string): number | null {
+  const ms = new Date(String(timestamp || "")).getTime();
+  if (!Number.isFinite(ms)) return null;
+  return Math.max(0, Math.floor((Date.now() - ms) / 60000));
+}
+
+function formatAgeLabel(minutes: number | null): string {
+  if (minutes === null) return "–";
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
 async function readSendResponse(
   res: Response,
 ): Promise<
@@ -371,6 +408,12 @@ export default function ZurFreigabeUI({
   const [search, setSearch] = useState<string>("");
   const [sortKey, setSortKey] = useState<ApprovalSortKey>("default");
   const [expandedText, setExpandedText] = useState<Record<string, boolean>>({});
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{
+    mode: "approve" | "reject" | null;
+    done: number;
+    total: number;
+  }>({ mode: null, done: 0, total: 0 });
 
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
   const [selectAll, setSelectAll] = useState(false);
@@ -380,8 +423,18 @@ export default function ZurFreigabeUI({
   >({});
   const [previewOpen, setPreviewOpen] = useState<Record<string, boolean>>({});
   const [reasonOpen, setReasonOpen] = useState<Record<string, boolean>>({});
+  const [helpOpen, setHelpOpen] = useState(false);
 
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    void trackFunnelEvent({
+      event: "approval_inbox_viewed",
+      source: "approval_inbox",
+      meta: { initial_count: initialMessages.length },
+    });
+  }, [initialMessages.length]);
 
   const setPending = (id: string, v: boolean) =>
     setPendingIds((prev) => ({ ...prev, [id]: v }));
@@ -471,12 +524,46 @@ export default function ZurFreigabeUI({
       for (const id of approvalIds) next[id] = !!prev[id];
       return next;
     });
+
+    setFocusedId((prev) => {
+      if (!approvalIds.length) return null;
+      if (prev && approvalIds.includes(prev)) return prev;
+      return approvalIds[0];
+    });
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [approvalIds.join("|")]);
 
   const selectedCount = useMemo(() => {
     return Object.values(selectedIds).filter(Boolean).length;
   }, [selectedIds]);
+  const bulkRunning = bulkProgress.mode !== null;
+
+  const triageStats = useMemo(() => {
+    const highRisk = approvalMessages.filter((m) => riskScore(m) >= 5).length;
+    const lowConfidence = approvalMessages.filter((m) => {
+      const c = getConfidence(m);
+      return c !== null && c < 0.8;
+    }).length;
+    const followups = approvalMessages.filter((m) => !!m.was_followup).length;
+    const failed = approvalMessages.filter(
+      (m) => String(m.send_status || "").toLowerCase() === "failed",
+    ).length;
+    const oldestMinutes = approvalMessages.reduce<number | null>((acc, m) => {
+      const current = ageMinutes(m.timestamp);
+      if (current === null) return acc;
+      if (acc === null) return current;
+      return Math.max(acc, current);
+    }, null);
+
+    return {
+      highRisk,
+      lowConfidence,
+      followups,
+      failed,
+      oldestMinutes,
+    };
+  }, [approvalMessages]);
 
   const toggleSelectAll = (v: boolean) => {
     setSelectAll(v);
@@ -490,6 +577,115 @@ export default function ZurFreigabeUI({
   const toggleSelected = (id: string, v: boolean) => {
     setSelectedIds((prev) => ({ ...prev, [id]: v }));
   };
+
+  const moveFocus = (delta: number) => {
+    if (!approvalIds.length) return;
+    const currentIdx = focusedId ? approvalIds.indexOf(focusedId) : -1;
+    const startIdx = currentIdx === -1 ? 0 : currentIdx;
+    const nextIdx = Math.max(
+      0,
+      Math.min(approvalIds.length - 1, startIdx + delta),
+    );
+    const nextId = approvalIds[nextIdx] || null;
+    if (!nextId) return;
+    setFocusedId(nextId);
+    cardRefs.current[nextId]?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const key = String(e.key || "");
+      const lower = key.toLowerCase();
+      const cmdOrCtrl = e.metaKey || e.ctrlKey;
+      const typing = isTypingTarget(e.target);
+
+      if (cmdOrCtrl && lower === "f") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+
+      if (typing) {
+        if (cmdOrCtrl && lower === "enter" && editingMessageId) {
+          e.preventDefault();
+          void handleSaveEditedMessage(editingMessageId);
+        }
+        if (key === "Escape" && editingMessageId) {
+          setEditingMessageId(null);
+          setEditedText("");
+        }
+        return;
+      }
+
+      if (lower === "/") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+
+      if (lower === "j") {
+        e.preventDefault();
+        moveFocus(1);
+        return;
+      }
+      if (lower === "k") {
+        e.preventDefault();
+        moveFocus(-1);
+        return;
+      }
+
+      if (!focusedId) return;
+
+      if (cmdOrCtrl && lower === "enter") {
+        e.preventDefault();
+        if (editingMessageId === focusedId) {
+          void handleSaveEditedMessage(focusedId);
+        } else if (!pendingIds[focusedId]) {
+          void handleApprove(focusedId);
+        }
+        return;
+      }
+
+      if (lower === "x") {
+        e.preventDefault();
+        toggleSelected(focusedId, !selectedIds[focusedId]);
+        return;
+      }
+      if (lower === "a") {
+        e.preventDefault();
+        if (!pendingIds[focusedId]) void handleApprove(focusedId);
+        return;
+      }
+      if (lower === "e") {
+        e.preventDefault();
+        if (!pendingIds[focusedId]) {
+          const msg = messages.find((m) => m.id === focusedId);
+          if (msg) handleEdit(focusedId, String(msg.text ?? ""));
+        }
+        return;
+      }
+      if (lower === "r") {
+        e.preventDefault();
+        if (!pendingIds[focusedId]) void handleReject(focusedId);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    approvalIds,
+    editingMessageId,
+    focusedId,
+    messages,
+    pendingIds,
+    selectedIds,
+  ]);
 
   const ensurePreviews = async (message: ApprovalMessage) => {
     const atts = normalizeAttachments(message as any);
@@ -637,11 +833,26 @@ export default function ZurFreigabeUI({
 
       if (send.status === "already_sent") {
         // treat as success; server already handled it
+        void trackFunnelEvent({
+          event: "approval_message_already_sent",
+          source: "approval_inbox",
+          meta: { message_id: message.id, lead_id: message.lead_id, edited: false },
+        });
         router.refresh();
         return;
       }
 
       // Send route handles idempotency + DB status updates (approval_required/send_status/etc.).
+      void trackFunnelEvent({
+        event: "approval_message_approved",
+        source: "approval_inbox",
+        meta: {
+          message_id: message.id,
+          lead_id: message.lead_id,
+          edited: false,
+          was_followup: Boolean(message.was_followup),
+        },
+      });
       setErr(id, null);
       router.refresh();
 
@@ -675,6 +886,11 @@ export default function ZurFreigabeUI({
     setPending(id, true);
     try {
       await rejectMessage(id);
+      void trackFunnelEvent({
+        event: "approval_message_rejected",
+        source: "approval_inbox",
+        meta: { message_id: id },
+      });
       setMessages((prev) => prev.filter((msg) => msg.id !== id));
       setExpandedText((prev) => {
         const copy = { ...prev };
@@ -774,11 +990,26 @@ export default function ZurFreigabeUI({
 
       if (send.status === "already_sent") {
         // treat as success; server already handled it
+        void trackFunnelEvent({
+          event: "approval_message_already_sent",
+          source: "approval_inbox",
+          meta: { message_id: message.id, lead_id: message.lead_id, edited: true },
+        });
         router.refresh();
         return;
       }
 
       // Send route handles DB status updates; we refresh to reflect the latest state.
+      void trackFunnelEvent({
+        event: "approval_message_approved",
+        source: "approval_inbox",
+        meta: {
+          message_id: message.id,
+          lead_id: message.lead_id,
+          edited: true,
+          was_followup: Boolean(message.was_followup),
+        },
+      });
       router.refresh();
 
       const idx = approvalIds.indexOf(id);
@@ -818,10 +1049,20 @@ export default function ZurFreigabeUI({
     );
     if (!ok) return;
 
-    for (const id of ids) {
+    void trackFunnelEvent({
+      event: "approval_bulk_approve_started",
+      source: "approval_inbox",
+      meta: { count: ids.length },
+    });
+
+    setBulkProgress({ mode: "approve", done: 0, total: ids.length });
+    for (let i = 0; i < ids.length; i += 1) {
+      const id = ids[i];
       if (editingMessageId && editingMessageId !== id) continue;
       await handleApprove(id);
+      setBulkProgress({ mode: "approve", done: i + 1, total: ids.length });
     }
+    setBulkProgress({ mode: null, done: 0, total: 0 });
     toggleSelectAll(false);
   };
 
@@ -829,11 +1070,31 @@ export default function ZurFreigabeUI({
     const ids = approvalIds.filter((id) => selectedIds[id]);
     if (ids.length === 0) return;
 
-    for (const id of ids) {
+    void trackFunnelEvent({
+      event: "approval_bulk_reject_started",
+      source: "approval_inbox",
+      meta: { count: ids.length },
+    });
+
+    setBulkProgress({ mode: "reject", done: 0, total: ids.length });
+    for (let i = 0; i < ids.length; i += 1) {
+      const id = ids[i];
       if (pendingIds[id]) continue;
       await handleReject(id);
+      setBulkProgress({ mode: "reject", done: i + 1, total: ids.length });
     }
+    setBulkProgress({ mode: null, done: 0, total: 0 });
     toggleSelectAll(false);
+  };
+
+  const selectRecommendedForBulk = () => {
+    const next: Record<string, boolean> = {};
+    for (const m of approvalMessages) {
+      const rec = recommendedAction(m);
+      next[m.id] = rec.label === "Direkt freigeben" && !pendingIds[m.id];
+    }
+    setSelectedIds(next);
+    setSelectAll(false);
   };
 
   return (
@@ -888,6 +1149,7 @@ export default function ZurFreigabeUI({
               </select>
 
               <input
+                ref={searchInputRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Suche im Text…"
@@ -899,43 +1161,163 @@ export default function ZurFreigabeUI({
 
         {/* Bulk bar */}
         <div
-          className="mt-4 rounded-2xl border border-gray-200 bg-white p-4 flex items-center justify-between gap-3"
+          className="mt-4 rounded-2xl border border-gray-200 bg-white p-4"
           data-tour="approval-bulk-actions"
         >
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-gray-800 select-none">
-              <input
-                type="checkbox"
-                checked={selectAll}
-                onChange={(e) => toggleSelectAll(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300"
-              />
-              Alle auswählen
-            </label>
-            <div className="text-sm text-gray-600">
-              {selectedCount} ausgewählt
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-gray-800 select-none">
+                <input
+                  type="checkbox"
+                  checked={selectAll}
+                  onChange={(e) => toggleSelectAll(e.target.checked)}
+                  disabled={bulkRunning}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                Alle auswählen
+              </label>
+              <div className="text-sm text-gray-600">
+                {selectedCount} ausgewählt
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={selectRecommendedForBulk}
+                disabled={bulkRunning}
+                className="px-3 py-2 rounded-xl text-sm border border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
+              >
+                Sichere Fälle markieren
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleSelectAll(false)}
+                disabled={bulkRunning}
+                className="px-3 py-2 rounded-xl text-sm border border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
+              >
+                Auswahl löschen
+              </button>
+              <button
+                type="button"
+                disabled={selectedCount === 0 || bulkRunning}
+                onClick={bulkApprove}
+                className="px-3 py-2 rounded-xl text-sm border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Bulk: Freigeben
+              </button>
+              <button
+                type="button"
+                disabled={selectedCount === 0 || bulkRunning}
+                onClick={bulkReject}
+                className="px-3 py-2 rounded-xl text-sm border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Bulk: Ablehnen
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {bulkProgress.mode && bulkProgress.total > 0 && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-xs text-gray-600">
+                <span>
+                  {bulkProgress.mode === "approve"
+                    ? "Bulk-Freigabe läuft"
+                    : "Bulk-Ablehnung läuft"}
+                </span>
+                <span className="font-medium text-gray-800">
+                  {bulkProgress.done}/{bulkProgress.total}
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                <div
+                  className="h-full rounded-full bg-gray-900 transition-all"
+                  style={{
+                    width: `${Math.round(
+                      (bulkProgress.done / bulkProgress.total) * 100,
+                    )}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="mt-3 text-xs text-gray-600">
+            Shortcuts: <span className="font-medium">J/K</span> nächste/vorherige Nachricht,{" "}
+            <span className="font-medium">A</span> freigeben,{" "}
+            <span className="font-medium">E</span> bearbeiten,{" "}
+            <span className="font-medium">R</span> ablehnen,{" "}
+            <span className="font-medium">X</span> auswählen,{" "}
+            <span className="font-medium">/</span> Suche,{" "}
+            <span className="font-medium">Cmd/Ctrl+Enter</span> senden.
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-6 gap-3">
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 md:col-span-1">
+            <div className="text-[11px] text-gray-500">Hohes Risiko</div>
+            <div className="mt-1 text-lg font-semibold text-gray-900">
+              {triageStats.highRisk}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 md:col-span-1">
+            <div className="text-[11px] text-gray-500">Niedrige Confidence</div>
+            <div className="mt-1 text-lg font-semibold text-gray-900">
+              {triageStats.lowConfidence}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 md:col-span-1">
+            <div className="text-[11px] text-gray-500">Follow-up Fälle</div>
+            <div className="mt-1 text-lg font-semibold text-gray-900">
+              {triageStats.followups}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 md:col-span-1">
+            <div className="text-[11px] text-gray-500">Fehlgeschlagen</div>
+            <div className="mt-1 text-lg font-semibold text-gray-900">
+              {triageStats.failed}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 md:col-span-1">
+            <div className="text-[11px] text-gray-500">Ältester Fall</div>
+            <div className="mt-1 text-lg font-semibold text-gray-900">
+              {formatAgeLabel(triageStats.oldestMinutes)}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 md:col-span-1">
             <button
               type="button"
-              disabled={selectedCount === 0}
-              onClick={bulkApprove}
-              className="px-3 py-2 rounded-xl text-sm border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setHelpOpen((v) => !v)}
+              className="w-full text-left"
+              title="Wie triagiere ich effizient?"
             >
-              Bulk: Freigeben
-            </button>
-            <button
-              type="button"
-              disabled={selectedCount === 0}
-              onClick={bulkReject}
-              className="px-3 py-2 rounded-xl text-sm border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Bulk: Ablehnen
+              <div className="text-[11px] text-gray-500">Schnellhilfe</div>
+              <div className="mt-1 text-sm font-semibold text-gray-900">
+                {helpOpen ? "Ausblenden" : "Wie priorisieren?"}
+              </div>
             </button>
           </div>
         </div>
+
+        {helpOpen && (
+          <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-4 text-sm text-gray-700">
+            <div className="font-medium text-gray-900">
+              Empfohlene Reihenfolge für schnelle Freigaben
+            </div>
+            <ul className="mt-2 list-disc pl-5 space-y-1">
+              <li>Sortierung auf „Höchstes Risiko zuerst“ stellen.</li>
+              <li>
+                Erst Fälle mit niedriger Confidence oder Konflikt-Signal prüfen.
+              </li>
+              <li>
+                Danach klare Standardfälle gesammelt per Bulk freigeben.
+              </li>
+              <li>
+                Fehlgeschlagene Sendungen zuerst neu prüfen, dann erneut senden.
+              </li>
+            </ul>
+          </div>
+        )}
 
         {/* List */}
         <div className="space-y-3" data-tour="approval-list">
@@ -944,6 +1326,7 @@ export default function ZurFreigabeUI({
               !!pendingIds[message.id] ||
               String(message.send_status || "").toLowerCase() === "sending";
             const isEditing = editingMessageId === message.id;
+            const isFocused = focusedId === message.id;
 
             const senderLabel =
               message.sender === "user"
@@ -955,6 +1338,7 @@ export default function ZurFreigabeUI({
                     : "System";
 
             const ts = message.timestamp ? new Date(message.timestamp) : null;
+            const recommendation = recommendedAction(message);
 
             return (
               <div
@@ -963,7 +1347,14 @@ export default function ZurFreigabeUI({
                 }}
                 key={message.id}
                 data-tour="approval-card"
-                className={`group rounded-2xl border border-gray-200 bg-white transition-colors p-5 ${
+                tabIndex={0}
+                onFocus={() => setFocusedId(message.id)}
+                onClick={() => setFocusedId(message.id)}
+                className={`group rounded-2xl border bg-white transition-colors p-5 ${
+                  isFocused
+                    ? "border-amber-300 ring-2 ring-amber-200/70"
+                    : "border-gray-200"
+                } ${
                   isEditing || pending ? "opacity-95" : "hover:bg-[#fbfbfc]"
                 }`}
               >
@@ -1099,6 +1490,11 @@ export default function ZurFreigabeUI({
                         </div>
                       );
                     })()}
+
+                    <div className={`mt-3 inline-flex items-start gap-2 rounded-xl border px-3 py-2 text-xs ${recommendation.cls}`}>
+                      <span className="font-semibold">{recommendation.label}:</span>
+                      <span>{recommendation.detail}</span>
+                    </div>
 
                     {(() => {
                       const rows = buildReasonRows(message);

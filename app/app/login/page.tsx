@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/browserClient";
+import {
+  parseSafeStartPresetFromParams,
+  saveSafeStartPreset,
+  serializeSafeStartPresetToQuery,
+} from "@/lib/onboarding/safe-start-preset";
 
 function safeNextPath(rawNext: string | null | undefined): string {
   const fallback = "/app/startseite";
@@ -19,16 +24,34 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [safeStartQuery, setSafeStartQuery] = useState("");
 
   useEffect(() => {
     let mounted = true;
 
     const redirectIfSessionExists = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const safeStartPreset = parseSafeStartPresetFromParams(params, "login");
+      if (safeStartPreset) {
+        saveSafeStartPreset(safeStartPreset);
+        setSafeStartQuery(
+          serializeSafeStartPresetToQuery({
+            preset: safeStartPreset.preset,
+            autoShare: safeStartPreset.autoShare,
+            approvalShare: safeStartPreset.approvalShare,
+            followupMode: safeStartPreset.followupMode,
+          }),
+        );
+      } else {
+        setSafeStartQuery("");
+      }
+
       const { data } = await supabase.auth.getSession();
       if (!mounted) return;
       if (data.session) {
-        const next = new URLSearchParams(window.location.search).get("next");
-        const target = safeNextPath(next);
+        const next = params.get("next");
+        const target =
+          safeStartPreset && !next ? "/app/onboarding" : safeNextPath(next);
         window.location.replace(target);
       }
     };
@@ -57,8 +80,14 @@ export default function LoginPage() {
     }
 
     // Full reload so middleware + server components see the new auth cookie
-    const next = new URLSearchParams(window.location.search).get("next");
-    const target = safeNextPath(next);
+    const params = new URLSearchParams(window.location.search);
+    const safeStartPreset = parseSafeStartPresetFromParams(params, "login");
+    if (safeStartPreset) {
+      saveSafeStartPreset(safeStartPreset);
+    }
+    const next = params.get("next");
+    const target =
+      safeStartPreset && !next ? "/app/onboarding" : safeNextPath(next);
     window.location.href = target;
   };
 
@@ -106,7 +135,10 @@ export default function LoginPage() {
 
         <p className="mt-4 text-xs text-gray-500 text-center">
           Noch kein Konto?{" "}
-          <Link href="/signup" className="underline hover:text-gray-700">
+          <Link
+            href={safeStartQuery ? `/signup?${safeStartQuery}` : "/signup"}
+            className="underline hover:text-gray-700"
+          >
             Jetzt registrieren
           </Link>
         </p>

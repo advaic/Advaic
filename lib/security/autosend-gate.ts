@@ -1,3 +1,5 @@
+import { getPropertyStartklarMissingFields } from "@/lib/properties/readiness";
+
 type GateCheck = {
   key: string;
   label: string;
@@ -22,6 +24,7 @@ export type LeadPropertyGate = {
   ready: boolean;
   active_property_id: string | null;
   reason: string | null;
+  missing_fields: string[];
 };
 
 export const AUTOSEND_MIN_REVIEWED_REPLIES = 3;
@@ -171,6 +174,7 @@ export async function getLeadPropertyGate(
         ready: false,
         active_property_id: null,
         reason: "Objektzuordnung konnte nicht geprüft werden.",
+        missing_fields: [],
       };
     }
 
@@ -180,11 +184,14 @@ export async function getLeadPropertyGate(
         ready: false,
         active_property_id: null,
         reason: "Für diesen Lead ist keine aktive Immobilie zugeordnet.",
+        missing_fields: [],
       };
     }
 
     const { data: property } = await (supabase.from("properties") as any)
-      .select("id")
+      .select(
+        "id,title,street_address,city,type,price_type,price,rooms,size_sqm,listing_summary,url",
+      )
       .eq("agent_id", agentId)
       .eq("id", activePropertyId)
       .maybeSingle();
@@ -194,15 +201,35 @@ export async function getLeadPropertyGate(
         ready: false,
         active_property_id: activePropertyId,
         reason: "Die zugeordnete Immobilie ist nicht mehr verfügbar.",
+        missing_fields: [],
       };
     }
 
-    return { ready: true, active_property_id: activePropertyId, reason: null };
+    const missing = getPropertyStartklarMissingFields(property as any);
+    if (missing.length > 0) {
+      const labels = missing.map((m) => m.label);
+      const preview = labels.slice(0, 3).join(", ");
+      const more = labels.length > 3 ? ` (+${labels.length - 3} weitere)` : "";
+      return {
+        ready: false,
+        active_property_id: activePropertyId,
+        reason: `Aktive Immobilie nicht startklar: ${preview}${more}.`,
+        missing_fields: labels,
+      };
+    }
+
+    return {
+      ready: true,
+      active_property_id: activePropertyId,
+      reason: null,
+      missing_fields: [],
+    };
   } catch {
     return {
       ready: false,
       active_property_id: null,
       reason: "Objektzuordnung konnte nicht geprüft werden.",
+      missing_fields: [],
     };
   }
 }

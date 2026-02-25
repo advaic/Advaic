@@ -7,6 +7,10 @@ import {
   useSupabaseClient,
 } from "@supabase/auth-helpers-react";
 import { Button } from "@/components/ui/button";
+import {
+  getPropertyStartklarMissingFields,
+  PROPERTY_STARTKLAR_FIELDS,
+} from "@/lib/properties/readiness";
 import Link from "next/link";
 import type { Database } from "@/types/supabase";
 
@@ -18,8 +22,12 @@ type Property = {
   title: string | null;
   street_address: string | null;
   city: string | null;
+  price_type: string | null;
   price: number | null;
   size_sqm: number | null;
+  rooms: number | null;
+  listing_summary: string | null;
+  url: string | null;
   year_built: number | null;
   type: string | null;
   image_urls: string[] | null; // ✅ storage paths, not URLs
@@ -42,6 +50,7 @@ export default function ImmobilienPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("updated_desc");
+  const [onlyNeedsSetup, setOnlyNeedsSetup] = useState(false);
 
   // Removed thumbs state and effect as per instructions
 
@@ -64,7 +73,7 @@ export default function ImmobilienPage() {
     const { data: propertyData, error: propError } = await supabase
       .from("properties")
       .select(
-        "id,title,street_address,city,price,size_sqm,year_built,type,image_urls,created_at,updated_at,agent_id,status"
+        "id,title,street_address,city,price_type,price,size_sqm,rooms,listing_summary,url,year_built,type,image_urls,created_at,updated_at,agent_id,status"
       )
       .eq("agent_id", userId)
       .neq("status", "archived")
@@ -100,14 +109,25 @@ export default function ImmobilienPage() {
     return `${new Intl.NumberFormat("de-DE").format(n)}${suffix}`;
   };
 
+  const readinessForProperty = (p: Property) => {
+    const missingFields = getPropertyStartklarMissingFields(p as any);
+    const missing = missingFields.map((f) => f.label);
+    const passed = PROPERTY_STARTKLAR_FIELDS.length - missing.length;
+    const score = Math.round((passed / PROPERTY_STARTKLAR_FIELDS.length) * 100);
+    const ready = missing.length === 0;
+    return { score, missing, ready };
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const base = (properties ?? []).filter((p) => {
-      if (!q) return true;
       const hay = `${safeStr(p.title)} ${safeStr(p.street_address)} ${safeStr(
         p.city
       )}`.toLowerCase();
-      return hay.includes(q);
+      const matchesSearch = !q || hay.includes(q);
+      if (!matchesSearch) return false;
+      if (onlyNeedsSetup && readinessForProperty(p).ready) return false;
+      return true;
     });
 
     const sorted = [...base].sort((a, b) => {
@@ -136,7 +156,29 @@ export default function ImmobilienPage() {
     });
 
     return sorted;
-  }, [properties, search, sortBy]);
+  }, [properties, search, sortBy, onlyNeedsSetup]);
+
+  const readinessStats = useMemo(() => {
+    const all = properties ?? [];
+    let readyCount = 0;
+    let missingLinkCount = 0;
+    let avgScoreTotal = 0;
+    for (const p of all) {
+      const r = readinessForProperty(p);
+      avgScoreTotal += r.score;
+      if (r.ready) readyCount += 1;
+      if (r.missing.includes("Listing-Link")) missingLinkCount += 1;
+    }
+    const avgScore =
+      all.length > 0 ? Math.round(avgScoreTotal / all.length) : 0;
+    return {
+      total: all.length,
+      readyCount,
+      notReadyCount: Math.max(0, all.length - readyCount),
+      missingLinkCount,
+      avgScore,
+    };
+  }, [properties]);
 
   if (isLoading || loading) {
     return <p className="text-muted-foreground">Lade Immobilien…</p>;
@@ -210,6 +252,47 @@ export default function ImmobilienPage() {
               >
                 Aktualisieren
               </Button>
+
+              <Button
+                type="button"
+                variant={onlyNeedsSetup ? "default" : "outline"}
+                onClick={() => setOnlyNeedsSetup((v) => !v)}
+                className={
+                  onlyNeedsSetup
+                    ? "bg-gray-900 text-amber-200 border-gray-900"
+                    : "border-gray-200"
+                }
+                title="Nur nicht startklare Immobilien anzeigen"
+              >
+                {onlyNeedsSetup ? "Nur nicht startklar: AN" : "Nur nicht startklar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div className="rounded-2xl border border-gray-200 bg-white p-4">
+            <div className="text-xs text-gray-500">Durchschnitt Readiness</div>
+            <div className="text-lg font-semibold text-gray-900">
+              {readinessStats.avgScore}%
+            </div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4">
+            <div className="text-xs text-gray-500">Startklar</div>
+            <div className="text-lg font-semibold text-gray-900">
+              {readinessStats.readyCount}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4">
+            <div className="text-xs text-gray-500">Nicht startklar</div>
+            <div className="text-lg font-semibold text-gray-900">
+              {readinessStats.notReadyCount}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4">
+            <div className="text-xs text-gray-500">Ohne Listing-Link</div>
+            <div className="text-lg font-semibold text-gray-900">
+              {readinessStats.missingLinkCount}
             </div>
           </div>
         </div>
@@ -246,6 +329,7 @@ export default function ImmobilienPage() {
               ]
                 .filter(Boolean)
                 .join(", ");
+              const readiness = readinessForProperty(property);
 
               const firstPath = property.image_urls?.[0];
               // Compute imgSrc using API redirect for signed URL
@@ -285,13 +369,23 @@ export default function ImmobilienPage() {
                   )}
 
                   <div className="p-4 space-y-3">
-                    {safeStr((property as any).status) && (
-                      <div className="flex justify-end">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={`text-[11px] font-medium px-2 py-1 rounded-full border ${
+                          readiness.ready
+                            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                            : "bg-amber-50 border-amber-200 text-amber-900"
+                        }`}
+                      >
+                        Readiness {readiness.score}%
+                      </span>
+                      {safeStr((property as any).status) && (
                         <span className="text-[11px] font-medium px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900">
                           {safeStr((property as any).status)}
                         </span>
-                      </div>
-                    )}
+                      )}
+                    </div>
+
                     <div className="min-w-0">
                       <h2 className="text-base font-semibold truncate">
                         {title}
@@ -327,6 +421,29 @@ export default function ImmobilienPage() {
                         </div>
                       </div>
                     </div>
+
+                    {readiness.missing.length > 0 && (
+                      <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-2">
+                        <div className="text-[11px] text-gray-500">
+                          Für Autopilot noch sinnvoll:
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {readiness.missing.slice(0, 4).map((item) => (
+                            <span
+                              key={item}
+                              className="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 bg-white text-gray-700"
+                            >
+                              {item}
+                            </span>
+                          ))}
+                          {readiness.missing.length > 4 && (
+                            <span className="text-[11px] text-gray-500 px-1 py-0.5">
+                              +{readiness.missing.length - 4} weitere
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="pt-1 flex gap-2">
                       {/* ✅ details route will work once [id]/page.tsx exists */}

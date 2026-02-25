@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { trackFunnelEvent } from "@/lib/funnel/track";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -145,12 +146,42 @@ async function onboardingUpdate(body: Record<string, any>) {
   return { ok: true as const, data: json };
 }
 
+async function applySafeStartDefaults() {
+  const [autosendRes, followupsRes] = await Promise.all([
+    fetch("/api/agent/settings/autosend", {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        autosend_enabled: false,
+        reply_mode: "approval",
+      }),
+    }).catch(() => null),
+    fetch("/api/agent/settings/followups", {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        followups_enabled_default: true,
+        followups_sender_mode: "always_approval",
+      }),
+    }).catch(() => null),
+  ]);
+
+  const autosendOk = !!autosendRes?.ok;
+  const followupsOk = !!followupsRes?.ok;
+  return { ok: autosendOk && followupsOk, autosendOk, followupsOk };
+}
+
 export default function Step6Client() {
   const router = useRouter();
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [safeStartEnabled, setSafeStartEnabled] = useState(true);
 
   const headline = useMemo(() => {
     if (done) return "Alles bereit.";
@@ -202,8 +233,21 @@ export default function Step6Client() {
       console.warn("Could not persist onboarding completion", e);
     }
 
+    if (safeStartEnabled) {
+      const safeStart = await applySafeStartDefaults();
+      if (!safeStart.ok) {
+        console.warn("Safe start defaults were not fully applied", safeStart);
+      }
+    }
+
     setSaving(false);
     setDone(true);
+
+    void trackFunnelEvent({
+      event: "onboarding_completed",
+      source: "onboarding_step_6",
+      step: 6,
+    });
 
     // Small UX: quick redirect to /app after “success”
     setTimeout(() => {
@@ -289,6 +333,35 @@ export default function Step6Client() {
         </div>
       </div>
 
+      {!done && (
+        <div
+          className="mt-4 rounded-[14px] border p-4"
+          style={{
+            borderColor: "rgba(201,162,63,0.28)",
+            background: "rgba(201,162,63,0.08)",
+          }}
+        >
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={safeStartEnabled}
+              onChange={(e) => setSafeStartEnabled(e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-gray-300"
+            />
+            <div>
+              <div className="text-[13px] font-semibold">Safe-Start aktivieren (empfohlen)</div>
+              <div
+                className="mt-1 text-[12px] leading-relaxed"
+                style={{ color: "var(--textMuted, rgba(14,14,17,0.65))" }}
+              >
+                Damit startet Advaic konservativ: Antworten zuerst zur Freigabe, Follow-ups ebenfalls zuerst zur
+                Freigabe. Du kannst später jederzeit schrittweise auf mehr Automatisierung umstellen.
+              </div>
+            </div>
+          </label>
+        </div>
+      )}
+
       {/* Next steps */}
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <MiniCard
@@ -306,6 +379,10 @@ export default function Step6Client() {
         <MiniCard
           title="4) Ton & Stil"
           desc="Dein Stil sitzt jetzt als Default. Du kannst ihn jederzeit feinjustieren (Beispiele, Dos & Don’ts, Signatur)."
+        />
+        <MiniCard
+          title="5) Erste 3 Antworten"
+          desc="Öffne danach direkt „Zur Freigabe“ und sende zuerst drei klare Standardfälle. Danach kannst du Auto-Senden kontrolliert hochfahren."
         />
       </div>
 

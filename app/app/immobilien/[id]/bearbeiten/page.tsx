@@ -25,6 +25,10 @@ import {
 } from "lucide-react";
 
 import SortablePreviewList from "@/components/SortablePreviewList";
+import {
+  getPropertyStartklarMissingFields,
+  PROPERTY_STARTKLAR_FIELDS,
+} from "@/lib/properties/readiness";
 import { supabase } from "@/lib/supabaseClient";
 
 const PROPERTY_IMAGES_BUCKET =
@@ -141,6 +145,13 @@ type PropertyEdit = {
   street_address: string;
   type: string;
   price: string;
+  kaltmiete: string;
+  nebenkosten: string;
+  warmmiete: string;
+  kaution: string;
+  provision: string;
+  mindesteinkommen: string;
+  besichtigung_regeln: string;
 
   /**
    * DB column stays `price_type` for compatibility,
@@ -199,6 +210,14 @@ function toNullableInt(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function toNullableNumber(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const n = Number(s.replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
 function clampNullable(
   n: number | null,
   min: number,
@@ -206,10 +225,6 @@ function clampNullable(
 ): number | null {
   if (n === null) return null;
   return Math.min(Math.max(n, min), max);
-}
-
-function safeTrim(v: unknown): string {
-  return String(v ?? "").trim();
 }
 
 function isProbablyUrl(v: string): boolean {
@@ -431,6 +446,13 @@ export default function EditPropertyPage() {
         street_address: data.street_address ?? "",
         type: data.type ?? "",
         price: String(data.price ?? ""),
+        kaltmiete: String((data as any).kaltmiete ?? ""),
+        nebenkosten: String((data as any).nebenkosten ?? ""),
+        warmmiete: String((data as any).warmmiete ?? ""),
+        kaution: String((data as any).kaution ?? ""),
+        provision: String((data as any).provision ?? ""),
+        mindesteinkommen: String((data as any).mindesteinkommen ?? ""),
+        besichtigung_regeln: String((data as any).besichtigung_regeln ?? ""),
         price_type: data.price_type ?? "",
         size_sqm: String(data.size_sqm ?? ""),
         rooms: String(data.rooms ?? ""),
@@ -537,6 +559,23 @@ export default function EditPropertyPage() {
           else if (pt === "Verkauf") payload.vermarktung = "sale";
           else payload.vermarktung = null;
         }
+        if ("price" in payload) payload.price = toNullableNumber(payload.price);
+        if ("kaltmiete" in payload)
+          payload.kaltmiete = toNullableNumber(payload.kaltmiete);
+        if ("nebenkosten" in payload)
+          payload.nebenkosten = toNullableNumber(payload.nebenkosten);
+        if ("warmmiete" in payload)
+          payload.warmmiete = toNullableNumber(payload.warmmiete);
+        if ("kaution" in payload)
+          payload.kaution = toNullableNumber(payload.kaution);
+        if ("mindesteinkommen" in payload)
+          payload.mindesteinkommen = toNullableNumber(payload.mindesteinkommen);
+        if ("size_sqm" in payload)
+          payload.size_sqm = toNullableInt(payload.size_sqm);
+        if ("rooms" in payload) payload.rooms = toNullableNumber(payload.rooms);
+        if ("floor" in payload) payload.floor = toNullableInt(payload.floor);
+        if ("year_built" in payload)
+          payload.year_built = toNullableInt(payload.year_built);
 
         // Track last edit timestamp
         payload.last_edit_at = new Date().toISOString();
@@ -545,8 +584,17 @@ export default function EditPropertyPage() {
           delete payload.neighbourhood;
         }
         if ("url" in payload) {
-          payload.url = payload.url;
+          const u = String(payload.url ?? "").trim();
+          payload.url = u ? u : null;
           delete payload.uri;
+        }
+        if ("provision" in payload) {
+          const v = String(payload.provision ?? "").trim();
+          payload.provision = v ? v : null;
+        }
+        if ("besichtigung_regeln" in payload) {
+          const v = String(payload.besichtigung_regeln ?? "").trim();
+          payload.besichtigung_regeln = v ? v : null;
         }
 
         const { error } = await supabase
@@ -896,6 +944,13 @@ export default function EditPropertyPage() {
       street_address: property.street_address,
       type: property.type,
       price: property.price,
+      kaltmiete: property.kaltmiete,
+      nebenkosten: property.nebenkosten,
+      warmmiete: property.warmmiete,
+      kaution: property.kaution,
+      provision: property.provision,
+      mindesteinkommen: property.mindesteinkommen,
+      besichtigung_regeln: property.besichtigung_regeln,
       price_type: property.price_type,
       size_sqm: property.size_sqm,
       rooms: property.rooms,
@@ -941,32 +996,27 @@ export default function EditPropertyPage() {
       setFlashField((cur) => (cur === name ? null : cur));
     }, 1200);
   };
+  const missingStartklarFields = useMemo(
+    () => getPropertyStartklarMissingFields((property || {}) as any),
+    [property],
+  );
+  const missingStartklarKeys = useMemo(
+    () => new Set(missingStartklarFields.map((f) => f.key)),
+    [missingStartklarFields],
+  );
+  const canPublish = missingStartklarFields.length === 0;
+
   const publishNow = async () => {
     if (!property) return;
 
-    const requiredOk =
-      safeTrim(property.title) &&
-      safeTrim(property.city) &&
-      safeTrim(property.type) &&
-      safeTrim(property.price_type) &&
-      safeTrim(property.price);
+    if (!canPublish) {
+      const firstMissing = missingStartklarFields[0];
+      if (firstMissing) scrollToField(String(firstMissing.key));
 
-    if (!requiredOk) {
-      const missingOrder: Array<keyof PropertyEdit> = [
-        "title",
-        "city",
-        "type",
-        "price_type",
-        "price",
-      ];
-      const firstMissing = missingOrder.find(
-        (k) => !safeTrim((property as any)[k]),
-      );
-      if (firstMissing) scrollToField(String(firstMissing));
-
-      toast.error(
-        "Bitte fülle mindestens Titel, Stadt, Typ, Preis & Vermarktung aus.",
-      );
+      const labels = missingStartklarFields.map((f) => f.label);
+      const preview = labels.slice(0, 4).join(", ");
+      const more = labels.length > 4 ? ` (+${labels.length - 4} weitere)` : "";
+      toast.error(`Bitte vervollständige zuerst: ${preview}${more}.`);
       return;
     }
     await persistUpdate({ status: "published" } as any);
@@ -1102,9 +1152,13 @@ export default function EditPropertyPage() {
               <button
                 type="button"
                 onClick={publishNow}
-                disabled={disabledHeaderActions}
+                disabled={disabledHeaderActions || !canPublish}
                 className="px-3 py-2 text-sm rounded-lg bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 disabled:opacity-50"
-                title="Veröffentlichen"
+                title={
+                  canPublish
+                    ? "Veröffentlichen"
+                    : "Bitte alle Startklar-Pflichtfelder ausfüllen"
+                }
               >
                 <CheckCircle2 className="h-4 w-4 inline-block mr-2" />
                 Veröffentlichen
@@ -1272,43 +1326,147 @@ export default function EditPropertyPage() {
                   </Field>
 
                   <Field label="Vermarktung" hint="Vermietung oder Verkauf">
-                    <div className="space-y-1">
-                      <select
-                        name="price_type"
-                        onChange={handleChange}
-                        value={property.price_type}
-                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                      >
-                        <option value="">Bitte wählen…</option>
-                        <option value="Vermietung">Vermietung</option>
-                        <option value="Verkauf">Verkauf</option>
-                      </select>
-                      <div className="text-[11px] text-gray-500">
-                        „Vermietung“ = Miete · „Verkauf“ = Kauf
+                    <div
+                      data-field="price_type"
+                      className={
+                        flashField === "price_type"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <div className="space-y-1">
+                        <select
+                          name="price_type"
+                          onChange={handleChange}
+                          value={property.price_type}
+                          className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                        >
+                          <option value="">Bitte wählen…</option>
+                          <option value="Vermietung">Vermietung</option>
+                          <option value="Verkauf">Verkauf</option>
+                        </select>
+                        <div className="text-[11px] text-gray-500">
+                          „Vermietung“ = Miete · „Verkauf“ = Kauf
+                        </div>
                       </div>
                     </div>
                   </Field>
 
-                  <Field label="Fläche (m²)" hint="z.B. 85">
+                  <Field
+                    label="Kaltmiete (optional)"
+                    hint="nur Vermietung · z.B. 980"
+                  >
                     <input
-                      name="size_sqm"
+                      name="kaltmiete"
                       type="number"
-                      placeholder="Fläche"
+                      placeholder="Kaltmiete"
                       onChange={handleChange}
-                      value={property.size_sqm}
+                      value={property.kaltmiete}
                       className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                     />
                   </Field>
 
-                  <Field label="Zimmer" hint="z.B. 3">
+                  <Field
+                    label="Nebenkosten (optional)"
+                    hint="nur Vermietung · z.B. 220"
+                  >
                     <input
-                      name="rooms"
+                      name="nebenkosten"
                       type="number"
-                      placeholder="Zimmer"
+                      placeholder="Nebenkosten"
                       onChange={handleChange}
-                      value={property.rooms}
+                      value={property.nebenkosten}
                       className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
                     />
+                  </Field>
+
+                  <Field
+                    label="Warmmiete (optional)"
+                    hint="nur Vermietung · z.B. 1200"
+                  >
+                    <input
+                      name="warmmiete"
+                      type="number"
+                      placeholder="Warmmiete"
+                      onChange={handleChange}
+                      value={property.warmmiete}
+                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                    />
+                  </Field>
+
+                  <Field label="Kaution (optional)" hint="nur Vermietung">
+                    <input
+                      name="kaution"
+                      type="number"
+                      placeholder="Kaution"
+                      onChange={handleChange}
+                      value={property.kaution}
+                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                    />
+                  </Field>
+
+                  <Field label="Provision (optional)" hint="nur Verkauf">
+                    <input
+                      name="provision"
+                      placeholder="z.B. 3,57 % inkl. MwSt."
+                      onChange={handleChange}
+                      value={property.provision}
+                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                    />
+                  </Field>
+
+                  <Field
+                    label="Mindesteinkommen (optional)"
+                    hint="z.B. 3200 € netto/Monat"
+                  >
+                    <input
+                      name="mindesteinkommen"
+                      type="number"
+                      placeholder="Mindesteinkommen"
+                      onChange={handleChange}
+                      value={property.mindesteinkommen}
+                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                    />
+                  </Field>
+
+                  <Field label="Fläche (m²)" hint="z.B. 85">
+                    <div
+                      data-field="size_sqm"
+                      className={
+                        flashField === "size_sqm"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="size_sqm"
+                        type="number"
+                        placeholder="Fläche"
+                        onChange={handleChange}
+                        value={property.size_sqm}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
+                  </Field>
+
+                  <Field label="Zimmer" hint="z.B. 3">
+                    <div
+                      data-field="rooms"
+                      className={
+                        flashField === "rooms"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="rooms"
+                        type="number"
+                        placeholder="Zimmer"
+                        onChange={handleChange}
+                        value={property.rooms}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                    </div>
                   </Field>
 
                   <Field label="Etage" hint="z.B. 2">
@@ -1374,18 +1532,27 @@ export default function EditPropertyPage() {
                   </Field>
 
                   <Field label="Listing-Link" hint="z.B. https://...">
-                    <input
-                      name="url"
-                      placeholder="Listing-Link"
-                      onChange={handleChange}
-                      value={property.url}
-                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                    />
-                    {property.url && !isProbablyUrl(property.url) && (
-                      <div className="mt-1 text-xs text-amber-700">
-                        Hinweis: Das sieht nicht nach einer gültigen URL aus.
-                      </div>
-                    )}
+                    <div
+                      data-field="url"
+                      className={
+                        flashField === "url"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <input
+                        name="url"
+                        placeholder="Listing-Link"
+                        onChange={handleChange}
+                        value={property.url}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                      />
+                      {property.url && !isProbablyUrl(property.url) && (
+                        <div className="mt-1 text-xs text-amber-700">
+                          Hinweis: Das sieht nicht nach einer gültigen URL aus.
+                        </div>
+                      )}
+                    </div>
                   </Field>
 
                   <Field
@@ -1403,19 +1570,24 @@ export default function EditPropertyPage() {
                     />
                   </Field>
 
-                  <Field
-                    label="Kurzbeschreibung"
-                    hint="(optional) · 2–3 Sätze"
-                    full
-                  >
-                    <textarea
-                      name="listing_summary"
-                      placeholder="Kurz zusammenfassen (2–3 Sätze)"
-                      onChange={handleChange}
-                      value={property.listing_summary}
-                      rows={3}
-                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50 resize-none"
-                    />
+                  <Field label="Kurzbeschreibung" hint="2–3 Sätze" full>
+                    <div
+                      data-field="listing_summary"
+                      className={
+                        flashField === "listing_summary"
+                          ? "rounded-lg ring-2 ring-amber-300/70"
+                          : ""
+                      }
+                    >
+                      <textarea
+                        name="listing_summary"
+                        placeholder="Kurz zusammenfassen (2–3 Sätze)"
+                        onChange={handleChange}
+                        value={property.listing_summary}
+                        rows={3}
+                        className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50 resize-none"
+                      />
+                    </div>
                   </Field>
 
                   <Field label="Beschreibung" hint="" full>
@@ -1459,6 +1631,21 @@ export default function EditPropertyPage() {
                       onChange={handleChange}
                       value={property.contact_instructions}
                       rows={5}
+                      className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50 resize-none"
+                    />
+                  </Field>
+
+                  <Field
+                    label="Besichtigungsregeln (optional)"
+                    hint="z.B. Sammeltermine, Unterlagen vor Termin"
+                    full
+                  >
+                    <textarea
+                      name="besichtigung_regeln"
+                      placeholder="Regeln für Besichtigungen, die Advaic in Antworten beachten soll."
+                      onChange={handleChange}
+                      value={property.besichtigung_regeln}
+                      rows={4}
                       className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50 resize-none"
                     />
                   </Field>
@@ -1706,55 +1893,41 @@ export default function EditPropertyPage() {
               </div>
 
               <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                <div className="text-sm font-medium text-gray-900">
-                  Pflichtfelder
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-medium text-gray-900">
+                    Startklar-Pflichtfelder
+                  </div>
+                  <span
+                    className={`text-xs font-medium px-2 py-1 rounded-full border ${
+                      canPublish
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "bg-amber-50 text-amber-800 border-amber-200"
+                    }`}
+                  >
+                    {canPublish
+                      ? "Vollständig"
+                      : `${missingStartklarFields.length} offen`}
+                  </span>
                 </div>
-                <div className="mt-2 text-sm text-gray-600 space-y-1">
-                  <div
-                    className={
-                      safeTrim(property.title)
-                        ? "text-gray-600"
-                        : "text-amber-800"
-                    }
-                  >
-                    • Kurztitel
-                  </div>
-                  <div
-                    className={
-                      safeTrim(property.city)
-                        ? "text-gray-600"
-                        : "text-amber-800"
-                    }
-                  >
-                    • Stadt
-                  </div>
-                  <div
-                    className={
-                      safeTrim(property.type)
-                        ? "text-gray-600"
-                        : "text-amber-800"
-                    }
-                  >
-                    • Typ
-                  </div>
-                  <div
-                    className={
-                      safeTrim(property.price_type)
-                        ? "text-gray-600"
-                        : "text-amber-800"
-                    }
-                  >
-                    • Vermarktung
-                  </div>
-                  <div
-                    className={
-                      safeTrim(property.price)
-                        ? "text-gray-600"
-                        : "text-amber-800"
-                    }
-                  >
-                    • Preis
-                  </div>
+                <div className="mt-2 text-sm space-y-1">
+                  {PROPERTY_STARTKLAR_FIELDS.map((field) => {
+                    const missing = missingStartklarKeys.has(field.key);
+                    return (
+                      <div
+                        key={field.key}
+                        className={
+                          missing
+                            ? "text-amber-800 inline-flex items-center gap-2"
+                            : "text-gray-600 inline-flex items-center gap-2"
+                        }
+                      >
+                        <span className="w-4 text-center">
+                          {missing ? "○" : "✓"}
+                        </span>
+                        <span>{field.label}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>

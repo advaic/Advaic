@@ -1,4 +1,5 @@
 import { ShieldCheck } from "lucide-react";
+import Link from "next/link";
 import Container from "./Container";
 
 const checks = [
@@ -32,7 +33,12 @@ export default function QualityChecks() {
   return (
     <section id="quality" className="marketing-soft-cool py-20 md:py-28">
       <Container>
-        <h2 className="h2">Vor jedem Versand laufen Qualitätschecks</h2>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h2 className="h2">Vor jedem Versand laufen Qualitätschecks</h2>
+          <Link href="/qualitaetschecks" className="btn-secondary">
+            Checks im Detail
+          </Link>
+        </div>
         <p className="body mt-4 max-w-[70ch] text-[var(--muted)]">
           Damit Autopilot im Alltag sicher nutzbar bleibt, wird jede Auto-Antwort vor dem Versand in mehreren
           Schritten geprüft.

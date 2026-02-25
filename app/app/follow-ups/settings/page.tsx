@@ -24,6 +24,10 @@ type FollowupSettings = {
   followups_delay_hours_stage2: number; // 1..336
 
   followups_sender_mode: string | null; // nullable for future
+  followups_send_start_hour: number; // 0..23
+  followups_send_end_hour: number; // 0..23
+  followups_send_on_weekends: boolean;
+  followups_timezone: string;
 };
 
 const DEFAULTS: FollowupSettings = {
@@ -33,7 +37,18 @@ const DEFAULTS: FollowupSettings = {
   followups_delay_hours_stage1: 24,
   followups_delay_hours_stage2: 72,
   followups_sender_mode: null,
+  followups_send_start_hour: 8,
+  followups_send_end_hour: 20,
+  followups_send_on_weekends: false,
+  followups_timezone: "Europe/Berlin",
 };
+
+const TIMEZONE_OPTIONS = [
+  "Europe/Berlin",
+  "Europe/Vienna",
+  "Europe/Zurich",
+  "UTC",
+];
 
 function clampInt(v: any, min: number, max: number, fallback: number) {
   const n = Number(v);
@@ -70,8 +85,22 @@ export default function FollowupsSettingsUI() {
     )
       return false;
 
+    if (
+      form.followups_send_start_hour < 0 ||
+      form.followups_send_start_hour > 23
+    )
+      return false;
+    if (form.followups_send_end_hour < 0 || form.followups_send_end_hour > 23)
+      return false;
+    if (!String(form.followups_timezone || "").trim()) return false;
+
     return true;
   }, [form]);
+
+  const hourOptions = useMemo(
+    () => Array.from({ length: 24 }, (_, h) => h),
+    [],
+  );
 
   async function load() {
     try {
@@ -129,6 +158,28 @@ export default function FollowupsSettingsUI() {
           typeof raw.followups_sender_mode === "string"
             ? raw.followups_sender_mode
             : null,
+
+        followups_send_start_hour: clampInt(
+          raw.followups_send_start_hour,
+          0,
+          23,
+          DEFAULTS.followups_send_start_hour,
+        ),
+        followups_send_end_hour: clampInt(
+          raw.followups_send_end_hour,
+          0,
+          23,
+          DEFAULTS.followups_send_end_hour,
+        ),
+        followups_send_on_weekends:
+          typeof raw.followups_send_on_weekends === "boolean"
+            ? raw.followups_send_on_weekends
+            : DEFAULTS.followups_send_on_weekends,
+        followups_timezone:
+          typeof raw.followups_timezone === "string" &&
+          raw.followups_timezone.trim().length > 0
+            ? raw.followups_timezone
+            : DEFAULTS.followups_timezone,
       };
 
       setForm(next);
@@ -174,6 +225,15 @@ export default function FollowupsSettingsUI() {
           336,
           72,
         ),
+        followups_send_start_hour: clampInt(
+          form.followups_send_start_hour,
+          0,
+          23,
+          8,
+        ),
+        followups_send_end_hour: clampInt(form.followups_send_end_hour, 0, 23, 20),
+        followups_send_on_weekends: !!form.followups_send_on_weekends,
+        followups_timezone: String(form.followups_timezone || "Europe/Berlin"),
       };
 
       const res = await fetch("/api/agent/settings/followups", {
@@ -185,7 +245,9 @@ export default function FollowupsSettingsUI() {
       const data = await res.json().catch(() => ({}) as any);
       if (!res.ok) {
         throw new Error(
-          String(data?.error || "failed_to_save_followup_settings"),
+          String(
+            data?.details || data?.error || "failed_to_save_followup_settings",
+          ),
         );
       }
 
@@ -255,6 +317,8 @@ export default function FollowupsSettingsUI() {
               <span className="font-medium">wie viele</span> pro Intent
               (Miete/Kauf) erlaubt sind und{" "}
               <span className="font-medium">wann</span> sie ausgelöst werden.
+              Zusätzlich legst du fest, in welchem Versandfenster (Uhrzeit,
+              Wochenende, Zeitzone) gesendet werden darf.
             </p>
           </div>
 
@@ -443,6 +507,127 @@ export default function FollowupsSettingsUI() {
               </SettingBox>
             </div>
 
+            {/* Versandfenster */}
+            <div className="rounded-2xl border border-gray-200 p-4">
+              <div className="text-sm font-medium">Versandfenster</div>
+              <div className="text-sm text-gray-600 mt-1">
+                Follow-ups werden nur in diesem Zeitfenster geplant. Außerhalb
+                des Fensters verschiebt Advaic den Versand automatisch auf den
+                nächsten erlaubten Zeitpunkt.
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <SettingBox
+                  title="Zeitzone"
+                  desc="Für Uhrzeit-Regeln und Wochenendlogik."
+                >
+                  <select
+                    value={form.followups_timezone}
+                    onChange={(e) => {
+                      setForm((p) => ({
+                        ...p,
+                        followups_timezone: String(
+                          e.target.value || "Europe/Berlin",
+                        ),
+                      }));
+                      setDirty(true);
+                    }}
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                  >
+                    {TIMEZONE_OPTIONS.map((tz) => (
+                      <option key={tz} value={tz}>
+                        {tz}
+                      </option>
+                    ))}
+                  </select>
+                </SettingBox>
+
+                <SettingBox
+                  title="Versand ab"
+                  desc="Früheste Uhrzeit für Follow-up Versand."
+                >
+                  <select
+                    value={form.followups_send_start_hour}
+                    onChange={(e) => {
+                      setForm((p) => ({
+                        ...p,
+                        followups_send_start_hour: clampInt(
+                          e.target.value,
+                          0,
+                          23,
+                          8,
+                        ),
+                      }));
+                      setDirty(true);
+                    }}
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                  >
+                    {hourOptions.map((h) => (
+                      <option key={h} value={h}>
+                        {String(h).padStart(2, "0")}:00
+                      </option>
+                    ))}
+                  </select>
+                </SettingBox>
+
+                <SettingBox
+                  title="Versand bis"
+                  desc="Späteste Start-Uhrzeit für Follow-ups."
+                >
+                  <select
+                    value={form.followups_send_end_hour}
+                    onChange={(e) => {
+                      setForm((p) => ({
+                        ...p,
+                        followups_send_end_hour: clampInt(
+                          e.target.value,
+                          0,
+                          23,
+                          20,
+                        ),
+                      }));
+                      setDirty(true);
+                    }}
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                  >
+                    {hourOptions.map((h) => (
+                      <option key={h} value={h}>
+                        {String(h).padStart(2, "0")}:00
+                      </option>
+                    ))}
+                  </select>
+                </SettingBox>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-[#fbfbfc] px-3 py-2">
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={!!form.followups_send_on_weekends}
+                    onChange={(e) => {
+                      setForm((p) => ({
+                        ...p,
+                        followups_send_on_weekends: e.target.checked,
+                      }));
+                      setDirty(true);
+                    }}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  Wochenende erlauben
+                </label>
+
+                <div className="text-xs text-gray-600">
+                  Aktiv: {String(form.followups_send_start_hour).padStart(2, "0")}
+                  :00 bis {String(form.followups_send_end_hour).padStart(2, "0")}
+                  :00 ({form.followups_timezone},{" "}
+                  {form.followups_send_on_weekends
+                    ? "inkl. Wochenende"
+                    : "nur Werktage"}
+                  )
+                </div>
+              </div>
+            </div>
+
             {/* Info */}
             <div className="rounded-2xl border border-gray-200 bg-[#fbfbfc] p-4">
               <div className="flex items-start gap-3">
@@ -453,9 +638,8 @@ export default function FollowupsSettingsUI() {
                   </div>
                   <div className="text-sm text-gray-600 mt-1">
                     24h + 72h funktioniert zuverlässig, wirkt nicht spammy und
-                    lässt genug Zeit für echte Antworten. Für besonders heiße
-                    Leads können wir später Lead- oder Property-Overrides
-                    anbieten.
+                    lässt genug Zeit für echte Antworten. Mit Werktagsfenster
+                    (z. B. 08:00-20:00) vermeidest du unpassende Versandzeiten.
                   </div>
                 </div>
               </div>

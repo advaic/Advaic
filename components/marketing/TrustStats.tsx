@@ -36,6 +36,10 @@ export default function TrustStats() {
           Die folgenden Punkte basieren direkt auf der aktuellen Systemlogik von Advaic und sind keine externen
           Schätzwerte.
         </p>
+        <p className="helper mt-2 max-w-[70ch]">
+          Es gibt aktuell noch keine veröffentlichten Kundenbeispiele. Deshalb zeigen wir bewusst konkrete
+          Entscheidungs- und Sicherheitslogik statt geschönter Referenzzahlen.
+        </p>
         <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {stats.map((item) => (
             <article key={item.value + item.title} className="card-base card-hover p-5">
@@ -45,6 +49,13 @@ export default function TrustStats() {
             </article>
           ))}
         </div>
+        <article className="card-base mt-4 p-5">
+          <p className="text-sm font-semibold text-[var(--text)]">Transparenz-Hinweis</p>
+          <p className="helper mt-2">
+            Sobald veröffentlichbare Kundenbeispiele vorliegen, ergänzen wir sie nachvollziehbar mit Kontext
+            (Objekttyp, Anfragevolumen, Zeitraum) statt mit isolierten Prozentwerten.
+          </p>
+        </article>
       </Container>
     </section>
   );
