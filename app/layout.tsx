@@ -2,6 +2,7 @@ import "../styles/globals.css";
 import SupabaseProvider from "./supabase-provider";
 import ClientRootLayout from "@/app/ClientRootLayout";
 import { Inter, Manrope } from "next/font/google";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -31,6 +32,7 @@ export default function RootLayout({
         <SupabaseProvider initialSession={null}>
           <ClientRootLayout session={null}>{children}</ClientRootLayout>
         </SupabaseProvider>
+        <SpeedInsights />
       </body>
     </html>
   );
