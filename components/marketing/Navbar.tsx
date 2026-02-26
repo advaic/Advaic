@@ -6,6 +6,7 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import Container from "./Container";
 import { trackPublicEvent } from "@/lib/funnel/public-track";
+import BrandLogo from "@/components/brand/BrandLogo";
 
 const navLinks = [
   { label: "Produkt", href: "/produkt" },
@@ -37,8 +38,8 @@ export default function MarketingNavbar() {
   return (
     <header className="sticky top-0 z-50 h-[72px] border-b border-[var(--border)] bg-white/70 backdrop-blur-md">
       <Container className="flex h-full items-center justify-between">
-        <Link href="/" className="focus-ring text-3xl font-bold leading-none tracking-[-0.03em]">
-          Adv<span className="text-[var(--gold)]">aic</span>
+        <Link href="/" className="focus-ring">
+          <BrandLogo size="md" withIcon={false} />
         </Link>
 
         <nav className="hidden items-center gap-8 lg:flex">

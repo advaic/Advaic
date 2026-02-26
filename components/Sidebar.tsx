@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import BrandLogo from "@/components/brand/BrandLogo";
 
 const navSections = [
   {
@@ -172,7 +173,9 @@ export default function Sidebar() {
     >
       {/* Logo and logout */}
       <div className="mb-8 flex flex-col space-y-2">
-        <div className="text-2xl font-bold text-gray-800">Advaic</div>
+        <div className="text-gray-800">
+          <BrandLogo size="md" withIcon={false} />
+        </div>
         <button
           onClick={handleLogout}
           data-tour="logout"

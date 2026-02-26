@@ -190,6 +190,26 @@ h6 {
   color: var(--text);
 }
 
+.brand-wordmark {
+  font-family: var(--font-display), "Manrope", "Sora", Inter, sans-serif;
+  font-weight: 780;
+  letter-spacing: -0.038em;
+  text-rendering: geometricPrecision;
+  color: var(--black);
+}
+
+.brand-wordmark-core {
+  color: var(--black);
+}
+
+.brand-wordmark-ai {
+  background: linear-gradient(160deg, #f3d77b 0%, var(--gold-2) 42%, #b28a11 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 14px rgba(201, 162, 39, 0.2);
+}
+
 .marketing-page-bg {
   background:
     radial-gradient(

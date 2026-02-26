@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import NavbarLinks from "./NavbarLinks";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
+import BrandLogo from "@/components/brand/BrandLogo";
 
 const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -13,13 +13,7 @@ const Navbar = () => {
     <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-white/80 shadow-[0_10px_36px_rgba(15,23,42,0.08)] backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 md:px-6">
         <Link href="/" className="flex items-center gap-2 focus-visible:rounded-md">
-          <Image
-            src="/Advaic_Logo_Cropped.webp"
-            alt="Advaic Logo"
-            width={60}
-            height={60}
-            className="h-7 w-auto object-contain"
-          />
+          <BrandLogo size="lg" withIcon />
         </Link>
 
         <div className="hidden lg:flex">

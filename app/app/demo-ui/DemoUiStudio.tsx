@@ -22,6 +22,7 @@ import {
   UserCircle2,
   XCircle,
 } from "lucide-react";
+import BrandLogo from "@/components/brand/BrandLogo";
 
 type DemoSceneKey =
   | "hero"
@@ -681,7 +682,7 @@ export default function DemoUiStudio() {
               <div className="flex min-h-0 flex-1">
                 <aside className="w-[122px] border-r border-[var(--border)] bg-[#fbfcfe] px-3 py-4">
                   <div className="mb-5 rounded-xl bg-white p-2 text-center text-sm font-bold text-[var(--text)] ring-1 ring-[var(--border)]">
-                    Adv<span className="text-[var(--gold)]">aic</span>
+                    <BrandLogo size="sm" withIcon={false} />
                   </div>
                   <div className="space-y-2">
                     <div className="rounded-xl border border-[var(--gold-soft)] bg-[var(--gold-soft)]/45 px-2 py-2 text-xs font-semibold text-[var(--text)]">

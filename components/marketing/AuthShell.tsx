@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { type ReactNode } from "react";
 import { CheckCircle2 } from "lucide-react";
+import BrandLogo from "@/components/brand/BrandLogo";
 
 type AuthShellProps = {
   title: string;
@@ -13,8 +14,8 @@ export default function AuthShell({ title, subtitle, children, points }: AuthShe
   return (
     <main className="marketing-page-bg min-h-screen bg-[var(--bg)] px-6 py-10 md:px-8 md:py-14">
       <div className="mx-auto flex w-full max-w-[1120px] items-center justify-between">
-        <Link href="/" className="focus-ring text-3xl font-bold leading-none tracking-[-0.03em]">
-          Adv<span className="text-[var(--gold)]">aic</span>
+        <Link href="/" className="focus-ring">
+          <BrandLogo size="md" withIcon={false} />
         </Link>
         <div className="text-sm text-[var(--muted)]">
           <Link href="/produkt" className="focus-ring link-subtle">
