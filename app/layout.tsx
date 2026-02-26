@@ -21,12 +21,12 @@ export const metadata: Metadata = {
   description: "KI-gestützter Maklerassistent für sichere und nachvollziehbare E-Mail-Automatisierung",
   icons: {
     icon: [
-      { url: "/icon?size=32", type: "image/png", sizes: "32x32" },
-      { url: "/icon?size=192", type: "image/png", sizes: "192x192" },
-      { url: "/icon?size=512", type: "image/png", sizes: "512x512" },
+      { url: "/brand/advaic-icon.png", type: "image/png", sizes: "32x32" },
+      { url: "/brand/advaic-icon.png", type: "image/png", sizes: "192x192" },
+      { url: "/brand/advaic-icon.png", type: "image/png", sizes: "512x512" },
     ],
-    apple: [{ url: "/apple-icon", sizes: "180x180", type: "image/png" }],
-    shortcut: ["/icon?size=32"],
+    apple: [{ url: "/brand/advaic-icon.png", sizes: "180x180", type: "image/png" }],
+    shortcut: ["/brand/advaic-icon.png"],
   },
   manifest: "/site.webmanifest",
 };
