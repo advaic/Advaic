@@ -1,4 +1,5 @@
 import { resolveLandingConversion } from "@/lib/marketing/conversion-map";
+import { canUseCategory } from "@/lib/marketing/cookie-consent";
 
 type PublicTrackInput = {
   event: string;
@@ -60,6 +61,7 @@ function getEntryContext(): EntryContext | null {
 
 export async function trackPublicEvent(input: PublicTrackInput): Promise<void> {
   if (typeof window === "undefined") return;
+  if (!canUseCategory("analytics")) return;
   const event = String(input.event || "").trim();
   if (!event) return;
 

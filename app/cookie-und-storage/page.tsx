@@ -54,6 +54,42 @@ const entries: Entry[] = [
     legalBase: "Art. 6 Abs. 1 lit. f DSGVO, § 25 Abs. 2 Nr. 2 TDDDG",
     retention: "Nur bis zum Schließen des Browser-Tabs.",
   },
+  {
+    name: "`advaic_public_vid_v1`",
+    place: "Local Storage",
+    purpose:
+      "Pseudonyme Besucher-ID für First-Party-Funnel- und Interaktionsanalyse auf öffentlichen Seiten.",
+    legalBase: "Art. 6 Abs. 1 lit. a DSGVO (Einwilligung), § 25 Abs. 1 TDDDG",
+    retention: "Bis zur manuellen Löschung im Browser.",
+  },
+  {
+    name: "`advaic_public_sid_v1`",
+    place: "Session Storage",
+    purpose: "Session-ID für zusammenhängende Ereignisse innerhalb einer Browser-Sitzung auf öffentlichen Seiten.",
+    legalBase: "Art. 6 Abs. 1 lit. a DSGVO (Einwilligung), § 25 Abs. 1 TDDDG",
+    retention: "Bis zum Schließen des Browser-Tabs oder -Fensters.",
+  },
+  {
+    name: "`advaic_public_entry_v1`",
+    place: "Session Storage",
+    purpose: "Speichert Einstiegskontext (Entry-Path, Referrer, Zeitpunkt) für Funnel-Auswertungen.",
+    legalBase: "Art. 6 Abs. 1 lit. a DSGVO (Einwilligung), § 25 Abs. 1 TDDDG",
+    retention: "Bis zum Schließen des Browser-Tabs oder -Fensters.",
+  },
+  {
+    name: "`advaic_cta_variant_v1`",
+    place: "Cookie",
+    purpose: "Speichert die angezeigte CTA-Variante für konsistente A/B-Auswertung auf Marketing-Seiten.",
+    legalBase: "Art. 6 Abs. 1 lit. a DSGVO (Einwilligung), § 25 Abs. 1 TDDDG",
+    retention: "Bis zu 30 Tage oder bis zur manuellen Löschung im Browser.",
+  },
+  {
+    name: "`advaic_cookie_consent_v1`",
+    place: "Cookie",
+    purpose: "Speichert Ihre gewählten Cookie-Präferenzen (Notwendig/Analyse/Marketing).",
+    legalBase: "Art. 6 Abs. 1 lit. c DSGVO (Nachweis von Einwilligungen), § 25 Abs. 2 Nr. 2 TDDDG",
+    retention: "Bis zu 180 Tage.",
+  },
 ];
 
 export default function CookieUndStoragePage() {
@@ -85,8 +121,8 @@ export default function CookieUndStoragePage() {
           <article className="card-base p-6 md:p-8">
             <h2 className="h2">Aktueller Stand</h2>
             <p className="helper mt-3">
-              Stand: 25. Februar 2026. Im aktuellen Code-Stand setzen wir keine zusätzlichen Marketing- oder
-              Werbe-Tracking-Skripte ein. Wenn sich das ändert, wird diese Seite vorab aktualisiert.
+              Stand: 26. Februar 2026. Auf öffentlichen Seiten setzen wir optionale Analyse- und Marketing-Speicher
+              erst nach Einwilligung im Cookie-Banner. Externe Werbe-Tracker sind im aktuellen Stand nicht eingebunden.
             </p>
           </article>
 

@@ -16,6 +16,9 @@ export default function MarketingFooter() {
             <Link href="/datenschutz" className="focus-ring link-subtle">
               Datenschutz
             </Link>
+            <Link href="/nutzungsbedingungen" className="focus-ring link-subtle">
+              Nutzungsbedingungen
+            </Link>
             <Link href="/cookie-und-storage" className="focus-ring link-subtle">
               Cookie & Storage
             </Link>

@@ -30,7 +30,7 @@ const stageConfig: Record<
     primaryHref: "/produkt",
     primaryLabel: "Produkt im Detail",
     secondaryHref: "/so-funktionierts",
-    secondaryLabel: "Ablauf ansehen",
+    secondaryLabel: "So funktioniert's",
   },
   bewertung: {
     label: "Funnel-Stufe: Bewertung",

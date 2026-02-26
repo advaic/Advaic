@@ -28,6 +28,11 @@ const items = [
     text: "Praxisnahe Einsatzszenarien mit klaren Vorteilen, Grenzen und Startkonfiguration.",
     href: "/use-cases",
   },
+  {
+    title: "Capability Matrix",
+    text: "Detaillierte Übersicht aller Dashboard-Bereiche mit Guardrails, Grenzen und operativer Steuerlogik.",
+    href: "/produkt/capabilities",
+  },
 ];
 
 export default function DeepDives() {
@@ -47,7 +52,7 @@ export default function DeepDives() {
               </p>
             </div>
             <div className="rounded-xl bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--muted)] ring-1 ring-[var(--border)]">
-              5 Detailseiten · direkt aus dem Produktfluss verlinkt
+              6 Detailseiten · direkt aus dem Produktfluss verlinkt
             </div>
           </div>
 

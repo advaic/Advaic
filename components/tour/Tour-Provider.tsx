@@ -12,24 +12,43 @@ import { TOUR_STEPS, type TourKey } from "./tour-steps";
 import { usePathname } from "next/navigation";
 
 const STORAGE_KEY = "advaic:tour:dashboard";
+const TOUR_PROGRESS_STORAGE_KEY = "advaic:tour:progress:v1";
+
+export type TourVariant = "full" | "compact";
+
+const COMPACT_STEP_ID_SET = new Set<string>([
+  "home_intro",
+  "home_nav_primary",
+  "messages_go",
+  "messages_filters",
+  "approval_go",
+  "followups_go",
+  "properties_go",
+  "templates_go",
+  "tone_style_intro",
+  "settings_go",
+  "done",
+]);
 
 type StoredTourState = {
   tourKey: TourKey;
   stepIndex: number;
   isOpen: boolean;
+  tourVariant?: TourVariant;
 };
 
 type TourState = {
   isOpen: boolean;
   tourKey: TourKey | null;
   stepIndex: number;
+  tourVariant: TourVariant;
   // UI-gate for “do the thing” steps (e.g. click a card) before allowing Next
   stepGateSatisfied: boolean;
 };
 
 type TourContextValue = {
   state: TourState;
-  openTour: (key: TourKey, startIndex?: number) => void;
+  openTour: (key: TourKey, startIndex?: number, variant?: TourVariant) => void;
   closeTour: () => void;
   setGateSatisfied: (ok: boolean) => void;
 
@@ -45,21 +64,28 @@ type TourContextValue = {
   startTourForCurrentPage: (opts?: {
     key?: TourKey;
     forceFullTour?: boolean;
+    variant?: TourVariant;
   }) => void;
   resumeTourForCurrentPage: (opts?: {
     key?: TourKey;
     forceFullTour?: boolean;
+    variant?: TourVariant;
   }) => void;
   resetTour: (key?: TourKey) => void;
 };
 
-function getStepsSafe(key: TourKey | null) {
+function getStepsSafe(key: TourKey | null, variant: TourVariant) {
   if (!key) return [];
-  return TOUR_STEPS[key] ?? [];
+  const steps = TOUR_STEPS[key] ?? [];
+  if (variant === "full") return steps;
+
+  const compactSteps = steps.filter((step: any) => COMPACT_STEP_ID_SET.has(String(step?.id ?? "")));
+  if (compactSteps.length > 0) return compactSteps;
+  return steps.filter((step: any) => step?.mode === "core");
 }
 
-function getCurrentStepSafe(key: TourKey | null, idx: number) {
-  const steps = getStepsSafe(key);
+function getCurrentStepSafe(key: TourKey | null, idx: number, variant: TourVariant) {
+  const steps = getStepsSafe(key, variant);
   return steps[idx] ?? null;
 }
 
@@ -73,8 +99,7 @@ function initialGateForStep(step: any): boolean {
   return !step?.requireClickSelector;
 }
 
-function findStartIndexForPath(key: TourKey, path: string): number {
-  const steps = TOUR_STEPS[key] ?? [];
+function findStartIndexForPath(steps: any[], path: string): number {
   if (!steps.length) return 0;
 
   // Prefer a step whose required path matches the current pathname.
@@ -96,15 +121,18 @@ function findStartIndexForPath(key: TourKey, path: string): number {
   return idx2 >= 0 ? idx2 : 0;
 }
 
-const TOUR_PROGRESS_STORAGE_KEY = "advaic:tour:progress:v1";
-
-type PersistedTourProgress = {
-  [key in TourKey]?: {
+type PersistedTourProgress = Record<
+  string,
+  {
     stepId?: string;
     stepIndex?: number;
     updatedAt?: number;
-  };
-};
+  }
+>;
+
+function buildProgressStorageKey(key: TourKey, variant: TourVariant) {
+  return `${key}:${variant}`;
+}
 
 function readProgress(): PersistedTourProgress {
   if (typeof window === "undefined") return {};
@@ -134,14 +162,18 @@ function writeProgress(next: PersistedTourProgress) {
 
 function clearProgressForKey(key: TourKey) {
   const all = readProgress();
-  if (!all[key]) return;
+  delete all[buildProgressStorageKey(key, "full")];
+  delete all[buildProgressStorageKey(key, "compact")];
+  // Legacy fallback key (old format without variant).
   delete all[key];
   writeProgress(all);
 }
 
-function getSavedStartIndex(key: TourKey, steps: any[]): number | null {
+function getSavedStartIndex(key: TourKey, steps: any[], variant: TourVariant): number | null {
   const all = readProgress();
-  const saved = all?.[key];
+  const saved =
+    all?.[buildProgressStorageKey(key, variant)] ??
+    (variant === "full" ? all?.[key] : undefined);
   if (!saved) return null;
 
   // Prefer restoring by stepId if possible.
@@ -190,6 +222,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         isOpen: false,
         tourKey: null,
         stepIndex: 0,
+        tourVariant: "full",
         stepGateSatisfied: true,
       };
     }
@@ -204,6 +237,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         isOpen: parsed.isOpen ?? false,
         tourKey: parsed.tourKey ?? null,
         stepIndex: parsed.stepIndex ?? 0,
+        tourVariant: parsed.tourVariant === "compact" ? "compact" : "full",
         stepGateSatisfied: true, // recalculated per step
       };
     } catch {
@@ -211,6 +245,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
         isOpen: false,
         tourKey: null,
         stepIndex: 0,
+        tourVariant: "full",
         stepGateSatisfied: true,
       };
     }
@@ -224,10 +259,11 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       tourKey: state.tourKey,
       stepIndex: state.stepIndex,
       isOpen: state.isOpen,
+      tourVariant: state.tourVariant,
     };
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  }, [state.tourKey, state.stepIndex, state.isOpen]);
+  }, [state.tourKey, state.stepIndex, state.isOpen, state.tourVariant]);
 
   const pathnameRaw = usePathname();
   const pathname = useMemo(
@@ -235,10 +271,13 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     [pathnameRaw],
   );
 
-  const steps = useMemo(() => getStepsSafe(state.tourKey), [state.tourKey]);
+  const steps = useMemo(
+    () => getStepsSafe(state.tourKey, state.tourVariant),
+    [state.tourKey, state.tourVariant],
+  );
   const currentStep = useMemo(
-    () => getCurrentStepSafe(state.tourKey, state.stepIndex),
-    [state.tourKey, state.stepIndex],
+    () => getCurrentStepSafe(state.tourKey, state.stepIndex, state.tourVariant),
+    [state.tourKey, state.stepIndex, state.tourVariant],
   );
 
   const isPathSatisfied = useMemo(() => {
@@ -254,20 +293,21 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     if (!state.tourKey) return;
 
     const key = state.tourKey;
-    const stepsForKey = TOUR_STEPS[key] ?? [];
+    const stepsForKey = getStepsSafe(key, state.tourVariant);
     const step = stepsForKey[state.stepIndex] ?? null;
 
     const all = readProgress();
-    all[key] = {
+    all[buildProgressStorageKey(key, state.tourVariant)] = {
       stepId: String(step?.id ?? ""),
       stepIndex: state.stepIndex,
       updatedAt: Date.now(),
     };
     writeProgress(all);
-  }, [state.isOpen, state.tourKey, state.stepIndex]);
+  }, [state.isOpen, state.tourKey, state.stepIndex, state.tourVariant]);
 
-  const openTour = useCallback((key: TourKey, startIndex = 0) => {
-    const s = TOUR_STEPS[key] ?? [];
+  const openTour = useCallback(
+    (key: TourKey, startIndex = 0, variant: TourVariant = "full") => {
+      const s = getStepsSafe(key, variant);
     const clamped = Math.max(
       0,
       Math.min(startIndex, Math.max(0, s.length - 1)),
@@ -279,9 +319,12 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       isOpen: true,
       tourKey: key,
       stepIndex: clamped,
+      tourVariant: variant,
       stepGateSatisfied: initialGateForStep(firstStep),
     });
-  }, []);
+    },
+    [],
+  );
 
   const closeTour = useCallback(() => {
     setState((p) => ({ ...p, isOpen: false }));
@@ -291,55 +334,63 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== "undefined") {
       localStorage.removeItem(STORAGE_KEY);
     }
+    if (key) {
+      clearProgressForKey(key);
+    } else {
+      clearProgressForKey("dashboard");
+    }
 
     setState({
       isOpen: false,
       tourKey: key ?? null,
       stepIndex: 0,
+      tourVariant: "full",
       stepGateSatisfied: true,
     });
   }, []);
 
   const startTourForCurrentPage = useCallback(
-    (opts?: { key?: TourKey; forceFullTour?: boolean }) => {
+    (opts?: { key?: TourKey; forceFullTour?: boolean; variant?: TourVariant }) => {
       const key = opts?.key ?? "dashboard";
-      const allSteps = TOUR_STEPS[key] ?? [];
+      const variant = opts?.variant ?? "full";
+      const allSteps = getStepsSafe(key, variant);
 
       // If forceFullTour is true, always start at the first step.
       // Otherwise, start at the first step that matches the current route.
       const startIndex = opts?.forceFullTour
         ? 0
-        : findStartIndexForPath(key, pathname);
+        : findStartIndexForPath(allSteps, pathname);
 
-      openTour(key, startIndex);
+      openTour(key, startIndex, variant);
     },
     [openTour, pathname],
   );
 
   const resumeTourForCurrentPage = useCallback(
-    (opts?: { key?: TourKey; forceFullTour?: boolean }) => {
+    (opts?: { key?: TourKey; forceFullTour?: boolean; variant?: TourVariant }) => {
       const key = opts?.key ?? "dashboard";
-      const allSteps = TOUR_STEPS[key] ?? [];
+      const variant = opts?.variant ?? "full";
+      const allSteps = getStepsSafe(key, variant);
 
       if (opts?.forceFullTour) {
-        openTour(key, 0);
+        openTour(key, 0, variant);
         return;
       }
 
       // Try to resume where the user left off.
-      const savedIdx = getSavedStartIndex(key, allSteps);
+      const savedIdx = getSavedStartIndex(key, allSteps, variant);
       if (savedIdx !== null) {
         const step = allSteps[savedIdx] ?? null;
         // Only resume if it still makes sense for the current page (handles dynamic routes).
         if (isPathSatisfiedForStep(step as any, pathname)) {
-          openTour(key, savedIdx);
+          openTour(key, savedIdx, variant);
           return;
         }
       }
 
       // Fallback: start at the first step relevant for this page.
-      const startIndex = findStartIndexForPath(key, pathname);
-      openTour(key, startIndex);
+      const startIndex = findStartIndexForPath(allSteps, pathname);
+      openTour(key, startIndex, variant);
     },
     [openTour, pathname],
   );
@@ -351,7 +402,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const next = useCallback(() => {
     setState((p) => {
       if (!p.tourKey) return p;
-      const s = TOUR_STEPS[p.tourKey] ?? [];
+      const s = getStepsSafe(p.tourKey, p.tourVariant);
       const curStep = s[p.stepIndex] ?? null;
 
       // Gate 1: correct page
@@ -374,7 +425,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const prev = useCallback(() => {
     setState((p) => {
       if (!p.tourKey) return p;
-      const s = TOUR_STEPS[p.tourKey] ?? [];
+      const s = getStepsSafe(p.tourKey, p.tourVariant);
       const prevIdx = Math.max(0, p.stepIndex - 1);
       if (prevIdx === p.stepIndex) return p;
       const prevStep = s[prevIdx] ?? null;
@@ -389,7 +440,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const skip = useCallback(() => {
     setState((p) => {
       if (!p.tourKey) return { ...p, isOpen: false, stepGateSatisfied: true };
-      const s = TOUR_STEPS[p.tourKey] ?? [];
+      const s = getStepsSafe(p.tourKey, p.tourVariant);
       const lastIdx = Math.max(0, s.length - 1);
       // If we're already at the end, close the tour.
       if (p.stepIndex >= lastIdx) {

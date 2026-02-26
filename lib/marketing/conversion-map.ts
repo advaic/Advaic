@@ -152,7 +152,11 @@ const MAP: Array<{
     },
   },
   {
-    match: (p) => p.startsWith("/impressum") || p.startsWith("/datenschutz") || p.startsWith("/cookie-und-storage"),
+    match: (p) =>
+      p.startsWith("/impressum") ||
+      p.startsWith("/datenschutz") ||
+      p.startsWith("/cookie-und-storage") ||
+      p.startsWith("/nutzungsbedingungen"),
     value: {
       family: "legal",
       reportingKey: "lp_legal_v1",
@@ -184,4 +188,3 @@ export function resolveLandingConversion(pathname: string): LandingConversion {
     secondaryHref: "/produkt",
   };
 }
-

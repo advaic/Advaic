@@ -38,10 +38,18 @@ export default function Hero() {
                 14 Tage kostenlos testen
                 <ArrowRight className="h-4 w-4" />
               </TrackedLink>
-              <a href="#tour" className="btn-secondary">
+              <TrackedLink
+                href="/so-funktionierts"
+                className="btn-secondary"
+                event="marketing_hero_secondary_click"
+                source="website"
+                pageGroup="marketing"
+                section="hero"
+                meta={{ section: "hero", target: "so-funktionierts" }}
+              >
                 <PlayCircle className="h-4 w-4" />
-                Ablauf ansehen
-              </a>
+                So funktioniert's
+              </TrackedLink>
             </div>
 
             <p className="helper mt-3">

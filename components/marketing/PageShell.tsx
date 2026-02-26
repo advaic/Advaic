@@ -7,6 +7,7 @@ import ProofLayer from "./ProofLayer";
 import MessageArchitectureBand from "./MessageArchitectureBand";
 import ConversionPathPanel from "./ConversionPathPanel";
 import PublicExperienceTracker from "./PublicExperienceTracker";
+import PublicAssistantWidget from "./PublicAssistantWidget";
 
 type PageShellProps = {
   children: ReactNode;
@@ -40,6 +41,7 @@ export default function PageShell({
       ) : null}
       {withFooter ? <MarketingFooter /> : null}
       <MobileConversionBar />
+      <PublicAssistantWidget />
       <PublicExperienceTracker />
     </main>
   );

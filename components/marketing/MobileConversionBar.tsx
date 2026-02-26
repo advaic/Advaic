@@ -17,7 +17,15 @@ type MobileBarConfig = {
   secondaryHref: string;
 };
 
-const HIDE_PREFIXES = ["/app", "/login", "/signup", "/impressum", "/datenschutz", "/cookie-und-storage"];
+const HIDE_PREFIXES = [
+  "/app",
+  "/login",
+  "/signup",
+  "/impressum",
+  "/datenschutz",
+  "/cookie-und-storage",
+  "/nutzungsbedingungen",
+];
 
 function shouldHide(pathname: string) {
   return HIDE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -202,7 +210,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       subtitle: "14 Tage Testphase mit vollständigem Sicherheitsnetz.",
       primaryLabel: "Jetzt testen",
       primaryHref: "/signup?entry=mobile-produkt-default",
-      secondaryLabel: "Ablauf ansehen",
+      secondaryLabel: "Prozess ansehen",
       secondaryHref: "/produkt#ablauf",
     };
   }

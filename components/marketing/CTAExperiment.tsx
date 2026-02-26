@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { trackPublicEvent } from "@/lib/funnel/public-track";
+import { canUseCategory } from "@/lib/marketing/cookie-consent";
 
 type VariantKey = "tempo" | "sicherheit" | "kontrolle";
 
@@ -23,7 +24,7 @@ const VARIANTS: Record<
       "Wenn Standardfälle sofort beantwortet werden, sinkt die Reaktionszeit deutlich und Ihr Postfach bleibt beherrschbar.",
     bullets: ["Klare Standardfälle automatisch", "Unklare Fälle zur Freigabe", "Qualitätschecks vor jedem Versand"],
     primary: "Jetzt 14 Tage testen",
-    secondary: "Ablauf ansehen",
+    secondary: "So funktioniert's",
   },
   sicherheit: {
     title: "Automatisieren mit Sicherheitsnetz",
@@ -68,6 +69,7 @@ function readCookie(name: string): string | null {
 
 function writeCookie(name: string, value: string, days = 30) {
   if (typeof document === "undefined") return;
+  if (!canUseCategory("analytics")) return;
   const maxAge = Math.max(1, Math.floor(days * 24 * 60 * 60));
   document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax`;
 }
@@ -82,40 +84,49 @@ export default function CTAExperiment({ id = "cta-variant" }: CTAExperimentProps
   const [variant, setVariant] = useState<VariantKey>("tempo");
 
   useEffect(() => {
+    const canPersistVariant = canUseCategory("analytics");
     const fromQuery = normalizeVariant(search.get("cta"));
     if (fromQuery) {
       setVariant(fromQuery);
-      writeCookie("advaic_cta_variant_v1", fromQuery, 30);
-      try {
-        localStorage.setItem("advaic_cta_variant_v1", fromQuery);
-      } catch {}
+      if (canPersistVariant) {
+        writeCookie("advaic_cta_variant_v1", fromQuery, 30);
+        try {
+          localStorage.setItem("advaic_cta_variant_v1", fromQuery);
+        } catch {}
+      }
       return;
     }
 
-    const fromCookie = normalizeVariant(readCookie("advaic_cta_variant_v1"));
-    if (fromCookie) {
-      setVariant(fromCookie);
-      try {
-        localStorage.setItem("advaic_cta_variant_v1", fromCookie);
-      } catch {}
-      return;
-    }
-
-    try {
-      const stored = normalizeVariant(localStorage.getItem("advaic_cta_variant_v1"));
-      if (stored) {
-        setVariant(stored);
-        writeCookie("advaic_cta_variant_v1", stored, 30);
+    if (canPersistVariant) {
+      const fromCookie = normalizeVariant(readCookie("advaic_cta_variant_v1"));
+      if (fromCookie) {
+        setVariant(fromCookie);
+        try {
+          localStorage.setItem("advaic_cta_variant_v1", fromCookie);
+        } catch {}
         return;
       }
-    } catch {}
+    }
+
+    if (canPersistVariant) {
+      try {
+        const stored = normalizeVariant(localStorage.getItem("advaic_cta_variant_v1"));
+        if (stored) {
+          setVariant(stored);
+          writeCookie("advaic_cta_variant_v1", stored, 30);
+          return;
+        }
+      } catch {}
+    }
 
     const fallback = pickRandom();
     setVariant(fallback);
-    writeCookie("advaic_cta_variant_v1", fallback, 30);
-    try {
-      localStorage.setItem("advaic_cta_variant_v1", fallback);
-    } catch {}
+    if (canPersistVariant) {
+      writeCookie("advaic_cta_variant_v1", fallback, 30);
+      try {
+        localStorage.setItem("advaic_cta_variant_v1", fallback);
+      } catch {}
+    }
   }, [search]);
 
   useEffect(() => {

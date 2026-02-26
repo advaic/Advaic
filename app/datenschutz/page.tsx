@@ -13,7 +13,7 @@ const principles = [
 const recipients = [
   "Supabase für Hosting, Datenbank, Authentifizierung und Storage.",
   "Google und Microsoft für E-Mail-Integrationen, wenn Sie diese aktiv verbinden.",
-  "Azure OpenAI für Klassifizierung, Entwürfe und Qualitätsprüfungen im Produktfluss.",
+  "Azure OpenAI für Klassifizierung, Entwürfe, Qualitätsprüfungen und den öffentlichen Website-Assistenten.",
   "Stripe für Abo-, Rechnungs- und Zahlungsprozesse.",
   "Slack oder vergleichbare Benachrichtigungsdienste, wenn Sie sie aktiv freischalten.",
 ];
@@ -32,7 +32,7 @@ const retentionRows = [
   {
     category: "Technische Fehler- und Sicherheitsprotokolle",
     retention:
-      "Nur solange erforderlich für Stabilität, Missbrauchsschutz und Fehleranalyse. Kein Einsatz von Marketing-Tracking im aktuellen Code-Stand.",
+      "Nur solange erforderlich für Stabilität, Missbrauchsschutz und Fehleranalyse. Auf öffentlichen Seiten werden optionale First-Party-Nutzungsereignisse für Funnel- und UX-Analyse nur nach Einwilligung verarbeitet.",
   },
   {
     category: "Cookies und Browser-Speicher",
@@ -53,7 +53,7 @@ export default function DatenschutzPage() {
       <PageIntro
         kicker="Datenschutz"
         title="Datenschutzhinweise"
-        description="Diese Seite beschreibt, wie Advaic personenbezogene Daten in der Produktnutzung verarbeitet. Stand: 25. Februar 2026."
+        description="Diese Seite beschreibt, wie Advaic personenbezogene Daten in der Produktnutzung verarbeitet. Stand: 26. Februar 2026."
         actions={
           <>
             <Link href="/sicherheit" className="btn-secondary">

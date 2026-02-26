@@ -9,6 +9,7 @@ import Sidebar from "@/components/Sidebar";
 import { TourProvider } from "@/components/tour/Tour-Provider";
 import TourOverlay from "@/components/tour/Tour-Overlay";
 import { TourLauncherIcon } from "@/components/tour/TourLauncherIcon";
+import CookieConsentBanner from "@/components/marketing/CookieConsentBanner";
 
 export const SupabaseContext = createContext<{
   supabase: SupabaseClient<Database>;
@@ -59,6 +60,9 @@ export default function ClientRootLayout({
 
   if (!hydrated) return null;
   const isAppRoute = pathname === "/app" || pathname.startsWith("/app/");
+  const isDemoUiRoute = pathname === "/app/demo-ui" || pathname.startsWith("/app/demo-ui/");
+  const showAppSidebar = isAppRoute && !isDemoUiRoute;
+  const showAppTourChrome = isAppRoute && !isDemoUiRoute;
   const showSkipLink = !isAppRoute;
 
   return (
@@ -73,20 +77,29 @@ export default function ClientRootLayout({
           </a>
         ) : null}
         <div className={isAppRoute ? "flex h-screen" : "min-h-screen"}>
-          {isAppRoute ? <Sidebar /> : null}
+          {showAppSidebar ? <Sidebar /> : null}
           <div
             id="main-content"
-            className={isAppRoute ? "flex-1 p-6 overflow-y-auto relative" : "relative flex-1"}
+            className={
+              isAppRoute
+                ? `flex-1 overflow-y-auto relative ${isDemoUiRoute ? "p-3 md:p-4" : "p-6"}`
+                : "relative flex-1"
+            }
           >
-            {/* Tour overlay (global, multi-page) */}
-            <TourOverlay />
+            {showAppTourChrome ? (
+              <>
+                {/* Tour overlay (app only, multi-page) */}
+                <TourOverlay />
+
+                {/* Global Tour launcher (app only) */}
+                <div className="fixed bottom-6 right-6 z-[1000]" data-tour="tour-launcher">
+                  <TourLauncherIcon />
+                </div>
+              </>
+            ) : null}
 
             {children}
-
-            {/* Global Tour launcher (always available) */}
-            <div className="fixed bottom-6 right-6 z-[1000]">
-              <TourLauncherIcon />
-            </div>
+            {!isAppRoute ? <CookieConsentBanner /> : null}
           </div>
         </div>
       </SupabaseContext.Provider>

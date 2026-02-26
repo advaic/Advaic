@@ -33,6 +33,7 @@ const limits = [
 
 const docs = [
   { label: "Datenschutz", href: "/datenschutz" },
+  { label: "Nutzungsbedingungen", href: "/nutzungsbedingungen" },
   { label: "Cookie & Storage", href: "/cookie-und-storage" },
   { label: "Sicherheitsseite", href: "/sicherheit" },
 ];

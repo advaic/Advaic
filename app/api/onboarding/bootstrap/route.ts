@@ -55,18 +55,52 @@ export async function POST(req: NextRequest) {
   const displayName =
     String(userMeta.full_name || userMeta.name || "").trim() || null;
   const company = String(userMeta.company || "").trim() || null;
+  const termsAcceptedAt = String(userMeta.terms_accepted_at || "").trim() || null;
+  const termsVersion = String(userMeta.terms_version || "").trim() || null;
+  const privacyAcceptedAt = String(userMeta.privacy_accepted_at || "").trim() || null;
+  const privacyVersion = String(userMeta.privacy_version || "").trim() || null;
+  const marketingOptIn =
+    userMeta.marketing_email_opt_in === null ||
+    typeof userMeta.marketing_email_opt_in === "undefined"
+      ? null
+      : userMeta.marketing_email_opt_in === true ||
+          String(userMeta.marketing_email_opt_in).toLowerCase() === "true";
+  const marketingOptInAt = String(userMeta.marketing_email_opt_in_at || "").trim() || null;
+  const marketingOptOutAt = String(userMeta.marketing_email_opt_out_at || "").trim() || null;
+  const signupSource = String(userMeta.signup_source || "").trim() || null;
 
   // Ensure legacy/public.agents row exists before writing onboarding.
   // Some environments rely on this FK relation and may not have DB triggers enabled.
-  const { error: agentSeedErr } = await (admin.from("agents") as any).upsert(
-    {
-      id: agentId,
-      email: user.email || null,
-      name: displayName,
-      company,
-    },
+  const enrichedAgentSeed = {
+    id: agentId,
+    email: user.email || null,
+    name: displayName,
+    company,
+    terms_accepted_at: termsAcceptedAt,
+    terms_version: termsVersion,
+    privacy_accepted_at: privacyAcceptedAt,
+    privacy_version: privacyVersion,
+    marketing_email_opt_in: marketingOptIn,
+    marketing_email_opt_in_at: marketingOptInAt,
+    marketing_email_opt_out_at: marketingOptOutAt,
+    signup_source: signupSource,
+  };
+  const basicAgentSeed = {
+    id: agentId,
+    email: user.email || null,
+    name: displayName,
+    company,
+  };
+
+  let { error: agentSeedErr } = await (admin.from("agents") as any).upsert(
+    enrichedAgentSeed,
     { onConflict: "id" }
   );
+
+  if (agentSeedErr && /column .* does not exist/i.test(String(agentSeedErr.message || ""))) {
+    const fallback = await (admin.from("agents") as any).upsert(basicAgentSeed, { onConflict: "id" });
+    agentSeedErr = fallback.error ?? null;
+  }
 
   if (agentSeedErr) {
     return NextResponse.json(

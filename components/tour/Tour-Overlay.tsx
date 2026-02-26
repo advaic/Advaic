@@ -133,6 +133,7 @@ export default function TourOverlay() {
   const stepCount = steps.length;
   const idx = state.stepIndex;
   const step = currentStep as unknown as StepLike | null;
+  const tourModeLabel = state.tourVariant === "compact" ? "Kompakt-Tour" : "Vollständige Tour";
 
   const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
   const spotlightElRef = useRef<Element | null>(null);
@@ -552,7 +553,7 @@ export default function TourOverlay() {
             title="Ziehen, um die Tour zu verschieben"
           >
             <div className="min-w-0">
-              <div className="text-xs text-black/60">Tour</div>
+              <div className="text-xs text-black/60">{tourModeLabel}</div>
               <div className="text-[15px] font-semibold text-[#0E0E11] truncate">
                 {step.title}
               </div>
@@ -698,4 +699,3 @@ function isExactPath(pathname: string, target: string) {
     const normalize = (p: string) => p.replace(/\/+$/, "");
     return normalize(pathname) === normalize(target);
 }
-
