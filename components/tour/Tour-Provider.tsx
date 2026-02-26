@@ -94,6 +94,31 @@ function getRequiredPath(step: any): string | null {
   return p ? p : null;
 }
 
+function normalizePath(path: string): string {
+  const raw = String(path || "/").trim();
+  if (!raw) return "/";
+  const slashPrefixed = raw.startsWith("/") ? raw : `/${raw}`;
+  const compact = slashPrefixed.replace(/\/{2,}/g, "/");
+  if (compact === "/") return "/";
+  return compact.replace(/\/+$/, "");
+}
+
+function matchesRequiredPath(requiredPath: string, pathname: string): boolean {
+  const requiredRaw = String(requiredPath || "").trim();
+  if (!requiredRaw) return true;
+
+  // Convention in this tour:
+  // - "/app/foo" means exact page
+  // - "/app/foo/" means nested detail route (prefix)
+  if (requiredRaw.endsWith("/") && requiredRaw !== "/") {
+    const base = normalizePath(requiredRaw);
+    const cur = normalizePath(pathname);
+    return cur.startsWith(`${base}/`);
+  }
+
+  return normalizePath(pathname) === normalizePath(requiredRaw);
+}
+
 function initialGateForStep(step: any): boolean {
   // If the step requires a click, Next should be disabled until the click happens.
   return !step?.requireClickSelector;
@@ -106,16 +131,17 @@ function findStartIndexForPath(steps: any[], path: string): number {
   const idx = steps.findIndex((s: any) => {
     const required = getRequiredPath(s);
     if (!required) return false;
-    return path.startsWith(required);
+    return matchesRequiredPath(required, path);
   });
-
-  // If no strict required-path match exists, fall back to first step that anchors on something
-  // that is likely to exist on this page.
   if (idx >= 0) return idx;
 
+  // Fallback: first step with explicit goTo/required path that roughly shares prefix.
   const idx2 = steps.findIndex((s: any) => {
-    const p = String(s?.pathname || s?.requiresPath || "").trim();
-    return p ? path.startsWith(p) : false;
+    const p = String(s?.goTo || s?.pathname || s?.requiresPath || "").trim();
+    if (!p) return false;
+    const cur = normalizePath(path);
+    const target = normalizePath(p);
+    return cur.startsWith(target) || target.startsWith(cur);
   });
 
   return idx2 >= 0 ? idx2 : 0;
@@ -195,22 +221,21 @@ function getSavedStartIndex(key: TourKey, steps: any[], variant: TourVariant): n
   return null;
 }
 
-function normalizeDynamicPath(path: string): string {
-  const p = String(path || "/");
-  // Collapse dynamic routes so a tour can resume on the right section.
-  // Example: /app/nachrichten/<id> should behave like /app/nachrichten
-  if (p.startsWith("/app/nachrichten/")) return "/app/nachrichten";
-  if (p.startsWith("/app/immobilien/")) return "/app/immobilien";
-  return p;
-}
-
 function isPathSatisfiedForStep(step: any, pathname: string): boolean {
   if (!step) return true;
   const required = getRequiredPath(step);
   if (!required) return true;
-  const cur = normalizeDynamicPath(pathname);
-  const req = normalizeDynamicPath(required);
-  return cur.startsWith(req);
+  if (matchesRequiredPath(required, pathname)) return true;
+
+  // Special case for click-gated "open detail" steps:
+  // if the click routes into a nested detail page, allow continuing.
+  if (step?.requireClickSelector) {
+    const base = normalizePath(required);
+    const cur = normalizePath(pathname);
+    if (cur.startsWith(`${base}/`)) return true;
+  }
+
+  return false;
 }
 
 const TourContext = createContext<TourContextValue | null>(null);
@@ -266,10 +291,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   }, [state.tourKey, state.stepIndex, state.isOpen, state.tourVariant]);
 
   const pathnameRaw = usePathname();
-  const pathname = useMemo(
-    () => normalizeDynamicPath(pathnameRaw),
-    [pathnameRaw],
-  );
+  const pathname = useMemo(() => normalizePath(pathnameRaw || "/"), [pathnameRaw]);
 
   const steps = useMemo(
     () => getStepsSafe(state.tourKey, state.tourVariant),

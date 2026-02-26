@@ -30,6 +30,7 @@ import MessageArchitectureBand from "@/components/marketing/MessageArchitectureB
 import ConversionPathPanel from "@/components/marketing/ConversionPathPanel";
 import ProductVisualAuthority from "@/components/marketing/ProductVisualAuthority";
 import PublicExperienceTracker from "@/components/marketing/PublicExperienceTracker";
+import PublicAssistantWidget from "@/components/marketing/PublicAssistantWidget";
 
 export const metadata: Metadata = {
   title: "Advaic | Autopilot für Makler-E-Mails mit klaren Guardrails",
@@ -92,6 +93,7 @@ export default function HomePage() {
       </section>
       <MarketingFooter />
       <MobileConversionBar />
+      <PublicAssistantWidget />
       <PublicExperienceTracker />
     </main>
   );

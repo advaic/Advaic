@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
   const displayName =
     String(userMeta.full_name || userMeta.name || "").trim() || null;
   const company = String(userMeta.company || "").trim() || null;
+  const phone = String(userMeta.phone || userMeta.telefon || "").trim() || null;
   const termsAcceptedAt = String(userMeta.terms_accepted_at || "").trim() || null;
   const termsVersion = String(userMeta.terms_version || "").trim() || null;
   const privacyAcceptedAt = String(userMeta.privacy_accepted_at || "").trim() || null;
@@ -76,6 +77,7 @@ export async function POST(req: NextRequest) {
     email: user.email || null,
     name: displayName,
     company,
+    phone,
     terms_accepted_at: termsAcceptedAt,
     terms_version: termsVersion,
     privacy_accepted_at: privacyAcceptedAt,
@@ -90,6 +92,7 @@ export async function POST(req: NextRequest) {
     email: user.email || null,
     name: displayName,
     company,
+    phone,
   };
 
   let { error: agentSeedErr } = await (admin.from("agents") as any).upsert(

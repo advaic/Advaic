@@ -232,7 +232,7 @@ export default function PasswortSicherheitPage() {
   };
 
   return (
-    <div className="max-w-xl space-y-6">
+    <div className="max-w-xl space-y-6" data-tour="account-link-passwortsicherheit">
       <h1 className="text-2xl font-semibold">Passwort & Sicherheit</h1>
       <p className="text-muted-foreground">
         Aktualisiere dein Passwort oder aktiviere 2-Faktor-Authentifizierung.

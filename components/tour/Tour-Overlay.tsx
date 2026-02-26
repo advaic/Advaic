@@ -114,6 +114,68 @@ function getRectForElement(el: Element): SpotlightRect {
   return { top, left, width, height };
 }
 
+function normalizePath(path: string) {
+  const raw = String(path || "/").trim();
+  if (!raw) return "/";
+  const withSlash = raw.startsWith("/") ? raw : `/${raw}`;
+  const compact = withSlash.replace(/\/{2,}/g, "/");
+  if (compact === "/") return "/";
+  return compact.replace(/\/+$/, "");
+}
+
+function matchesTourPath(targetPath: string, pathname: string) {
+  const targetRaw = String(targetPath || "").trim();
+  if (!targetRaw) return true;
+  const cur = normalizePath(pathname);
+
+  // Convention:
+  // "/app/foo" => exact page
+  // "/app/foo/" => nested detail routes under this page
+  if (targetRaw.endsWith("/") && targetRaw !== "/") {
+    const base = normalizePath(targetRaw);
+    return cur.startsWith(`${base}/`);
+  }
+
+  return cur === normalizePath(targetRaw);
+}
+
+function routeLabel(path: string) {
+  const p = normalizePath(path);
+  const map: Record<string, string> = {
+    "/app/startseite": "Startseite",
+    "/app/nachrichten": "Nachrichten",
+    "/app/eskalationen": "Eskalationen",
+    "/app/zur-freigabe": "Freigabe",
+    "/app/follow-ups": "Follow-ups",
+    "/app/immobilien": "Immobilien",
+    "/app/immobilien/hinzufuegen": "Immobilie anlegen",
+    "/app/archiv": "Archiv",
+    "/app/antwortvorlagen": "Antwortvorlagen",
+    "/app/ton-und-stil": "Ton & Stil",
+    "/app/benachrichtigungen": "Benachrichtigungen",
+    "/app/konto": "Konto",
+    "/app/konto/verknuepfungen": "Verknüpfungen",
+    "/app/konto/sicherheit": "Sicherheit",
+    "/app/konto/abo": "Abo",
+  };
+  return map[p] ?? "Seite";
+}
+
+function isStepPathSatisfied(step: StepLike | null, pathname: string) {
+  if (!step) return true;
+  const required = String(step.requiresPath || step.pathname || "").trim();
+  if (!required) return true;
+  if (matchesTourPath(required, pathname)) return true;
+
+  if (step.requireClickSelector) {
+    const base = normalizePath(required);
+    const cur = normalizePath(pathname);
+    if (cur.startsWith(`${base}/`)) return true;
+  }
+
+  return false;
+}
+
 export default function TourOverlay() {
   const {
     state,
@@ -127,7 +189,8 @@ export default function TourOverlay() {
     canGoNext,
   } = useTour();
 
-  const pathname = usePathname(); // <-- NICHT normalisieren!
+  const pathnameRaw = usePathname();
+  const pathname = useMemo(() => normalizePath(pathnameRaw || "/"), [pathnameRaw]);
   const router = useRouter();
 
   const stepCount = steps.length;
@@ -332,76 +395,52 @@ export default function TourOverlay() {
     };
   }, [isDragging]);
 
-  // ✅ Gate: requiredPath FIRST (block until correct route),
-  // then requireClickSelector (block until click happens)
-  const clickHandlerRef = useRef<((e: Event) => void) | null>(null);
-
+  // ✅ Gate: route first, then required UI interaction
   useEffect(() => {
     if (!state.isOpen || !step) return;
 
     const requiredPath = step.requiresPath ?? step.pathname ?? null;
 
-    // If there is a requiredPath and we are NOT on it -> gate stays false (must navigate)
-    if (requiredPath && !pathname.startsWith(requiredPath)) {
+    if (requiredPath && !isStepPathSatisfied(step, pathname)) {
       setGateSatisfied(false);
       return;
     }
 
-    // If no click requirement -> gate satisfied (once route is ok)
     if (!step.requireClickSelector) {
       setGateSatisfied(true);
       return;
     }
 
-    // Click required
     setGateSatisfied(false);
+    const selector = step.requireClickSelector;
 
-    let disposed = false;
-    let interval: any = null;
+    const targetMatches = (target: EventTarget | null) => {
+      if (!target || !(target instanceof Element)) return false;
+      return Boolean(target.closest(selector));
+    };
 
-    const attachOnce = () => {
-      if (disposed) return;
-      const sel = step.requireClickSelector;
-      if (!sel) return;
-
-      const el = document.querySelector(sel);
-      if (!el) return;
-
-      const handler = () => setGateSatisfied(true);
-      clickHandlerRef.current = handler;
-
-      try {
-        el.addEventListener("click", handler, { once: true });
-      } catch {}
-
-      if (interval) {
-        clearInterval(interval);
-        interval = null;
+    // Event delegation is robust against re-renders/re-mounts of target nodes.
+    const onClickCapture = (event: Event) => {
+      if (targetMatches(event.target)) setGateSatisfied(true);
+    };
+    const onKeyCapture = (event: KeyboardEvent) => {
+      if ((event.key === "Enter" || event.key === " ") && targetMatches(event.target)) {
+        setGateSatisfied(true);
       }
     };
 
-    attachOnce();
-    if (!document.querySelector(step.requireClickSelector)) {
-      interval = setInterval(attachOnce, 120);
-    }
+    document.addEventListener("click", onClickCapture, true);
+    document.addEventListener("keydown", onKeyCapture, true);
 
     return () => {
-      disposed = true;
-      if (interval) clearInterval(interval);
-
-      const handler = clickHandlerRef.current;
-      clickHandlerRef.current = null;
-
-      try {
-        const sel = step.requireClickSelector;
-        if (!sel) return;
-        const el = document.querySelector(sel);
-        if (el && handler) el.removeEventListener("click", handler);
-      } catch {}
+      document.removeEventListener("click", onClickCapture, true);
+      document.removeEventListener("keydown", onKeyCapture, true);
     };
   }, [
     state.isOpen,
     step?.id,
+    step?.requiresPath,
+    step?.pathname,
     step?.requireClickSelector,
     pathname,
     setGateSatisfied,
@@ -416,26 +455,28 @@ export default function TourOverlay() {
 
   const requiredPath = step.pathname ?? step.requiresPath ?? null;
   const goTo = step.goTo ?? null;
+  const isCurrentStepPathSatisfied = isStepPathSatisfied(step, pathname);
 
   const targetRoute = goTo || requiredPath;
-  const needsNavigate = (() => {
-    if (!targetRoute) return false;
+  const needsNavigate = Boolean(
+    targetRoute && !isCurrentStepPathSatisfied,
+  );
 
-    if (targetRoute === "/app/immobilien") {
-      return !isExactPath(pathname, "/app/immobilien");
-    }
+  const nextStep = idx + 1 < stepCount ? (steps[idx + 1] as StepLike) : null;
+  const nextTargetRoute =
+    nextStep?.goTo ?? nextStep?.pathname ?? nextStep?.requiresPath ?? null;
+  const shouldNavigateAfterNext = Boolean(
+    nextTargetRoute && !matchesTourPath(String(nextTargetRoute), pathname),
+  );
 
-    if (targetRoute === "/app/immobilien/[id]") {
-      return !isDetailPath(pathname);
-    }
+  const primaryLabel = !canGoNext
+    ? needsNavigate && targetRoute
+      ? `Zu ${routeLabel(String(targetRoute))}`
+      : "Weiter"
+    : shouldNavigateAfterNext && nextTargetRoute
+      ? `Weiter zu ${routeLabel(String(nextTargetRoute))}`
+      : "Weiter";
 
-    return !isExactPath(pathname, targetRoute);
-  })();
-
-  function isDetailPath(pathname: string) {
-    // Matches paths like /app/immobilien/123 or /app/immobilien/abc
-    return /^\/app\/immobilien\/[^/]+$/.test(pathname.replace(/\/+$/, ""));
-  }
   const allowClickThrough = Boolean(step.requireClickSelector && clickRect);
   const gateActive =
     !canGoNext && (needsNavigate || !!step.requireClickSelector);
@@ -490,7 +531,7 @@ export default function TourOverlay() {
       {spotlight && (
         <div className="absolute inset-0 pointer-events-none">
           <div
-            className="absolute rounded-[16px]"
+            className="absolute rounded-[16px] animate-pulse"
             style={{
               top: spotlight.top,
               left: spotlight.left,
@@ -507,7 +548,7 @@ export default function TourOverlay() {
       {clickRect && step?.requireClickSelector && (
         <div className="absolute inset-0 pointer-events-none">
           <div
-            className="absolute rounded-[16px]"
+            className="absolute rounded-[16px] animate-pulse"
             style={{
               top: clickRect.top,
               left: clickRect.left,
@@ -663,28 +704,36 @@ export default function TourOverlay() {
 
               <button
                 onClick={() => {
-                  if (targetRoute && !pathname.startsWith(targetRoute)) {
+                  if (targetRoute && !isCurrentStepPathSatisfied) {
                     router.push(String(targetRoute));
                     return;
                   }
+                  if (!canGoNext) return;
+
+                  if (!nextStep) {
+                    closeTour();
+                    return;
+                  }
+
                   next();
+
+                  if (nextTargetRoute && !matchesTourPath(String(nextTargetRoute), pathname)) {
+                    router.push(String(nextTargetRoute));
+                  }
                 }}
                 disabled={
-                  !canGoNext &&
-                  !(targetRoute && !pathname.startsWith(targetRoute))
+                  !canGoNext && !(targetRoute && !isCurrentStepPathSatisfied)
                 }
                 className={cn(
                   "h-10 px-4 rounded-xl text-sm font-medium inline-flex items-center gap-2",
                   "bg-[#0E0E11] text-white border border-[#C9A23F]",
                   "hover:bg-[#C9A23F] hover:text-[#0E0E11] transition",
                   !canGoNext &&
-                    !(targetRoute && !pathname.startsWith(targetRoute)) &&
+                    !(targetRoute && !isCurrentStepPathSatisfied) &&
                     "opacity-50 cursor-not-allowed hover:bg-[#0E0E11] hover:text-white",
                 )}
               >
-                {targetRoute && !pathname.startsWith(targetRoute)
-                  ? "Zur Seite"
-                  : "Weiter"}
+                {primaryLabel}
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
@@ -693,9 +742,4 @@ export default function TourOverlay() {
       </div>
     </div>
   );
-}
-function isExactPath(pathname: string, target: string) {
-    // Remove trailing slashes for comparison
-    const normalize = (p: string) => p.replace(/\/+$/, "");
-    return normalize(pathname) === normalize(target);
 }

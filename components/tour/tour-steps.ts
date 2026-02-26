@@ -140,7 +140,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       title: "Was zeigt eine Karte?",
       body: "Eine Karte zeigt Kontakt, letzte Nachricht, Kategorie, Priorität und Eskalationsstatus. Damit priorisierst du ohne Öffnen jedes Details.",
       requiresPath: "/app/nachrichten",
-      anchorSelector: '[data-tour="messages-card"]',
+      anchorSelector: '[data-tour="conversation-card"]',
     },
     {
       id: "messages_open_required",
@@ -149,7 +149,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       title: "Konversation öffnen",
       body: "Öffne jetzt eine Konversation. Danach gehen wir den Detailbereich und den Versand durch.",
       requiresPath: "/app/nachrichten",
-      requireClickSelector: '[data-tour="messages-card"]',
+      requireClickSelector: '[data-tour="conversation-card"]',
       requireClickText: "Klicke eine Konversations-Karte an, um fortzufahren.",
     },
 
@@ -173,7 +173,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       title: "E-Mail-Verlauf",
       body: "Hier siehst du den echten E-Mail-Verlauf: eingehende Nachrichten und gesendete Antworten. Das ist kein interner Chat, sondern dein reales Postfachgeschehen.",
       requiresPath: "/app/nachrichten/",
-      anchorSelector: '[data-tour="conversation-history"]',
+      anchorSelector: '[data-tour="conversation-messages"]',
     },
     {
       id: "conversation_rule_send_real",
@@ -182,7 +182,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       title: "Senden = echte E-Mail",
       body: "Wenn du auf „Senden“ klickst, wird eine echte E-Mail über dein verbundenes Postfach verschickt. Advaic unterstützt den Entwurf, die Freigabe liegt bei dir.",
       requiresPath: "/app/nachrichten/",
-      anchorSelector: '[data-tour="conversation-composer"]',
+      anchorSelector: '[data-tour="composer"]',
     },
     {
       id: "conversation_attachments",
@@ -191,7 +191,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       title: "Anhänge",
       body: "Anhänge werden direkt mit der E-Mail verschickt, z. B. Exposé, Grundriss oder Unterlagenliste.",
       requiresPath: "/app/nachrichten/",
-      anchorSelector: '[data-tour="conversation-attachments"]',
+      anchorSelector: '[data-tour="attachments"]',
     },
     {
       id: "conversation_profile",
@@ -200,7 +200,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       title: "Profil und Dokumente",
       body: "Über „Profil“ siehst du Zusatzinfos und vorhandene Dokumente zum Interessenten. Das hilft bei schnellen, passenden Antworten.",
       requiresPath: "/app/nachrichten/",
-      anchorSelector: '[data-tour="conversation-profile-button"]',
+      anchorSelector: '[data-tour="lead-profile-button"]',
     },
 
     // =========================
@@ -262,7 +262,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       title: "Vorschau",
       body: "Vor dem Versand siehst du den kompletten Entwurf inklusive Anhängen.",
       requiresPath: "/app/zur-freigabe",
-      anchorSelector: '[data-tour="approval-preview"]',
+      anchorSelector: '[data-tour="approval-editor"]',
     },
     {
       id: "approval_send_locking",
@@ -342,7 +342,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       title: "Objektübersicht",
       body: "Hier findest du alle Objekte mit aktuellem Status. Advaic nutzt diese Daten für Matching und Rückfragen.",
       requiresPath: "/app/immobilien",
-      anchorSelector: '[data-tour="properties-list"]',
+      anchorSelector: '[data-tour="properties-grid"]',
     },
     {
       id: "properties_add_flow",
@@ -410,7 +410,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       title: "Speichern und Veröffentlichen",
       body: "Speichern hält den Entwurf fest. Veröffentlichen setzt das Objekt aktiv, damit es im operativen Ablauf genutzt wird.",
       requiresPath: "/app/immobilien/hinzufuegen",
-      anchorSelector: '[data-tour="property-add-actions"]',
+      anchorSelector: '[data-tour="property-add-save"]',
     },
     {
       id: "properties_back_to_list",
@@ -548,7 +548,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       title: "ImmoScout-Sync",
       body: "Optional kannst du ImmoScout anbinden, damit Objektdaten automatisch synchronisiert und aktuell gehalten werden.",
       requiresPath: "/app/immobilien",
-      anchorSelector: '[data-tour="properties-sync"]',
+      anchorSelector: '[data-tour="properties-refresh"]',
     },
 
     // =========================
@@ -698,9 +698,6 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       title: "Bearbeiten testen",
       body: "Klicke jetzt auf „Bearbeiten“. Die Vorlage wird in das Formular geladen und kann direkt angepasst werden.",
       requiresPath: "/app/antwortvorlagen",
-      // Empfehlung: sobald du den Button taggst:
-      // requireClickSelector: '[data-tour="template-edit"]',
-      // Falls du NICHT taggst, geht auch:
       requireClickSelector: '[data-tour="template-actions"] button',
       requireClickText: "Klicke auf „Bearbeiten“, um fortzufahren.",
       anchorSelector: '[data-tour="template-actions"]',
@@ -742,8 +739,8 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       mode: "core",
       title: "Dein persönlicher Schreibstil",
       body: "Hier legst du fest, wie Advaic in deinem Namen formuliert. Diese Einstellungen gelten systemweit.",
-      requiresPath: "/app/Ton-und-stil",
-      goTo: "/app/Ton-und-stil",
+      requiresPath: "/app/ton-und-stil",
+      goTo: "/app/ton-und-stil",
       anchorSelector: '[data-tour="tone-style-header"]',
     },
     {
@@ -752,7 +749,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       mode: "core",
       title: "Stil & Regeln festlegen",
       body: "Definiere Ton, Anrede, Antwortlänge sowie Do’s und Don’ts. So bleiben Antworten konsistent.",
-      requiresPath: "/app/Ton-und-stil",
+      requiresPath: "/app/ton-und-stil",
       anchorSelector: '[data-tour="tone-style-card"]',
     },
     {
@@ -761,8 +758,8 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       mode: "core",
       title: "Mit echten Beispielen trainieren",
       body: "Du kannst eigene Formulierungen oder Beispiele hinterlegen. Das verbessert die Stiltreue in neuen Entwürfen.",
-      requiresPath: "/app/Ton-und-stil",
-      anchorSelector: '[data-tour="tone-style-upload-input"]',
+      requiresPath: "/app/ton-und-stil",
+      anchorSelector: '[data-tour="tone-style-formulations-input"]',
     },
     {
       id: "tone_style_save",
@@ -770,7 +767,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       mode: "core",
       title: "Einmal speichern – überall aktiv",
       body: "Nach dem Speichern nutzt Advaic diesen Stil automatisch. Änderungen sind jederzeit möglich.",
-      requiresPath: "/app/Ton-und-stil",
+      requiresPath: "/app/ton-und-stil",
       anchorSelector: '[data-tour="tone-style-save"]',
     },
 
@@ -793,7 +790,7 @@ export const TOUR_STEPS: Record<TourKey, TourStep[]> = {
       title: "Alert-Regeln",
       body: "Lege fest, ob Hinweise sofort oder gebündelt eingehen. So verpasst du nichts und vermeidest unnötige Unterbrechungen.",
       requiresPath: "/app/benachrichtigungen",
-      anchorSelector: '[data-tour="notifications-form"]',
+      anchorSelector: '[data-tour="notifications-container"]',
     },
 
     // =========================

@@ -165,7 +165,7 @@ export default function AboPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" data-tour="account-link-abozahlungen">
       <div>
         <h1 className="text-2xl font-bold">Abo & Zahlungen</h1>
         <p className="text-muted-foreground text-sm">
@@ -211,6 +211,9 @@ export default function AboPage() {
             <p className="text-sm text-muted-foreground">Status: {statusLabel}</p>
             <p className="text-sm text-muted-foreground">
               Nächste Verlängerung: {formatDate(plan?.current_period_end || null)}
+            </p>
+            <p className="text-sm text-muted-foreground" data-tour="account-link-kontoloschen">
+              Kündigung und Tarifwechsel erfolgen über das Billing-Portal.
             </p>
             {plan?.cancel_at_period_end ? (
               <p className="text-sm text-amber-700">

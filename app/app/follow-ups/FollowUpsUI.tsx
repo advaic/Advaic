@@ -1201,12 +1201,18 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
             </div>
           </div>
 
-          <div className="mb-4 rounded-2xl border border-gray-200 bg-white p-4 text-xs text-gray-700">
+          <div
+            className="mb-4 rounded-2xl border border-gray-200 bg-white p-4 text-xs text-gray-700"
+            data-tour="followups-quality"
+          >
             Follow-up-Performance wird konservativ berechnet: Antwortquote basiert auf Leads mit Nutzerantwort nach dem
             letzten gesendeten Follow-up in den letzten 30 Tagen.
           </div>
 
-          <div className="mb-4 rounded-2xl border border-gray-200 bg-white p-4">
+          <div
+            className="mb-4 rounded-2xl border border-gray-200 bg-white p-4"
+            data-tour="followups-timing"
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-gray-900">
@@ -1302,10 +1308,8 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
             )}
           </div>
 
-          <div
-            className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
-            data-tour="followups-list"
-          >
+          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden" data-tour="followups-archive">
+            <div data-tour="followups-list">
             <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between gap-3">
               <div className="text-sm text-gray-600">
                 {tab === "waiting" && (
@@ -1483,6 +1487,7 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
                   emptyText="Noch keine gesendeten Follow-Ups gefunden."
                 />
               )}
+            </div>
             </div>
           </div>
         </div>

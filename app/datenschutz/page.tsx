@@ -3,64 +3,152 @@ import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
 
-const principles = [
-  "Zweckbindung: E-Mail-Daten werden nur zur Anfragebearbeitung, Qualitätssicherung und Nachvollziehbarkeit verarbeitet.",
-  "Datenminimierung: Nicht relevante Nachrichten wie Newsletter, Systemmails und Spam werden gefiltert und nicht beantwortet.",
-  "Kontrolle: Unklare oder riskante Fälle gehen in die Freigabe statt in den Autopilot.",
-  "Nachvollziehbarkeit: Status, Zeitstempel und Versandentscheidungen sind im Verlauf dokumentiert.",
-];
+type PrivacySection = {
+  title: string;
+  paragraphs?: string[];
+  points?: string[];
+};
 
-const recipients = [
-  "Supabase für Hosting, Datenbank, Authentifizierung und Storage.",
-  "Google und Microsoft für E-Mail-Integrationen, wenn Sie diese aktiv verbinden.",
-  "Azure OpenAI für Klassifizierung, Entwürfe, Qualitätsprüfungen und den öffentlichen Website-Assistenten.",
-  "Stripe für Abo-, Rechnungs- und Zahlungsprozesse.",
-  "Slack oder vergleichbare Benachrichtigungsdienste, wenn Sie sie aktiv freischalten.",
-];
-
-const retentionRows = [
+const PRIVACY_SECTIONS: PrivacySection[] = [
   {
-    category: "Nachrichten- und Verlaufsdaten",
-    retention:
-      "Speicherung für den laufenden Produktbetrieb. Bei Kontolöschung werden agentenbezogene Datensätze und Verknüpfungen entfernt, vorbehaltlich gesetzlicher Pflichten.",
+    title: "1) Rollenmodell der Verarbeitung",
+    points: [
+      "Für Kontoanlage, Authentifizierung, Abrechnung, Sicherheit, Missbrauchsprävention und Support handelt Advaic regelmäßig als eigener Verantwortlicher.",
+      "Soweit Nachrichteninhalte für den Kundenbetrieb verarbeitet werden, erfolgt die Verarbeitung im Rahmen einer Auftragsverarbeitung gemäß Art. 28 DSGVO.",
+      "Der Kunde bleibt verantwortlich für Rechtsgrundlagen, Betroffeneninformationen und die Zulässigkeit der jeweiligen Kommunikation.",
+    ],
   },
   {
-    category: "Integrations- und Zugriffsdaten",
-    retention:
-      "Bis zur Trennung der jeweiligen Integration oder Kontolöschung. Zugangstoken werden verschlüsselt gespeichert.",
+    title: "2) Verarbeitete Datenkategorien",
+    points: [
+      "Kontodaten: Name, E-Mail, Firmenangaben, Rollen, Einstellungen, Vertragsdaten.",
+      "Kommunikationsdaten: Betreff, E-Mail-Inhalte, Absender-/Empfängerdaten, Thread-Bezüge, Zeitstempel, Status.",
+      "Konfigurationsdaten: Auto/Freigabe-Regeln, Ton- und Stilvorgaben, Follow-up-Einstellungen, Vorlagen.",
+      "Integrationsdaten: Verbindungsstatus, technische Token-/API-Metadaten (sicher gespeichert), Fehler- und Laufzeitinformationen.",
+      "Sicherheits- und Protokolldaten: Zugriffsvorgänge, Systemereignisse, Fehlermeldungen, Audit-Hinweise.",
+    ],
   },
   {
-    category: "Technische Fehler- und Sicherheitsprotokolle",
-    retention:
-      "Nur solange erforderlich für Stabilität, Missbrauchsschutz und Fehleranalyse. Auf öffentlichen Seiten werden optionale First-Party-Nutzungsereignisse für Funnel- und UX-Analyse nur nach Einwilligung verarbeitet.",
+    title: "3) Zwecke und Rechtsgrundlagen",
+    points: [
+      "Art. 6 Abs. 1 lit. b DSGVO: Vertragserfüllung, Bereitstellung und Betrieb der Plattform, Nutzerverwaltung, Support.",
+      "Art. 6 Abs. 1 lit. f DSGVO: Sicherheit, Stabilität, Missbrauchsprävention, Qualitätsverbesserung und Nachvollziehbarkeit.",
+      "Art. 6 Abs. 1 lit. c DSGVO: Erfüllung gesetzlicher Pflichten (z. B. handels- und steuerrechtliche Aufbewahrung).",
+      "Art. 6 Abs. 1 lit. a DSGVO: Einwilligungsbasierte Verarbeitungen (z. B. Newsletter, optionale Analyse-/Marketing-Cookies).",
+      "§ 25 TDDDG: Zugriff auf Endgeräteinformationen erfolgt nur im gesetzlich zulässigen Rahmen (erforderlich oder einwilligungsbasiert).",
+    ],
   },
   {
-    category: "Cookies und Browser-Speicher",
-    retention:
-      "Siehe detaillierte Übersicht auf der Seite „Cookie & Storage“ mit Eintrag, Zweck, Rechtsgrundlage und Dauer.",
+    title: "4) Automatisierte Verarbeitung im Produkt",
+    points: [
+      "Advaic nutzt regel- und modellgestützte Verfahren zur Kategorisierung eingehender E-Mails sowie zur Entwurfserstellung.",
+      "Je nach Kundeneinstellung können klare Standardfälle automatisiert versendet werden; unklare oder risikobehaftete Fälle gehen zur Freigabe.",
+      "Trotz Guardrails und Qualitätschecks kann eine Fehlklassifikation technisch nicht vollständig ausgeschlossen werden.",
+      "Die fachliche und rechtliche Verantwortung für aktive Konfiguration und Versandentscheidungen verbleibt beim Kunden.",
+    ],
+  },
+  {
+    title: "5) Empfänger und Dienstleister",
+    points: [
+      "Technische Infrastruktur- und Betriebsdienstleister (z. B. Hosting, Datenbank, Monitoring, Authentifizierung).",
+      "E-Mail- und Integrationsanbieter, die der Kunde aktiv verbindet (z. B. Gmail/Outlook/Portale).",
+      "KI-Dienstleister zur Klassifizierung, Entwurfserstellung und Qualitätsprüfung innerhalb der Produktlogik.",
+      "Zahlungsdienstleister für Abo-, Rechnungs- und Zahlungsabwicklung.",
+      "Eine Offenlegung gegenüber Behörden erfolgt ausschließlich bei gesetzlicher Verpflichtung.",
+    ],
+  },
+  {
+    title: "6) Drittlandübermittlungen",
+    points: [
+      "Soweit Daten außerhalb der EU/des EWR verarbeitet werden, erfolgen Übermittlungen nur bei geeigneten Garantien.",
+      "Als Garantien kommen insbesondere Angemessenheitsbeschlüsse und/oder Standardvertragsklauseln in Betracht.",
+      "Ergänzende technische und organisatorische Schutzmaßnahmen werden risikobasiert berücksichtigt.",
+    ],
+  },
+  {
+    title: "7) Speicherdauer und Löschung",
+    points: [
+      "Kontodaten: Speicherung für die Vertragslaufzeit; danach Löschung oder Einschränkung, soweit keine gesetzlichen Pflichten entgegenstehen.",
+      "Nachrichten- und Verlaufsdaten: Speicherung für den Produktbetrieb und Nachvollziehbarkeit, danach Löschung/Anonymisierung gemäß Löschkonzept.",
+      "Integrations- und Zugriffsdaten: Speicherung bis zur Trennung der Verbindung oder Vertragsende.",
+      "Abrechnungsdaten: Aufbewahrung nach gesetzlichen handels- und steuerrechtlichen Fristen.",
+      "Sicherheits-/Fehlerprotokolle: nur so lange wie für Stabilität, Sicherheit und Missbrauchsabwehr erforderlich.",
+    ],
+  },
+  {
+    title: "8) Sicherheit der Verarbeitung",
+    points: [
+      "Rollen- und Rechtekonzepte mit Zugriff nach Need-to-know-Prinzip.",
+      "Absicherung von Integrations- und Verbindungsdaten sowie Transportverschlüsselung.",
+      "Technische und organisatorische Maßnahmen nach Art. 32 DSGVO.",
+      "Protokollierung sicherheitsrelevanter Vorgänge sowie Wiederherstellungs- und Backup-Prozesse.",
+    ],
+  },
+  {
+    title: "9) Newsletter und Marketing-Kommunikation",
+    points: [
+      "Newsletter und vergleichbare Produkt-/Marketing-E-Mails erfolgen nur bei entsprechender Einwilligung.",
+      "Die Einwilligung ist freiwillig und jederzeit mit Wirkung für die Zukunft widerrufbar.",
+      "Ein Widerruf berührt nicht die Rechtmäßigkeit der bis zum Widerruf erfolgten Verarbeitung.",
+    ],
+  },
+  {
+    title: "10) Cookies und ähnliche Technologien",
+    points: [
+      "Notwendige Cookies und Speicher werden für Login, Sicherheit und technisch erforderliche Funktionen eingesetzt.",
+      "Optionale Kategorien (Analyse/Marketing) werden nur nach aktiver Einwilligung verarbeitet.",
+      "Einwilligungen können jederzeit über die Cookie-Einstellungen angepasst oder widerrufen werden.",
+      "Detaillierte Informationen stehen auf der Seite Cookie & Storage.",
+    ],
+  },
+  {
+    title: "11) Rechte betroffener Personen",
+    points: [
+      "Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16 DSGVO), Löschung (Art. 17 DSGVO) und Einschränkung (Art. 18 DSGVO).",
+      "Recht auf Datenübertragbarkeit (Art. 20 DSGVO) und Widerspruch (Art. 21 DSGVO).",
+      "Recht auf Widerruf erteilter Einwilligungen mit Wirkung für die Zukunft (Art. 7 Abs. 3 DSGVO).",
+      "Beschwerderecht bei einer Datenschutzaufsichtsbehörde (Art. 77 DSGVO).",
+    ],
+  },
+  {
+    title: "12) Pflicht zur Bereitstellung von Daten",
+    points: [
+      "Bestimmte Daten sind für Vertragsabschluss und Betrieb von Advaic erforderlich.",
+      "Ohne erforderliche Angaben kann die Leistung ganz oder teilweise nicht erbracht werden.",
+    ],
+  },
+  {
+    title: "13) Änderungen dieser Datenschutzhinweise",
+    points: [
+      "Diese Hinweise können angepasst werden, wenn sich Rechtslage, technische Prozesse oder Produktfunktionen ändern.",
+      "Maßgeblich ist die jeweils auf dieser Seite veröffentlichte aktuelle Fassung mit Stand-Datum.",
+    ],
   },
 ];
 
 export default function DatenschutzPage() {
-  const companyName = process.env.NEXT_PUBLIC_LEGAL_COMPANY_NAME || "Advaic";
+  const legalCompany = process.env.NEXT_PUBLIC_LEGAL_COMPANY_NAME || "Advaic";
   const privacyEmail =
     process.env.NEXT_PUBLIC_LEGAL_PRIVACY_EMAIL ||
     process.env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL ||
     "support@advaic.com";
+  const legalAddressStreet = process.env.NEXT_PUBLIC_LEGAL_ADDRESS_STREET || "Adresse folgt";
+  const legalAddressZipCity = process.env.NEXT_PUBLIC_LEGAL_ADDRESS_ZIP_CITY || "PLZ Ort folgt";
+  const legalAddressCountry = process.env.NEXT_PUBLIC_LEGAL_ADDRESS_COUNTRY || "Deutschland";
 
   return (
     <PageShell withProofLayer={false}>
       <PageIntro
         kicker="Datenschutz"
         title="Datenschutzhinweise"
-        description="Diese Seite beschreibt, wie Advaic personenbezogene Daten in der Produktnutzung verarbeitet. Stand: 26. Februar 2026."
+        description="Transparente Informationen zur Verarbeitung personenbezogener Daten bei der Nutzung von Advaic. Stand: 26. Februar 2026."
         actions={
           <>
-            <Link href="/sicherheit" className="btn-secondary">
-              Sicherheitsdetails
+            <Link href="/cookie-und-storage" className="btn-secondary">
+              Cookie & Storage
             </Link>
             <a href={`mailto:${privacyEmail}`} className="btn-primary">
-              Datenschutz anfragen
+              Datenschutz kontaktieren
             </a>
           </>
         }
@@ -68,11 +156,12 @@ export default function DatenschutzPage() {
 
       <section className="marketing-section-clear py-20 md:py-28">
         <Container>
-          <article className="card-base p-8 md:p-10">
-            <h2 className="h2">Verantwortlicher</h2>
-            <p className="helper mt-4">
-              Verantwortlich für die Datenverarbeitung im Rahmen dieses Webauftritts und der Produktnutzung ist{" "}
-              <strong>{companyName}</strong>. Datenschutzanfragen richten Sie an{" "}
+          <article className="card-base p-6 md:p-8">
+            <h2 className="h3">Verantwortlicher</h2>
+            <p className="mt-3 text-sm text-[var(--muted)]">
+              Verantwortlich für die Datenverarbeitung im Sinne der DSGVO ist{" "}
+              <strong className="text-[var(--text)]">{legalCompany}</strong>, {legalAddressStreet}, {legalAddressZipCity},{" "}
+              {legalAddressCountry}. Für Datenschutzanfragen nutzen Sie bitte{" "}
               <a className="underline underline-offset-4" href={`mailto:${privacyEmail}`}>
                 {privacyEmail}
               </a>
@@ -80,129 +169,59 @@ export default function DatenschutzPage() {
             </p>
           </article>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <article className="card-base card-hover p-6">
-              <h3 className="h3">1) Welche Daten verarbeitet Advaic?</h3>
-              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                <li>E-Mail-Inhalte, Betreffzeilen und Metadaten (Absender, Zeitpunkte, Threads).</li>
-                <li>Konfigurationen wie Tonalität, Regeln, Freigabe- und Versandstatus.</li>
-                <li>Technische Protokolle zur Stabilität, Fehlersuche und Missbrauchserkennung.</li>
-              </ul>
-            </article>
+          <div className="mt-6 space-y-4">
+            {PRIVACY_SECTIONS.map((section) => (
+              <article key={section.title} className="card-base p-6 md:p-8">
+                <h2 className="h3">{section.title}</h2>
 
-            <article className="card-base card-hover p-6">
-              <h3 className="h3">2) Zu welchen Zwecken?</h3>
-              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                <li>Erkennung echter Interessenten-Anfragen und Filterung nicht relevanter Nachrichten.</li>
-                <li>Erstellung von Antwortentwürfen im definierten Stil und kontrollierter Versand.</li>
-                <li>Dokumentation von Entscheidungen für Transparenz und interne Qualitätssicherung.</li>
-              </ul>
-            </article>
+                {section.paragraphs?.length ? (
+                  <div className="mt-3 space-y-3 text-sm text-[var(--muted)]">
+                    {section.paragraphs.map((paragraph) => (
+                      <p key={paragraph}>{paragraph}</p>
+                    ))}
+                  </div>
+                ) : null}
 
-            <article className="card-base card-hover p-6">
-              <h3 className="h3">3) Rechtsgrundlagen</h3>
-              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                <li>Art. 6 Abs. 1 lit. b DSGVO (Vertrag und vorvertragliche Kommunikation).</li>
-                <li>Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an sicherer, effizienter Kommunikation).</li>
-                <li>Art. 6 Abs. 1 lit. c DSGVO, soweit gesetzliche Pflichten bestehen.</li>
-              </ul>
-            </article>
-
-            <article className="card-base card-hover p-6">
-              <h3 className="h3">4) Empfänger und Dienstleister</h3>
-              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {recipients.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
+                {section.points?.length ? (
+                  <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                    {section.points.map((point) => (
+                      <li key={point} className="flex items-start gap-2">
+                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--gold)]" />
+                        <span>{point}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </article>
+            ))}
           </div>
 
           <article className="card-base mt-6 p-6 md:p-8">
-            <h3 className="h3">Drittlandtransfer</h3>
-            <p className="helper mt-3">
-              Wenn Dienste außerhalb der EU/des EWR eingebunden sind, erfolgt die Verarbeitung nur auf Grundlage der
-              jeweils erforderlichen Garantien (z. B. Angemessenheitsbeschluss oder Standardvertragsklauseln).
-              Die konkrete Anbieter- und Transferübersicht finden Sie auf der Seite{" "}
-              <Link href="/unterauftragsverarbeiter" className="underline underline-offset-4">
-                Unterauftragsverarbeiter
-              </Link>
-              .
-            </p>
-          </article>
-
-          <article className="card-base mt-6 p-6 md:p-8">
-            <h3 className="h3">Speicherdauer und Löschung</h3>
-            <div className="mt-4 space-y-4">
-              {retentionRows.map((row) => (
-                <div key={row.category} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
-                  <p className="text-sm font-semibold text-[var(--text)]">{row.category}</p>
-                  <p className="mt-2 text-sm text-[var(--muted)]">{row.retention}</p>
-                </div>
-              ))}
-            </div>
-            <p className="helper mt-4">
-              Detaillierte technische Einträge finden Sie auf{" "}
-              <Link href="/cookie-und-storage" className="underline underline-offset-4">
-                Cookie & Storage
-              </Link>
-              .
-            </p>
-          </article>
-
-          <article className="card-base mt-6 p-6 md:p-8">
-            <h3 className="h3">Datenschutz-Grundsätze im Produkt</h3>
-            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-              {principles.map((item) => (
-                <li key={item} className="flex items-start gap-2">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--gold)]" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </article>
-
-          <article className="card-base mt-6 p-6 md:p-8">
-            <h3 className="h3">Ihre Rechte nach DSGVO</h3>
-            <p className="helper mt-3">
-              Sie haben insbesondere Rechte auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung,
-              Datenübertragbarkeit sowie Widerspruch. Anfragen senden Sie an{" "}
-              <a className="underline underline-offset-4" href={`mailto:${privacyEmail}`}>
-                {privacyEmail}
-              </a>
-              .
-            </p>
-            <p className="helper mt-3">
-              Wenn Sie der Ansicht sind, dass eine Verarbeitung nicht DSGVO-konform erfolgt, können Sie sich zusätzlich
-              an eine Datenschutzaufsichtsbehörde wenden.
-            </p>
-          </article>
-
-          <article className="card-base mt-6 p-6 md:p-8">
-            <h3 className="h3">Transparenz-Dokumente</h3>
+            <h2 className="h3">Weitere Transparenzdokumente</h2>
             <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
               <li>
                 <Link href="/unterauftragsverarbeiter" className="underline underline-offset-4">
-                  Unterauftragsverarbeiter-Verzeichnis
+                  Unterauftragsverarbeiter
                 </Link>
               </li>
               <li>
-                <Link href="/cookie-und-storage" className="underline underline-offset-4">
-                  Cookie & Storage Übersicht
+                <Link href="/nutzungsbedingungen" className="underline underline-offset-4">
+                  Nutzungsbedingungen
                 </Link>
               </li>
               <li>
                 <Link href="/sicherheit" className="underline underline-offset-4">
-                  Sicherheits- und Guardrail-Logik
+                  Sicherheitslogik und Guardrails
                 </Link>
               </li>
             </ul>
           </article>
 
           <article className="card-base mt-6 p-6">
-            <h3 className="h3">Hinweis</h3>
-            <p className="helper mt-3">
-              Diese Seite ist eine produktbezogene Datenschutzinformation. Sie ersetzt keine individuelle Rechtsberatung.
+            <h2 className="h3">Hinweis</h2>
+            <p className="mt-3 text-sm text-[var(--muted)]">
+              Diese Hinweise dienen der transparenten Information über unsere Datenverarbeitung und ersetzen keine
+              individuelle Rechtsberatung.
             </p>
           </article>
         </Container>

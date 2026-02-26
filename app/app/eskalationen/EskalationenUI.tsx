@@ -669,7 +669,10 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+          <div
+            className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
+            data-tour="escalations-list"
+          >
             <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between gap-3">
               <div className="text-sm text-gray-600 inline-flex items-center gap-2">
                 <Clock className="h-4 w-4 text-gray-500" />
@@ -683,7 +686,10 @@ export default function EskalationenUI({ leads, userId }: EskalationenUIProps) {
 
             <div className="p-4 md:p-6">
               {selectedIds.length > 0 && (
-                <div className="mb-4 rounded-2xl border border-gray-200 bg-white p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div
+                  className="mb-4 rounded-2xl border border-gray-200 bg-white p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                  data-tour="escalation-actions"
+                >
                   <div className="text-sm text-gray-700 inline-flex items-center gap-2">
                     <CheckSquare className="h-4 w-4" />
                     <span className="font-medium">{selectedIds.length}</span>

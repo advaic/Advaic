@@ -448,7 +448,10 @@ export default function AntwortvorlagenPage() {
     <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
-        <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
+        <div
+          className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
+          data-tour="templates-header"
+        >
           <div className="flex items-start justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -462,13 +465,13 @@ export default function AntwortvorlagenPage() {
                   {filteredTemplates.length} / {templates.length} Vorlagen
                 </span>
               </div>
-              <div className="mt-1 text-sm text-gray-600">
+              <div className="mt-1 text-sm text-gray-600" data-tour="templates-intro">
                 Erstelle eigene Textbausteine. Advaic kombiniert Vorlagen mit
                 Kontext, Ton & Stil – sie werden nie starr 1:1 gesendet.
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" data-tour="templates-actions">
               {isEditing ? (
                 <Button variant="outline" onClick={resetForm} className="gap-2">
                   <X className="h-4 w-4" />
@@ -494,10 +497,16 @@ export default function AntwortvorlagenPage() {
 
         {/* Content */}
         <div className="py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" data-tour="templates-layout">
             {/* Left: Form */}
-            <Card className="lg:col-span-1 rounded-2xl border border-gray-200 bg-white overflow-hidden">
-              <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
+            <Card
+              className="lg:col-span-1 rounded-2xl border border-gray-200 bg-white overflow-hidden"
+              data-tour="templates-form-card"
+            >
+              <div
+                className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between"
+                data-tour="templates-form-header"
+              >
                 <div className="text-sm text-gray-700 font-medium inline-flex items-center gap-2">
                   {isEditing ? (
                     <>
@@ -518,7 +527,7 @@ export default function AntwortvorlagenPage() {
                 ) : null}
               </div>
 
-              <div className="p-4 md:p-6 space-y-4">
+              <div className="p-4 md:p-6 space-y-4" data-tour="templates-form">
                 <div className="space-y-1">
                   <label
                     className="text-xs font-medium text-gray-700"
@@ -568,7 +577,7 @@ export default function AntwortvorlagenPage() {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4" data-tour="templates-tip">
                   <div className="text-sm font-medium text-amber-900 inline-flex items-center gap-2">
                     <Sparkles className="h-4 w-4" />
                     Tipp
@@ -584,7 +593,10 @@ export default function AntwortvorlagenPage() {
             {/* Right: Lists */}
             <div className="lg:col-span-2 space-y-4">
               {/* AI Generator */}
-              <Card className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+              <Card
+                className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
+                data-tour="templates-ai-card"
+              >
                 <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
                   <div className="text-sm text-gray-700 font-medium inline-flex items-center gap-2">
                     <Wand2 className="h-4 w-4 text-gray-500" />
@@ -605,6 +617,7 @@ export default function AntwortvorlagenPage() {
                     placeholder="Beispiel: Freundliche Antwort für Interessenten, die nach Haustieren fragen (kurz, professionell)."
                     rows={3}
                     className="resize-none"
+                    data-tour="templates-ai-prompt"
                   />
 
                   <div className="flex items-center justify-end gap-2">
@@ -620,6 +633,7 @@ export default function AntwortvorlagenPage() {
                       className="rounded-lg bg-gray-900 text-amber-200 hover:bg-gray-800 gap-2"
                       onClick={generateWithAI}
                       disabled={aiLoading || !aiPrompt.trim()}
+                      data-tour="templates-ai-generate"
                     >
                       {aiLoading ? (
                         <>
@@ -640,7 +654,10 @@ export default function AntwortvorlagenPage() {
               </Card>
 
               {/* Your templates */}
-              <Card className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+              <Card
+                className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
+                data-tour="templates-list"
+              >
                 <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
                   <div className="text-sm text-gray-700 font-medium inline-flex items-center gap-2">
                     <Lightbulb className="h-4 w-4 text-gray-500" />
@@ -743,6 +760,7 @@ export default function AntwortvorlagenPage() {
                         <div
                           key={t.id}
                           className="rounded-2xl border border-gray-200 bg-white p-4 hover:bg-[#fbfbfc] transition-colors"
+                          data-tour="template-card"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -761,7 +779,7 @@ export default function AntwortvorlagenPage() {
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2" data-tour="template-actions">
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -847,7 +865,10 @@ export default function AntwortvorlagenPage() {
 
               {/* AI suggestions */}
               {suggestions.length > 0 ? (
-                <Card className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+                <Card
+                  className="rounded-2xl border border-gray-200 bg-white overflow-hidden"
+                  data-tour="templates-suggestions-card"
+                >
                   <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between">
                     <div className="text-sm text-gray-700 font-medium inline-flex items-center gap-2">
                       <Sparkles className="h-4 w-4 text-gray-500" />
@@ -908,7 +929,10 @@ export default function AntwortvorlagenPage() {
         {/* Confirm Dialog */}
         {showConfirmId ? (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4">
-            <div className="bg-white rounded-2xl p-6 shadow-md w-full max-w-sm border border-gray-200">
+            <div
+              className="bg-white rounded-2xl p-6 shadow-md w-full max-w-sm border border-gray-200"
+              data-tour="templates-delete-modal-card"
+            >
               <h2 className="text-lg font-semibold mb-2">
                 Vorlage wirklich löschen?
               </h2>

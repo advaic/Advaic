@@ -165,6 +165,7 @@ export async function POST(req: NextRequest) {
       email: user.email || null,
       name: fullName || null,
       company: firma || null,
+      phone: telefon || null,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "id" },

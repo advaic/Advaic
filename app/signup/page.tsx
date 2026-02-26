@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase/browserClient";
 import { Eye, EyeOff } from "lucide-react";
 import AuthShell from "@/components/marketing/AuthShell";
 import { useSearchParams } from "next/navigation";
@@ -12,14 +11,28 @@ import {
   serializeSafeStartPresetToQuery,
 } from "@/lib/onboarding/safe-start-preset";
 
+type SignupStage = "collect" | "verify" | "done";
+
+function normalizePhoneClient(raw: string) {
+  const input = String(raw || "").trim();
+  const hasPlus = input.startsWith("+");
+  const digits = input.replace(/\D/g, "");
+  if (digits.length < 8 || digits.length > 15) return "";
+  return `${hasPlus ? "+" : ""}${digits}`;
+}
+
 export default function SignupPage() {
   const searchParams = useSearchParams();
+
+  const [stage, setStage] = useState<SignupStage>("collect");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [company, setCompany] = useState("");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [acceptPrivacy, setAcceptPrivacy] = useState(false);
   const [allowNewsletter, setAllowNewsletter] = useState(false);
@@ -27,7 +40,9 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
-  const consentVersion = "2026-02-26";
+  const [maskedTarget, setMaskedTarget] = useState("");
+  const [resendCooldownSec, setResendCooldownSec] = useState(0);
+
   const safeStartPreset = useMemo(
     () => parseSafeStartPresetFromParams(searchParams, "signup"),
     [searchParams],
@@ -53,91 +68,155 @@ export default function SignupPage() {
     saveSafeStartPreset(safeStartPreset);
   }, [safeStartPreset]);
 
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg("");
-    setSuccessMsg("");
+  useEffect(() => {
+    if (resendCooldownSec <= 0) return;
+    const id = window.setInterval(() => {
+      setResendCooldownSec((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [resendCooldownSec]);
 
-    if (password.length < 8) {
-      setErrorMsg("Das Passwort muss mindestens 8 Zeichen lang sein.");
-      return;
-    }
+  const validateCollectStep = () => {
+    if (!firstName.trim() || !lastName.trim()) return "Bitte geben Sie Vor- und Nachnamen an.";
+    if (!email.trim()) return "Bitte geben Sie Ihre E-Mail-Adresse an.";
+    if (!normalizePhoneClient(phone)) return "Bitte geben Sie eine gültige Handynummer an.";
+    if (password.length < 8) return "Das Passwort muss mindestens 8 Zeichen lang sein.";
+    if (password !== confirmPassword) return "Die Passwörter stimmen nicht überein.";
+    if (!acceptTerms) return "Bitte akzeptieren Sie die Nutzungsbedingungen.";
+    if (!acceptPrivacy) return "Bitte bestätigen Sie die Datenschutzhinweise.";
+    return "";
+  };
 
-    if (password !== confirmPassword) {
-      setErrorMsg("Die Passwörter stimmen nicht überein.");
-      return;
-    }
-
-    if (!acceptTerms) {
-      setErrorMsg("Bitte akzeptieren Sie die Nutzungsbedingungen.");
-      return;
-    }
-
-    if (!acceptPrivacy) {
-      setErrorMsg("Bitte bestätigen Sie die Datenschutzhinweise.");
+  const requestVerificationCode = async (isResend = false) => {
+    const validationError = validateCollectStep();
+    if (validationError) {
+      setErrorMsg(validationError);
       return;
     }
 
     setLoading(true);
-    const nowIso = new Date().toISOString();
-    const cleanedFirst = firstName.trim();
-    const cleanedLast = lastName.trim();
-    const fullName = `${cleanedFirst} ${cleanedLast}`.trim();
-    const cleanedCompany = company.trim();
-    const emailRedirectTo =
-      typeof window !== "undefined"
-        ? `${window.location.origin}/login${safeStartQuery ? `?${safeStartQuery}` : ""}`
-        : undefined;
+    setErrorMsg("");
+    setSuccessMsg("");
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo,
-        data: {
-          first_name: cleanedFirst || null,
-          last_name: cleanedLast || null,
-          full_name: fullName || null,
-          name: fullName || null,
-          company: cleanedCompany || null,
-          terms_accepted: true,
-          terms_accepted_at: nowIso,
-          terms_version: consentVersion,
-          privacy_accepted: true,
-          privacy_accepted_at: nowIso,
-          privacy_version: consentVersion,
-          marketing_email_opt_in: allowNewsletter,
-          marketing_email_opt_in_at: allowNewsletter ? nowIso : null,
-          marketing_email_opt_out_at: allowNewsletter ? null : nowIso,
-          signup_source: signupEntry ? `website:${signupEntry}` : "website:signup",
-          signup_path: "/signup",
-          consent_locale: "de-DE",
-        },
-      },
+    const response = await fetch("/api/auth/signup/request-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        acceptTerms,
+        acceptPrivacy,
+      }),
     });
 
-    if (error) {
-      if (error.message.toLowerCase().includes("already registered")) {
-        setErrorMsg("Für diese E-Mail existiert bereits ein Konto. Bitte nutzen Sie den Login.");
+    const data = (await response.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      method?: "sms_verify" | "email_code";
+      maskedTarget?: string;
+    };
+
+    if (!response.ok || !data?.ok) {
+      if (data?.error === "rate_limited") {
+        setErrorMsg("Zu viele Code-Anfragen. Bitte warten Sie kurz und versuchen Sie es erneut.");
+      } else if (data?.error === "verification_rate_limited") {
+        setErrorMsg("Zu viele Verifizierungsversuche. Bitte warten Sie kurz und versuchen Sie es erneut.");
+      } else if (data?.error === "invalid_phone_e164") {
+        setErrorMsg("Bitte geben Sie Ihre Handynummer im Format +49... an.");
+      } else if (data?.error === "twilio_verify_misconfigured") {
+        setErrorMsg("Die SMS-Verifizierung ist aktuell nicht korrekt eingerichtet. Bitte kontaktieren Sie den Support.");
       } else {
-        setErrorMsg("Registrierung fehlgeschlagen. Bitte prüfen Sie Ihre Angaben.");
+        setErrorMsg("Verifizierungscode konnte nicht gesendet werden. Bitte prüfen Sie Ihre Angaben.");
       }
       setLoading(false);
       return;
     }
 
-    const hasSession = !!data?.session;
-    if (hasSession) {
-      window.location.assign("/app/onboarding");
+    setMaskedTarget(String(data.maskedTarget || ""));
+    setStage("verify");
+    setResendCooldownSec(30);
+    setSuccessMsg(
+      isResend
+        ? data.method === "sms_verify"
+          ? "Ein neuer Verifizierungscode wurde per SMS gesendet."
+          : "Ein neuer Verifizierungscode wurde per E-Mail gesendet."
+        : data.method === "sms_verify"
+          ? "Wir haben Ihnen den Verifizierungscode per SMS gesendet. Ohne Code wird kein Konto erstellt."
+          : "Wir haben Ihnen den Verifizierungscode per E-Mail gesendet. Ohne Code wird kein Konto erstellt.",
+    );
+    setLoading(false);
+  };
+
+  const verifyCodeAndCreateAccount = async () => {
+    const normalizedCode = String(verificationCode || "").replace(/\s+/g, "");
+    if (!/^\d{6}$/.test(normalizedCode)) {
+      setErrorMsg("Bitte geben Sie einen gültigen 6-stelligen Verifizierungscode ein.");
       return;
     }
 
+    setLoading(true);
+    setErrorMsg("");
+    setSuccessMsg("");
+
+    const response = await fetch("/api/auth/signup/verify-create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        company: company.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        password,
+        code: normalizedCode,
+        allowNewsletter,
+        acceptTerms,
+        acceptPrivacy,
+        signupEntry: signupEntry || null,
+      }),
+    });
+
+    const data = (await response.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+    };
+
+    if (!response.ok || !data?.ok) {
+      if (data?.error === "verification_expired") {
+        setErrorMsg("Der Code ist abgelaufen. Bitte fordern Sie einen neuen Code an.");
+      } else if (data?.error === "verification_invalid") {
+        setErrorMsg("Der Code ist ungültig. Bitte prüfen Sie die Eingabe.");
+      } else if (data?.error === "invalid_phone_e164") {
+        setErrorMsg("Bitte geben Sie Ihre Handynummer im Format +49... an.");
+      } else if (data?.error === "twilio_verify_misconfigured") {
+        setErrorMsg("Die SMS-Verifizierung ist aktuell nicht korrekt eingerichtet. Bitte kontaktieren Sie den Support.");
+      } else if (data?.error === "email_already_registered") {
+        setErrorMsg("Für diese E-Mail existiert bereits ein Konto. Bitte nutzen Sie den Login.");
+      } else {
+        setErrorMsg("Konto konnte nicht erstellt werden. Bitte versuchen Sie es erneut.");
+      }
+      setLoading(false);
+      return;
+    }
+
+    setStage("done");
     setSuccessMsg(
-      allowNewsletter
-        ? "Konto erstellt. Bitte bestätigen Sie Ihre E-Mail-Adresse und loggen Sie sich danach ein. Falls Sie den Newsletter gewählt haben, erhalten Sie nur relevante Updates und können ihn jederzeit abbestellen."
-        : "Konto erstellt. Bitte bestätigen Sie Ihre E-Mail-Adresse und loggen Sie sich danach ein.",
+      "Konto erfolgreich erstellt und verifiziert. Sie können sich jetzt einloggen.",
     );
     setLoading(false);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (stage === "collect") {
+      await requestVerificationCode(false);
+      return;
+    }
+    if (stage === "verify") {
+      await verifyCodeAndCreateAccount();
+    }
   };
 
   return (
@@ -145,18 +224,15 @@ export default function SignupPage() {
       title="Konto erstellen"
       subtitle="Starten Sie mit klaren Regeln, sicherem Autopilot und vollständiger Nachvollziehbarkeit."
       points={[
-        "Schneller Start mit konservativen Standardeinstellungen.",
-        "Freigabe-Workflow für unklare oder heikle Fälle.",
-        "Follow-ups sind optional und stufenweise steuerbar.",
+        "Pflicht-Verifizierung per SMS-Code vor Kontoerstellung.",
+        "Handynummer als Pflichtfeld für zuverlässige Kontakt- und Sicherheitsprozesse.",
+        "Freigabe-Workflow und Follow-ups bleiben stufenweise steuerbar.",
       ]}
     >
-      <form
-        onSubmit={handleSignup}
-        className="mx-auto w-full max-w-md"
-      >
+      <form onSubmit={handleSubmit} className="mx-auto w-full max-w-md">
         <h1 className="h2">Konto erstellen</h1>
         <p className="helper mt-2">
-          Starten Sie mit Advaic und richten Sie Ihr Konto in wenigen Schritten ein.
+          Ohne Verifizierungscode wird kein Konto erstellt.
         </p>
 
         {errorMsg ? (
@@ -168,153 +244,233 @@ export default function SignupPage() {
           </p>
         ) : null}
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-[var(--text)]">Vorname</label>
+        {stage !== "done" ? (
+          <>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--text)]">Vorname</label>
+                <input
+                  type="text"
+                  required
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  disabled={stage === "verify"}
+                  className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)] disabled:bg-[var(--surface)]"
+                  autoComplete="given-name"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[var(--text)]">Nachname</label>
+                <input
+                  type="text"
+                  required
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  disabled={stage === "verify"}
+                  className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)] disabled:bg-[var(--surface)]"
+                  autoComplete="family-name"
+                />
+              </div>
+            </div>
+
+            <label className="mt-4 mb-2 block text-sm font-medium text-[var(--text)]">
+              Firma (optional)
+            </label>
             <input
               type="text"
-              required
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
-              autoComplete="given-name"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              disabled={stage === "verify"}
+              className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)] disabled:bg-[var(--surface)]"
+              autoComplete="organization"
             />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-[var(--text)]">Nachname</label>
+
+            <label className="mt-4 mb-2 block text-sm font-medium text-[var(--text)]">
+              Handynummer
+            </label>
+            <input
+              type="tel"
+              required
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              disabled={stage === "verify"}
+              className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)] disabled:bg-[var(--surface)]"
+              autoComplete="tel"
+              placeholder="+49 170 1234567"
+            />
+            <p className="mt-2 text-xs text-[var(--muted)]">
+              Für die SMS-Verifizierung bitte im Format <strong>+49...</strong> angeben.
+            </p>
+
+            <label className="mt-4 mb-2 block text-sm font-medium text-[var(--text)]">
+              E-Mail
+            </label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={stage === "verify"}
+              className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)] disabled:bg-[var(--surface)]"
+              autoComplete="email"
+            />
+
+            <label className="mt-4 mb-2 block text-sm font-medium text-[var(--text)]">
+              Passwort
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={stage === "verify"}
+                className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 pr-10 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)] disabled:bg-[var(--surface)]"
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="focus-ring absolute inset-y-0 right-2 inline-flex items-center rounded-lg px-2 text-[var(--muted)] hover:text-[var(--text)] disabled:cursor-not-allowed"
+                aria-label={showPassword ? "Passwort verbergen" : "Passwort anzeigen"}
+                disabled={stage === "verify"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-[var(--muted)]">Mindestens 8 Zeichen.</p>
+
+            <label className="mt-4 mb-2 block text-sm font-medium text-[var(--text)]">
+              Passwort wiederholen
+            </label>
+            <input
+              type={showPassword ? "text" : "password"}
+              required
+              minLength={8}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={stage === "verify"}
+              className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)] disabled:bg-[var(--surface)]"
+              autoComplete="new-password"
+            />
+
+            <div className="mt-5 space-y-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
+              <label className="flex items-start gap-3 text-sm text-[var(--text)]">
+                <input
+                  type="checkbox"
+                  checked={acceptTerms}
+                  onChange={(e) => setAcceptTerms(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--black)]"
+                  required
+                  disabled={stage === "verify"}
+                />
+                <span>
+                  Ich akzeptiere die{" "}
+                  <Link href="/nutzungsbedingungen" className="underline underline-offset-4 hover:text-[var(--muted)]">
+                    Nutzungsbedingungen
+                  </Link>
+                  .
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3 text-sm text-[var(--text)]">
+                <input
+                  type="checkbox"
+                  checked={acceptPrivacy}
+                  onChange={(e) => setAcceptPrivacy(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--black)]"
+                  required
+                  disabled={stage === "verify"}
+                />
+                <span>
+                  Ich habe die{" "}
+                  <Link href="/datenschutz" className="underline underline-offset-4 hover:text-[var(--muted)]">
+                    Datenschutzhinweise
+                  </Link>{" "}
+                  gelesen und stimme der Verarbeitung meiner Daten zur Kontoerstellung zu.
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3 text-sm text-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={allowNewsletter}
+                  onChange={(e) => setAllowNewsletter(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--black)]"
+                  disabled={stage === "verify"}
+                />
+                <span>
+                  Ich möchte Produkt-Updates, Praxis-Tipps und gelegentliche Angebote per E-Mail erhalten. Diese
+                  Einwilligung kann ich jederzeit widerrufen.
+                </span>
+              </label>
+
+              <p className="text-xs leading-5 text-[var(--muted)]">
+                Hinweis: Advaic ist ein Assistenzsystem. Die Verantwortung für Aktivierung, Konfiguration und
+                versendete Inhalte liegt beim Konto-Inhaber.
+              </p>
+            </div>
+          </>
+        ) : null}
+
+        {stage === "verify" ? (
+          <div className="mt-6 rounded-xl border border-[var(--gold-soft)] bg-[rgba(201,162,39,0.08)] p-4">
+            <p className="text-sm font-semibold text-[var(--text)]">Verifizierungscode eingeben</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Code gesendet an <strong>{maskedTarget || phone || email}</strong>.
+            </p>
+            <label className="mt-3 mb-2 block text-sm font-medium text-[var(--text)]">
+              6-stelliger Code
+            </label>
             <input
               type="text"
-              required
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
-              autoComplete="family-name"
+              inputMode="numeric"
+              maxLength={6}
+              value={verificationCode}
+              onChange={(e) => setVerificationCode(e.target.value.replace(/[^\d]/g, ""))}
+              className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-center text-lg tracking-[0.28em] shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
+              placeholder="123456"
             />
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setStage("collect")}
+                disabled={loading}
+              >
+                Daten ändern
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void requestVerificationCode(true)}
+                disabled={loading || resendCooldownSec > 0}
+              >
+                {resendCooldownSec > 0 ? `Code erneut senden (${resendCooldownSec}s)` : "Code erneut senden"}
+              </button>
+            </div>
           </div>
-        </div>
+        ) : null}
 
-        <label className="mt-4 mb-2 block text-sm font-medium text-[var(--text)]">
-          Firma (optional)
-        </label>
-        <input
-          type="text"
-          value={company}
-          onChange={(e) => setCompany(e.target.value)}
-          className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
-          autoComplete="organization"
-        />
-
-        <label className="mt-6 block mb-2 text-sm font-medium text-[var(--text)]">
-          E-Mail
-        </label>
-        <input
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
-          autoComplete="email"
-        />
-
-        <label className="mt-4 block mb-2 text-sm font-medium text-[var(--text)]">
-          Passwort
-        </label>
-        <div className="relative">
-          <input
-            type={showPassword ? "text" : "password"}
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 pr-10 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
-            autoComplete="new-password"
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword((prev) => !prev)}
-            className="focus-ring absolute inset-y-0 right-2 inline-flex items-center rounded-lg px-2 text-[var(--muted)] hover:text-[var(--text)]"
-            aria-label={showPassword ? "Passwort verbergen" : "Passwort anzeigen"}
-          >
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        {stage !== "done" ? (
+          <button type="submit" disabled={loading} className="btn-primary mt-7 w-full">
+            {stage === "collect"
+              ? loading
+                ? "Sende Code..."
+                : "Verifizierungscode senden"
+              : loading
+                ? "Verifiziere..."
+                : "Konto verifizieren & erstellen"}
           </button>
-        </div>
-        <p className="mt-2 text-xs text-[var(--muted)]">Mindestens 8 Zeichen.</p>
-
-        <label className="mt-4 block mb-2 text-sm font-medium text-[var(--text)]">
-          Passwort wiederholen
-        </label>
-        <input
-          type={showPassword ? "text" : "password"}
-          required
-          minLength={8}
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          className="w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
-          autoComplete="new-password"
-        />
-
-        <div className="mt-5 space-y-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
-          <label className="flex items-start gap-3 text-sm text-[var(--text)]">
-            <input
-              type="checkbox"
-              checked={acceptTerms}
-              onChange={(e) => setAcceptTerms(e.target.checked)}
-              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--black)]"
-              required
-            />
-            <span>
-              Ich akzeptiere die{" "}
-              <Link href="/nutzungsbedingungen" className="underline underline-offset-4 hover:text-[var(--muted)]">
-                Nutzungsbedingungen
-              </Link>
-              .
-            </span>
-          </label>
-
-          <label className="flex items-start gap-3 text-sm text-[var(--text)]">
-            <input
-              type="checkbox"
-              checked={acceptPrivacy}
-              onChange={(e) => setAcceptPrivacy(e.target.checked)}
-              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--black)]"
-              required
-            />
-            <span>
-              Ich habe die{" "}
-              <Link href="/datenschutz" className="underline underline-offset-4 hover:text-[var(--muted)]">
-                Datenschutzhinweise
-              </Link>{" "}
-              gelesen und stimme der Verarbeitung meiner Daten zur Kontoerstellung zu.
-            </span>
-          </label>
-
-          <label className="flex items-start gap-3 text-sm text-[var(--muted)]">
-            <input
-              type="checkbox"
-              checked={allowNewsletter}
-              onChange={(e) => setAllowNewsletter(e.target.checked)}
-              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--black)]"
-            />
-            <span>
-              Ich möchte Produkt-Updates, Praxis-Tipps und gelegentliche Angebote per E-Mail erhalten. Diese
-              Einwilligung kann ich jederzeit widerrufen.
-            </span>
-          </label>
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="btn-primary mt-7 w-full"
-        >
-          {loading ? "Erstelle Konto..." : "Konto erstellen"}
-        </button>
+        ) : (
+          <Link href={safeStartQuery ? `/login?${safeStartQuery}` : "/login"} className="btn-primary mt-7 w-full">
+            Zum Login
+          </Link>
+        )}
 
         <p className="mt-4 text-xs text-[var(--muted)] text-center">
-          Mit dem Klick auf „Konto erstellen“ starten Sie die 14-Tage-Testphase.
-        </p>
-
-        <p className="mt-3 text-xs text-[var(--muted)] text-center">
           Bereits registriert?{" "}
           <Link
             href={safeStartQuery ? `/login?${safeStartQuery}` : "/login"}
