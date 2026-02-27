@@ -9,7 +9,7 @@ export default function FinalCTA() {
     <section id="cta" className="marketing-soft-warm py-20 md:py-28">
       <Container>
         <div className="card-base p-8 text-center md:p-12">
-          <h2 className="h2">Machen Sie Feierabend, ohne dass Ihr Postfach weiterläuft.</h2>
+          <h2 className="h2">Machen Sie Feierabend, ohne dass Ihr Postfach überläuft.</h2>
           <p className="body mt-4 text-[var(--muted)]">
             Testen Sie Advaic 14 Tage kostenlos. Danach läuft Starter monatlich weiter.
           </p>
