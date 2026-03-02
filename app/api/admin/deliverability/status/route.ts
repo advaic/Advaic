@@ -113,11 +113,14 @@ export async function GET(req: NextRequest) {
 
   const dkimResolved = dkimTxtRows.map((row, idx) => {
     const host = `${selectors[idx]}._domainkey.${senderDomain}`;
-    const record = row.records.find((r) => r.toLowerCase().includes("v=dkim1")) || "";
+    const record =
+      row.records.find((r) => /v\s*=\s*dkim1/i.test(r)) ||
+      row.records.find((r) => /(^|[;\s])p=([A-Za-z0-9+/=]{20,})/i.test(String(r || "").trim())) ||
+      "";
     return {
       host,
       ok: !!record,
-      details: record || "Kein DKIM TXT-Eintrag gefunden",
+      details: record || "Kein verwertbarer DKIM TXT-Eintrag gefunden",
       error: row.error,
     } satisfies DnsCheck;
   });
