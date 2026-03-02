@@ -19,6 +19,13 @@ function parseDomainFromEmail(raw: string) {
   return email.slice(at + 1).replace(/[^a-z0-9.-]/g, "");
 }
 
+function rootDomainFallback(domain: string) {
+  const d = String(domain || "").trim().toLowerCase();
+  const parts = d.split(".").filter(Boolean);
+  if (parts.length < 2) return d;
+  return parts.slice(-2).join(".");
+}
+
 function parseTxtRows(rows: string[][]) {
   return rows.map((parts) => parts.join("")).filter(Boolean);
 }
@@ -77,17 +84,30 @@ export async function GET(req: NextRequest) {
     .filter(Boolean)
     .slice(0, 8);
 
-  const [rootTxt, dmarcTxt, ...dkimTxtRows] = await Promise.all([
+  const baseRoot = rootDomainFallback(senderDomain);
+  const dmarcRootHost = `_dmarc.${baseRoot}`;
+  const dmarcSubHost = `_dmarc.${senderDomain}`;
+
+  const [rootTxt, sendSubTxt, dmarcSubTxt, dmarcRootTxt, ...dkimTxtRows] = await Promise.all([
     txtCheck(senderDomain),
-    txtCheck(`_dmarc.${senderDomain}`),
+    txtCheck(`send.${senderDomain}`),
+    txtCheck(dmarcSubHost),
+    senderDomain === baseRoot ? Promise.resolve({ ok: false, records: [], error: null as string | null }) : txtCheck(dmarcRootHost),
     ...selectors.map((selector) => txtCheck(`${selector}._domainkey.${senderDomain}`)),
   ]);
 
   const rootRecords = rootTxt.records.map((r) => r.toLowerCase());
-  const dmarcRecords = dmarcTxt.records.map((r) => r.toLowerCase());
+  const sendSubRecords = sendSubTxt.records.map((r) => r.toLowerCase());
+  const dmarcSubRecords = dmarcSubTxt.records.map((r) => r.toLowerCase());
+  const dmarcRootRecords = dmarcRootTxt.records.map((r) => r.toLowerCase());
 
-  const spfRecord = rootRecords.find((r) => r.includes("v=spf1")) || "";
-  const dmarcRecord = dmarcRecords.find((r) => r.includes("v=dmarc1")) || "";
+  const spfRecordRoot = rootRecords.find((r) => r.includes("v=spf1")) || "";
+  const spfRecordSendSub = sendSubRecords.find((r) => r.includes("v=spf1")) || "";
+  const spfRecord = spfRecordRoot || spfRecordSendSub;
+  const dmarcRecordSub = dmarcSubRecords.find((r) => r.includes("v=dmarc1")) || "";
+  const dmarcRecordRoot = dmarcRootRecords.find((r) => r.includes("v=dmarc1")) || "";
+  const dmarcRecord = dmarcRecordSub || dmarcRecordRoot;
+  const dmarcHostResolved = dmarcRecordSub ? dmarcSubHost : dmarcRecordRoot ? dmarcRootHost : dmarcSubHost;
   const dmarcPolicyMatch = dmarcRecord.match(/\bp=([a-z]+)/i);
   const dmarcPolicy = dmarcPolicyMatch ? String(dmarcPolicyMatch[1] || "").toLowerCase() : "";
 
@@ -105,15 +125,21 @@ export async function GET(req: NextRequest) {
   const checks: DnsCheck[] = [
     {
       host: senderDomain,
-      ok: !!spfRecord,
-      details: spfRecord || "Kein SPF-Eintrag (v=spf1) gefunden",
+      ok: !!spfRecordRoot,
+      details: spfRecordRoot || "Kein SPF-Eintrag direkt auf der Absenderdomain gefunden",
       error: rootTxt.error,
     },
     {
-      host: `_dmarc.${senderDomain}`,
+      host: `send.${senderDomain}`,
+      ok: !!spfRecordSendSub,
+      details: spfRecordSendSub || "Kein SPF-Eintrag auf send.<domain> gefunden",
+      error: sendSubTxt.error,
+    },
+    {
+      host: dmarcHostResolved,
       ok: !!dmarcRecord,
       details: dmarcRecord || "Kein DMARC-Eintrag (v=DMARC1) gefunden",
-      error: dmarcTxt.error,
+      error: dmarcRecordSub ? dmarcSubTxt.error : dmarcRootTxt.error,
     },
     ...dkimResolved,
   ];
@@ -177,4 +203,3 @@ export async function GET(req: NextRequest) {
     recommendations,
   });
 }
-
