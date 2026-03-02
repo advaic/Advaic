@@ -38,9 +38,25 @@ const sources = [
 ];
 
 export const metadata: Metadata = {
-  title: "Preise | Advaic Starter",
+  title: "Preise und Starter",
   description:
     "14 Tage Testphase und danach Starter-Abo mit klarer Leistungslogik: Guardrails, Freigabe-Inbox, Qualitätschecks und kontrollierte Follow-ups.",
+  alternates: {
+    canonical: "/preise",
+  },
+  openGraph: {
+    title: "Preise | Advaic Starter",
+    description:
+      "14 Tage Testphase und danach Starter-Abo mit klarer Leistungslogik: Guardrails, Freigabe-Inbox, Qualitätschecks und kontrollierte Follow-ups.",
+    url: "/preise",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Preise | Advaic Starter",
+    description:
+      "14 Tage Testphase und danach Starter-Abo mit klarer Leistungslogik: Guardrails, Freigabe-Inbox, Qualitätschecks und kontrollierte Follow-ups.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function PreisePage() {
@@ -160,7 +176,7 @@ export default function PreisePage() {
                   key={source.href}
                   href={source.href}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="btn-secondary"
                 >
                   {source.label}

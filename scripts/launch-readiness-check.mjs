@@ -98,10 +98,20 @@ const requiredFiles = [
   "docs/aufbewahrung-loeschkonzept.md",
   "docs/rollen-und-zugriffskonzept.md",
   "docs/dsb-pruefung.md",
+  "docs/ai-eval-email-classify.md",
+  "docs/deliverability-ops.md",
+  "docs/ops-webhook-und-eval-setup.md",
   "app/unterauftragsverarbeiter/page.tsx",
   "app/app/admin/ops/page.tsx",
+  "app/app/admin/deliverability/page.tsx",
   "app/api/pipeline/ops/alerts/run/route.ts",
   "app/api/admin/ops/status/route.ts",
+  "app/api/admin/deliverability/status/route.ts",
+  "app/robots.ts",
+  "app/sitemap.ts",
+  "app/login/layout.tsx",
+  "app/signup/layout.tsx",
+  "components/marketing/PublicClientWidgets.tsx",
 ];
 
 for (const rel of requiredFiles) {
@@ -111,6 +121,29 @@ for (const rel of requiredFiles) {
     message: exists(rel) ? `${rel} vorhanden` : `${rel} fehlt`,
   });
 }
+
+function fileContains(relPath, pattern) {
+  const abs = path.join(cwd, relPath);
+  if (!fs.existsSync(abs)) return false;
+  const raw = fs.readFileSync(abs, "utf8");
+  return pattern.test(raw);
+}
+
+addCheck({
+  id: "consent:banner-mounted",
+  ok: fileContains("app/ClientRootLayout.tsx", /CookieConsentBanner/),
+  message: fileContains("app/ClientRootLayout.tsx", /CookieConsentBanner/)
+    ? "Cookie-Consent-Banner in Root-Layout eingebunden"
+    : "Cookie-Consent-Banner nicht im Root-Layout gefunden",
+});
+
+addCheck({
+  id: "ops:webhook-support",
+  ok: fileContains("app/api/pipeline/ops/alerts/run/route.ts", /ADVAIC_OPS_ALERT_WEBHOOK_URL/),
+  message: fileContains("app/api/pipeline/ops/alerts/run/route.ts", /ADVAIC_OPS_ALERT_WEBHOOK_URL/)
+    ? "Ops-Alerts unterstützen externen Webhook"
+    : "Externer Ops-Webhook nicht gefunden",
+});
 
 const pass = checks.filter((c) => c.ok).length;
 const fail = checks.length - pass;

@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import { logPipelineRun } from "@/lib/ops/pipeline-runs";
 import { readRuntimeControl } from "@/lib/ops/runtime-control";
+import { getRequestId, jsonWithRequestId, logError, logInfo } from "@/lib/ops/request-id";
 
 export const runtime = "nodejs";
 
@@ -18,6 +19,20 @@ type AlertCandidate = {
   value: number;
   threshold: number;
   deepLink: string;
+};
+
+type ApiProbeResult = {
+  key: string;
+  ok: boolean;
+  status: number | null;
+  latency_ms: number;
+  error: string | null;
+};
+
+type OutboundAlertResult = {
+  key: string;
+  sent: boolean;
+  reason?: string;
 };
 
 type AlertEventRow = {
@@ -68,12 +83,96 @@ function parseIsoMs(value: string | null | undefined) {
   return Number.isFinite(ms) ? ms : null;
 }
 
+async function probeEndpoint(args: {
+  baseUrl: string;
+  key: string;
+  path: string;
+  expectedStatus: number;
+  timeoutMs?: number;
+}): Promise<ApiProbeResult> {
+  const started = Date.now();
+  const ctrl = new AbortController();
+  const timeoutMs = Math.max(1000, Number(args.timeoutMs || 4000));
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${args.baseUrl}${args.path}`, {
+      method: "GET",
+      signal: ctrl.signal,
+      cache: "no-store",
+    });
+    const latencyMs = Date.now() - started;
+    return {
+      key: args.key,
+      ok: res.status === args.expectedStatus,
+      status: res.status,
+      latency_ms: latencyMs,
+      error: null,
+    };
+  } catch (e: any) {
+    const latencyMs = Date.now() - started;
+    return {
+      key: args.key,
+      ok: false,
+      status: null,
+      latency_ms: latencyMs,
+      error: String(e?.name === "AbortError" ? "timeout" : e?.message || "fetch_failed"),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function sendOpsWebhook(args: {
+  webhookUrl: string;
+  generatedAt: string;
+  alert: AlertCandidate;
+  baseUrl: string;
+}): Promise<{ ok: boolean; reason?: string }> {
+  const body = {
+    source: "advaic_ops_alerts",
+    generated_at: args.generatedAt,
+    severity: args.alert.severity,
+    key: args.alert.key,
+    title: args.alert.title,
+    message: args.alert.body,
+    value: args.alert.value,
+    threshold: args.alert.threshold,
+    deep_link: `${args.baseUrl}${args.alert.deepLink}`,
+  };
+
+  try {
+    const url = args.webhookUrl;
+    const isSlack = /hooks\.slack\.com/i.test(url);
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(
+        isSlack
+          ? {
+              text: `*${args.alert.severity.toUpperCase()}* · ${args.alert.title}\n${args.alert.body}\n${args.baseUrl}${args.alert.deepLink}`,
+            }
+          : body,
+      ),
+    });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      return { ok: false, reason: `webhook_http_${resp.status}:${txt.slice(0, 180)}` };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, reason: String(e?.message || "webhook_exception") };
+  }
+}
+
 export async function POST(req: NextRequest) {
+  const requestId = getRequestId(req);
   const startedAtMs = Date.now();
   const pipeline = "ops_alerts";
 
   if (!isInternal(req)) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    return jsonWithRequestId(requestId, { ok: false, error: "unauthorized" }, { status: 401 });
   }
 
   const body = (await req.json().catch(() => null)) as RunBody | null;
@@ -87,6 +186,7 @@ export async function POST(req: NextRequest) {
   const baseUrl = baseUrlFromReq(req);
   const internalSecret = mustEnv("ADVAIC_INTERNAL_PIPELINE_SECRET");
   const adminUserId = String(process.env.ADVAIC_ADMIN_USER_ID || "").trim();
+  const opsWebhookUrl = String(process.env.ADVAIC_OPS_ALERT_WEBHOOK_URL || "").trim();
 
   const [
     failed30Res,
@@ -95,6 +195,10 @@ export async function POST(req: NextRequest) {
     recentRunsRes,
     openAlertsRes,
     control,
+    billingWebhookFailedRes,
+    billingWebhookStuckRes,
+    signupVerifyRowsRes,
+    apiProbes,
   ] = await Promise.all([
     (supabase.from("messages") as any)
       .select("id", { count: "exact", head: true })
@@ -123,12 +227,60 @@ export async function POST(req: NextRequest) {
       .select("id, alert_key, status, last_fired_at")
       .eq("status", "open"),
     readRuntimeControl(supabase),
+    (supabase.from("billing_webhook_events") as any)
+      .select("event_id", { count: "exact", head: true })
+      .eq("status", "failed")
+      .gte("last_attempt_at", since30m)
+      .catch(() => ({ count: 0 })),
+    (supabase.from("billing_webhook_events") as any)
+      .select("event_id", { count: "exact", head: true })
+      .eq("status", "processing")
+      .lt("last_attempt_at", new Date(nowMs - 15 * 60 * 1000).toISOString())
+      .catch(() => ({ count: 0 })),
+    (supabase.from("signup_verifications") as any)
+      .select("attempts, max_attempts, expires_at, used_at")
+      .gte("created_at", since30m)
+      .is("used_at", null)
+      .limit(500)
+      .catch(() => ({ data: [] })),
+    Promise.all([
+      probeEndpoint({
+        baseUrl,
+        key: "probe_produkt_page",
+        path: "/produkt",
+        expectedStatus: 200,
+      }),
+      probeEndpoint({
+        baseUrl,
+        key: "probe_outlook_webhook",
+        path: "/api/outlook/webhook",
+        expectedStatus: 200,
+      }),
+      probeEndpoint({
+        baseUrl,
+        key: "probe_gmail_push_get",
+        path: "/api/gmail/push",
+        expectedStatus: 405,
+      }),
+    ]),
   ]);
 
   const failedSends30m = Number(failed30Res.count || 0);
   const needsHuman = Number((queueRes[0] as any).count || 0);
   const readyToSend = Number((queueRes[1] as any).count || 0);
   const stuckSending15m = Number(stuckRes.count || 0);
+  const billingWebhookFailed30m = Number(billingWebhookFailedRes?.count || 0);
+  const billingWebhookStuck15m = Number(billingWebhookStuckRes?.count || 0);
+  const signupRows = Array.isArray(signupVerifyRowsRes?.data) ? signupVerifyRowsRes.data : [];
+  const signupLocked30m = signupRows.filter((row: any) => {
+    const attempts = Number(row?.attempts || 0);
+    const maxAttempts = Math.max(1, Number(row?.max_attempts || 6));
+    return attempts >= maxAttempts;
+  }).length;
+  const signupExpired30m = signupRows.filter((row: any) => {
+    const expiresMs = parseIsoMs(String(row?.expires_at || ""));
+    return !!expiresMs && expiresMs < nowMs;
+  }).length;
 
   const latestRunByPipeline = new Map<string, { created_at: string; status: string }>();
   for (const row of ((recentRunsRes.data || []) as any[])) {
@@ -190,6 +342,67 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  if (billingWebhookFailed30m >= 3) {
+    alerts.push({
+      key: "billing_webhook_failed_30m",
+      severity: "critical",
+      title: "Kritisch: Stripe-Webhook-Fehler häufen sich",
+      body: `In den letzten 30 Minuten gab es ${billingWebhookFailed30m} fehlgeschlagene Billing-Webhook-Events (Schwelle: 3).`,
+      value: billingWebhookFailed30m,
+      threshold: 3,
+      deepLink: "/app/admin/billing/webhook-events",
+    });
+  }
+
+  if (billingWebhookStuck15m >= 3) {
+    alerts.push({
+      key: "billing_webhook_stuck_15m",
+      severity: "critical",
+      title: "Kritisch: Billing-Webhook-Verarbeitung hängt",
+      body: `${billingWebhookStuck15m} Billing-Webhook-Events stehen seit mindestens 15 Minuten auf „processing“ (Schwelle: 3).`,
+      value: billingWebhookStuck15m,
+      threshold: 3,
+      deepLink: "/app/admin/billing/webhook-events",
+    });
+  }
+
+  if (signupLocked30m >= 8) {
+    alerts.push({
+      key: "signup_verification_locked_30m",
+      severity: "warning",
+      title: "Warnung: viele gesperrte Signup-Verifizierungen",
+      body: `In den letzten 30 Minuten wurden ${signupLocked30m} Verifizierungen durch zu viele Fehlversuche gesperrt (Schwelle: 8).`,
+      value: signupLocked30m,
+      threshold: 8,
+      deepLink: "/signup",
+    });
+  }
+
+  if (signupExpired30m >= 12) {
+    alerts.push({
+      key: "signup_verification_expired_30m",
+      severity: "warning",
+      title: "Warnung: viele abgelaufene Signup-Codes",
+      body: `In den letzten 30 Minuten sind ${signupExpired30m} ungenutzte Verifizierungscodes abgelaufen (Schwelle: 12).`,
+      value: signupExpired30m,
+      threshold: 12,
+      deepLink: "/signup",
+    });
+  }
+
+  for (const probe of apiProbes) {
+    if (probe.ok) continue;
+    alerts.push({
+      key: `api_probe_${probe.key}`,
+      severity: "critical",
+      title: "Kritisch: API-/Seiten-Health-Probe fehlgeschlagen",
+      body: `Probe ${probe.key} fehlgeschlagen (Status: ${probe.status ?? "kein_response"}, Latenz: ${probe.latency_ms}ms${probe.error ? `, Fehler: ${probe.error}` : ""}).`,
+      value: probe.status ?? -1,
+      threshold: 0,
+      deepLink: "/app/admin/ops",
+    });
+  }
+
   const staleChecks: Array<{ pipeline: string; staleMs: number; label: string }> = [
     { pipeline: "reply_ready_send", staleMs: stale20m, label: "Reply-Ready-Send" },
     { pipeline: "followups", staleMs: stale20m, label: "Follow-ups" },
@@ -224,6 +437,7 @@ export async function POST(req: NextRequest) {
   let resolved = 0;
   const cooldownMs = 60 * 60 * 1000;
   const notifications: Array<{ key: string; sent: boolean; reason?: string }> = [];
+  const webhookNotifications: OutboundAlertResult[] = [];
 
   for (const alert of alerts) {
     const existing = openMap.get(alert.key);
@@ -260,46 +474,86 @@ export async function POST(req: NextRequest) {
 
     if (!shouldFire) {
       notifications.push({ key: alert.key, sent: false, reason: "cooldown" });
+      webhookNotifications.push({ key: alert.key, sent: false, reason: "cooldown" });
       continue;
     }
 
     fired += 1;
+    logInfo(requestId, "ops_alert_fired", {
+      alert_key: alert.key,
+      severity: alert.severity,
+      value: alert.value,
+      threshold: alert.threshold,
+    });
     if (!isUuid(adminUserId)) {
       notifications.push({ key: alert.key, sent: false, reason: "missing_admin_user_id" });
-      continue;
-    }
-
-    const type = `ops_alert_${alert.key}`;
-    try {
-      const enqueueRes = await fetch(`${baseUrl}/api/notifications/enqueue`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-advaic-internal-secret": internalSecret,
-        },
-        body: JSON.stringify({
-          agent_id: adminUserId,
-          type,
-          payload,
-          dispatch_now: true,
-        }),
-      });
-      const json = await enqueueRes.json().catch(() => null);
+    } else {
+      const type = `ops_alert_${alert.key}`;
+      try {
+        const enqueueRes = await fetch(`${baseUrl}/api/notifications/enqueue`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-advaic-internal-secret": internalSecret,
+          },
+          body: JSON.stringify({
+            agent_id: adminUserId,
+            type,
+            payload,
+            dispatch_now: true,
+          }),
+        });
+        const json = await enqueueRes.json().catch(() => null);
       if (!enqueueRes.ok || json?.ok === false) {
+        logError(requestId, "ops_alert_internal_notification_failed", {
+          alert_key: alert.key,
+          status: enqueueRes.status,
+          reason: String(json?.error || json?.details || "enqueue_failed"),
+        });
         notifications.push({
           key: alert.key,
           sent: false,
-          reason: String(json?.error || json?.details || "enqueue_failed"),
-        });
+            reason: String(json?.error || json?.details || "enqueue_failed"),
+          });
       } else {
         notifications.push({ key: alert.key, sent: true });
       }
     } catch (e: any) {
+      logError(requestId, "ops_alert_internal_notification_exception", {
+        alert_key: alert.key,
+        reason: String(e?.message || "enqueue_exception"),
+      });
       notifications.push({
         key: alert.key,
         sent: false,
-        reason: String(e?.message || "enqueue_exception"),
+          reason: String(e?.message || "enqueue_exception"),
+        });
+      }
+    }
+    if (!opsWebhookUrl) {
+      webhookNotifications.push({
+        key: alert.key,
+        sent: false,
+        reason: "missing_ops_webhook_url",
       });
+    } else {
+      const webhookSent = await sendOpsWebhook({
+        webhookUrl: opsWebhookUrl,
+        generatedAt: nowIso,
+        alert,
+        baseUrl,
+      });
+      webhookNotifications.push({
+        key: alert.key,
+        sent: webhookSent.ok,
+        reason: webhookSent.ok ? undefined : webhookSent.reason || "webhook_failed",
+      });
+      if (!webhookSent.ok) {
+        logError(requestId, "ops_alert_webhook_failed", {
+          alert_key: alert.key,
+          reason: webhookSent.reason || "webhook_failed",
+        });
+      }
     }
   }
 
@@ -361,10 +615,13 @@ export async function POST(req: NextRequest) {
       alerts_open: alerts.length,
       alerts_resolved: resolved,
       critical_count: criticalCount,
+      webhook_sent: webhookNotifications.filter((w) => w.sent).length,
+      webhook_failed: webhookNotifications.filter((w) => !w.sent && w.reason !== "cooldown")
+        .length,
     },
   });
 
-  return NextResponse.json({
+  return jsonWithRequestId(requestId, {
     ok: true,
     generated_at: nowIso,
     auto_pause: autoPause,
@@ -381,11 +638,17 @@ export async function POST(req: NextRequest) {
     fired,
     resolved,
     notifications,
+    webhook_notifications: webhookNotifications,
     metrics: {
       failed_sends_30m: failedSends30m,
       stuck_sending_15m: stuckSending15m,
       needs_human: needsHuman,
       ready_to_send: readyToSend,
+      billing_webhook_failed_30m: billingWebhookFailed30m,
+      billing_webhook_stuck_15m: billingWebhookStuck15m,
+      signup_verification_locked_30m: signupLocked30m,
+      signup_verification_expired_30m: signupExpired30m,
     },
+    probes: apiProbes,
   });
 }

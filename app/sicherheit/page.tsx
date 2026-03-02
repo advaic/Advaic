@@ -80,9 +80,25 @@ const sources = [
 ];
 
 export const metadata: Metadata = {
-  title: "Sicherheit | Advaic",
+  title: "Sicherheit",
   description:
     "Sicherheits- und Datenschutzlogik von Advaic: klare Entscheidungsregeln, Freigabe bei Unsicherheit, dokumentierter Verlauf und DSGVO-orientierte Prozesse.",
+  alternates: {
+    canonical: "/sicherheit",
+  },
+  openGraph: {
+    title: "Sicherheit | Advaic",
+    description:
+      "Sicherheits- und Datenschutzlogik von Advaic: klare Entscheidungsregeln, Freigabe bei Unsicherheit, dokumentierter Verlauf und DSGVO-orientierte Prozesse.",
+    url: "/sicherheit",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Sicherheit | Advaic",
+    description:
+      "Sicherheits- und Datenschutzlogik von Advaic: klare Entscheidungsregeln, Freigabe bei Unsicherheit, dokumentierter Verlauf und DSGVO-orientierte Prozesse.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function SicherheitPage() {
@@ -202,7 +218,7 @@ export default function SicherheitPage() {
                   key={source.href}
                   href={source.href}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="btn-secondary"
                 >
                   {source.label}

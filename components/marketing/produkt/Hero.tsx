@@ -27,7 +27,7 @@ export default function Hero() {
     <section id="top" className="py-20 md:py-28">
       <Container>
         <div className="grid grid-cols-12 gap-8 md:gap-12 lg:items-center">
-          <div className="col-span-12 lg:col-span-6">
+          <div className="col-span-12 lg:col-span-5">
             <p className="label">Produkt</p>
             <h1 className="h1 mt-4 max-w-[17ch]">Autopilot für Interessenten-Anfragen per E-Mail</h1>
             <p className="body-lg mt-6 max-w-[62ch] text-[var(--muted)]">
@@ -70,7 +70,7 @@ export default function Hero() {
             </div>
           </div>
 
-          <div className="col-span-12 lg:col-span-6">
+          <div className="col-span-12 lg:col-span-7">
             <PremiumVideoFrame
               label="Produkt"
               webm="/loops/product-hero.webm"

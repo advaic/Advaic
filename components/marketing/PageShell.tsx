@@ -1,13 +1,11 @@
 import { type ReactNode } from "react";
 import MarketingNavbar from "./Navbar";
 import MarketingFooter from "./Footer";
-import MobileConversionBar from "./MobileConversionBar";
 import Container from "./Container";
 import ProofLayer from "./ProofLayer";
 import MessageArchitectureBand from "./MessageArchitectureBand";
 import ConversionPathPanel from "./ConversionPathPanel";
-import PublicExperienceTracker from "./PublicExperienceTracker";
-import PublicAssistantWidget from "./PublicAssistantWidget";
+import PublicClientWidgets from "./PublicClientWidgets";
 
 type PageShellProps = {
   children: ReactNode;
@@ -40,9 +38,7 @@ export default function PageShell({
         </section>
       ) : null}
       {withFooter ? <MarketingFooter /> : null}
-      <MobileConversionBar />
-      <PublicAssistantWidget />
-      <PublicExperienceTracker />
+      <PublicClientWidgets />
     </main>
   );
 }

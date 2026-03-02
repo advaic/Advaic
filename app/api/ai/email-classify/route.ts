@@ -227,9 +227,14 @@ function hasUsableReplyTarget(from: string, replyTo: string) {
   const r = parsePrimaryEmail(rRaw);
 
   if (!r || !isProbablyValidEmail(r)) return false;
-
-  // If reply-to is also a no-reply address, it's not usable.
-  if (isNoReplyAddress(fRaw, rRaw)) return false;
+  const rLc = rRaw.toLowerCase();
+  const replyLooksNoReply =
+    rLc.includes("no-reply") ||
+    rLc.includes("noreply") ||
+    rLc.includes("do-not-reply") ||
+    rLc.includes("donotreply");
+  // Reply-To itself must be reachable.
+  if (replyLooksNoReply) return false;
 
   // If From is a no-reply address, we require Reply-To to be different.
   if (f && r && f.toLowerCase() === r.toLowerCase()) return false;

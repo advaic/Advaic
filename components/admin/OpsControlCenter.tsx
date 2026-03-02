@@ -11,6 +11,10 @@ type OpsStatus = {
     critical_alerts: number;
     warning_alerts: number;
     stale_pipelines: number;
+    billing_webhook_failed_30m?: number;
+    billing_webhook_stuck_15m?: number;
+    signup_locked_30m?: number;
+    signup_expired_30m?: number;
   };
   control: {
     pause_all: boolean;
@@ -46,6 +50,9 @@ type OpsStatus = {
       deep_link?: string;
     } | null;
   }>;
+  integrations?: {
+    ops_webhook_configured?: boolean;
+  };
 };
 
 function toneClass(level: "ok" | "warning" | "critical") {
@@ -68,13 +75,16 @@ export default function OpsControlCenter() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [triggerResult, setTriggerResult] = useState<string | null>(null);
+  const [webhookTestResult, setWebhookTestResult] = useState<string | null>(null);
 
   const load = async () => {
     setError(null);
     const res = await fetch("/api/admin/ops/status", { cache: "no-store" });
     const json = (await res.json().catch(() => null)) as OpsStatus | null;
     if (!res.ok || !json?.ok) {
-      throw new Error(String((json as any)?.error || "ops_status_load_failed"));
+      const details = String((json as any)?.details || "").trim();
+      const core = String((json as any)?.error || "ops_status_load_failed");
+      throw new Error(details ? `${core}: ${details}` : core);
     }
     setData(json);
   };
@@ -108,6 +118,7 @@ export default function OpsControlCenter() {
     setBusy(true);
     setError(null);
     setTriggerResult(null);
+    setWebhookTestResult(null);
     try {
       const res = await fetch("/api/admin/ops/control", {
         method: "POST",
@@ -130,6 +141,7 @@ export default function OpsControlCenter() {
     setBusy(true);
     setError(null);
     setTriggerResult(null);
+    setWebhookTestResult(null);
     try {
       const res = await fetch("/api/admin/ops/alerts/trigger", {
         method: "POST",
@@ -146,6 +158,27 @@ export default function OpsControlCenter() {
       await load();
     } catch (e: any) {
       setError(String(e?.message || "ops_alert_trigger_failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const testWebhook = async () => {
+    setBusy(true);
+    setError(null);
+    setWebhookTestResult(null);
+    try {
+      const res = await fetch("/api/admin/ops/webhook/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok !== true) {
+        throw new Error(String(json?.error || json?.details || "ops_webhook_test_failed"));
+      }
+      setWebhookTestResult(`Webhook-Test erfolgreich (${Number(json?.status || 200)}).`);
+    } catch (e: any) {
+      setError(String(e?.message || "ops_webhook_test_failed"));
     } finally {
       setBusy(false);
     }
@@ -188,12 +221,22 @@ export default function OpsControlCenter() {
           <Stat label="Stale Pipelines" value={data.summary.stale_pipelines} />
           <Stat label="Notfall-Pause" value={data.control.pause_all ? "Aktiv" : "Aus"} />
         </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
+          <Stat label="Billing Webhook Failed (30m)" value={Number(data.summary.billing_webhook_failed_30m || 0)} />
+          <Stat label="Billing Webhook Stuck (15m)" value={Number(data.summary.billing_webhook_stuck_15m || 0)} />
+          <Stat label="Signup Locked (30m)" value={Number(data.summary.signup_locked_30m || 0)} />
+          <Stat label="Signup Expired (30m)" value={Number(data.summary.signup_expired_30m || 0)} />
+        </div>
 
         {data.control.reason ? (
           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             Letzter Grund: {data.control.reason}
           </div>
         ) : null}
+        <div className="mt-2 text-xs text-gray-600">
+          Ops-Webhook:{" "}
+          {data.integrations?.ops_webhook_configured ? "konfiguriert" : "nicht konfiguriert (ADVAIC_OPS_ALERT_WEBHOOK_URL)"}
+        </div>
       </div>
 
       <div className="rounded-2xl border border-gray-200 bg-white p-5">
@@ -237,6 +280,15 @@ export default function OpsControlCenter() {
           >
             <RefreshCw className="h-4 w-4" />
             Alert-Check jetzt ausführen
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={testWebhook}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 hover:bg-gray-50 disabled:opacity-60"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Webhook-Test senden
           </button>
         </div>
 
@@ -290,6 +342,11 @@ export default function OpsControlCenter() {
         {triggerResult ? (
           <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
             {triggerResult}
+          </div>
+        ) : null}
+        {webhookTestResult ? (
+          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            {webhookTestResult}
           </div>
         ) : null}
         {error ? (
@@ -434,4 +491,3 @@ function PipelineToggle({
     </div>
   );
 }
-

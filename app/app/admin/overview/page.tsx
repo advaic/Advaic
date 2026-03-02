@@ -159,6 +159,12 @@ export default async function AdminOverviewPage() {
               Ops
             </Link>
             <Link
+              href="/app/admin/deliverability"
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Deliverability
+            </Link>
+            <Link
               href="/app/admin/outbox"
               className="inline-flex items-center justify-center rounded-xl border border-gray-900 bg-gray-900 px-3 py-2 text-sm font-medium text-amber-200 hover:bg-gray-800"
             >
@@ -167,7 +173,7 @@ export default async function AdminOverviewPage() {
             <a
               href="/api/admin/health"
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
               title="Health JSON öffnen"
             >

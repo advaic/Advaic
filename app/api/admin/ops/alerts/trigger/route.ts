@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { requireAdmin } from "../../../_guard";
+import { getRequestId, jsonWithRequestId } from "@/lib/ops/request-id";
 
 export const runtime = "nodejs";
 
@@ -18,8 +19,9 @@ function siteUrl(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const requestId = getRequestId(req);
   const gate = await requireAdmin(req);
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
+  if (!gate.ok) return jsonWithRequestId(requestId, { error: gate.error }, { status: gate.status });
 
   const body = (await req.json().catch(() => null)) as { auto_pause?: boolean } | null;
   const base = siteUrl(req);
@@ -36,20 +38,20 @@ export async function POST(req: NextRequest) {
   }).catch(() => null);
 
   if (!response) {
-    return NextResponse.json({ error: "ops_alert_trigger_network_failed" }, { status: 502 });
+    return jsonWithRequestId(requestId, { error: "ops_alert_trigger_network_failed" }, { status: 502 });
   }
 
   const json = await response.json().catch(() => null);
   if (!response.ok) {
-    return NextResponse.json(
+    return jsonWithRequestId(
+      requestId,
       { error: "ops_alert_trigger_failed", details: json || null },
       { status: response.status || 500 },
     );
   }
 
-  return NextResponse.json({
+  return jsonWithRequestId(requestId, {
     ok: true,
     ...(json || {}),
   });
 }
-

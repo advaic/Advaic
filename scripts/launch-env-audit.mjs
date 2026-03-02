@@ -43,6 +43,10 @@ const requiredCore = [
   "ADVAIC_SECRET_ENCRYPTION_KEY",
 ];
 
+const recommendedOps = [
+  "ADVAIC_OPS_ALERT_WEBHOOK_URL",
+];
+
 const requiredLegal = [
   "NEXT_PUBLIC_LEGAL_COMPANY_NAME",
   "NEXT_PUBLIC_LEGAL_FORM",
@@ -78,13 +82,14 @@ function printGroup(title, keys, required = true) {
 const missingCore = printGroup("Kernwerte", requiredCore, true);
 const missingLegal = printGroup("Rechtliche Pflichtwerte", requiredLegal, true);
 printGroup("Empfohlene Zusatzwerte", recommendedLegal, false);
+printGroup("Empfohlene Ops-Werte", recommendedOps, false);
 
 const totalMissing = missingCore + missingLegal;
 console.log(`\nErgebnis: ${totalMissing === 0 ? "LAUNCHFÄHIG (Env)" : `NICHT LAUNCHFÄHIG (Env), ${totalMissing} Pflichtwerte fehlen`}`);
 
 if (totalMissing > 0) {
   console.log("\nCopy-Paste Vorlage (fehlende Werte ausfüllen):\n");
-  const all = [...requiredCore, ...requiredLegal, ...recommendedLegal];
+  const all = [...requiredCore, ...requiredLegal, ...recommendedLegal, ...recommendedOps];
   for (const key of all) {
     const v = getValue(key, envFile);
     if (isSensitiveKey(key)) {

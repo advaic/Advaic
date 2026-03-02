@@ -103,7 +103,7 @@ export default function StickyTour() {
         </div>
 
         <div className="mt-10 grid grid-cols-12 gap-8 md:gap-12">
-          <div className="col-span-12 lg:col-span-7">
+          <div className="col-span-12 lg:col-span-6">
             <div className="space-y-6">
               {steps.map((step, index) => {
                 const isActive = step.id === activeStep;
@@ -133,7 +133,7 @@ export default function StickyTour() {
             </div>
           </div>
 
-          <div className="col-span-12 lg:col-span-5">
+          <div className="col-span-12 lg:col-span-6">
             <div className="lg:sticky lg:top-[108px]">
               <PremiumVideoFrame label={activeLabel} caption="Aktive Prozessansicht">
                 <div className="relative aspect-video w-full overflow-hidden rounded-[8px] bg-[var(--surface-2)]">
@@ -148,8 +148,8 @@ export default function StickyTour() {
                         poster={step.poster}
                         ariaLabel={`Video-Loop: ${step.title}`}
                         isActive={isActive}
-                        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${
-                          isActive ? "opacity-100" : "opacity-0"
+                        className={`absolute inset-0 h-full w-full bg-[var(--surface-2)] object-contain transition-opacity duration-500 ${
+                          isActive ? "z-10 opacity-100" : "pointer-events-none z-0 opacity-0"
                         }`}
                         placeholderLabel={step.title}
                       />

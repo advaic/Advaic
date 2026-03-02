@@ -1,6 +1,6 @@
 # Launch-Readiness Status (Go/No-Go)
 
-Stand: 25.02.2026  
+Stand: 02.03.2026  
 Scope: aktueller Stand im Repository `advaic-dashboard`.
 
 Legende:
@@ -9,7 +9,8 @@ Legende:
 - `OFFEN` = fehlt für sauberen Launch
 
 Automatischer Check:
-- Ergebnis `launch:check`: 23/32 `PASS`, 9 `OFFEN` (alle 9 betreffen fehlende `NEXT_PUBLIC_LEGAL_*` Pflichtwerte in der aktuellen Umgebung).
+- Ergebnis `launch:check`: erweitert um technische Launch-Gates (robots/sitemap/noindex, Cookie-Banner-Mount, Ops-Webhook-Support).
+- Offene Pflichtpunkte bleiben in der Regel weiterhin env-/organisationsgetrieben (`NEXT_PUBLIC_LEGAL_*`, juristische Finalprüfung, produktionsnahe Abnahme).
 - Env-Audit: `npm run launch:env` (sichere Ausgabe ohne Secret-Leak).
 
 ## 0) Release-Rahmen
@@ -49,6 +50,7 @@ Automatischer Check:
   - Ops-Control-Center: [app/app/admin/ops/page.tsx](/Users/kilianziemann/Downloads/advaic-dashboard/app/app/admin/ops/page.tsx)
   - Ops-Status API: [app/api/admin/ops/status/route.ts](/Users/kilianziemann/Downloads/advaic-dashboard/app/api/admin/ops/status/route.ts)
   - Alert-Runner: [app/api/pipeline/ops/alerts/run/route.ts](/Users/kilianziemann/Downloads/advaic-dashboard/app/api/pipeline/ops/alerts/run/route.ts)
+  - Neu: Alerting enthält zusätzliche Billing-/Signup-/API-Probe-Signale plus optionale externe Webhook-Zustellung (`ADVAIC_OPS_ALERT_WEBHOOK_URL`).
   - Pipeline-Run-Logging in Kernpipelines (reply/followups/onboarding/outlook fetch).
   - Cron-Setup-Doku: [supabase-cron-setup.md](/Users/kilianziemann/Downloads/advaic-dashboard/docs/supabase-cron-setup.md)
 
@@ -71,7 +73,7 @@ Automatischer Check:
 - Status: `TEILWEISE`
 - Nachweis:
   - Typecheck ist grün (`npx tsc --noEmit`).
-  - Smoke/E2E lokal in dieser Umgebung nicht stabil ausführbar (Loopback-/Sandbox-Bindungsgrenzen).
+  - Critical E2E lokal erfolgreich ausführbar, inkl. Vertragschecks für Signup-/Billing-Gates und Public-SEO-Endpunkte (`/robots.txt`, `/sitemap.xml`).
 - Nächster Schritt:
   - Finalen E2E-Lauf in produktionsnaher Umgebung (Staging/Preview mit stabiler Erreichbarkeit) durchführen und dokumentieren.
 

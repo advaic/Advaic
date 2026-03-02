@@ -243,7 +243,7 @@ export default function AutopilotRegelnPage() {
                   key={source.href}
                   href={source.href}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="btn-secondary"
                 >
                   {source.label}

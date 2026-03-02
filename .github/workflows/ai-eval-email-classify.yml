@@ -1,0 +1,33 @@
+name: AI Eval Email Classifier
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "15 4 * * *"
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_URL: ${{ secrets.ADVAIC_EVAL_BASE_URL }}
+      INTERNAL_SECRET: ${{ secrets.ADVAIC_INTERNAL_PIPELINE_SECRET }}
+      EVAL_STRICT: "true"
+      EVAL_MIN_ACCURACY: "0.95"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate required secrets
+        run: |
+          test -n "$BASE_URL" || (echo "ADVAIC_EVAL_BASE_URL fehlt" && exit 1)
+          test -n "$INTERNAL_SECRET" || (echo "ADVAIC_INTERNAL_PIPELINE_SECRET fehlt" && exit 1)
+
+      - name: Run email classifier eval
+        run: node scripts/ai-eval-email-classify.mjs
+

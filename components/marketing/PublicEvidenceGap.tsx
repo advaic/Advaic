@@ -195,7 +195,7 @@ export default function PublicEvidenceGap() {
               <a
                 href={item.sourceUrl}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="mt-4 inline-flex text-sm font-semibold text-[var(--text)] underline underline-offset-4"
               >
                 Quelle: {item.sourceLabel}

@@ -25,17 +25,31 @@ import CTAExperiment from "@/components/marketing/CTAExperiment";
 import FinalCTA from "@/components/marketing/FinalCTA";
 import ProofLayer from "@/components/marketing/ProofLayer";
 import MarketingFooter from "@/components/marketing/Footer";
-import MobileConversionBar from "@/components/marketing/MobileConversionBar";
 import MessageArchitectureBand from "@/components/marketing/MessageArchitectureBand";
 import ConversionPathPanel from "@/components/marketing/ConversionPathPanel";
 import ProductVisualAuthority from "@/components/marketing/ProductVisualAuthority";
-import PublicExperienceTracker from "@/components/marketing/PublicExperienceTracker";
-import PublicAssistantWidget from "@/components/marketing/PublicAssistantWidget";
+import PublicClientWidgets from "@/components/marketing/PublicClientWidgets";
 
 export const metadata: Metadata = {
-  title: "Advaic | Autopilot für Makler-E-Mails mit klaren Guardrails",
+  title: "Autopilot für Makler-E-Mails mit klaren Guardrails",
   description:
     "Advaic beantwortet Interessenten-Anfragen automatisch in Ihrem Stil. Unklare Fälle gehen zur Freigabe, vor Auto-Versand greifen Qualitätschecks.",
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title: "Advaic | Autopilot für Makler-E-Mails mit klaren Guardrails",
+    description:
+      "Advaic beantwortet Interessenten-Anfragen automatisch in Ihrem Stil. Unklare Fälle gehen zur Freigabe, vor Auto-Versand greifen Qualitätschecks.",
+    url: "/",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Advaic | Autopilot für Makler-E-Mails mit klaren Guardrails",
+    description:
+      "Advaic beantwortet Interessenten-Anfragen automatisch in Ihrem Stil. Unklare Fälle gehen zur Freigabe, vor Auto-Versand greifen Qualitätschecks.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function HomePage() {
@@ -92,9 +106,7 @@ export default function HomePage() {
         </div>
       </section>
       <MarketingFooter />
-      <MobileConversionBar />
-      <PublicAssistantWidget />
-      <PublicExperienceTracker />
+      <PublicClientWidgets />
     </main>
   );
 }

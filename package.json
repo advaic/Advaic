@@ -8,6 +8,7 @@
     "start": "next start",
     "smoke:e2e": "node scripts/smoke-e2e.mjs",
     "critical:e2e": "node scripts/critical-flow-e2e.mjs",
+    "eval:email-classify": "node scripts/ai-eval-email-classify.mjs",
     "launch:check": "node scripts/launch-readiness-check.mjs",
     "launch:env": "node scripts/launch-env-audit.mjs"
   },

@@ -28,6 +28,12 @@ export default function AdminOpsPage() {
               Outbox
             </Link>
             <Link
+              href="/app/admin/deliverability"
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Deliverability
+            </Link>
+            <Link
               href="/app/admin/support"
               className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
             >
@@ -43,4 +49,3 @@ export default function AdminOpsPage() {
     </div>
   );
 }
-

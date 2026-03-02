@@ -61,7 +61,7 @@ export default function ProofLayer({
             key={item.href}
             href={item.href}
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-3 text-sm text-[var(--muted)] transition hover:border-[rgba(11,15,23,0.18)]"
           >
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">{item.id}</p>

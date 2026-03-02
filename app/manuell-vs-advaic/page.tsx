@@ -213,7 +213,7 @@ export default function ManualVsAdvaicPage() {
                     <a
                       href={source.href}
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noopener noreferrer"
                       className="text-sm font-semibold text-[var(--text)] underline underline-offset-4"
                     >
                       {source.label}

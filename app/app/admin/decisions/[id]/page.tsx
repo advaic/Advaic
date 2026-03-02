@@ -181,7 +181,7 @@ export default async function AdminDecisionDetailPage({
             <a
               href={`/api/admin/decisions/${id}`}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
               title="API JSON öffnen"
             >
@@ -417,7 +417,7 @@ export default async function AdminDecisionDetailPage({
                       <a
                         href={property.url}
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                         className="mt-3 inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
                       >
                         Listing öffnen <ExternalLink className="h-4 w-4 ml-2" />

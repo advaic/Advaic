@@ -85,9 +85,25 @@ const sources = [
 ];
 
 export const metadata: Metadata = {
-  title: "Anwendungsfälle | Advaic",
+  title: "Anwendungsfälle",
   description:
     "Detaillierte Anwendungsfälle für Makler: Wann Advaic besonders sinnvoll ist, wie Guardrails greifen und wie ein sicherer Start aussieht.",
+  alternates: {
+    canonical: "/use-cases",
+  },
+  openGraph: {
+    title: "Anwendungsfälle | Advaic",
+    description:
+      "Detaillierte Anwendungsfälle für Makler: Wann Advaic besonders sinnvoll ist, wie Guardrails greifen und wie ein sicherer Start aussieht.",
+    url: "/use-cases",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Anwendungsfälle | Advaic",
+    description:
+      "Detaillierte Anwendungsfälle für Makler: Wann Advaic besonders sinnvoll ist, wie Guardrails greifen und wie ein sicherer Start aussieht.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function UseCasesPage() {
@@ -184,7 +200,7 @@ export default function UseCasesPage() {
                   key={source.href}
                   href={source.href}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="btn-secondary"
                 >
                   {source.label}

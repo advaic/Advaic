@@ -76,6 +76,8 @@ Go-Kriterium:
 - [ ] `pipeline_runs` werden geschrieben und sind auswertbar
 - [ ] `ops_alert_events` werden erzeugt, dedupliziert und aufgelöst
 - [ ] Kritische Auto-Pause validiert (bei failed/stuck Sendungen)
+- [ ] Externe Alert-Zustellung konfiguriert (`ADVAIC_OPS_ALERT_WEBHOOK_URL`)
+- [ ] Deliverability-Status geprüft (`/app/admin/deliverability`)
 
 Go-Kriterium:
 - Mindestens ein kompletter Testlauf je Kernpipeline wurde im Monitoring nachgewiesen.
@@ -123,6 +125,7 @@ Go-Kriterium:
   - Provider-Fehler
   - DB-Fehler
   - Pipeline-Pause
+- [ ] AI-Classifier-Eval ausgeführt und dokumentiert (`npm run eval:email-classify`)
 
 Go-Kriterium:
 - Kritischer Flow plus Fehlerpfade sind erfolgreich dokumentiert getestet.

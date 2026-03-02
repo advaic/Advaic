@@ -1,0 +1,183 @@
+{
+  "version": "v1",
+  "description": "Gold-Set für deterministische Kernregeln (Sicherheit vor Auto-Versand).",
+  "cases": [
+    {
+      "id": "portal_relay_auto_01",
+      "input": {
+        "subject": "Neue Kontaktanfrage zur Immobilie Lindenstraße 8",
+        "from": "ImmoScout24 <noreply@immobilienscout24.de>",
+        "to": "makler@advaic.de",
+        "replyTo": "reply+12345@reply.immobilienscout24.de",
+        "snippet": "Hallo, ich interessiere mich für die Wohnung. Besichtigung möglich?",
+        "isNoReply": true
+      },
+      "expected": {
+        "decision": "auto_reply",
+        "email_type": "PORTAL"
+      }
+    },
+    {
+      "id": "portal_relay_auto_02",
+      "input": {
+        "subject": "Kontaktanfrage: Exposé für Parkallee 21",
+        "from": "Portal Service <noreply@immowelt.de>",
+        "to": "makler@advaic.de",
+        "replyTo": "reply+987@reply.immowelt.de",
+        "snippet": "Bitte senden Sie mir das Exposé für das Objekt.",
+        "isNoReply": true
+      },
+      "expected": {
+        "decision": "auto_reply",
+        "email_type": "PORTAL"
+      }
+    },
+    {
+      "id": "system_ignore_01",
+      "input": {
+        "subject": "Delivery Status Notification (Failure)",
+        "from": "Mailer-Daemon <mailer-daemon@googlemail.com>",
+        "to": "makler@advaic.de",
+        "replyTo": "",
+        "snippet": "Undelivered Mail Returned to Sender"
+      },
+      "expected": {
+        "decision": "ignore",
+        "email_type": "SYSTEM"
+      }
+    },
+    {
+      "id": "system_ignore_02",
+      "input": {
+        "subject": "Mail delivery failed: returning message to sender",
+        "from": "Postmaster <postmaster@mailserver.example>",
+        "to": "makler@advaic.de",
+        "replyTo": "",
+        "snippet": "This is the mail system at host."
+      },
+      "expected": {
+        "decision": "ignore",
+        "email_type": "SYSTEM"
+      }
+    },
+    {
+      "id": "no_reply_needs_approval_01",
+      "input": {
+        "subject": "Kurze Frage zur Anzeige",
+        "from": "Info Team <noreply@beispiel-newsletter.de>",
+        "to": "makler@advaic.de",
+        "replyTo": "",
+        "snippet": "Hallo, ich wollte nur kurz nachfragen.",
+        "isNoReply": true
+      },
+      "expected": {
+        "decision": "needs_approval",
+        "email_type": "UNKNOWN"
+      }
+    },
+    {
+      "id": "newsletter_ignore_01",
+      "input": {
+        "subject": "Newsletter: Top Angebote der Woche",
+        "from": "News <news@marketing-tool.example>",
+        "to": "makler@advaic.de",
+        "replyTo": "reply@marketing-tool.example",
+        "snippet": "Jetzt abmelden und keine Promo mehr erhalten.",
+        "hasListUnsubscribe": true,
+        "isBulk": true
+      },
+      "expected": {
+        "decision": "ignore",
+        "email_type": "NEWSLETTER"
+      }
+    },
+    {
+      "id": "newsletter_ignore_02",
+      "input": {
+        "subject": "Promotion: Sale nur heute",
+        "from": "Aktionen <angebote@shop.example>",
+        "to": "makler@advaic.de",
+        "replyTo": "kontakt@shop.example",
+        "snippet": "Jetzt abbestellen, wenn Sie keine Werbung mehr möchten.",
+        "isBulk": true
+      },
+      "expected": {
+        "decision": "ignore",
+        "email_type": "NEWSLETTER"
+      }
+    },
+    {
+      "id": "billing_needs_approval_01",
+      "input": {
+        "subject": "Rechnung 2026-03 ist fällig",
+        "from": "Billing Team <billing@anbieter.example>",
+        "to": "makler@advaic.de",
+        "replyTo": "billing@anbieter.example",
+        "snippet": "Bitte begleichen Sie die offene Zahlung."
+      },
+      "expected": {
+        "decision": "needs_approval",
+        "email_type": "BILLING"
+      }
+    },
+    {
+      "id": "billing_needs_approval_02",
+      "input": {
+        "subject": "Invoice overdue",
+        "from": "Finance <finance@vendor.example>",
+        "to": "makler@advaic.de",
+        "replyTo": "finance@vendor.example",
+        "snippet": "Payment reminder for your subscription."
+      },
+      "expected": {
+        "decision": "needs_approval",
+        "email_type": "BILLING"
+      }
+    },
+    {
+      "id": "newsletter_like_ignore_03",
+      "input": {
+        "subject": "Newsletter März",
+        "from": "Update <updates@crm.example>",
+        "to": "makler@advaic.de",
+        "replyTo": "updates@crm.example",
+        "snippet": "unsubscribe any time"
+      },
+      "expected": {
+        "decision": "ignore",
+        "email_type": "NEWSLETTER"
+      }
+    },
+    {
+      "id": "portal_no_relay_needs_approval_01",
+      "input": {
+        "subject": "Kontaktanfrage zur Immobilie",
+        "from": "ImmoScout24 <noreply@immobilienscout24.de>",
+        "to": "makler@advaic.de",
+        "replyTo": "noreply@immobilienscout24.de",
+        "snippet": "Ich möchte einen Besichtigungstermin.",
+        "isNoReply": true
+      },
+      "expected": {
+        "decision": "needs_approval",
+        "email_type": "PORTAL"
+      }
+    },
+    {
+      "id": "bulk_no_portal_ignore_04",
+      "input": {
+        "subject": "Angebot für Ihr Büro",
+        "from": "Sales <sales@vendor.example>",
+        "to": "makler@advaic.de",
+        "replyTo": "sales@vendor.example",
+        "snippet": "promo sale newsletter",
+        "isBulk": true
+      },
+      "expected": {
+        "decision": "ignore",
+        "email_type": "NEWSLETTER"
+      }
+    }
+  ]
+}
+

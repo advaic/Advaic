@@ -50,7 +50,7 @@ export default function ProductVisualAuthority({
           <p className="body mt-4 text-[var(--muted)]">{description}</p>
         </div>
 
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
+        <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {visualItems.map((item) => (
             <article key={item.id} className="card-base overflow-hidden p-0">
               <div className="h-1 w-full bg-[linear-gradient(90deg,var(--gold),rgba(201,162,39,0.08))]" />
@@ -60,7 +60,7 @@ export default function ProductVisualAuthority({
                     webm={item.webm}
                     mp4={item.mp4}
                     poster={item.poster}
-                    className="aspect-video w-full object-cover"
+                    className="aspect-video w-full bg-[var(--surface-2)] object-contain"
                     ariaLabel={item.aria}
                     placeholderLabel={item.title}
                   />

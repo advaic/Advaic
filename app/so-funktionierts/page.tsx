@@ -100,9 +100,25 @@ const sources = [
 ];
 
 export const metadata: Metadata = {
-  title: "So funktioniert's | Advaic",
+  title: "So funktioniert's",
   description:
     "Der Ablauf von Advaic im Detail: Eingang klassifizieren, Regel- und Qualitätslogik anwenden, Auto/Freigabe entscheiden und Follow-ups kontrolliert steuern.",
+  alternates: {
+    canonical: "/so-funktionierts",
+  },
+  openGraph: {
+    title: "So funktioniert's | Advaic",
+    description:
+      "Der Ablauf von Advaic im Detail: Eingang klassifizieren, Regel- und Qualitätslogik anwenden, Auto/Freigabe entscheiden und Follow-ups kontrolliert steuern.",
+    url: "/so-funktionierts",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "So funktioniert's | Advaic",
+    description:
+      "Der Ablauf von Advaic im Detail: Eingang klassifizieren, Regel- und Qualitätslogik anwenden, Auto/Freigabe entscheiden und Follow-ups kontrolliert steuern.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function SoFunktioniertsPage() {
@@ -217,7 +233,7 @@ export default function SoFunktioniertsPage() {
                   key={source.href}
                   href={source.href}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="btn-secondary"
                 >
                   {source.label}

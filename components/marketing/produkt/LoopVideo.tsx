@@ -23,7 +23,6 @@ export default function LoopVideo({
   isActive = true,
   priority = false,
 }: LoopVideoProps) {
-  const [hasError, setHasError] = useState(false);
   const [isInView, setIsInView] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -78,9 +77,9 @@ export default function LoopVideo({
         // Autoplay restrictions can block playback in some environments.
       });
     }
-  }, [isActive]);
+  }, [isActive, isInView, prefersReducedMotion]);
 
-  if (hasError || (!webm && !mp4)) {
+  if (!webm && !mp4) {
     return (
       <div
         className={`${className} flex items-center justify-center bg-[var(--surface-2)] px-4 text-center text-sm text-[var(--muted)]`}
@@ -98,13 +97,13 @@ export default function LoopVideo({
       autoPlay={!prefersReducedMotion}
       muted
       loop
+      controls
       playsInline
       preload={isInView && isActive ? "metadata" : "none"}
       poster={poster}
       aria-label={ariaLabel}
       aria-hidden={!isActive || !isInView}
       className={className}
-      onError={() => setHasError(true)}
     >
       {webm ? <source src={webm} type="video/webm" /> : null}
       {mp4 ? <source src={mp4} type="video/mp4" /> : null}

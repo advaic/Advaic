@@ -65,9 +65,25 @@ const sources = [
 ];
 
 export const metadata: Metadata = {
-  title: "Branchenprofile | Advaic",
+  title: "Branchenprofile",
   description:
     "Detaillierte Branchen-Landingpages für Immobilienmakler: Vermietung in Ballungsräumen, kleine Maklerbüros und Neubau-Vertrieb.",
+  alternates: {
+    canonical: "/branchen",
+  },
+  openGraph: {
+    title: "Branchenprofile | Advaic",
+    description:
+      "Detaillierte Branchen-Landingpages für Immobilienmakler: Vermietung in Ballungsräumen, kleine Maklerbüros und Neubau-Vertrieb.",
+    url: "/branchen",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Branchenprofile | Advaic",
+    description:
+      "Detaillierte Branchen-Landingpages für Immobilienmakler: Vermietung in Ballungsräumen, kleine Maklerbüros und Neubau-Vertrieb.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function BranchenPage() {
@@ -146,7 +162,7 @@ export default function BranchenPage() {
                   key={source.href}
                   href={source.href}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="btn-secondary"
                 >
                   {source.label}

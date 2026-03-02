@@ -14,6 +14,7 @@ type TourStep = {
   bullets: string[];
   webm: string;
   mp4: string;
+  poster?: string;
 };
 
 const steps: TourStep[] = [
@@ -26,8 +27,9 @@ const steps: TourStep[] = [
       "Absender- und Inhaltssignal werden analysiert",
       "Newsletter und Systemmails werden früh gefiltert",
     ],
-    webm: "/loops/inbox.webm",
-    mp4: "/loops/inbox.mp4",
+    webm: "/loops/tour-inbox.webm",
+    mp4: "/loops/tour-inbox.mp4",
+    poster: "/loops/tour-inbox.jpg",
   },
   {
     id: "rules",
@@ -38,8 +40,9 @@ const steps: TourStep[] = [
       "Klare Standardfälle können automatisch laufen",
       "Unklare oder heikle Fälle gehen zur Freigabe",
     ],
-    webm: "/loops/rules.webm",
-    mp4: "/loops/rules.mp4",
+    webm: "/loops/tour-rules.webm",
+    mp4: "/loops/tour-rules.mp4",
+    poster: "/loops/tour-rules.jpg",
   },
   {
     id: "checks",
@@ -50,8 +53,9 @@ const steps: TourStep[] = [
       "Ton und Lesbarkeit werden gegen Ihre Vorgaben geprüft",
       "Bei Unsicherheit wird nicht automatisch gesendet",
     ],
-    webm: "/loops/checks.webm",
-    mp4: "/loops/checks.mp4",
+    webm: "/loops/tour-checks.webm",
+    mp4: "/loops/tour-checks.mp4",
+    poster: "/loops/tour-checks.jpg",
   },
   {
     id: "approve",
@@ -64,6 +68,7 @@ const steps: TourStep[] = [
     ],
     webm: "/loops/approve.webm",
     mp4: "/loops/approve.mp4",
+    poster: "/loops/tour-log.jpg",
   },
 ];
 
@@ -114,7 +119,7 @@ export default function StickyTour() {
         </div>
 
         <div className="grid grid-cols-12 gap-8 md:gap-12">
-          <div className="col-span-12 lg:col-span-7">
+          <div className="col-span-12 lg:col-span-6">
             <div className="space-y-8">
               {steps.map((step, index) => {
                 const active = step.id === activeLoop;
@@ -146,7 +151,7 @@ export default function StickyTour() {
             </div>
           </div>
 
-          <div className="col-span-12 lg:col-span-5">
+          <div className="col-span-12 lg:col-span-6">
             <div className="lg:sticky lg:top-[110px]">
               <div className="card-base overflow-hidden p-3">
                 <div className="flex items-center gap-2 border-b border-[var(--border)] px-2 pb-3">
@@ -161,7 +166,8 @@ export default function StickyTour() {
                     key={activeStep.id}
                     webm={activeStep.webm}
                     mp4={activeStep.mp4}
-                    className="aspect-video w-full object-cover"
+                    poster={activeStep.poster}
+                    className="aspect-video w-full bg-[var(--surface-2)] object-contain"
                     ariaLabel={`Produktloop: ${activeStep.title}`}
                     placeholderLabel={activeStep.title}
                   />

@@ -250,7 +250,7 @@ export default function AboPage() {
                     Zahlungsmethode aktualisieren
                   </Button>
                   {dunning?.hosted_invoice_url ? (
-                    <a href={dunning.hosted_invoice_url} target="_blank" rel="noreferrer">
+                    <a href={dunning.hosted_invoice_url} target="_blank" rel="noopener noreferrer">
                       <Button variant="outline">Rechnung öffnen</Button>
                     </a>
                   ) : null}
@@ -303,13 +303,13 @@ export default function AboPage() {
                         <a
                           href={inv.hosted_invoice_url}
                           target="_blank"
-                          rel="noreferrer"
+                          rel="noopener noreferrer"
                         >
                           <Button variant="outline">Rechnung öffnen</Button>
                         </a>
                       ) : null}
                       {inv.invoice_pdf ? (
-                        <a href={inv.invoice_pdf} target="_blank" rel="noreferrer">
+                        <a href={inv.invoice_pdf} target="_blank" rel="noopener noreferrer">
                           <Button variant="outline">PDF</Button>
                         </a>
                       ) : null}

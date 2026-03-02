@@ -30,9 +30,25 @@ import FinalCTA from "@/components/marketing/produkt/FinalCTA";
 import ProductVisualAuthority from "@/components/marketing/ProductVisualAuthority";
 
 export const metadata: Metadata = {
-  title: "Produkt | Advaic für Immobilienmakler",
+  title: "Produkt für Immobilienmakler",
   description:
     "Verstehen Sie exakt, wann Advaic automatisch sendet, wann Freigabe greift und welche Qualitätschecks jeden Versand absichern.",
+  alternates: {
+    canonical: "/produkt",
+  },
+  openGraph: {
+    title: "Produkt | Advaic für Immobilienmakler",
+    description:
+      "Verstehen Sie exakt, wann Advaic automatisch sendet, wann Freigabe greift und welche Qualitätschecks jeden Versand absichern.",
+    url: "/produkt",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Produkt | Advaic für Immobilienmakler",
+    description:
+      "Verstehen Sie exakt, wann Advaic automatisch sendet, wann Freigabe greift und welche Qualitätschecks jeden Versand absichern.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function ProduktPage() {

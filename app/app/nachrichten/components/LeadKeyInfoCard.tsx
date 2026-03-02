@@ -490,7 +490,7 @@ export default function LeadKeyInfoCard({ leadId }: Props) {
                     <a
                       href={href}
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noopener noreferrer"
                       className="mt-3 inline-block text-sm text-blue-600 hover:underline"
                     >
                       Dokument ansehen

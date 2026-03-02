@@ -4,6 +4,8 @@ import ClientRootLayout from "@/app/ClientRootLayout";
 import { Inter, Manrope } from "next/font/google";
 import type { Metadata } from "next";
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://advaic.com";
+
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
@@ -17,8 +19,35 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Advaic",
   description: "KI-gestützter Maklerassistent für sichere und nachvollziehbare E-Mail-Automatisierung",
+  openGraph: {
+    type: "website",
+    locale: "de_DE",
+    url: siteUrl,
+    siteName: "Advaic",
+    title: "Advaic",
+    description: "KI-gestützter Maklerassistent für sichere und nachvollziehbare E-Mail-Automatisierung",
+    images: [
+      {
+        url: "/brand/advaic-icon.png",
+        width: 1024,
+        height: 1024,
+        alt: "Advaic",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Advaic",
+    description: "KI-gestützter Maklerassistent für sichere und nachvollziehbare E-Mail-Automatisierung",
+    images: ["/brand/advaic-icon.png"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
   icons: {
     icon: [
       { url: "/brand/advaic-icon.png", type: "image/png", sizes: "32x32" },

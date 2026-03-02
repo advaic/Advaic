@@ -107,7 +107,7 @@ export default function LoginPage() {
         onSubmit={handleLogin}
         className="mx-auto w-full max-w-md"
       >
-        <h2 className="h2">Willkommen zurück</h2>
+        <h1 className="h2">Willkommen zurück</h1>
         <p className="helper mt-2">Melden Sie sich mit Ihren Zugangsdaten an.</p>
 
         {errorMsg && (

@@ -39,14 +39,65 @@ const externalSources = [
 ];
 
 export const metadata: Metadata = {
-  title: "FAQ | Advaic",
+  title: "FAQ",
   description:
     "Antworten zu Autopilot, Freigabe, Qualitätschecks, Follow-ups, Sicherheit und Testphase von Advaic für Immobilienmakler.",
+  alternates: {
+    canonical: "/faq",
+  },
+  openGraph: {
+    title: "FAQ | Advaic",
+    description:
+      "Antworten zu Autopilot, Freigabe, Qualitätschecks, Follow-ups, Sicherheit und Testphase von Advaic für Immobilienmakler.",
+    url: "/faq",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "FAQ | Advaic",
+    description:
+      "Antworten zu Autopilot, Freigabe, Qualitätschecks, Follow-ups, Sicherheit und Testphase von Advaic für Immobilienmakler.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function FAQPage() {
+  const faqSchema = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: [
+      {
+        "@type": "Question",
+        name: "Sendet Advaic automatisch?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "Ja, wenn der Fall klar ist und die Qualitätschecks bestanden sind. Unklare Fälle gehen zur Freigabe.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "Was verhindert unpassende Antworten?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "Vor jedem Auto-Versand laufen Relevanz-, Kontext-, Vollständigkeits-, Ton-, Risiko- und Lesbarkeitschecks.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "Kann ich den Autopilot jederzeit stoppen?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "Ja, der Autopilot kann jederzeit pausiert werden.",
+        },
+      },
+    ],
+  };
+
   return (
     <PageShell>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+      />
       <PageIntro
         kicker="FAQ"
         title="Häufige Fragen zu Advaic"
@@ -121,7 +172,7 @@ export default function FAQPage() {
                   key={source.href}
                   href={source.href}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="btn-secondary"
                 >
                   {source.label}

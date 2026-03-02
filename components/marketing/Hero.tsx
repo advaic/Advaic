@@ -15,7 +15,7 @@ export default function Hero() {
     <section id="top" className="marketing-hero-bg py-20 md:py-28">
       <Container>
         <div className="grid grid-cols-12 gap-8 md:gap-12 lg:items-center">
-          <div className="col-span-12 lg:col-span-6">
+          <div className="col-span-12 lg:col-span-5">
             <p className="label">Automatisierte Interessenten-Kommunikation</p>
             <h1 className="h1 mt-4">Mehr Zeit. Weniger Stress.</h1>
             <p className="body-lg mt-6 max-w-[54ch] text-[var(--muted)]">
@@ -66,21 +66,21 @@ export default function Hero() {
             </ul>
           </div>
 
-          <div className="col-span-12 lg:col-span-6">
-            <div className="card-base overflow-hidden p-3">
+          <div className="col-span-12 lg:col-span-7">
+            <div className="card-base overflow-hidden p-2">
               <div className="flex items-center gap-2 border-b border-[var(--border)] px-2 pb-3">
                 <span className="h-2.5 w-2.5 rounded-full bg-[#f87171]" />
                 <span className="h-2.5 w-2.5 rounded-full bg-[#fbbf24]" />
                 <span className="h-2.5 w-2.5 rounded-full bg-[#4ade80]" />
               </div>
 
-              <div className="mt-3 overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)]">
+              <div className="mt-2 overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)]">
                 <LoopVideo
                   webm="/loops/product-hero.webm"
                   mp4="/loops/product-hero.mp4"
                   poster="/loops/product-hero.jpg"
                   priority
-                  className="aspect-video w-full object-cover"
+                  className="aspect-video w-full bg-[var(--surface-2)] object-contain"
                   ariaLabel="Advaic Produktvorschau: Eingang, Entscheidung und Versand"
                   placeholderLabel="Produktvorschau"
                 />
