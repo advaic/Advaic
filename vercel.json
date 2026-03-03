@@ -3,6 +3,10 @@
     {
       "path": "/api/gmail/renew-watches?secret=${CRON_SECRET}",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/pipeline/billing-trial-reminders/run?secret=${CRON_SECRET}",
+      "schedule": "15 9 * * *"
     }
   ]
 }

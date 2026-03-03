@@ -74,6 +74,9 @@ type SuggestionMetrics = {
   short_edit_rate: number;
   large_edit_rate: number;
   avg_diff_chars: number;
+  feedback_negative_total?: number;
+  feedback_top_reason?: string | null;
+  feedback_top_reason_share?: number;
 };
 
 type SuggestionAiMeta = {
@@ -110,6 +113,16 @@ function toPct(v: number) {
   const n = Number(v);
   if (!Number.isFinite(n)) return "0%";
   return `${Math.round(n * 1000) / 10}%`;
+}
+
+function feedbackReasonLabel(code: string | null | undefined) {
+  const key = String(code || "").toLowerCase().trim();
+  if (key === "zu_lang") return "Zu lang";
+  if (key === "falscher_fokus") return "Falscher Fokus";
+  if (key === "fehlende_infos") return "Fehlende Infos";
+  if (key === "ton_unpassend") return "Ton unpassend";
+  if (key === "sonstiges") return "Sonstiges";
+  return "—";
 }
 
 function previewFromPatch(patch: SuggestionPatch): string[] {
@@ -572,7 +585,7 @@ export default function ToneSettingsPage() {
               </Button>
             </div>
 
-            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
               <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
                 <div className="text-muted-foreground">Geprüfte Freigaben</div>
                 <div className="mt-1 font-semibold text-gray-900">
@@ -595,6 +608,21 @@ export default function ToneSettingsPage() {
                 <div className="text-muted-foreground">Ø Diff-Zeichen</div>
                 <div className="mt-1 font-semibold text-gray-900">
                   {suggestionMetrics?.avg_diff_chars ?? 0}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
+                <div className="text-muted-foreground">Negatives Feedback</div>
+                <div className="mt-1 font-semibold text-gray-900">
+                  {suggestionMetrics?.feedback_negative_total ?? 0}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
+                <div className="text-muted-foreground">Top-Feedbacktreiber</div>
+                <div className="mt-1 font-semibold text-gray-900">
+                  {feedbackReasonLabel(suggestionMetrics?.feedback_top_reason)}
+                </div>
+                <div className="mt-0.5 text-[11px] text-gray-500">
+                  Anteil: {toPct(suggestionMetrics?.feedback_top_reason_share ?? 0)}
                 </div>
               </div>
             </div>

@@ -10,6 +10,10 @@ import {
   computeFollowupNextAt,
   normalizeFollowupSendWindow,
 } from "@/lib/followups/scheduling";
+import {
+  getCommercialAccess,
+  paymentRequiredMeta,
+} from "@/lib/billing/commercial-access";
 
 export const runtime = "nodejs";
 
@@ -378,6 +382,16 @@ export async function POST(req: NextRequest) {
     if (authErr || !u) return jsonError(401, "Unauthorized");
     if (String(u.id) !== agentIdFromMessage) return jsonError(403, "Forbidden");
     user = { id: String(u.id) };
+  }
+
+  const billingAccess = await getCommercialAccess({
+    supabase: supabaseAdmin,
+    agentId: String(user.id),
+  });
+  if (billingAccess.access.upgrade_required) {
+    return NextResponse.json(paymentRequiredMeta(billingAccess.access), {
+      status: 402,
+    });
   }
 
   const safeTo = sanitizeHeaderValue(to);

@@ -94,6 +94,28 @@ type BillingAccess = {
   };
 };
 
+type DeliverabilitySnapshot = {
+  ok: boolean;
+  level: "ok" | "warning" | "critical";
+  sender_from: string | null;
+  sender_domain: string | null;
+  dmarc_policy: string | null;
+  checks: Array<{
+    key: string;
+    label: string;
+    ok: boolean;
+    details: string;
+  }>;
+  summary: {
+    failed_sends_24h: number;
+    deliverability_like_failures_24h: number;
+    failed_sends_7d: number;
+    sent_7d: number;
+    fail_rate_7d: number;
+  };
+  recommendations: string[];
+};
+
 type SimulationCaseKey =
   | "clear_standard"
   | "missing_context"
@@ -246,6 +268,8 @@ export default function StartseiteUI({
   const [opsInsights, setOpsInsights] = useState<OperationsInsights | null>(
     null,
   );
+  const [deliverability, setDeliverability] =
+    useState<DeliverabilitySnapshot | null>(null);
   const [autosendGate, setAutosendGate] = useState<AutosendGate | null>(null);
   const [billingAccess, setBillingAccess] = useState<BillingAccess | null>(
     null,
@@ -503,19 +527,34 @@ export default function StartseiteUI({
       }
 
       try {
-        const opRes = await fetch("/api/agent/insights/operations", {
-          method: "GET",
-          cache: "no-store",
-        });
+        const [opRes, delRes] = await Promise.all([
+          fetch("/api/agent/insights/operations", {
+            method: "GET",
+            cache: "no-store",
+          }),
+          fetch("/api/agent/deliverability/status", {
+            method: "GET",
+            cache: "no-store",
+          }),
+        ]);
+
         const opJson = await opRes.json().catch(() => null);
         if (opRes.ok && opJson?.ok) {
           setOpsInsights(opJson as OperationsInsights);
         } else {
           setOpsInsights(null);
         }
+
+        const delJson = await delRes.json().catch(() => null);
+        if (delRes.ok && delJson?.ok) {
+          setDeliverability(delJson as DeliverabilitySnapshot);
+        } else {
+          setDeliverability(null);
+        }
       } catch (e) {
-        console.warn("operations insights failed", e);
+        console.warn("operations or deliverability insights failed", e);
         setOpsInsights(null);
+        setDeliverability(null);
       }
     } finally {
       if (!opts?.silent) setLoading(false);
@@ -769,6 +808,17 @@ export default function StartseiteUI({
       toast.error(
         "Testphase beendet. Bitte aktiviere Starter, um Auto-Senden zu nutzen.",
       );
+      void trackFunnelEvent({
+        event: "billing_upgrade_gate_triggered",
+        source: "dashboard_autosend_gate",
+        path: "/app/startseite",
+        meta: { reason: "trial_expired_autosend_toggle" },
+      });
+      if (typeof window !== "undefined") {
+        window.location.assign(
+          "/app/konto/abo?upgrade_required=1&source=dashboard_autosend_gate&next=%2Fapp%2Fstartseite",
+        );
+      }
       return;
     }
 
@@ -786,6 +836,17 @@ export default function StartseiteUI({
       if (res.status === 402 && data?.error === "payment_required") {
         if (data?.billing_access) {
           setBillingAccess(data.billing_access as BillingAccess);
+        }
+        void trackFunnelEvent({
+          event: "billing_upgrade_gate_triggered",
+          source: "dashboard_autosend_api_gate",
+          path: "/app/startseite",
+          meta: { reason: "payment_required_autosend_api" },
+        });
+        if (typeof window !== "undefined") {
+          window.location.assign(
+            "/app/konto/abo?upgrade_required=1&source=dashboard_autosend_api_gate&next=%2Fapp%2Fstartseite",
+          );
         }
         throw new Error(
           String(
@@ -836,6 +897,17 @@ export default function StartseiteUI({
       toast.error(
         "Testphase beendet. Bitte aktiviere Starter, um Follow-ups zu nutzen.",
       );
+      void trackFunnelEvent({
+        event: "billing_upgrade_gate_triggered",
+        source: "dashboard_followups_gate",
+        path: "/app/startseite",
+        meta: { reason: "trial_expired_followups_toggle" },
+      });
+      if (typeof window !== "undefined") {
+        window.location.assign(
+          "/app/konto/abo?upgrade_required=1&source=dashboard_followups_gate&next=%2Fapp%2Fstartseite",
+        );
+      }
       return;
     }
 
@@ -854,6 +926,17 @@ export default function StartseiteUI({
       if (res.status === 402 && data?.error === "payment_required") {
         if (data?.billing_access) {
           setBillingAccess(data.billing_access as BillingAccess);
+        }
+        void trackFunnelEvent({
+          event: "billing_upgrade_gate_triggered",
+          source: "dashboard_followups_api_gate",
+          path: "/app/startseite",
+          meta: { reason: "payment_required_followups_api" },
+        });
+        if (typeof window !== "undefined") {
+          window.location.assign(
+            "/app/konto/abo?upgrade_required=1&source=dashboard_followups_api_gate&next=%2Fapp%2Fstartseite",
+          );
         }
         throw new Error(
           String(
@@ -911,6 +994,17 @@ export default function StartseiteUI({
       toast.error(
         "Testphase beendet. Bitte aktiviere Starter, bevor du Safe-Start setzt.",
       );
+      void trackFunnelEvent({
+        event: "billing_upgrade_gate_triggered",
+        source: "dashboard_safe_start_gate",
+        path: "/app/startseite",
+        meta: { reason: "trial_expired_safe_start" },
+      });
+      if (typeof window !== "undefined") {
+        window.location.assign(
+          "/app/konto/abo?upgrade_required=1&source=dashboard_safe_start_gate&next=%2Fapp%2Fstartseite",
+        );
+      }
       return;
     }
     setQuickstartBusy(true);
@@ -943,6 +1037,17 @@ export default function StartseiteUI({
         if (aJson?.billing_access) {
           setBillingAccess(aJson.billing_access as BillingAccess);
         }
+        void trackFunnelEvent({
+          event: "billing_upgrade_gate_triggered",
+          source: "dashboard_safe_start_autosend_gate",
+          path: "/app/startseite",
+          meta: { reason: "payment_required_safe_start_autosend" },
+        });
+        if (typeof window !== "undefined") {
+          window.location.assign(
+            "/app/konto/abo?upgrade_required=1&source=dashboard_safe_start_autosend_gate&next=%2Fapp%2Fstartseite",
+          );
+        }
         throw new Error(
           String(
             aJson?.details ||
@@ -953,6 +1058,17 @@ export default function StartseiteUI({
       if (fRes.status === 402 && fJson?.error === "payment_required") {
         if (fJson?.billing_access) {
           setBillingAccess(fJson.billing_access as BillingAccess);
+        }
+        void trackFunnelEvent({
+          event: "billing_upgrade_gate_triggered",
+          source: "dashboard_safe_start_followups_gate",
+          path: "/app/startseite",
+          meta: { reason: "payment_required_safe_start_followups" },
+        });
+        if (typeof window !== "undefined") {
+          window.location.assign(
+            "/app/konto/abo?upgrade_required=1&source=dashboard_safe_start_followups_gate&next=%2Fapp%2Fstartseite",
+          );
         }
         throw new Error(
           String(
@@ -1021,6 +1137,51 @@ export default function StartseiteUI({
     };
   }, [autosendEnabled, followupsSenderMode, quickstartApprovedSends]);
 
+  const quickstartNextAction = useMemo(() => {
+    if (trialExpired) {
+      return {
+        href: "/app/konto/abo?source=dashboard_quickstart_next&next=%2Fapp%2Fstartseite",
+        label: "Starter aktivieren",
+        hint: "Die Testphase ist beendet. Aktiviere Starter, damit Safe-Start und Versand wieder freigeschaltet sind.",
+        primary: true,
+      };
+    }
+
+    if (!quickstart.safeStartActive) {
+      return {
+        href: null,
+        label: "Safe-Start anwenden",
+        hint: "Setze zuerst Freigabe als Standard für Antworten und Follow-ups.",
+        primary: true,
+      };
+    }
+
+    if (shownKpis.approvals > 0) {
+      return {
+        href: "/app/zur-freigabe",
+        label: "Offene Freigaben bearbeiten",
+        hint: "Dort liegen die nächsten klaren Entwürfe. Drei sichere Freigaben reichen für den First Value.",
+        primary: true,
+      };
+    }
+
+    if (shownKpis.open > 0) {
+      return {
+        href: "/app/nachrichten",
+        label: "Nachrichten prüfen",
+        hint: "Öffne neue Konversationen, damit weitere Fälle in die Freigabe laufen.",
+        primary: false,
+      };
+    }
+
+    return {
+      href: "/app/immobilien",
+      label: "Objekte ergänzen",
+      hint: "Mit vollständigen Objektdaten steigen Präzision und Automatisierungsgrad.",
+      primary: false,
+    };
+  }, [quickstart.safeStartActive, shownKpis.approvals, shownKpis.open, trialExpired]);
+
   useEffect(() => {
     const reached = quickstart.progress >= 1 || autoReplies30d > 0;
     if (!reached || firstValueTracked) return;
@@ -1063,6 +1224,26 @@ export default function StartseiteUI({
       cls: "border-emerald-200 bg-emerald-50 text-emerald-800",
     };
   }, [opsInsights?.sending_health?.level]);
+
+  const deliverabilityUi = useMemo(() => {
+    const level = deliverability?.level || "ok";
+    if (level === "critical") {
+      return {
+        label: "Kritisch",
+        cls: "border-red-200 bg-red-50 text-red-800",
+      };
+    }
+    if (level === "warning") {
+      return {
+        label: "Auffällig",
+        cls: "border-amber-200 bg-amber-50 text-amber-900",
+      };
+    }
+    return {
+      label: "Stabil",
+      cls: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    };
+  }, [deliverability?.level]);
 
   return (
     <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
@@ -1168,7 +1349,18 @@ export default function StartseiteUI({
                   </div>
                 </div>
                 <Link
-                  href="/app/konto/abo"
+                  href="/app/konto/abo?source=dashboard_trial_card&next=%2Fapp%2Fstartseite"
+                  onClick={() => {
+                    void trackFunnelEvent({
+                      event: "billing_upgrade_cta_clicked",
+                      source: "dashboard_trial_card",
+                      path: "/app/startseite",
+                      meta: {
+                        trial_state: billingAccess?.state || null,
+                        trial_days_remaining: billingAccess?.trial_days_remaining ?? null,
+                      },
+                    });
+                  }}
                   className="inline-flex items-center justify-center rounded-lg border border-gray-900 bg-gray-900 px-3 py-2 text-sm font-medium text-amber-200 hover:bg-gray-800"
                 >
                   Starter aktivieren
@@ -1178,6 +1370,7 @@ export default function StartseiteUI({
           ) : null}
 
           <div
+            id="quickstart"
             className={`rounded-2xl border p-5 ${
               quickstart.done
                 ? "border-emerald-200 bg-emerald-50/60"
@@ -1218,7 +1411,7 @@ export default function StartseiteUI({
               />
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-4 text-xs">
+            <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5 text-xs">
               <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-800">
                 <span className="font-medium">1) Safe-Start aktiv:</span>{" "}
                 {quickstart.safeStartActive ? "Ja" : "Noch nicht"}
@@ -1234,6 +1427,55 @@ export default function StartseiteUI({
               <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-800">
                 <span className="font-medium">4) First Value:</span>{" "}
                 {quickstart.progress >= 1 || autoReplies30d > 0 ? "Erreicht" : "Offen"}
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-800">
+                <span className="font-medium">5) Follow-ups sicher:</span>{" "}
+                {followupsSenderMode === "always_approval" || followupsSenderMode === null
+                  ? "Ja"
+                  : "Auto-basiert"}
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3">
+              <div className="text-xs font-semibold text-gray-900">
+                Nächster bester Schritt
+              </div>
+              <div className="mt-1 text-xs text-gray-700">
+                {quickstartNextAction.hint}
+              </div>
+              <div className="mt-3">
+                {quickstartNextAction.href ? (
+                  <Link
+                    href={quickstartNextAction.href}
+                    onClick={() => {
+                      void trackFunnelEvent({
+                        event: "dashboard_quickstart_next_clicked",
+                        source: "dashboard_home",
+                        meta: {
+                          next_label: quickstartNextAction.label,
+                          next_href: quickstartNextAction.href,
+                          trial_expired: trialExpired,
+                        },
+                      });
+                    }}
+                    className={`inline-flex items-center rounded-lg border px-3 py-2 text-sm font-medium ${
+                      quickstartNextAction.primary
+                        ? "border-gray-900 bg-gray-900 text-amber-200 hover:bg-gray-800"
+                        : "border-gray-200 bg-white text-gray-900 hover:bg-gray-50"
+                    }`}
+                  >
+                    {quickstartNextAction.label}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={applySafeStart}
+                    disabled={quickstartBusy || trialExpired}
+                    className="inline-flex items-center rounded-lg border border-gray-900 bg-gray-900 px-3 py-2 text-sm font-medium text-amber-200 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {quickstartBusy ? "Setzt Safe-Start…" : quickstartNextAction.label}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1262,7 +1504,18 @@ export default function StartseiteUI({
               </Link>
               {quickstart.done && billingAccess?.state !== "paid_active" ? (
                 <Link
-                  href="/app/konto/abo"
+                  href="/app/konto/abo?source=dashboard_quickstart_done&next=%2Fapp%2Fstartseite"
+                  onClick={() => {
+                    void trackFunnelEvent({
+                      event: "billing_upgrade_cta_clicked",
+                      source: "dashboard_quickstart_done",
+                      path: "/app/startseite",
+                      meta: {
+                        quickstart_done: true,
+                        trial_state: billingAccess?.state || null,
+                      },
+                    });
+                  }}
                   className="inline-flex items-center rounded-lg border border-gray-900 bg-gray-900 px-3 py-2 text-sm font-medium text-amber-200 hover:bg-gray-800"
                 >
                   Starter jetzt aktivieren
@@ -1277,7 +1530,7 @@ export default function StartseiteUI({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-sm font-semibold text-gray-900">
@@ -1412,6 +1665,70 @@ export default function StartseiteUI({
                   : sendingHealthUi.label === "Auffällig"
                     ? "Empfehlung: Queue und Fehlermuster täglich kurz prüfen."
                     : "Der Versand läuft aktuell stabil."}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-gray-900">
+                  Deliverability-Monitoring
+                </div>
+                <span
+                  className={`text-xs rounded-full border px-2 py-1 font-medium ${deliverabilityUi.cls}`}
+                >
+                  {deliverabilityUi.label}
+                </span>
+              </div>
+              <div className="mt-2 text-xs text-gray-600">
+                Sichtbarkeit für SPF, DKIM, DMARC und zustellbarkeitsnahe Fehler.
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-2">
+                  <div className="text-gray-500">Deliverability-Fehler (24h)</div>
+                  <div className="text-sm font-semibold text-gray-900">
+                    {deliverability?.summary?.deliverability_like_failures_24h ?? 0}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-2">
+                  <div className="text-gray-500">Gesamtfehler (24h)</div>
+                  <div className="text-sm font-semibold text-gray-900">
+                    {deliverability?.summary?.failed_sends_24h ?? 0}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-2">
+                  <div className="text-gray-500">Fehlerquote (7 Tage)</div>
+                  <div className="text-sm font-semibold text-gray-900">
+                    {toPct(deliverability?.summary?.fail_rate_7d)}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-2">
+                  <div className="text-gray-500">Absenderdomain</div>
+                  <div className="truncate text-sm font-semibold text-gray-900">
+                    {deliverability?.sender_domain || "–"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
+                {(deliverability?.checks || []).map((check) => (
+                  <div
+                    key={check.key}
+                    className={`rounded-xl border px-2 py-2 ${
+                      check.ok
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                        : "border-amber-200 bg-amber-50 text-amber-900"
+                    }`}
+                  >
+                    <div className="font-semibold">{check.label}</div>
+                    <div className="mt-1 line-clamp-2">{check.ok ? "OK" : "Fehlt"}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 text-xs text-gray-700">
+                {deliverability?.recommendations?.[0] ||
+                  "Keine Empfehlung verfügbar. Bitte später erneut prüfen."}
               </div>
             </div>
           </div>

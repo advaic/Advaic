@@ -17,6 +17,16 @@ const intents = [
     text: "Konkrete Übersicht zu Datenminimierung, Zugriffskontrolle und dokumentierbaren Prozessgrenzen.",
     href: "/dsgvo-email-autopilot",
   },
+  {
+    title: "ROI-Rechner für Makler",
+    text: "Konservative Modellrechnung zu Zeitgewinn, Erstreaktion und Antwortquote im Zielzeitfenster.",
+    href: "/roi-rechner",
+  },
+  {
+    title: "Einwände gegen E-Mail-Autopilot",
+    text: "Detaillierte Antworten zu DSGVO, Kontrolle, Qualität, Aufwand und Kosten mit klaren Handlungspfaden.",
+    href: "/einwaende",
+  },
 ];
 
 export default function SearchIntentTeaser() {
@@ -33,7 +43,7 @@ export default function SearchIntentTeaser() {
           </div>
         </div>
 
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
+        <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {intents.map((item) => (
             <article key={item.title} className="card-base card-hover p-6">
               <h3 className="h3">{item.title}</h3>

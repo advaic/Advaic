@@ -116,6 +116,16 @@ function buildTitleForEvent(type: string) {
       return "Onboarding fortsetzen";
     case "onboarding_recovery_24h":
       return "Onboarding: erster Wert noch offen";
+    case "trial_upgrade_reminder_t7":
+      return "Testphase: 7 Tage verbleibend";
+    case "trial_upgrade_reminder_t3":
+      return "Testphase: noch 3 Tage";
+    case "trial_upgrade_reminder_t1":
+      return "Testphase: letzter Tag";
+    case "trial_upgrade_reminder_expired_d1":
+      return "Testphase beendet";
+    case "trial_upgrade_reminder_expired_d4":
+      return "Starter jederzeit aktivierbar";
     default:
       return "Advaic Update";
   }
@@ -134,6 +144,16 @@ function buildBodyForEvent(type: string) {
       return "Ihr Safe-Start ist vorbereitet. Fahren Sie mit dem nächsten Schritt fort.";
     case "onboarding_recovery_24h":
       return "Der erste messbare Nutzen fehlt noch. Setzen Sie Ihr Onboarding fort.";
+    case "trial_upgrade_reminder_t7":
+      return "Die Testphase läuft. Aktivieren Sie Starter vor Ablauf, damit alle Funktionen ohne Pause weiterlaufen.";
+    case "trial_upgrade_reminder_t3":
+      return "Noch 3 Tage Testphase. Starter jetzt aktivieren, damit Auto-Senden und Follow-ups aktiv bleiben.";
+    case "trial_upgrade_reminder_t1":
+      return "Heute endet die Testphase. Aktivieren Sie Starter, damit Ihre Versand-Funktionen aktiv bleiben.";
+    case "trial_upgrade_reminder_expired_d1":
+      return "Die Testphase ist beendet. Aktivieren Sie Starter, um Auto-Senden und Follow-ups wieder zu nutzen.";
+    case "trial_upgrade_reminder_expired_d4":
+      return "Kurze Erinnerung: Starter kann jederzeit aktiviert werden, um wieder produktiv zu arbeiten.";
     default:
       return "Neues Update im Advaic Dashboard.";
   }

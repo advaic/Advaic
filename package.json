@@ -8,7 +8,13 @@
     "start": "next start",
     "smoke:e2e": "node scripts/smoke-e2e.mjs",
     "critical:e2e": "node scripts/critical-flow-e2e.mjs",
+    "sprint4:e2e": "node scripts/sprint4-e2e.mjs",
     "eval:email-classify": "node scripts/ai-eval-email-classify.mjs",
+    "eval:rollout-gate": "node scripts/ai-rollout-gate.mjs",
+    "fine-tune:dataset": "node scripts/build-finetune-reply-dataset.mjs",
+    "fine-tune:upload": "node scripts/azure-upload-finetune-files.mjs",
+    "fine-tune:job": "node scripts/azure-finetune-job.mjs",
+    "deploy:candidate": "node scripts/azure-update-candidate-deployment.mjs",
     "launch:check": "node scripts/launch-readiness-check.mjs",
     "launch:env": "node scripts/launch-env-audit.mjs"
   },

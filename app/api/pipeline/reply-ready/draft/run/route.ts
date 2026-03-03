@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { pickCanaryDeployment } from "@/lib/ai/canary-deployment";
 
 export const runtime = "nodejs";
 
@@ -148,6 +149,7 @@ async function fetchJsonWithTimeout(
 async function callAzureWriter(args: {
   system: string;
   user: string;
+  rolloutKey: string;
   temperature: number;
   maxTokens: number;
   timeoutMs?: number;
@@ -155,15 +157,30 @@ async function callAzureWriter(args: {
 }) {
   const endpoint = mustEnv("AZURE_OPENAI_ENDPOINT");
   const apiKey = mustEnv("AZURE_OPENAI_API_KEY");
-  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_WRITER;
+  const stableDeployment = String(
+    process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_WRITER || ""
+  ).trim();
 
-  if (!deployment) {
-    return { ok: false as const, text: "", reason: "writer_not_configured" };
+  if (!stableDeployment) {
+    return {
+      ok: false as const,
+      text: "",
+      reason: "writer_not_configured",
+      deployment: "",
+      variant: "stable" as const,
+    };
   }
+
+  const selected = pickCanaryDeployment({
+    stableDeployment,
+    candidateDeployment: process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_WRITER_CANDIDATE,
+    canaryPercent: process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_WRITER_CANARY_PERCENT,
+    unitKey: args.rolloutKey,
+  });
 
   const apiVersion =
     process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview";
-  const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+  const url = `${endpoint}/openai/deployments/${selected.deployment}/chat/completions?api-version=${apiVersion}`;
 
   const timeoutMs = Number.isFinite(Number(args.timeoutMs))
     ? Number(args.timeoutMs)
@@ -200,22 +217,48 @@ async function callAzureWriter(args: {
         if (resp.status === 429 || (resp.status >= 500 && resp.status <= 599)) {
           continue;
         }
-        return { ok: false as const, text: "", reason: lastErr };
+        return {
+          ok: false as const,
+          text: "",
+          reason: lastErr,
+          deployment: selected.deployment,
+          variant: selected.variant,
+        };
       }
 
       const data = (await resp.json().catch(() => null)) as any;
       const out = data?.choices?.[0]?.message?.content;
       const text = typeof out === "string" ? out.trim() : "";
-      if (!text) return { ok: false as const, text: "", reason: "no_output" };
+      if (!text) {
+        return {
+          ok: false as const,
+          text: "",
+          reason: "no_output",
+          deployment: selected.deployment,
+          variant: selected.variant,
+        };
+      }
 
-      return { ok: true as const, text, reason: "ok" };
+      return {
+        ok: true as const,
+        text,
+        reason: "ok",
+        deployment: selected.deployment,
+        variant: selected.variant,
+      };
     } catch (e: any) {
       lastErr = e?.name === "AbortError" ? "timeout" : "fetch_failed";
       continue;
     }
   }
 
-  return { ok: false as const, text: "", reason: lastErr };
+  return {
+    ok: false as const,
+    text: "",
+    reason: lastErr,
+    deployment: selected.deployment,
+    variant: selected.variant,
+  };
 }
 
 /**
@@ -644,6 +687,7 @@ export async function POST(req: Request) {
     const writer = await callAzureWriter({
       system: String(systemPromptFromDb),
       user: userPrompt,
+      rolloutKey: `${agentId}:${leadId}:${inboundMessageId}`,
       temperature,
       maxTokens,
       timeoutMs: 25_000,
@@ -674,6 +718,8 @@ export async function POST(req: Request) {
         autosendEnabled,
         draftStatus: "escalate",
         writerReason: writer.reason,
+        writerDeployment: writer.deployment || null,
+        writerVariant: writer.variant,
       });
 
       continue;
@@ -743,6 +789,8 @@ export async function POST(req: Request) {
       draftStatus: "qa_pending",
       confidence: baseConfidence,
       reason: baseReason,
+      writerDeployment: writer.deployment || null,
+      writerVariant: writer.variant,
     });
 
   }

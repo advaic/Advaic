@@ -54,6 +54,55 @@ export default async function AdminOverviewPage() {
       ? Math.round((aqRatePct - aqPrevRatePct) * 10) / 10
       : null;
 
+  const trustKpis = (health.trust_kpis || {}) as any;
+  const approvalToSend = (trustKpis.approval_to_send || {}) as any;
+  const correctionTime = (trustKpis.correction_time_seconds || {}) as any;
+
+  const approvalToSendRate =
+    typeof approvalToSend.current_rate === "number"
+      ? approvalToSend.current_rate
+      : null;
+  const approvalToSendPrevRate =
+    typeof approvalToSend.previous_rate === "number"
+      ? approvalToSend.previous_rate
+      : null;
+  const approvalToSendRatePct =
+    approvalToSendRate === null ? null : Math.round(approvalToSendRate * 1000) / 10;
+  const approvalToSendPrevRatePct =
+    approvalToSendPrevRate === null
+      ? null
+      : Math.round(approvalToSendPrevRate * 1000) / 10;
+  const approvalToSendRelChangePct =
+    typeof approvalToSend.relative_change_pct === "number"
+      ? Math.round(approvalToSend.relative_change_pct * 10) / 10
+      : null;
+
+  const correctionMedianSec =
+    typeof correctionTime.current_median === "number"
+      ? Math.max(0, Math.round(correctionTime.current_median))
+      : null;
+  const correctionMedianPrevSec =
+    typeof correctionTime.previous_median === "number"
+      ? Math.max(0, Math.round(correctionTime.previous_median))
+      : null;
+  const correctionRelChangePct =
+    typeof correctionTime.relative_change_pct === "number"
+      ? Math.round(correctionTime.relative_change_pct * 10) / 10
+      : null;
+
+  const formatSec = (v: number | null) => {
+    if (v === null) return "–";
+    if (v < 60) return `${v}s`;
+    const mins = Math.floor(v / 60);
+    const sec = v % 60;
+    return sec === 0 ? `${mins}m` : `${mins}m ${sec}s`;
+  };
+
+  const sprint3GoalSendMet =
+    approvalToSendRelChangePct !== null && approvalToSendRelChangePct >= 15;
+  const sprint3GoalCorrectionMet =
+    correctionRelChangePct !== null && correctionRelChangePct <= -20;
+
   // heuristic health level (V1):
   // red if failed sends >= 3 or needs_human >= 5
   // yellow if needs_approval >= 10 or ready_to_send >= 10
@@ -249,6 +298,109 @@ export default async function AdminOverviewPage() {
             }
             tone={aqDeltaPp !== null && aqDeltaPp < 0 ? "warning" : "neutral"}
           />
+        </div>
+
+        <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-4 md:p-5">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold text-gray-900">
+                Sprint 3 · Produktvertrauen KPIs (7 Tage)
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                Ziel: +15% Freigabe-zu-Senden, -20% manuelle Korrekturzeit
+                (gegenüber Vorwoche).
+              </div>
+            </div>
+            <Link
+              href="/app/admin/quality"
+              className="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs hover:bg-gray-50"
+            >
+              Quality öffnen
+            </Link>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+              <div className="text-[11px] text-gray-500">Freigabe → Gesendet</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">
+                {approvalToSendRatePct === null ? "–" : `${approvalToSendRatePct}%`}
+              </div>
+              <div className="mt-1 text-[11px] text-gray-600">
+                {Number(approvalToSend.current_sent ?? 0)}/
+                {Number(approvalToSend.current_total ?? 0)} Freigaben wurden gesendet.
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+              <div className="text-[11px] text-gray-500">Trend vs. Vorwoche</div>
+              <div
+                className={`mt-1 text-lg font-semibold ${
+                  approvalToSendRelChangePct !== null && approvalToSendRelChangePct < 0
+                    ? "text-red-700"
+                    : "text-gray-900"
+                }`}
+              >
+                {approvalToSendRelChangePct === null
+                  ? "–"
+                  : `${approvalToSendRelChangePct >= 0 ? "+" : ""}${approvalToSendRelChangePct}%`}
+              </div>
+              <div className="mt-1 text-[11px] text-gray-600">
+                Vorwoche:{" "}
+                {approvalToSendPrevRatePct === null
+                  ? "–"
+                  : `${approvalToSendPrevRatePct}%`}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+              <div className="text-[11px] text-gray-500">Median Korrekturzeit</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">
+                {formatSec(correctionMedianSec)}
+              </div>
+              <div className="mt-1 text-[11px] text-gray-600">
+                Bearbeitete Fälle: {Number(correctionTime.current_edited_count ?? 0)}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+              <div className="text-[11px] text-gray-500">Korrekturzeit vs. Vorwoche</div>
+              <div
+                className={`mt-1 text-lg font-semibold ${
+                  correctionRelChangePct !== null && correctionRelChangePct > 0
+                    ? "text-red-700"
+                    : "text-gray-900"
+                }`}
+              >
+                {correctionRelChangePct === null
+                  ? "–"
+                  : `${correctionRelChangePct >= 0 ? "+" : ""}${correctionRelChangePct}%`}
+              </div>
+              <div className="mt-1 text-[11px] text-gray-600">
+                Vorwoche: {formatSec(correctionMedianPrevSec)}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span
+              className={`rounded-full border px-2 py-1 ${
+                sprint3GoalSendMet
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-amber-200 bg-amber-50 text-amber-900"
+              }`}
+            >
+              Ziel 1 (+15%): {sprint3GoalSendMet ? "erreicht" : "noch offen"}
+            </span>
+            <span
+              className={`rounded-full border px-2 py-1 ${
+                sprint3GoalCorrectionMet
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-amber-200 bg-amber-50 text-amber-900"
+              }`}
+            >
+              Ziel 2 (-20%): {sprint3GoalCorrectionMet ? "erreicht" : "noch offen"}
+            </span>
+          </div>
         </div>
 
         <div className="mt-2 text-xs text-gray-600">

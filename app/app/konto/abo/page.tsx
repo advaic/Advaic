@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { trackFunnelEvent } from "@/lib/funnel/track";
 
 type BillingSummaryResponse = {
   ok: boolean;
@@ -82,31 +84,120 @@ function formatDate(v: string | null) {
 }
 
 export default function AboPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<null | "checkout" | "portal">(null);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState<BillingSummaryResponse["summary"] | null>(
     null,
   );
+  const [syncingAfterCheckout, setSyncingAfterCheckout] = useState(false);
 
-  const loadSummary = async () => {
-    setLoading(true);
+  const checkoutParam = String(searchParams.get("checkout") || "").toLowerCase();
+  const upgradeRequiredParam = searchParams.get("upgrade_required") === "1";
+  const sourceParam = String(searchParams.get("source") || "").trim();
+  const stageParam = String(searchParams.get("stage") || "").trim();
+  const nextPath = useMemo(() => {
+    const raw = String(searchParams.get("next") || "").trim();
+    if (!raw.startsWith("/") || raw.startsWith("//")) return "";
+    return raw;
+  }, [searchParams]);
+
+  const loadSummary = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     setError("");
     const res = await fetch("/api/billing/summary", { cache: "no-store" });
     const data = (await res.json().catch(() => ({}))) as BillingSummaryResponse;
     if (!res.ok || !data?.ok || !data.summary) {
       setError(String(data?.error || "Billing-Daten konnten nicht geladen werden."));
       setSummary(null);
-      setLoading(false);
-      return;
+      if (!opts?.silent) setLoading(false);
+      return null;
     }
     setSummary(data.summary);
-    setLoading(false);
-  };
+    if (!opts?.silent) setLoading(false);
+    return data.summary;
+  }, []);
 
   useEffect(() => {
-    loadSummary();
-  }, []);
+    void loadSummary();
+  }, [loadSummary]);
+
+  useEffect(() => {
+    void trackFunnelEvent({
+      event: "billing_upgrade_page_viewed",
+      source: "account_billing",
+      path: "/app/konto/abo",
+      meta: {
+        source: sourceParam || null,
+        stage: stageParam || null,
+        upgrade_required: upgradeRequiredParam,
+      },
+    });
+    // track a meaningful entry once per param combination
+  }, [sourceParam, stageParam, upgradeRequiredParam]);
+
+  useEffect(() => {
+    if (checkoutParam === "success") {
+      void trackFunnelEvent({
+        event: "billing_checkout_return_success",
+        source: "account_billing",
+      });
+      return;
+    }
+    if (checkoutParam === "cancel") {
+      void trackFunnelEvent({
+        event: "billing_checkout_return_cancel",
+        source: "account_billing",
+      });
+    }
+  }, [checkoutParam]);
+
+  useEffect(() => {
+    if (checkoutParam !== "success") {
+      setSyncingAfterCheckout(false);
+      return;
+    }
+
+    let cancelled = false;
+    let attempts = 0;
+    setSyncingAfterCheckout(true);
+
+    const run = async () => {
+      attempts += 1;
+      const next = await loadSummary({ silent: true });
+      if (cancelled) return;
+
+      const settled =
+        next?.access?.state === "paid_active" ||
+        ["active", "trialing"].includes(String(next?.plan?.status || "").toLowerCase());
+
+      if (settled || attempts >= 8) {
+        setSyncingAfterCheckout(false);
+        if (
+          settled &&
+          nextPath &&
+          nextPath !== "/app/konto/abo" &&
+          nextPath !== "/app/konto/abo/"
+        ) {
+          window.setTimeout(() => {
+            router.replace(nextPath);
+          }, 1200);
+        }
+        return;
+      }
+
+      window.setTimeout(() => {
+        void run();
+      }, 3000);
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [checkoutParam, loadSummary, nextPath, router]);
 
   const plan = summary?.plan;
   const access = summary?.access;
@@ -131,12 +222,35 @@ export default function AboPage() {
     );
 
   const openCheckout = async () => {
+    void trackFunnelEvent({
+      event: "billing_checkout_started",
+      source: "account_billing",
+      path: "/app/konto/abo",
+      meta: {
+        source: sourceParam || null,
+        stage: stageParam || null,
+        trial_state: access?.state || null,
+        trial_days_remaining:
+          typeof access?.trial_days_remaining === "number"
+            ? access.trial_days_remaining
+            : null,
+      },
+    });
+
     setBusy("checkout");
     setError("");
     const res = await fetch("/api/billing/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plan_key: "starter_monthly" }),
+      body: JSON.stringify({
+        plan_key: "starter_monthly",
+        success_path: nextPath
+          ? `/app/konto/abo?checkout=success&next=${encodeURIComponent(nextPath)}`
+          : "/app/konto/abo?checkout=success",
+        cancel_path: nextPath
+          ? `/app/konto/abo?checkout=cancel&next=${encodeURIComponent(nextPath)}`
+          : "/app/konto/abo?checkout=cancel",
+      }),
     });
     const data = (await res.json().catch(() => ({}))) as any;
     if (!res.ok || !data?.checkout_url) {
@@ -148,6 +262,16 @@ export default function AboPage() {
   };
 
   const openPortal = async () => {
+    void trackFunnelEvent({
+      event: "billing_portal_opened",
+      source: "account_billing",
+      path: "/app/konto/abo",
+      meta: {
+        source: sourceParam || null,
+        stage: stageParam || null,
+      },
+    });
+
     setBusy("portal");
     setError("");
     const res = await fetch("/api/billing/portal", {
@@ -172,6 +296,45 @@ export default function AboPage() {
           Verwalte dein Abo, Zahlungen und Rechnungen.
         </p>
       </div>
+
+      {checkoutParam === "success" ? (
+        <div
+          className={`rounded-lg border p-4 text-sm ${
+            syncingAfterCheckout
+              ? "border-amber-300 bg-amber-50 text-amber-900"
+              : "border-emerald-300 bg-emerald-50 text-emerald-900"
+          }`}
+        >
+          <p className="font-medium">
+            {syncingAfterCheckout
+              ? "Checkout abgeschlossen. Wir synchronisieren dein Abo gerade."
+              : "Checkout erfolgreich. Dein Abo ist aktiv."}
+          </p>
+          <p className="mt-1">
+            {syncingAfterCheckout
+              ? "Falls der Status noch nicht aktualisiert ist, laden wir automatisch nach."
+              : "Auto-Senden und Follow-ups bleiben damit aktiv."}
+          </p>
+        </div>
+      ) : null}
+
+      {checkoutParam === "cancel" ? (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+          <p className="font-medium text-gray-900">Checkout abgebrochen</p>
+          <p className="mt-1">
+            Es wurde keine Zahlung ausgelöst. Sie können den Vorgang jederzeit neu starten.
+          </p>
+        </div>
+      ) : null}
+
+      {upgradeRequiredParam && checkoutParam !== "success" ? (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+          <p className="font-medium">Starter erforderlich</p>
+          <p className="mt-1">
+            Deine Testphase ist beendet. Aktiviere Starter, damit Auto-Senden und Follow-ups weiterlaufen.
+          </p>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="border rounded-lg p-6 bg-muted/30 text-sm text-muted-foreground">

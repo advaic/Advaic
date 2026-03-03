@@ -249,6 +249,7 @@ export default function OnboardingLayout({
   const [listingsConnected, setListingsConnected] = useState<boolean | null>(
     null
   );
+  const [safeStartActive, setSafeStartActive] = useState<boolean | null>(null);
   const lastTrackedStep = useRef<number | null>(null);
   const safeStartAppliedRef = useRef(false);
 
@@ -331,6 +332,41 @@ export default function OnboardingLayout({
         // Heuristic: use step flags to reflect “connected” status in the transparency modal
         setEmailConnected(Boolean(row.step_email_connected_done));
         setListingsConnected(Boolean(row.step_listings_sync_done));
+        try {
+          const [autosendRes, followupsRes] = await Promise.all([
+            fetch("/api/agent/settings/autosend", {
+              method: "GET",
+              credentials: "include",
+              cache: "no-store",
+            }),
+            fetch("/api/agent/settings/followups", {
+              method: "GET",
+              credentials: "include",
+              cache: "no-store",
+            }),
+          ]);
+
+          if (!autosendRes.ok || !followupsRes.ok) {
+            setSafeStartActive(null);
+          } else {
+            const autosendJson = await autosendRes.json().catch(() => null);
+            const followupsJson = await followupsRes.json().catch(() => null);
+
+            const autosendEnabled = Boolean(
+              autosendJson?.settings?.autosend_enabled
+            );
+            const followupMode = String(
+              followupsJson?.settings?.followups_sender_mode || ""
+            );
+
+            const safeStart =
+              autosendEnabled === false &&
+              (followupMode === "always_approval" || followupMode === "");
+            setSafeStartActive(safeStart);
+          }
+        } catch {
+          setSafeStartActive(null);
+        }
 
         // If completed → send to app home
         if (row.completed_at) {
@@ -385,6 +421,92 @@ export default function OnboardingLayout({
 
   const safeTotal = Math.max(1, Number(totalSteps) || 6);
   const safeStep = clamp(Number(currentStep) || 1, 1, safeTotal);
+  const firstValueChecklist = useMemo(
+    () => [
+      {
+        id: "email",
+        label: "Postfach verbunden",
+        done: Boolean(onboarding?.step_email_connected_done),
+      },
+      {
+        id: "safestart",
+        label: "Safe-Start aktiv",
+        done: safeStartActive === true,
+        pending: safeStartActive === null,
+      },
+      {
+        id: "tone",
+        label: "Ton & Stil gesetzt",
+        done: Boolean(onboarding?.step_tone_style_done),
+      },
+      {
+        id: "listings",
+        label: "Mindestens ein Objekt hinterlegt",
+        done: Boolean(onboarding?.step_listings_sync_done),
+      },
+      {
+        id: "finish",
+        label: "Onboarding abgeschlossen",
+        done: Boolean(onboarding?.step_finish_done),
+      },
+    ],
+    [onboarding, safeStartActive]
+  );
+
+  const firstValueDoneCount = useMemo(
+    () => firstValueChecklist.filter((item) => item.done).length,
+    [firstValueChecklist]
+  );
+
+  const nextStepCta = useMemo(() => {
+    if (!onboarding) {
+      return {
+        href: "/app/onboarding/step-1",
+        label: "Weiter im Onboarding",
+        hint: "Wir laden gerade deinen aktuellen Stand.",
+      };
+    }
+    if (!onboarding.step_email_connected_done) {
+      return {
+        href: "/app/onboarding/step-2",
+        label: "Postfach verbinden",
+        hint: "Ohne Postfach kann Advaic keine Anfrage verarbeiten.",
+      };
+    }
+    if (safeStartActive === false || !onboarding.step_autosend_done) {
+      return {
+        href: "/app/onboarding/step-3",
+        label: "Safe-Start absichern",
+        hint: "Standard ist Freigabe: erst sicher starten, dann erweitern.",
+      };
+    }
+    if (!onboarding.step_tone_style_done) {
+      return {
+        href: "/app/onboarding/step-4",
+        label: "Ton & Stil festlegen",
+        hint: "Antworten sollen so klingen, wie du schreibst.",
+      };
+    }
+    if (!onboarding.step_listings_sync_done) {
+      return {
+        href: "/app/onboarding/step-5",
+        label: "Objekte hinterlegen",
+        hint: "Mit Objektdaten werden Antworten präzise und nutzbar.",
+      };
+    }
+    if (!onboarding.step_finish_done) {
+      return {
+        href: "/app/onboarding/step-6",
+        label: "Onboarding abschließen",
+        hint: "Ein letzter Schritt bis zum produktiven Start.",
+      };
+    }
+    return {
+      href: "/app/startseite",
+      label: "Dashboard öffnen",
+      hint: "Jetzt die ersten drei klaren Freigaben versenden.",
+    };
+  }, [onboarding, safeStartActive]);
 
   return (
     <div
@@ -704,6 +826,89 @@ export default function OnboardingLayout({
                 <li>• Schritt 4–5: Ton und Objektdaten präzisieren</li>
                 <li>• Danach: erst dann Auto-Senden aktivieren, wenn Gate freigegeben ist</li>
               </ul>
+            </div>
+
+            <div
+              className="mt-4 rounded-[14px] border p-4"
+              style={{
+                background: "var(--card, #FFFFFF)",
+                borderColor: "var(--border, rgba(0,0,0,0.08))",
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[13px] font-semibold">
+                  First Value in 15 Minuten
+                </div>
+                <span
+                  className="rounded-full border px-2 py-1 text-[11px] font-semibold"
+                  style={{
+                    borderColor: "rgba(201,162,63,0.35)",
+                    background: "rgba(201,162,63,0.14)",
+                    color: "var(--black, #0E0E11)",
+                  }}
+                >
+                  {firstValueDoneCount}/{firstValueChecklist.length}
+                </span>
+              </div>
+
+              <ul className="mt-3 space-y-2">
+                {firstValueChecklist.map((item) => (
+                  <li
+                    key={item.id}
+                    className="rounded-[10px] border px-3 py-2 text-[12px]"
+                    style={{
+                      borderColor: item.done
+                        ? "rgba(34,197,94,0.28)"
+                        : "var(--border, rgba(0,0,0,0.08))",
+                      background: item.done
+                        ? "rgba(34,197,94,0.08)"
+                        : "rgba(0,0,0,0.015)",
+                      color: "var(--text, #0E0E11)",
+                    }}
+                  >
+                    <span className="font-medium">
+                      {item.done ? "✓ " : item.pending ? "… " : "○ "}
+                      {item.label}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <div
+                className="mt-3 rounded-[10px] border p-3"
+                style={{
+                  borderColor: "rgba(201,162,63,0.25)",
+                  background: "rgba(201,162,63,0.08)",
+                }}
+              >
+                <div className="text-[12px] font-semibold">Nächster Schritt</div>
+                <p
+                  className="mt-1 text-[12px] leading-relaxed"
+                  style={{ color: "var(--textMuted, rgba(14,14,17,0.65))" }}
+                >
+                  {nextStepCta.hint}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => router.push(nextStepCta.href)}
+                  className="mt-3 rounded-[10px] border px-3 py-2 text-[12px] font-semibold transition"
+                  style={{
+                    borderColor: "var(--gold, #C9A23F)",
+                    background: "var(--black, #0E0E11)",
+                    color: "#fff",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "var(--gold, #C9A23F)";
+                    e.currentTarget.style.color = "var(--black, #0E0E11)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "var(--black, #0E0E11)";
+                    e.currentTarget.style.color = "#fff";
+                  }}
+                >
+                  {nextStepCta.label}
+                </button>
+              </div>
             </div>
           </div>
         </div>

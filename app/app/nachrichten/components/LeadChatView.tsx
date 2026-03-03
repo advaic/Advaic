@@ -6,6 +6,7 @@ import type { Lead } from "@/types/lead";
 import type { Message } from "@/types/message";
 import type { Database, Json } from "@/types/supabase";
 import { useSupabaseClient } from "@supabase/auth-helpers-react";
+import { trackFunnelEvent } from "@/lib/funnel/track";
 import LeadDocumentList from "./LeadDocumentList";
 import LeadKeyInfoCard from "./LeadKeyInfoCard";
 
@@ -98,6 +99,7 @@ type DraftQaRow = {
   id: string;
   draft_message_id: string;
   verdict: string | null;
+  score?: number | null;
   reason: string | null;
   reason_long?: string | null;
   action?: string | null;
@@ -114,6 +116,15 @@ type MessageFeedbackRow = {
   note: string | null;
   created_at: string | null;
   updated_at: string | null;
+};
+
+const FEEDBACK_REASON_LABELS: Record<string, string> = {
+  helpful: "Hilfreich",
+  zu_lang: "Zu lang",
+  falscher_fokus: "Falscher Fokus",
+  fehlende_infos: "Fehlende Infos",
+  ton_unpassend: "Ton unpassend",
+  sonstiges: "Unpassend",
 };
 
 
@@ -295,6 +306,129 @@ function qaVerdictTone(v: unknown) {
 function parseQaConfidence(meta: any): number | null {
   const n = Number(meta?.confidence);
   return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null;
+}
+
+function clamp01(v: number | null | undefined): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  return Math.max(0, Math.min(1, v));
+}
+
+function computeDraftQualityScore(input: {
+  qa?: DraftQaRow | null;
+  classificationConfidence?: number | null;
+  sendStatus?: string | null;
+}): number | null {
+  const qaScore = clamp01(input.qa?.score ?? null);
+  const qaConfidence = parseQaConfidence(input.qa?.meta);
+  const clsConfidence = clamp01(input.classificationConfidence ?? null);
+  const verdict = String(input.qa?.verdict || "").toLowerCase();
+  const riskFlags = Array.isArray(input.qa?.risk_flags)
+    ? input.qa!.risk_flags!.length
+    : 0;
+  const sendStatus = String(input.sendStatus || "").toLowerCase();
+  const hasSignals =
+    qaScore !== null ||
+    qaConfidence !== null ||
+    clsConfidence !== null ||
+    verdict.length > 0 ||
+    riskFlags > 0;
+
+  if (!hasSignals) return null;
+
+  let score =
+    qaScore !== null
+      ? qaScore
+      : qaConfidence !== null
+        ? qaConfidence
+        : clsConfidence !== null
+          ? clsConfidence
+          : 0.6;
+  if (qaConfidence !== null) score = score * 0.72 + qaConfidence * 0.28;
+  if (clsConfidence !== null) score = score * 0.78 + clsConfidence * 0.22;
+
+  if (verdict === "fail") score -= 0.35;
+  else if (verdict === "warn") score -= 0.18;
+
+  score -= Math.min(0.25, riskFlags * 0.06);
+  if (sendStatus === "failed") score -= 0.25;
+
+  return Math.round(Math.max(0, Math.min(1, score)) * 100);
+}
+
+function qualityScoreTone(score: number | null): string {
+  if (score === null)
+    return "border-gray-200 bg-gray-50 text-gray-600";
+  if (score >= 80) return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (score >= 60) return "border-amber-200 bg-amber-50 text-amber-900";
+  return "border-red-200 bg-red-50 text-red-700";
+}
+
+function summarizeApprovalWhy(input: {
+  qa?: DraftQaRow | null;
+  classificationReason?: string | null;
+  classificationConfidence?: number | null;
+}): { reasons: string[]; recommendation: string } {
+  const reasons: string[] = [];
+  const qaMeta =
+    input.qa?.meta && typeof input.qa.meta === "object" && !Array.isArray(input.qa.meta)
+      ? input.qa.meta
+      : null;
+  const metaReasons = Array.isArray((qaMeta as any)?.approval_reasons_de)
+    ? ((qaMeta as any).approval_reasons_de as any[])
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+        .slice(0, 2)
+    : Array.isArray((qaMeta as any)?.reasons_de)
+      ? ((qaMeta as any).reasons_de as any[])
+          .map((x) => String(x || "").trim())
+          .filter(Boolean)
+          .slice(0, 2)
+      : null;
+  const metaRecommendation = String(
+    (qaMeta as any)?.recommendation_de ??
+      (qaMeta as any)?.approval_recommendation_de ??
+      (qaMeta as any)?.recommendation ??
+      "",
+  ).trim();
+  const verdict = String(input.qa?.verdict || "").toLowerCase();
+  const qaReason = String(input.qa?.reason || "").trim();
+  const qaReasonLong = String(input.qa?.reason_long || "").trim();
+  const clsReason = String(input.classificationReason || "").trim();
+  const confidence = clamp01(input.classificationConfidence ?? null);
+  const risks = Array.isArray(input.qa?.risk_flags)
+    ? input.qa!.risk_flags!.map((x) => String(x).toLowerCase())
+    : [];
+
+  if (verdict === "fail") {
+    reasons.push("Mindestens ein Qualitätscheck ist auf „Fail“ gelaufen.");
+  } else if (verdict === "warn") {
+    reasons.push("Die Qualitätsprüfung meldet einen Warnhinweis.");
+  }
+  if (confidence !== null && confidence < 0.8) {
+    reasons.push(`Die Zuordnung ist unsicher (Confidence ${confidence.toFixed(2)}).`);
+  }
+  if (risks.length > 0) {
+    reasons.push(`Erkannte Risiken: ${risks.slice(0, 2).join(", ")}.`);
+  }
+  if (!reasons.length && qaReason) reasons.push(qaReason);
+  if (!reasons.length && qaReasonLong) reasons.push(qaReasonLong.split(".")[0] || qaReasonLong);
+  if (!reasons.length && clsReason) reasons.push(clsReason.split(".")[0] || clsReason);
+  if (!reasons.length) reasons.push("Der Fall ist nicht eindeutig und bleibt deshalb in Freigabe.");
+  if (metaReasons && metaReasons.length > 0) {
+    reasons.splice(0, reasons.length, ...metaReasons);
+  }
+
+  const recommendation =
+    metaRecommendation ||
+    (verdict === "fail" || risks.length > 0
+      ? "Entwurf kurz bearbeiten und erst dann senden."
+      : confidence !== null && confidence < 0.8
+        ? "Objektbezug prüfen und dann freigeben."
+        : input.qa?.action
+          ? String(input.qa.action)
+          : "Kurz prüfen und freigeben.");
+
+  return { reasons: reasons.slice(0, 2), recommendation };
 }
 
 const QUICK_TEMPLATES: Array<{ label: string; value: string }> = [
@@ -711,9 +845,9 @@ export default function LeadChatView({
       }
 
       const extendedSelect =
-        "id, draft_message_id, verdict, reason, reason_long, action, risk_flags, meta, created_at";
+        "id, draft_message_id, verdict, score, reason, reason_long, action, risk_flags, meta, created_at";
       const minimalSelect =
-        "id, draft_message_id, verdict, reason, created_at";
+        "id, draft_message_id, verdict, score, reason, created_at";
 
       let rows: any[] = [];
       const ext = await (supabase.from("message_qas") as any)
@@ -745,6 +879,10 @@ export default function LeadChatView({
           id: String(row?.id || ""),
           draft_message_id: key,
           verdict: row?.verdict ?? null,
+          score:
+            typeof row?.score === "number" && Number.isFinite(row.score)
+              ? Math.max(0, Math.min(1, Number(row.score)))
+              : null,
           reason: row?.reason ?? null,
           reason_long: row?.reason_long ?? null,
           action: row?.action ?? null,
@@ -783,7 +921,7 @@ export default function LeadChatView({
           id: String(row?.id || ""),
           message_id: key,
           rating,
-          reason: row?.reason ?? null,
+          reason: String(row?.reason || "").trim() || null,
           note: row?.note ?? null,
           created_at: row?.created_at ?? null,
           updated_at: row?.updated_at ?? null,
@@ -798,6 +936,7 @@ export default function LeadChatView({
   const submitMessageFeedback = async (
     messageId: string,
     rating: "helpful" | "not_helpful",
+    reason?: string | null,
   ) => {
     const id = String(messageId || "").trim();
     if (!id) return;
@@ -811,6 +950,7 @@ export default function LeadChatView({
         body: JSON.stringify({
           message_id: id,
           rating,
+          reason: reason || null,
           source: "lead_chat",
         }),
       });
@@ -826,7 +966,7 @@ export default function LeadChatView({
             id: String(row.id || ""),
             message_id: String(row.message_id),
             rating,
-            reason: row.reason ?? null,
+            reason: String(row.reason || "").trim() || null,
             note: row.note ?? null,
             created_at: row.created_at ?? null,
             updated_at: row.updated_at ?? null,
@@ -1665,6 +1805,25 @@ export default function LeadChatView({
     if (!pipelineRes.ok) {
       throw new Error(String(pipelineData?.error || "Senden fehlgeschlagen."));
     }
+    const firstResult = Array.isArray(pipelineData?.results)
+      ? pipelineData.results[0]
+      : null;
+    if (String(firstResult?.status || "") === "blocked_trial_expired") {
+      void trackFunnelEvent({
+        event: "billing_upgrade_gate_triggered",
+        source: "nachrichten_approve_gate",
+        path: "/app/nachrichten",
+        meta: { reason: "trial_expired_approve_draft" },
+      });
+      if (typeof window !== "undefined") {
+        window.location.assign(
+          "/app/konto/abo?upgrade_required=1&source=nachrichten_approve_gate&next=%2Fapp%2Fnachrichten",
+        );
+      }
+      throw new Error(
+        "Testphase beendet. Bitte aktiviere Starter, um weiter zu senden.",
+      );
+    }
   };
 
   const deleteDraft = async (draftId: string) => {
@@ -1832,6 +1991,32 @@ export default function LeadChatView({
         setSending(false);
         return;
       }
+      const firstResult = Array.isArray(pipelineData?.results)
+        ? pipelineData.results[0]
+        : null;
+      if (String(firstResult?.status || "") === "blocked_trial_expired") {
+        void trackFunnelEvent({
+          event: "billing_upgrade_gate_triggered",
+          source: "nachrichten_send_gate",
+          path: "/app/nachrichten",
+          meta: { reason: "trial_expired_send" },
+        });
+        setSendError(
+          "Testphase beendet. Bitte aktiviere Starter, um weiter zu senden.",
+        );
+        if (typeof window !== "undefined") {
+          window.location.assign(
+            "/app/konto/abo?upgrade_required=1&source=nachrichten_send_gate&next=%2Fapp%2Fnachrichten",
+          );
+        }
+        setMessages((prev) =>
+          prev.map((m) =>
+            m._localId === optimisticId ? { ...m, _localStatus: "failed" } : m,
+          ),
+        );
+        setSending(false);
+        return;
+      }
 
       // Update optimistic local message with persisted messageId
       setMessages((prev) =>
@@ -1888,6 +2073,8 @@ export default function LeadChatView({
       detail: string;
       timestamp: string | null;
       qa?: DraftQaRow | null;
+      qualityScore?: number | null;
+      evidence?: string | null;
     };
 
     const all = [...filteredMessages, ...systemEvents]
@@ -1914,6 +2101,14 @@ export default function LeadChatView({
       const qaReason = String(qa?.reason || "").trim();
       const qaAction = String(qa?.action || "").trim();
       const qaConfidence = parseQaConfidence(qa?.meta);
+      const messageId = String((msg as any).id || "").trim();
+      const score = computeDraftQualityScore({
+        qa,
+        classificationConfidence:
+          typeof confidence === "number" ? confidence : null,
+        sendStatus,
+      });
+      const baseEvidence = messageId ? `ID ${shortId(messageId)}` : null;
 
       if (isSystem) {
         events.push({
@@ -1923,6 +2118,8 @@ export default function LeadChatView({
           detail: String(msg.text || "Interner Status aktualisiert."),
           timestamp: String(msg.timestamp || ""),
           qa,
+          qualityScore: null,
+          evidence: baseEvidence,
         });
       } else if (!isAgent) {
         events.push({
@@ -1937,6 +2134,8 @@ export default function LeadChatView({
                 : "Neue Nachricht vom Interessenten",
           timestamp: String(msg.timestamp || ""),
           qa,
+          qualityScore: null,
+          evidence: baseEvidence,
         });
       } else if (sendStatus === "failed") {
         events.push({
@@ -1948,6 +2147,8 @@ export default function LeadChatView({
             "Technischer Fehler beim Senden.",
           timestamp: String(msg.timestamp || ""),
           qa,
+          qualityScore: score,
+          evidence: baseEvidence ? `${baseEvidence} · Status failed` : "Status failed",
         });
       } else if (sendStatus === "sent") {
         const qaLine =
@@ -1963,6 +2164,8 @@ export default function LeadChatView({
           detail: `Über das verbundene Postfach verschickt.${qaLine}`.trim(),
           timestamp: String((msg as any).sent_at || msg.timestamp || ""),
           qa,
+          qualityScore: score,
+          evidence: baseEvidence ? `${baseEvidence} · Status sent` : "Status sent",
         });
       } else if (approvalRequired) {
         const detailParts: string[] = [
@@ -1977,6 +2180,8 @@ export default function LeadChatView({
           detail: detailParts.join(" "),
           timestamp: String(msg.timestamp || ""),
           qa,
+          qualityScore: score,
+          evidence: baseEvidence ? `${baseEvidence} · Status approval` : "Status approval",
         });
       }
 
@@ -2006,6 +2211,24 @@ export default function LeadChatView({
     }
     return null;
   }, [filteredMessages, qaByDraftId]);
+
+  const trustLogStats = useMemo(() => {
+    const counts = {
+      eingang: 0,
+      freigabe: 0,
+      versand: 0,
+      fehler: 0,
+      system: 0,
+    };
+    for (const ev of trustLog) {
+      if (ev.kind === "eingang") counts.eingang += 1;
+      if (ev.kind === "freigabe") counts.freigabe += 1;
+      if (ev.kind === "versand") counts.versand += 1;
+      if (ev.kind === "fehler") counts.fehler += 1;
+      if (ev.kind === "system") counts.system += 1;
+    }
+    return counts;
+  }, [trustLog]);
 
   const latestSentAgentMessage = useMemo(() => {
     const sorted = [...filteredMessages]
@@ -2339,6 +2562,29 @@ export default function LeadChatView({
                       // Follow-ups are normal outgoing messages, but flagged as follow-up.
                       const isFollowup = !!(msg as any).was_followup;
                       const pendingApproval = isPendingApprovalDraft(msg);
+                      const qaForMessage =
+                        qaByDraftId[String((msg as any).id || "").trim()] ||
+                        null;
+                      const approvalSummary = summarizeApprovalWhy({
+                        qa: qaForMessage,
+                        classificationReason: String(
+                          (msg as any).classification_reason || "",
+                        ),
+                        classificationConfidence:
+                          typeof (msg as any).classification_confidence ===
+                          "number"
+                            ? Number((msg as any).classification_confidence)
+                            : null,
+                      });
+                      const draftQualityScore = computeDraftQualityScore({
+                        qa: qaForMessage,
+                        classificationConfidence:
+                          typeof (msg as any).classification_confidence ===
+                          "number"
+                            ? Number((msg as any).classification_confidence)
+                            : null,
+                        sendStatus: String((msg as any).send_status || ""),
+                      });
                       const looksLikeImage = /\.(jpeg|jpg|gif|png|webp)$/i.test(
                         text,
                       );
@@ -2385,10 +2631,35 @@ export default function LeadChatView({
                               {isSystem && prependIcon}
                               <div className="flex-1 min-w-0">
                                 {pendingApproval && !isSystem && (
-                                  <div className="mb-3">
+                                  <div className="mb-3 space-y-2">
                                     <span className="inline-flex items-center gap-2 text-[11px] px-2 py-1 rounded-full border border-amber-300 bg-amber-100/60 text-amber-900">
                                       ⏳ Zur Freigabe
                                     </span>
+                                    <span
+                                      className={`inline-flex items-center gap-2 text-[11px] px-2 py-1 rounded-full border ${qualityScoreTone(
+                                        draftQualityScore,
+                                      )}`}
+                                    >
+                                      {draftQualityScore !== null
+                                        ? `Qualitäts-Score ${draftQualityScore}/100`
+                                        : "Qualitäts-Score offen"}
+                                    </span>
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-[11px] text-gray-800">
+                                      <div className="font-semibold text-amber-900">
+                                        Warum Freigabe?
+                                      </div>
+                                      <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                                        {approvalSummary.reasons.map((reason, idx) => (
+                                          <li key={`${String((msg as any).id)}-${idx}`}>
+                                            {reason}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                      <div className="mt-1">
+                                        <span className="font-semibold">Empfehlung:</span>{" "}
+                                        {approvalSummary.recommendation}
+                                      </div>
+                                    </div>
                                   </div>
                                 )}
                                 {isAgent && isFollowup && !isSystem && (
@@ -3573,6 +3844,20 @@ export default function LeadChatView({
                     </span>
                   </div>
                   <div className="mt-2 space-y-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-gray-200 bg-white text-gray-700">
+                        Eingang: {trustLogStats.eingang}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-900">
+                        Freigabe: {trustLogStats.freigabe}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800">
+                        Versand: {trustLogStats.versand}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-red-200 bg-red-50 text-red-700">
+                        Fehler: {trustLogStats.fehler}
+                      </span>
+                    </div>
                     {trustLog.length === 0 ? (
                       <div className="text-xs text-gray-500">
                         Noch keine nachvollziehbaren Statusereignisse vorhanden.
@@ -3604,6 +3889,17 @@ export default function LeadChatView({
                           <div className="mt-1 text-xs text-gray-700">
                             {event.detail}
                           </div>
+                          {typeof event.qualityScore === "number" ? (
+                            <div className="mt-2">
+                              <span
+                                className={`text-[10px] px-1.5 py-0.5 rounded-full border ${qualityScoreTone(
+                                  event.qualityScore,
+                                )}`}
+                              >
+                                Qualitäts-Score {event.qualityScore}/100
+                              </span>
+                            </div>
+                          ) : null}
                           {event.qa ? (
                             <div className="mt-2 flex flex-wrap items-center gap-1.5">
                               <span
@@ -3622,6 +3918,11 @@ export default function LeadChatView({
                                     .join(", ")}
                                 </span>
                               ) : null}
+                            </div>
+                          ) : null}
+                          {event.evidence ? (
+                            <div className="mt-2 text-[10px] text-gray-500">
+                              Nachweis: {event.evidence}
                             </div>
                           ) : null}
                         </div>
@@ -3699,6 +4000,21 @@ export default function LeadChatView({
                             )}
                           </span>
                         ) : null}
+                        {typeof latestQaInsight.qa.score === "number" ? (
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded-full border ${qualityScoreTone(
+                              Math.round(
+                                Math.max(0, Math.min(1, latestQaInsight.qa.score)) * 100,
+                              ),
+                            )}`}
+                          >
+                            Qualitäts-Score{" "}
+                            {Math.round(
+                              Math.max(0, Math.min(1, latestQaInsight.qa.score)) * 100,
+                            )}
+                            /100
+                          </span>
+                        ) : null}
                       </div>
                     </div>
                   )}
@@ -3734,6 +4050,7 @@ export default function LeadChatView({
                             submitMessageFeedback(
                               latestSentAgentMessage.id,
                               "helpful",
+                              "helpful",
                             )
                           }
                           className={`text-xs px-2.5 py-1.5 rounded-lg border ${
@@ -3754,26 +4071,73 @@ export default function LeadChatView({
                             submitMessageFeedback(
                               latestSentAgentMessage.id,
                               "not_helpful",
+                              "zu_lang",
                             )
                           }
                           className={`text-xs px-2.5 py-1.5 rounded-lg border ${
                             feedbackByMessageId[latestSentAgentMessage.id]
-                              ?.rating === "not_helpful"
+                              ?.reason === "zu_lang"
                               ? "border-red-200 bg-red-50 text-red-700"
                               : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
                           } disabled:opacity-60`}
                         >
-                          Unpassend
+                          Zu lang
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            !!feedbackSavingByMessageId[latestSentAgentMessage.id]
+                          }
+                          onClick={() =>
+                            submitMessageFeedback(
+                              latestSentAgentMessage.id,
+                              "not_helpful",
+                              "falscher_fokus",
+                            )
+                          }
+                          className={`text-xs px-2.5 py-1.5 rounded-lg border ${
+                            feedbackByMessageId[latestSentAgentMessage.id]
+                              ?.reason === "falscher_fokus"
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                          } disabled:opacity-60`}
+                        >
+                          Falscher Fokus
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            !!feedbackSavingByMessageId[latestSentAgentMessage.id]
+                          }
+                          onClick={() =>
+                            submitMessageFeedback(
+                              latestSentAgentMessage.id,
+                              "not_helpful",
+                              "fehlende_infos",
+                            )
+                          }
+                          className={`text-xs px-2.5 py-1.5 rounded-lg border ${
+                            feedbackByMessageId[latestSentAgentMessage.id]
+                              ?.reason === "fehlende_infos"
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                          } disabled:opacity-60`}
+                        >
+                          Fehlende Infos
                         </button>
                       </div>
 
                       {feedbackByMessageId[latestSentAgentMessage.id] ? (
                         <div className="text-[11px] text-gray-500">
                           Letztes Feedback:{" "}
-                          {feedbackByMessageId[latestSentAgentMessage.id]
-                            .rating === "helpful"
-                            ? "Hilfreich"
-                            : "Unpassend"}{" "}
+                          {FEEDBACK_REASON_LABELS[
+                            String(
+                              feedbackByMessageId[latestSentAgentMessage.id].reason ||
+                                (feedbackByMessageId[latestSentAgentMessage.id].rating === "helpful"
+                                  ? "helpful"
+                                  : "sonstiges"),
+                            )
+                          ] || "Unpassend"}{" "}
                           ({formatDateTimeDE(
                             feedbackByMessageId[latestSentAgentMessage.id]
                               .updated_at,

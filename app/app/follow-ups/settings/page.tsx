@@ -30,6 +30,23 @@ type FollowupSettings = {
   followups_timezone: string;
 };
 
+type FollowupPreset = {
+  key: string;
+  title: string;
+  description: string;
+  values: Pick<
+    FollowupSettings,
+    | "followups_max_stage_rent"
+    | "followups_max_stage_buy"
+    | "followups_delay_hours_stage1"
+    | "followups_delay_hours_stage2"
+    | "followups_send_start_hour"
+    | "followups_send_end_hour"
+    | "followups_send_on_weekends"
+    | "followups_timezone"
+  >;
+};
+
 const DEFAULTS: FollowupSettings = {
   followups_enabled_default: true,
   followups_max_stage_rent: 2,
@@ -50,6 +67,57 @@ const TIMEZONE_OPTIONS = [
   "UTC",
 ];
 
+const FOLLOWUP_PRESETS: FollowupPreset[] = [
+  {
+    key: "safe_start",
+    title: "Safe-Start (empfohlen)",
+    description:
+      "Konservativer Start für neue Accounts: klare Follow-ups, wenig Risiko, gute Antwortqualität.",
+    values: {
+      followups_max_stage_rent: 1,
+      followups_max_stage_buy: 1,
+      followups_delay_hours_stage1: 48,
+      followups_delay_hours_stage2: 96,
+      followups_send_start_hour: 9,
+      followups_send_end_hour: 18,
+      followups_send_on_weekends: false,
+      followups_timezone: "Europe/Berlin",
+    },
+  },
+  {
+    key: "vermietung_speed",
+    title: "Vermietung (schneller)",
+    description:
+      "Für höheres Anfragevolumen in der Vermietung. Kürzere Reaktionszeiten, aber weiter kontrolliert.",
+    values: {
+      followups_max_stage_rent: 2,
+      followups_max_stage_buy: 1,
+      followups_delay_hours_stage1: 24,
+      followups_delay_hours_stage2: 72,
+      followups_send_start_hour: 8,
+      followups_send_end_hour: 20,
+      followups_send_on_weekends: false,
+      followups_timezone: "Europe/Berlin",
+    },
+  },
+  {
+    key: "kauf_beratung",
+    title: "Kauf (beratungsintensiv)",
+    description:
+      "Für längere Entscheidungszyklen im Kauf: mehr Abstand, weniger Druck, professioneller Rhythmus.",
+    values: {
+      followups_max_stage_rent: 1,
+      followups_max_stage_buy: 2,
+      followups_delay_hours_stage1: 72,
+      followups_delay_hours_stage2: 120,
+      followups_send_start_hour: 9,
+      followups_send_end_hour: 18,
+      followups_send_on_weekends: false,
+      followups_timezone: "Europe/Berlin",
+    },
+  },
+];
+
 function clampInt(v: any, min: number, max: number, fallback: number) {
   const n = Number(v);
   if (!Number.isFinite(n)) return fallback;
@@ -65,6 +133,7 @@ export default function FollowupsSettingsUI() {
   const [dirty, setDirty] = useState(false);
 
   const [form, setForm] = useState<FollowupSettings>(DEFAULTS);
+  const [activePresetKey, setActivePresetKey] = useState<string | null>(null);
 
   const canSave = useMemo(() => {
     // simple guardrails (must match your SQL constraints)
@@ -101,6 +170,43 @@ export default function FollowupsSettingsUI() {
     () => Array.from({ length: 24 }, (_, h) => h),
     [],
   );
+
+  const strategySummary = useMemo(() => {
+    const rentStages =
+      form.followups_max_stage_rent <= 0
+        ? "Keine Follow-ups"
+        : form.followups_max_stage_rent === 1
+          ? `1 Follow-up nach ${form.followups_delay_hours_stage1}h`
+          : `2 Follow-ups nach ${form.followups_delay_hours_stage1}h und ${form.followups_delay_hours_stage2}h`;
+
+    const buyStages =
+      form.followups_max_stage_buy <= 0
+        ? "Keine Follow-ups"
+        : form.followups_max_stage_buy === 1
+          ? `1 Follow-up nach ${form.followups_delay_hours_stage1}h`
+          : `2 Follow-ups nach ${form.followups_delay_hours_stage1}h und ${form.followups_delay_hours_stage2}h`;
+
+    return {
+      rentStages,
+      buyStages,
+      sendWindow: `${String(form.followups_send_start_hour).padStart(2, "0")}:00 bis ${String(
+        form.followups_send_end_hour,
+      ).padStart(2, "0")}:00`,
+      weekends: form.followups_send_on_weekends
+        ? "inklusive Wochenende"
+        : "nur Werktage",
+      timezone: form.followups_timezone,
+    };
+  }, [
+    form.followups_delay_hours_stage1,
+    form.followups_delay_hours_stage2,
+    form.followups_max_stage_buy,
+    form.followups_max_stage_rent,
+    form.followups_send_end_hour,
+    form.followups_send_on_weekends,
+    form.followups_send_start_hour,
+    form.followups_timezone,
+  ]);
 
   async function load() {
     try {
@@ -183,6 +289,7 @@ export default function FollowupsSettingsUI() {
       };
 
       setForm(next);
+      setActivePresetKey(null);
       setDirty(false);
     } catch (e: any) {
       console.error(e);
@@ -259,6 +366,16 @@ export default function FollowupsSettingsUI() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function applyPreset(preset: FollowupPreset) {
+    setForm((prev) => ({
+      ...prev,
+      ...preset.values,
+    }));
+    setActivePresetKey(preset.key);
+    setDirty(true);
+    toast.success(`Preset gesetzt: ${preset.title}`);
   }
 
   useEffect(() => {
@@ -365,6 +482,82 @@ export default function FollowupsSettingsUI() {
           </div>
 
           <div className="p-4 md:p-6 space-y-6">
+            <div className="rounded-2xl border border-gray-200 p-4">
+              <div className="text-sm font-medium">Preset-Vorlagen</div>
+              <div className="text-sm text-gray-600 mt-1">
+                Wähle eine Startkonfiguration. Du kannst danach alles feinjustieren.
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                {FOLLOWUP_PRESETS.map((preset) => {
+                  const isActive = activePresetKey === preset.key;
+                  return (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      onClick={() => applyPreset(preset)}
+                      className={`rounded-xl border p-3 text-left transition ${
+                        isActive
+                          ? "border-amber-300 bg-amber-50"
+                          : "border-gray-200 bg-white hover:bg-gray-50"
+                      }`}
+                    >
+                      <div className="text-sm font-semibold text-gray-900">{preset.title}</div>
+                      <div className="mt-1 text-xs text-gray-600">{preset.description}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-[#fbfbfc] p-4">
+              <div className="text-sm font-medium text-gray-900">
+                Aktive Strategie je Objekt-Typ
+              </div>
+              <div className="mt-1 text-sm text-gray-600">
+                So arbeitet der Follow-up Runner aktuell mit den von dir gesetzten Werten:
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Miete
+                  </div>
+                  <div className="mt-1 text-sm font-medium text-gray-900">
+                    {strategySummary.rentStages}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-600">
+                    Versandfenster: {strategySummary.sendWindow} ({strategySummary.weekends})
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Kauf
+                  </div>
+                  <div className="mt-1 text-sm font-medium text-gray-900">
+                    {strategySummary.buyStages}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-600">
+                    Zeitzone: {strategySummary.timezone}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <div className="text-xs font-semibold text-amber-900">
+                  Harte Stop-Regeln (Fail-Safe)
+                </div>
+                <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-amber-900/90">
+                  <li>Unklare oder riskante Fälle gehen zur Freigabe statt in den Autopilot.</li>
+                  <li>Außerhalb des Versandfensters wird automatisch auf den nächsten erlaubten Zeitpunkt verschoben.</li>
+                  <li>Eskalierte, abgeschlossene oder veraltete Konversationen werden nicht automatisch nachverfolgt.</li>
+                  <li>Wenn die KI-Sicherheit zu niedrig ist, wird nicht automatisch versendet.</li>
+                </ul>
+                <div className="mt-2 text-xs text-amber-900/90">
+                  Aktuelle Mindest-Sicherheit: Miete 0,75 / 0,82 (Stufe 1/2), Kauf 0,72 / 0,78 (Stufe 1/2).
+                </div>
+              </div>
+            </div>
+
             {/* Toggle */}
             <div className="rounded-2xl border border-gray-200 p-4">
               <div className="flex items-start justify-between gap-4">

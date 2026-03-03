@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
+import { getCommercialAccess } from "@/lib/billing/commercial-access";
 
 function isPublicAsset(pathname: string) {
   // Next internals
@@ -20,6 +21,22 @@ function isPublicAsset(pathname: string) {
   if (/\.[a-zA-Z0-9]+$/.test(pathname)) return true;
 
   return false;
+}
+
+function isBillingRestrictedPath(pathname: string) {
+  const restrictedPrefixes = [
+    "/app/nachrichten",
+    "/app/eskalationen",
+    "/app/zur-freigabe",
+    "/app/follow-ups",
+    "/app/antwortvorlagen",
+    "/app/ton-und-stil",
+    "/app/benachrichtigungen",
+  ];
+
+  return restrictedPrefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
 }
 
 export async function proxy(req: NextRequest) {
@@ -192,6 +209,30 @@ export async function proxy(req: NextRequest) {
     }
   } catch {
     // ignore (fail-open)
+  }
+
+  // ---- Billing / Trial gate ----
+  // After trial expiry, high-impact work routes are redirected to billing.
+  // This keeps account, onboarding and overview reachable, while protecting costly workflows.
+  if (isBillingRestrictedPath(pathname)) {
+    try {
+      const accessRes = await getCommercialAccess({
+        supabase: supabase as any,
+        agentId: String(user.id),
+      });
+
+      if (accessRes.access.upgrade_required) {
+        const redirectUrl = req.nextUrl.clone();
+        redirectUrl.pathname = "/app/konto/abo";
+        redirectUrl.search = "";
+        redirectUrl.searchParams.set("upgrade_required", "1");
+        redirectUrl.searchParams.set("source", "middleware_billing_guard");
+        redirectUrl.searchParams.set("next", pathname + (search || ""));
+        return NextResponse.redirect(redirectUrl);
+      }
+    } catch {
+      // fail-open on middleware billing checks
+    }
   }
 
   return res;

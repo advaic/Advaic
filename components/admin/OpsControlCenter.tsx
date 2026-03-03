@@ -76,6 +76,7 @@ export default function OpsControlCenter() {
   const [note, setNote] = useState("");
   const [triggerResult, setTriggerResult] = useState<string | null>(null);
   const [webhookTestResult, setWebhookTestResult] = useState<string | null>(null);
+  const [trialReminderResult, setTrialReminderResult] = useState<string | null>(null);
 
   const load = async () => {
     setError(null);
@@ -119,6 +120,7 @@ export default function OpsControlCenter() {
     setError(null);
     setTriggerResult(null);
     setWebhookTestResult(null);
+    setTrialReminderResult(null);
     try {
       const res = await fetch("/api/admin/ops/control", {
         method: "POST",
@@ -142,6 +144,7 @@ export default function OpsControlCenter() {
     setError(null);
     setTriggerResult(null);
     setWebhookTestResult(null);
+    setTrialReminderResult(null);
     try {
       const res = await fetch("/api/admin/ops/alerts/trigger", {
         method: "POST",
@@ -167,6 +170,7 @@ export default function OpsControlCenter() {
     setBusy(true);
     setError(null);
     setWebhookTestResult(null);
+    setTrialReminderResult(null);
     try {
       const res = await fetch("/api/admin/ops/webhook/test", {
         method: "POST",
@@ -179,6 +183,37 @@ export default function OpsControlCenter() {
       setWebhookTestResult(`Webhook-Test erfolgreich (${Number(json?.status || 200)}).`);
     } catch (e: any) {
       setError(String(e?.message || "ops_webhook_test_failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const triggerTrialReminders = async (dryRun: boolean) => {
+    setBusy(true);
+    setError(null);
+    setTrialReminderResult(null);
+    try {
+      const res = await fetch("/api/admin/ops/trial-reminders/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dry_run: dryRun,
+          send_limit: dryRun ? 30 : 120,
+          scan_limit: 3000,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok !== true) {
+        throw new Error(String(json?.error || "trial_reminder_trigger_failed"));
+      }
+
+      const mode = dryRun ? "Dry-Run" : "Live";
+      setTrialReminderResult(
+        `${mode}: ${Number(json?.due || 0)} fällig · ${Number(json?.sent || 0)} gesendet · ${Number(json?.skipped || 0)} übersprungen · ${Number(json?.failed || 0)} fehlerhaft.`,
+      );
+      await load();
+    } catch (e: any) {
+      setError(String(e?.message || "trial_reminder_trigger_failed"));
     } finally {
       setBusy(false);
     }
@@ -290,6 +325,28 @@ export default function OpsControlCenter() {
             <RefreshCw className="h-4 w-4" />
             Webhook-Test senden
           </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              void triggerTrialReminders(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 hover:bg-gray-50 disabled:opacity-60"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Trial-Reminder Dry-Run
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              void triggerTrialReminders(false);
+            }}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-900 bg-gray-900 px-3 py-2 text-sm font-medium text-amber-200 hover:bg-gray-800 disabled:opacity-60"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Trial-Reminder senden
+          </button>
         </div>
 
         <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
@@ -347,6 +404,11 @@ export default function OpsControlCenter() {
         {webhookTestResult ? (
           <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
             {webhookTestResult}
+          </div>
+        ) : null}
+        {trialReminderResult ? (
+          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            {trialReminderResult}
           </div>
         ) : null}
         {error ? (

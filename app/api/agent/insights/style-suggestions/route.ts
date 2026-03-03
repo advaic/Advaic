@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { normalizeFeedbackReason } from "@/lib/style-feedback-learning";
 
 export const runtime = "nodejs";
 
@@ -366,6 +367,8 @@ function buildSuggestions(args: {
   lengthened: number;
   largeEdits: number;
   avgDiffChars: number;
+  feedbackNegativeTotal: number;
+  feedbackReasonCounts: Record<string, number>;
   style: StyleRow | null;
   examples: StyleExampleRow[];
 }) {
@@ -476,6 +479,74 @@ function buildSuggestions(args: {
     });
   }
 
+  const negativeTotal = Math.max(0, Number(args.feedbackNegativeTotal || 0));
+  if (negativeTotal >= 3) {
+    const tooLong = Number(args.feedbackReasonCounts.zu_lang || 0);
+    const wrongFocus = Number(args.feedbackReasonCounts.falscher_fokus || 0);
+    const missingInfos = Number(args.feedbackReasonCounts.fehlende_infos || 0);
+
+    if (tooLong >= 2 && tooLong / negativeTotal >= 0.28) {
+      pushSuggestion({
+        id: "feedback_shorter",
+        title: "Feedback-basiert: Antworten kürzer halten",
+        reason:
+          "Mehrere Rückmeldungen markieren Entwürfe als zu lang. Eine kürzere Standardlänge reduziert Nachbearbeitung.",
+        impact: "Weniger manuelle Kürzungen und klarere Antworten.",
+        confidence: Math.min(0.95, 0.62 + (tooLong / negativeTotal) * 0.3),
+        source: "heuristic",
+        patch: {
+          length_pref: "kurz",
+          add_do_rules: [
+            "Antwort in maximal drei kurzen Absätzen halten.",
+          ],
+          add_dont_rules: [
+            "Keine langen Fließtexte ohne klare Struktur.",
+          ],
+        },
+      });
+    }
+
+    if (wrongFocus >= 2 && wrongFocus / negativeTotal >= 0.22) {
+      pushSuggestion({
+        id: "feedback_focus",
+        title: "Feedback-basiert: Fokus auf die konkrete Frage",
+        reason:
+          "Rückmeldungen zeigen, dass Entwürfe teils am Anliegen vorbeigehen. Ein expliziter Fokusanker verbessert Trefferquote.",
+        impact: "Mehr passende Entwürfe beim ersten Versuch.",
+        confidence: Math.min(0.93, 0.58 + (wrongFocus / negativeTotal) * 0.35),
+        source: "heuristic",
+        patch: {
+          add_do_rules: [
+            "Zu Beginn die konkrete Frage der anfragenden Person in einem Satz spiegeln.",
+          ],
+          add_dont_rules: [
+            "Keine allgemeinen Erklärungen ohne direkten Bezug zur Frage.",
+          ],
+        },
+      });
+    }
+
+    if (missingInfos >= 2 && missingInfos / negativeTotal >= 0.2) {
+      pushSuggestion({
+        id: "feedback_missing_context",
+        title: "Feedback-basiert: Rückfrage bei fehlenden Infos erzwingen",
+        reason:
+          "Mehrere Rückmeldungen deuten auf fehlenden Kontext hin. Eine klare Rückfrage-Regel senkt Risiko.",
+        impact: "Weniger unpassende Aussagen bei unklarer Datengrundlage.",
+        confidence: Math.min(0.9, 0.56 + (missingInfos / negativeTotal) * 0.34),
+        source: "heuristic",
+        patch: {
+          add_do_rules: [
+            "Wenn Objektbezug oder Kerninfo fehlt, zuerst kurz nachfragen.",
+          ],
+          add_dont_rules: [
+            "Keine Annahmen zu Verfügbarkeit oder Unterlagen ohne belastbare Information.",
+          ],
+        },
+      });
+    }
+  }
+
   if (!out.length) {
     pushSuggestion({
       id: "baseline_quality",
@@ -555,6 +626,9 @@ async function generateAiSuggestions(args: {
     short_edit_rate: number;
     large_edit_rate: number;
     avg_diff_chars: number;
+    feedback_negative_total: number;
+    feedback_top_reason: string | null;
+    feedback_top_reason_share: number;
   };
   heuristicSuggestions: Suggestion[];
 }) {
@@ -622,7 +696,7 @@ async function fetchContext(
   const admin = supabaseAdmin();
   const since45 = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [reviewsRes, styleRes, examplesRes] = await Promise.all([
+  const [reviewsRes, styleRes, examplesRes, feedbackRes] = await Promise.all([
     (admin.from("message_qas") as any)
       .select("reason, meta, created_at")
       .eq("agent_id", agentId)
@@ -638,6 +712,12 @@ async function fetchContext(
       .select("id, text, kind")
       .eq("agent_id", agentId)
       .limit(4000),
+    (admin.from("message_feedback") as any)
+      .select("rating, reason, updated_at")
+      .eq("agent_id", agentId)
+      .gte("updated_at", since45)
+      .order("updated_at", { ascending: false })
+      .limit(4000),
   ]);
 
   if (reviewsRes.error) {
@@ -648,6 +728,9 @@ async function fetchContext(
   }
   if (examplesRes.error) {
     throw new Error(`examples_fetch_failed:${examplesRes.error.message}`);
+  }
+  if (feedbackRes.error) {
+    throw new Error(`feedback_fetch_failed:${feedbackRes.error.message}`);
   }
 
   const reviewRows = Array.isArray(reviewsRes.data) ? reviewsRes.data : [];
@@ -685,6 +768,34 @@ async function fetchContext(
   const avgDiffChars = diffCount > 0 ? diffSum / diffCount : 0;
   const style = (styleRes.data || null) as StyleRow | null;
   const examples = (examplesRes.data || []) as StyleExampleRow[];
+  const feedbackRows = Array.isArray(feedbackRes.data) ? feedbackRes.data : [];
+
+  const feedbackReasonCounts: Record<string, number> = {
+    zu_lang: 0,
+    falscher_fokus: 0,
+    fehlende_infos: 0,
+    ton_unpassend: 0,
+    sonstiges: 0,
+  };
+  let feedbackNegativeTotal = 0;
+  for (const row of feedbackRows) {
+    const rating = String(row?.rating || "").toLowerCase();
+    if (rating !== "not_helpful") continue;
+    feedbackNegativeTotal += 1;
+    const reasonCode = normalizeFeedbackReason(row?.reason, "not_helpful");
+    if (reasonCode === "helpful") continue;
+    feedbackReasonCounts[reasonCode] = Number(feedbackReasonCounts[reasonCode] || 0) + 1;
+  }
+  const topFeedbackReasonEntry = Object.entries(feedbackReasonCounts).sort(
+    (a, b) => Number(b[1] || 0) - Number(a[1] || 0),
+  )[0];
+  const topFeedbackReason = topFeedbackReasonEntry?.[1]
+    ? String(topFeedbackReasonEntry[0] || "")
+    : null;
+  const topFeedbackReasonShare =
+    topFeedbackReason && feedbackNegativeTotal > 0
+      ? Number(topFeedbackReasonEntry?.[1] || 0) / feedbackNegativeTotal
+      : 0;
 
   const computed = buildSuggestions({
     totalReviews,
@@ -693,6 +804,8 @@ async function fetchContext(
     lengthened,
     largeEdits,
     avgDiffChars,
+    feedbackNegativeTotal,
+    feedbackReasonCounts,
     style,
     examples,
   });
@@ -715,6 +828,9 @@ async function fetchContext(
         short_edit_rate: computed.shortRate,
         large_edit_rate: computed.largeEditRate,
         avg_diff_chars: Math.round(avgDiffChars * 10) / 10,
+        feedback_negative_total: feedbackNegativeTotal,
+        feedback_top_reason: topFeedbackReason,
+        feedback_top_reason_share: Math.round(topFeedbackReasonShare * 1000) / 1000,
       },
       heuristicSuggestions: computed.suggestions,
     });
@@ -747,6 +863,9 @@ async function fetchContext(
     short_edit_rate: computed.shortRate,
     large_edit_rate: computed.largeEditRate,
     avg_diff_chars: Math.round(avgDiffChars * 10) / 10,
+    feedback_negative_total: feedbackNegativeTotal,
+    feedback_top_reason: topFeedbackReason,
+    feedback_top_reason_share: Math.round(topFeedbackReasonShare * 1000) / 1000,
     suggestions: mergedSuggestions,
     heuristic_suggestions: computed.suggestions,
     ai_suggestions: aiSuggestions,
@@ -779,6 +898,9 @@ export async function GET(req: NextRequest) {
         short_edit_rate: data.short_edit_rate,
         large_edit_rate: data.large_edit_rate,
         avg_diff_chars: data.avg_diff_chars,
+        feedback_negative_total: data.feedback_negative_total,
+        feedback_top_reason: data.feedback_top_reason,
+        feedback_top_reason_share: data.feedback_top_reason_share,
       },
       ai: data.ai,
       suggestions: data.suggestions,
@@ -891,6 +1013,9 @@ export async function POST(req: NextRequest) {
         short_edit_rate: refreshed.short_edit_rate,
         large_edit_rate: refreshed.large_edit_rate,
         avg_diff_chars: refreshed.avg_diff_chars,
+        feedback_negative_total: refreshed.feedback_negative_total,
+        feedback_top_reason: refreshed.feedback_top_reason,
+        feedback_top_reason_share: refreshed.feedback_top_reason_share,
       },
     });
   } catch (e: any) {

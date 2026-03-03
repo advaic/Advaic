@@ -5,6 +5,7 @@ import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
 import StageCTA from "@/components/marketing/StageCTA";
 import ManualVsAdvaicComparison from "@/components/marketing/ManualVsAdvaicComparison";
+import ProcessFlowComparison from "@/components/marketing/ProcessFlowComparison";
 import SafeStartConfigurator from "@/components/marketing/SafeStartConfigurator";
 import FinalCTA from "@/components/marketing/FinalCTA";
 
@@ -136,12 +137,13 @@ export default function ManualVsAdvaicPage() {
         stage="bewertung"
         primaryHref="/signup?entry=vergleich-stage"
         primaryLabel="Mit Safe-Start testen"
-        secondaryHref="/produkt#safe-start-konfiguration"
-        secondaryLabel="Startkonfiguration berechnen"
+        secondaryHref="/roi-rechner"
+        secondaryLabel="ROI berechnen"
         context="manuell-vs-advaic"
       />
 
       <ManualVsAdvaicComparison />
+      <ProcessFlowComparison />
 
       <section className="marketing-soft-warm py-20 md:py-28">
         <Container>

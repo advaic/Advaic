@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { applyStyleFeedbackLearning, normalizeFeedbackReason } from "@/lib/style-feedback-learning";
 
 export const runtime = "nodejs";
 
@@ -135,6 +136,7 @@ export async function POST(req: NextRequest) {
   const reason = String(body.reason || "")
     .trim()
     .slice(0, 240);
+  const reasonCode = normalizeFeedbackReason(reason, rating);
   const note = String(body.note || "")
     .trim()
     .slice(0, 2000);
@@ -147,11 +149,12 @@ export async function POST(req: NextRequest) {
     lead_id: String(msg.lead_id),
     message_id: messageId,
     rating,
-    reason: reason || null,
+    reason: reasonCode || null,
     note: note || null,
     source: source || "lead_chat",
     meta: {
       sender,
+      reason_code: reasonCode,
       updated_via: "api/messages/feedback",
     },
   };
@@ -167,6 +170,22 @@ export async function POST(req: NextRequest) {
     return jsonError(500, "feedback_save_failed", { details: error.message });
   }
 
-  return NextResponse.json({ ok: true, feedback: data || null });
-}
+  let styleLearning: any = null;
+  if (rating === "not_helpful") {
+    try {
+      styleLearning = await applyStyleFeedbackLearning({
+        supa: admin,
+        agentId: String(user.id),
+        source: "feedback_post",
+        triggerMessageId: messageId,
+      });
+    } catch (e: any) {
+      styleLearning = {
+        ok: false,
+        error: String(e?.message || "style_feedback_learning_failed"),
+      };
+    }
+  }
 
+  return NextResponse.json({ ok: true, feedback: data || null, style_learning: styleLearning });
+}

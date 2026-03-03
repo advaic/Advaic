@@ -7,6 +7,8 @@ export type LandingFamily =
   | "freigabe"
   | "followups"
   | "vergleich"
+  | "roi"
+  | "einwaende"
   | "fit"
   | "preise"
   | "faq"
@@ -106,6 +108,26 @@ const MAP: Array<{
       stage: "entscheidung",
       primaryHref: "/signup",
       secondaryHref: "/produkt#safe-start-konfiguration",
+    },
+  },
+  {
+    match: (p) => p.startsWith("/roi-rechner"),
+    value: {
+      family: "roi",
+      reportingKey: "lp_roi_v1",
+      stage: "entscheidung",
+      primaryHref: "/signup",
+      secondaryHref: "/manuell-vs-advaic",
+    },
+  },
+  {
+    match: (p) => p.startsWith("/einwaende"),
+    value: {
+      family: "einwaende",
+      reportingKey: "lp_einwaende_v1",
+      stage: "bewertung",
+      primaryHref: "/signup",
+      secondaryHref: "/produkt#setup",
     },
   },
   {

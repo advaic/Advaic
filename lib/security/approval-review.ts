@@ -27,6 +27,9 @@ export type ApprovalReviewInput = {
   finalText?: string | null;
   edited?: boolean;
   source?: "approval_inbox" | "api_approve" | "slack" | "other";
+  editingSeconds?: number | null;
+  qualityScoreBeforeSend?: number | null;
+  approvalAgeMinutes?: number | null;
 };
 
 export async function upsertHumanApprovalReview(
@@ -38,28 +41,76 @@ export async function upsertHumanApprovalReview(
   const normalizedEdited =
     normalizeForCompare(originalText) !== normalizeForCompare(finalText);
   const edited = typeof input.edited === "boolean" ? input.edited || normalizedEdited : normalizedEdited;
+  const diffChars = roughDiffCount(originalText, finalText);
 
   try {
     const { data: existing } = await (supabase.from("message_qas") as any)
-      .select("id")
+      .select("id, meta")
       .eq("draft_message_id", input.messageId)
       .eq("prompt_key", APPROVAL_REVIEW_KEY)
       .eq("prompt_version", APPROVAL_REVIEW_VERSION)
       .maybeSingle();
 
     if (existing?.id) {
+      const prevMeta =
+        existing?.meta && typeof existing.meta === "object" ? existing.meta : {};
+      const mergedEdited = Boolean(prevMeta?.edited) || edited;
+      const mergedNormalizedEdited =
+        Boolean(prevMeta?.normalized_edited) || normalizedEdited;
+
+      const mergedMeta = {
+        ...prevMeta,
+        source: input.source || prevMeta?.source || "other",
+        edited: mergedEdited,
+        normalized_edited: mergedNormalizedEdited,
+        original_length: originalText.length,
+        final_length: finalText.length,
+        diff_chars: diffChars,
+        editing_seconds:
+          typeof input.editingSeconds === "number" &&
+          Number.isFinite(input.editingSeconds)
+            ? Math.max(0, Math.round(input.editingSeconds))
+            : prevMeta?.editing_seconds ?? null,
+        quality_score_before_send:
+          typeof input.qualityScoreBeforeSend === "number" &&
+          Number.isFinite(input.qualityScoreBeforeSend)
+            ? Math.max(0, Math.min(100, Math.round(input.qualityScoreBeforeSend)))
+            : prevMeta?.quality_score_before_send ?? null,
+        approval_age_minutes:
+          typeof input.approvalAgeMinutes === "number" &&
+          Number.isFinite(input.approvalAgeMinutes)
+            ? Math.max(0, Math.round(input.approvalAgeMinutes))
+            : prevMeta?.approval_age_minutes ?? null,
+      };
+
+      try {
+        await (supabase.from("message_qas") as any)
+          .update({
+            verdict: mergedEdited ? "warn" : "pass",
+            reason: mergedEdited ? "edited_before_send" : "approved_without_edit",
+            reason_long: mergedEdited
+              ? "Freigabe mit Textänderung vor dem Versand."
+              : "Freigabe ohne Textänderung vor dem Versand.",
+            action: mergedEdited ? "manual_edit_and_send" : "approve_and_send",
+            risk_flags: mergedEdited ? ["manual_edit"] : ["no_edit"],
+            meta: mergedMeta,
+          })
+          .eq("id", String(existing.id));
+      } catch {
+        // best effort: keep flow resilient if extended columns are unavailable
+      }
+
       return {
         ok: true,
         inserted: false,
         id: String(existing.id),
-        edited,
+        edited: mergedEdited,
       };
     }
   } catch {
     // continue and try insert
   }
 
-  const diffChars = roughDiffCount(originalText, finalText);
   const base = {
     agent_id: input.agentId,
     lead_id: input.leadId,
@@ -87,6 +138,21 @@ export async function upsertHumanApprovalReview(
       original_length: originalText.length,
       final_length: finalText.length,
       diff_chars: diffChars,
+      editing_seconds:
+        typeof input.editingSeconds === "number" &&
+        Number.isFinite(input.editingSeconds)
+          ? Math.max(0, Math.round(input.editingSeconds))
+          : null,
+      quality_score_before_send:
+        typeof input.qualityScoreBeforeSend === "number" &&
+        Number.isFinite(input.qualityScoreBeforeSend)
+          ? Math.max(0, Math.min(100, Math.round(input.qualityScoreBeforeSend)))
+          : null,
+      approval_age_minutes:
+        typeof input.approvalAgeMinutes === "number" &&
+        Number.isFinite(input.approvalAgeMinutes)
+          ? Math.max(0, Math.round(input.approvalAgeMinutes))
+          : null,
     },
   } as Record<string, any>;
 

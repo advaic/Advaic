@@ -13,6 +13,7 @@ const navLinks = [
   { label: "Branchen", href: "/branchen" },
   { label: "So funktioniert's", href: "/so-funktionierts" },
   { label: "Sicherheit", href: "/sicherheit" },
+  { label: "Einwände", href: "/einwaende" },
   { label: "Trust", href: "/trust" },
   { label: "Preise", href: "/preise" },
   { label: "FAQ", href: "/faq" },

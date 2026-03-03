@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, supabaseAdmin } from "../_guard";
+import {
+  applyStyleFeedbackLearning,
+  normalizeFeedbackReason,
+  summarizeFeedbackRootCauses,
+} from "@/lib/style-feedback-learning";
 
 export const runtime = "nodejs";
 
@@ -148,6 +153,136 @@ function normalizeMessagePreview(v: unknown) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 180);
+}
+
+type RootCause = {
+  code: string;
+  label: string;
+  count: number;
+  share: number;
+  recommendation: string;
+  quick_action:
+    | "open_outbox_failed"
+    | "open_outbox_approval"
+    | "open_outbox_human"
+    | "safe_mode_top_agent"
+    | "style_feedback_loop";
+};
+
+function buildSupportRootCauses(args: {
+  incidents: any[];
+  feedbackRows: any[];
+}) {
+  const issueCounts = new Map<string, number>();
+  const issueMeta = new Map<string, Omit<RootCause, "count" | "share">>();
+
+  const addIssue = (
+    code: RootCause["code"],
+    label: RootCause["label"],
+    recommendation: RootCause["recommendation"],
+    quickAction: RootCause["quick_action"],
+    weight = 1,
+  ) => {
+    issueCounts.set(code, Number(issueCounts.get(code) || 0) + weight);
+    if (!issueMeta.has(code)) {
+      issueMeta.set(code, {
+        code,
+        label,
+        recommendation,
+        quick_action: quickAction,
+      });
+    }
+  };
+
+  for (const incident of args.incidents || []) {
+    const status = String(incident?.status || "").toLowerCase();
+    const sendStatus = String(incident?.send_status || "").toLowerCase();
+    const stuck = Boolean(incident?.stuck);
+
+    if (sendStatus === "failed") {
+      addIssue(
+        "send_failed",
+        "Versandfehler",
+        "Outbox-Fehler priorisieren, Provider-Fehler analysieren und betroffene Agents temporär auf Safe Mode setzen.",
+        "open_outbox_failed",
+      );
+    }
+    if (stuck || sendStatus === "sending") {
+      addIssue(
+        "sending_lock",
+        "Sending-Locks",
+        "Locks aktiv lösen und betroffene Nachrichten sofort neu einreihen.",
+        "open_outbox_failed",
+      );
+    }
+    if (status === "needs_human") {
+      addIssue(
+        "needs_human",
+        "Menschliche Eskalationen",
+        "Human-Queue priorisieren und wiederkehrende Eskalationsmuster als Guardrail-Regel absichern.",
+        "open_outbox_human",
+      );
+    }
+    if (status === "needs_approval") {
+      addIssue(
+        "approval_backlog",
+        "Freigabe-Rückstau",
+        "Freigabe-Queue priorisieren und Auto/Freigabe-Regeln nachkalibrieren.",
+        "open_outbox_approval",
+      );
+    }
+  }
+
+  const feedbackSummary = summarizeFeedbackRootCauses(args.feedbackRows || []);
+  for (const reason of feedbackSummary.by_reason) {
+    const code = `feedback_${reason.code}`;
+    if (reason.code === "zu_lang") {
+      addIssue(
+        code,
+        "Feedback: Zu lange Entwürfe",
+        "Längenregel auf kurz setzen und strukturierte Kurzantworten als Stilanker erzwingen.",
+        "style_feedback_loop",
+        reason.count,
+      );
+    } else if (reason.code === "falscher_fokus") {
+      addIssue(
+        code,
+        "Feedback: Falscher Fokus",
+        "Fragefokus-Regel schärfen und Kontextanker vor den Antworttext setzen.",
+        "style_feedback_loop",
+        reason.count,
+      );
+    } else if (reason.code === "fehlende_infos") {
+      addIssue(
+        code,
+        "Feedback: Fehlende Infos",
+        "Rückfragepflicht bei fehlendem Objektbezug aktivieren.",
+        "style_feedback_loop",
+        reason.count,
+      );
+    }
+  }
+
+  const total = Array.from(issueCounts.values()).reduce((acc, v) => acc + Number(v || 0), 0);
+  const rootCauses: RootCause[] = Array.from(issueCounts.entries())
+    .map(([code, count]) => {
+      const meta = issueMeta.get(code);
+      return {
+        code,
+        label: meta?.label || code,
+        count,
+        share: total > 0 ? count / total : 0,
+        recommendation: meta?.recommendation || "Analyse und Maßnahmen nötig.",
+        quick_action: meta?.quick_action || "style_feedback_loop",
+      };
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+
+  return {
+    rootCauses,
+    feedbackSummary,
+  };
 }
 
 function normalizeTicketStatus(value: unknown): TicketStatus {
@@ -481,6 +616,10 @@ export async function GET(req: NextRequest) {
   const qRaw = sanitizeQuery(url.searchParams.get("q") || "");
   const qLike = safeLikeTerm(qRaw);
   const qIsUuid = isUuid(qRaw);
+  const nowMs = Date.now();
+  const since30Iso = new Date(nowMs - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const since60Iso = new Date(nowMs - 60 * 24 * 60 * 60 * 1000).toISOString();
+  const since90Iso = new Date(nowMs - 90 * 24 * 60 * 60 * 1000).toISOString();
 
   const { data: problematicMsgs, error: msgErr } = await (supa.from("messages") as any)
     .select(
@@ -535,7 +674,7 @@ export async function GET(req: NextRequest) {
 
   const agentIds = Array.from(statsMap.keys());
 
-  const [{ data: agents }, { data: settings }, ticketIndex] = await Promise.all([
+  const [{ data: agents }, { data: settings }, ticketIndex, feedbackRes, activityRes] = await Promise.all([
     agentIds.length > 0
       ? (supa.from("agents") as any)
           .select("id, email, name, company, created_at")
@@ -547,6 +686,15 @@ export async function GET(req: NextRequest) {
           .in("agent_id", agentIds)
       : Promise.resolve({ data: [] as any[] }),
     loadTicketIndex(supa),
+    (supa.from("message_feedback") as any)
+      .select("agent_id, rating, reason, updated_at")
+      .gte("updated_at", since30Iso)
+      .limit(20000),
+    (supa.from("messages") as any)
+      .select("agent_id, sender, status, send_status, timestamp")
+      .eq("sender", "user")
+      .gte("timestamp", since90Iso)
+      .limit(80000),
   ]);
 
   const agentMap = new Map<string, any>();
@@ -663,6 +811,67 @@ export async function GET(req: NextRequest) {
     };
   });
 
+  const feedbackRows = Array.isArray(feedbackRes?.data) ? feedbackRes.data : [];
+  const rootCauseData = buildSupportRootCauses({
+    incidents,
+    feedbackRows: feedbackRows.filter((row: any) => String(row?.rating || "").toLowerCase() === "not_helpful"),
+  });
+
+  const activityRows = Array.isArray(activityRes?.data) ? activityRes.data : [];
+  const setCurrent = new Set<string>();
+  const setPrev = new Set<string>();
+  const setPrev2 = new Set<string>();
+
+  const currentStartMs = nowMs - 30 * 24 * 60 * 60 * 1000;
+  const prevStartMs = nowMs - 60 * 24 * 60 * 60 * 1000;
+  const prev2StartMs = nowMs - 90 * 24 * 60 * 60 * 1000;
+
+  for (const row of activityRows) {
+    const agentId = String(row?.agent_id || "").trim();
+    if (!agentId) continue;
+    const ts = new Date(String(row?.timestamp || "")).getTime();
+    if (!Number.isFinite(ts)) continue;
+    if (ts >= currentStartMs) setCurrent.add(agentId);
+    else if (ts >= prevStartMs) setPrev.add(agentId);
+    else if (ts >= prev2StartMs) setPrev2.add(agentId);
+  }
+
+  let retainedCurrent = 0;
+  for (const id of setPrev) {
+    if (setCurrent.has(id)) retainedCurrent += 1;
+  }
+  let retainedPrevious = 0;
+  for (const id of setPrev2) {
+    if (setPrev.has(id)) retainedPrevious += 1;
+  }
+  const retentionRateCurrent = setPrev.size > 0 ? retainedCurrent / setPrev.size : 0;
+  const retentionRatePrevious = setPrev2.size > 0 ? retainedPrevious / setPrev2.size : 0;
+  const retentionDeltaPp = Math.round((retentionRateCurrent - retentionRatePrevious) * 1000) / 10;
+
+  const issueRowsCurrent = allMsgs.filter((m) => {
+    const ts = new Date(String(m?.timestamp || "")).getTime();
+    if (!Number.isFinite(ts) || ts < currentStartMs) return false;
+    const status = String(m?.status || "").toLowerCase();
+    const sendStatus = String(m?.send_status || "").toLowerCase();
+    return sendStatus === "failed" || status === "needs_human" || status === "needs_approval";
+  });
+  const issueRowsPrev = allMsgs.filter((m) => {
+    const ts = new Date(String(m?.timestamp || "")).getTime();
+    if (!Number.isFinite(ts) || ts < prevStartMs || ts >= currentStartMs) return false;
+    const status = String(m?.status || "").toLowerCase();
+    const sendStatus = String(m?.send_status || "").toLowerCase();
+    return sendStatus === "failed" || status === "needs_human" || status === "needs_approval";
+  });
+
+  const supportLoadCurrent =
+    setCurrent.size > 0 ? issueRowsCurrent.length / setCurrent.size : 0;
+  const supportLoadPrevious =
+    setPrev.size > 0 ? issueRowsPrev.length / setPrev.size : 0;
+  const supportLoadDeltaPct =
+    supportLoadPrevious > 0
+      ? ((supportLoadCurrent - supportLoadPrevious) / supportLoadPrevious) * 100
+      : 0;
+
   let searchAgents: any[] = [];
   let searchLeads: any[] = [];
   let searchMessages: any[] = [];
@@ -735,6 +944,24 @@ export async function GET(req: NextRequest) {
     q: qRaw || null,
     summary,
     ticket_summary: ticketIndex.summary,
+    root_causes: rootCauseData.rootCauses,
+    retention_kpi: {
+      previous_active_agents_30d: setPrev.size,
+      current_active_agents_30d: setCurrent.size,
+      retained_agents_30d: retainedCurrent,
+      retention_rate: Math.round(retentionRateCurrent * 1000) / 1000,
+      previous_retention_rate: Math.round(retentionRatePrevious * 1000) / 1000,
+      delta_pp: retentionDeltaPp,
+      sprint6_goal_met: retentionDeltaPp >= 15,
+    },
+    support_kpi: {
+      current_issues_per_active_agent: Math.round(supportLoadCurrent * 100) / 100,
+      previous_issues_per_active_agent: Math.round(supportLoadPrevious * 100) / 100,
+      delta_pct: Math.round(supportLoadDeltaPct * 10) / 10,
+      sprint6_goal_met: supportLoadDeltaPct <= -25,
+      negative_feedback_total_30d: rootCauseData.feedbackSummary.total_negative,
+      top_feedback_reason: rootCauseData.feedbackSummary.by_reason[0]?.code || null,
+    },
     tickets: enrichedTickets.slice(0, 240),
     critical_agents: criticalAgents,
     incidents,
@@ -762,6 +989,7 @@ export async function POST(req: NextRequest) {
         ticket_id?: string;
         ticket_status?: TicketStatus | string;
         note?: string;
+        force?: boolean;
       }
     | null;
 
@@ -835,6 +1063,77 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "safe_mode_failed", details: error.message }, { status: 500 });
     }
     return NextResponse.json({ ok: true, action, settings: data });
+  }
+
+  if (action === "run_style_feedback_loop") {
+    const force = Boolean(body?.force);
+    let targetAgentIds: string[] = [];
+
+    if (agentId) {
+      targetAgentIds = [agentId];
+    } else {
+      const sinceIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: feedbackRows } = await (supa.from("message_feedback") as any)
+        .select("agent_id, rating, reason, updated_at")
+        .gte("updated_at", sinceIso)
+        .limit(40000);
+
+      const byAgent = new Map<string, { negative: number; weighted: number }>();
+      for (const row of Array.isArray(feedbackRows) ? feedbackRows : []) {
+        const id = String(row?.agent_id || "").trim();
+        if (!id) continue;
+        if (!byAgent.has(id)) byAgent.set(id, { negative: 0, weighted: 0 });
+        const agg = byAgent.get(id)!;
+        if (String(row?.rating || "").toLowerCase() !== "not_helpful") continue;
+        agg.negative += 1;
+        const reasonCode = normalizeFeedbackReason(row?.reason, "not_helpful");
+        if (reasonCode === "zu_lang" || reasonCode === "falscher_fokus" || reasonCode === "fehlende_infos") {
+          agg.weighted += 2;
+        } else {
+          agg.weighted += 1;
+        }
+      }
+
+      targetAgentIds = Array.from(byAgent.entries())
+        .filter(([, value]) => value.negative >= 3)
+        .sort((a, b) => b[1].weighted - a[1].weighted)
+        .slice(0, 24)
+        .map(([id]) => id);
+    }
+
+    const results: Array<{ agent_id: string; ok: boolean; changed?: boolean; skipped?: string; error?: string }> = [];
+    for (const id of targetAgentIds) {
+      try {
+        const result = await applyStyleFeedbackLearning({
+          supa,
+          agentId: id,
+          source: "admin_support_loop",
+          force,
+        });
+        results.push({
+          agent_id: id,
+          ok: Boolean(result?.ok),
+          changed: Boolean((result as any)?.changed),
+          skipped: (result as any)?.skipped || undefined,
+          error: (result as any)?.error || undefined,
+        });
+      } catch (e: any) {
+        results.push({
+          agent_id: id,
+          ok: false,
+          error: String(e?.message || "style_feedback_loop_failed"),
+        });
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      action,
+      force,
+      processed: targetAgentIds.length,
+      changed: results.filter((r) => r.changed).length,
+      results,
+    });
   }
 
   if (action === "retry_message") {

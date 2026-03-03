@@ -161,6 +161,12 @@ export default function PreisePage() {
               <Link href="/manuell-vs-advaic" className="btn-secondary">
                 Manuell vs. Advaic
               </Link>
+              <Link href="/roi-rechner" className="btn-secondary">
+                ROI-Rechner
+              </Link>
+              <Link href="/einwaende" className="btn-secondary">
+                Einwände klären
+              </Link>
             </div>
           </article>
 

@@ -11,6 +11,56 @@ type Body = {
   event_id?: string | null; // optional
 };
 
+function clamp01(v: unknown): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(1, n));
+}
+
+function computeQualityScoreForReview(input: {
+  qaScore?: number | null;
+  qaConfidence?: number | null;
+  clsConfidence?: number | null;
+  verdict?: string | null;
+  riskFlags?: string[] | null;
+  sendStatus?: string | null;
+}): number | null {
+  const qaScore = clamp01(input.qaScore);
+  const qaConfidence = clamp01(input.qaConfidence);
+  const clsConfidence = clamp01(input.clsConfidence);
+  const verdict = String(input.verdict || "").toLowerCase();
+  const riskFlags = Array.isArray(input.riskFlags) ? input.riskFlags.length : 0;
+  const sendStatus = String(input.sendStatus || "").toLowerCase();
+  const hasSignals =
+    qaScore !== null ||
+    qaConfidence !== null ||
+    clsConfidence !== null ||
+    verdict.length > 0 ||
+    riskFlags > 0;
+
+  if (!hasSignals) return null;
+
+  let score =
+    qaScore !== null
+      ? qaScore
+      : qaConfidence !== null
+        ? qaConfidence
+        : clsConfidence !== null
+          ? clsConfidence
+          : 0.6;
+
+  if (qaConfidence !== null) score = score * 0.72 + qaConfidence * 0.28;
+  if (clsConfidence !== null) score = score * 0.78 + clsConfidence * 0.22;
+
+  if (verdict === "fail") score -= 0.35;
+  else if (verdict === "warn") score -= 0.18;
+
+  score -= Math.min(0.25, riskFlags * 0.06);
+  if (sendStatus === "failed") score -= 0.25;
+
+  return Math.round(Math.max(0, Math.min(1, score)) * 100);
+}
+
 function buildSubject(lead: any) {
   const s = lead?.subject || lead?.type || "Anfrage";
   return `Re: ${String(s).slice(0, 140)}`;
@@ -80,7 +130,7 @@ export async function POST(req: Request) {
     supabase.from("messages") as any
   )
     .select(
-      "id, agent_id, lead_id, gmail_message_id, gmail_thread_id, text, snippet, was_followup",
+      "id, agent_id, lead_id, gmail_message_id, gmail_thread_id, text, snippet, was_followup, timestamp, classification_confidence, send_status",
     )
     .eq("id", messageId)
     .eq("agent_id", agentId)
@@ -151,6 +201,38 @@ export async function POST(req: Request) {
     );
   }
 
+  const { data: latestQa } = await (supabase.from("message_qas") as any)
+    .select("score, verdict, risk_flags, meta, created_at")
+    .eq("draft_message_id", messageId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const qaConfidenceRaw = Number((latestQa as any)?.meta?.confidence);
+  const qaConfidence =
+    Number.isFinite(qaConfidenceRaw) && qaConfidenceRaw >= 0 && qaConfidenceRaw <= 1
+      ? qaConfidenceRaw
+      : null;
+  const qualityScoreBeforeSend = computeQualityScoreForReview({
+    qaScore:
+      typeof (latestQa as any)?.score === "number" ? (latestQa as any).score : null,
+    qaConfidence,
+    clsConfidence:
+      typeof (msgRow as any).classification_confidence === "number"
+        ? (msgRow as any).classification_confidence
+        : null,
+    verdict: (latestQa as any)?.verdict ?? null,
+    riskFlags: Array.isArray((latestQa as any)?.risk_flags)
+      ? ((latestQa as any).risk_flags as string[])
+      : null,
+    sendStatus: (msgRow as any).send_status ?? null,
+  });
+  const messageTs = new Date(String((msgRow as any).timestamp || "")).getTime();
+  const approvalAgeMinutes =
+    Number.isFinite(messageTs) && messageTs > 0
+      ? Math.max(0, Math.floor((Date.now() - messageTs) / 60000))
+      : null;
+
   const reviewTrack = await upsertHumanApprovalReview(supabase, {
     agentId,
     leadId: String((msgRow as any).lead_id || ""),
@@ -159,6 +241,8 @@ export async function POST(req: Request) {
     originalText: text,
     finalText: text,
     source: "api_approve",
+    qualityScoreBeforeSend,
+    approvalAgeMinutes,
   });
   if (!reviewTrack.ok) {
     console.warn("⚠️ approval review tracking failed in /api/messages/approve:", reviewTrack.error);
@@ -204,6 +288,25 @@ export async function POST(req: Request) {
   }
 
   const send = await readSendResponse(sendRes);
+  if (!send.ok && send.error === "payment_required") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "payment_required",
+        details:
+          String(
+            (send as any)?.data?.details ||
+              "Testphase beendet. Bitte Starter aktivieren.",
+          ) || "payment_required",
+        billing_access: (send as any)?.data?.billing_access || null,
+        next_action: (send as any)?.data?.next_action || {
+          type: "open_billing",
+          path: "/app/konto/abo",
+        },
+      },
+      { status: 402 },
+    );
+  }
   if (
     !send.ok ||
     !(

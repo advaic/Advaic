@@ -64,6 +64,36 @@ type SupportData = {
     in_progress: number;
     resolved: number;
   };
+  root_causes: Array<{
+    code: string;
+    label: string;
+    count: number;
+    share: number;
+    recommendation: string;
+    quick_action:
+      | "open_outbox_failed"
+      | "open_outbox_approval"
+      | "open_outbox_human"
+      | "safe_mode_top_agent"
+      | "style_feedback_loop";
+  }>;
+  retention_kpi: {
+    previous_active_agents_30d: number;
+    current_active_agents_30d: number;
+    retained_agents_30d: number;
+    retention_rate: number;
+    previous_retention_rate: number;
+    delta_pp: number;
+    sprint6_goal_met: boolean;
+  };
+  support_kpi: {
+    current_issues_per_active_agent: number;
+    previous_issues_per_active_agent: number;
+    delta_pct: number;
+    sprint6_goal_met: boolean;
+    negative_feedback_total_30d: number;
+    top_feedback_reason: string | null;
+  };
   tickets: SupportTicket[];
   critical_agents: Array<{
     agent_id: string;
@@ -131,6 +161,22 @@ type SupportData = {
     }>;
   };
 };
+
+function pct(v: number | null | undefined) {
+  const n = Number(v ?? 0);
+  if (!Number.isFinite(n)) return "0%";
+  return `${Math.round(n * 1000) / 10}%`;
+}
+
+function feedbackReasonLabel(code: string | null | undefined) {
+  const key = String(code || "").toLowerCase().trim();
+  if (key === "zu_lang") return "Zu lang";
+  if (key === "falscher_fokus") return "Falscher Fokus";
+  if (key === "fehlende_infos") return "Fehlende Infos";
+  if (key === "ton_unpassend") return "Ton unpassend";
+  if (key === "sonstiges") return "Sonstiges";
+  return "—";
+}
 
 function fmt(v?: string | null) {
   if (!v) return "—";
@@ -263,6 +309,9 @@ export default function SupportHub() {
   const search = data?.search;
   const ticketSummary = data?.ticket_summary || { open: 0, in_progress: 0, resolved: 0 };
   const tickets = data?.tickets || [];
+  const rootCauses = data?.root_causes || [];
+  const retentionKpi = data?.retention_kpi || null;
+  const supportKpi = data?.support_kpi || null;
 
   const incidentStats = useMemo(() => {
     return {
@@ -286,6 +335,22 @@ export default function SupportHub() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() =>
+                void action("global:style-feedback-loop", {
+                  action: "run_style_feedback_loop",
+                })
+              }
+              disabled={!!busy["global:style-feedback-loop"]}
+              className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-800 hover:bg-violet-100 disabled:opacity-60"
+            >
+              {busy["global:style-feedback-loop"] ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Wrench className="h-4 w-4" />
+              )}
+              Feedback-Lernloop
+            </button>
             <Link
               href="/app/admin/tickets"
               className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
@@ -358,6 +423,139 @@ export default function SupportHub() {
           </div>
         ) : (
           <>
+            <section>
+              <div className="text-sm font-semibold text-gray-900">Sprint 6 · Retention & Supportaufwand (30 Tage)</div>
+              <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                  <div className="text-[11px] text-gray-500">30-Tage-Retention</div>
+                  <div className="mt-1 text-2xl font-semibold text-gray-900">
+                    {retentionKpi ? pct(retentionKpi.retention_rate) : "—"}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-600">
+                    {retentionKpi
+                      ? `${retentionKpi.retained_agents_30d}/${retentionKpi.previous_active_agents_30d} Agents retained`
+                      : "Keine Daten"}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                  <div className="text-[11px] text-gray-500">Retention-Trend vs. Vorperiode</div>
+                  <div
+                    className={`mt-1 text-2xl font-semibold ${
+                      retentionKpi && retentionKpi.delta_pp < 0 ? "text-red-700" : "text-gray-900"
+                    }`}
+                  >
+                    {retentionKpi
+                      ? `${retentionKpi.delta_pp >= 0 ? "+" : ""}${retentionKpi.delta_pp} pp`
+                      : "—"}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-600">
+                    Ziel: +15 pp · {retentionKpi?.sprint6_goal_met ? "erreicht" : "noch offen"}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                  <div className="text-[11px] text-gray-500">Issues pro aktivem Agent</div>
+                  <div className="mt-1 text-2xl font-semibold text-gray-900">
+                    {supportKpi
+                      ? supportKpi.current_issues_per_active_agent.toFixed(2)
+                      : "—"}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-600">
+                    Vorperiode:{" "}
+                    {supportKpi
+                      ? supportKpi.previous_issues_per_active_agent.toFixed(2)
+                      : "—"}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                  <div className="text-[11px] text-gray-500">Supportlast-Trend</div>
+                  <div
+                    className={`mt-1 text-2xl font-semibold ${
+                      supportKpi && supportKpi.delta_pct > 0 ? "text-red-700" : "text-gray-900"
+                    }`}
+                  >
+                    {supportKpi
+                      ? `${supportKpi.delta_pct >= 0 ? "+" : ""}${supportKpi.delta_pct}%`
+                      : "—"}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-600">
+                    Ziel: -25% · {supportKpi?.sprint6_goal_met ? "erreicht" : "noch offen"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
+                <span className="rounded-full border border-gray-200 bg-white px-2 py-1">
+                  Negatives Feedback (30d): {supportKpi?.negative_feedback_total_30d ?? 0}
+                </span>
+                <span className="rounded-full border border-gray-200 bg-white px-2 py-1">
+                  Haupttreiber: {feedbackReasonLabel(supportKpi?.top_feedback_reason)}
+                </span>
+              </div>
+            </section>
+
+            <section>
+              <div className="text-sm font-semibold text-gray-900">Hauptursachen & schnelle Maßnahmen</div>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {rootCauses.length === 0 ? (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+                    Aktuell keine dominanten Ursachen.
+                  </div>
+                ) : (
+                  rootCauses.map((cause) => (
+                    <div key={cause.code} className="rounded-xl border border-gray-200 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-sm font-semibold text-gray-900">{cause.label}</div>
+                        <span className="rounded-full border border-gray-200 bg-[#fbfbfc] px-2 py-0.5 text-xs text-gray-700">
+                          {cause.count} Fälle ({pct(cause.share)})
+                        </span>
+                      </div>
+                      <div className="mt-2 text-xs text-gray-600">{cause.recommendation}</div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {cause.quick_action === "open_outbox_failed" ? (
+                          <Link
+                            href="/app/admin/outbox?status=failed"
+                            className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs hover:bg-gray-50"
+                          >
+                            Outbox: Failed öffnen
+                          </Link>
+                        ) : null}
+                        {cause.quick_action === "open_outbox_approval" ? (
+                          <Link
+                            href="/app/admin/outbox?status=needs_approval"
+                            className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs hover:bg-gray-50"
+                          >
+                            Outbox: Freigabe öffnen
+                          </Link>
+                        ) : null}
+                        {cause.quick_action === "open_outbox_human" ? (
+                          <Link
+                            href="/app/admin/outbox?status=needs_human"
+                            className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs hover:bg-gray-50"
+                          >
+                            Outbox: Needs human öffnen
+                          </Link>
+                        ) : null}
+                        {cause.quick_action === "style_feedback_loop" ? (
+                          <button
+                            onClick={() =>
+                              void action(`cause:${cause.code}:feedback-loop`, {
+                                action: "run_style_feedback_loop",
+                                force: true,
+                              })
+                            }
+                            disabled={!!busy[`cause:${cause.code}:feedback-loop`]}
+                            className="rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-xs text-violet-800 hover:bg-violet-100 disabled:opacity-60"
+                          >
+                            Lernloop jetzt anwenden
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
             <section>
               <div className="text-sm font-semibold text-gray-900">Kritische Agents (priorisiert)</div>
               <div className="mt-3 space-y-3">

@@ -43,7 +43,10 @@ export type ApprovalMessage = {
   qa_score?: number | null;
   qa_reason?: string | null;
   qa_reason_long?: string | null;
+  qa_action?: string | null;
+  qa_confidence?: number | null;
   qa_risk_flags?: string[] | null;
+  qa_meta?: Record<string, any> | null;
 
   // for UI label
   lead_name?: string;
@@ -197,6 +200,154 @@ function buildReasonRows(message: ApprovalMessage) {
   return rows;
 }
 
+function clamp01(v: number | null | undefined): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  return Math.max(0, Math.min(1, v));
+}
+
+function qualityScore(message: ApprovalMessage): number | null {
+  const qaScore = clamp01(
+    typeof message.qa_score === "number" ? message.qa_score : null,
+  );
+  const qaConfidence = clamp01(
+    typeof message.qa_confidence === "number" ? message.qa_confidence : null,
+  );
+  const clsConfidence = clamp01(
+    typeof message.classification_confidence === "number"
+      ? message.classification_confidence
+      : null,
+  );
+  const riskFlags = Array.isArray(message.qa_risk_flags)
+    ? message.qa_risk_flags.length
+    : 0;
+  const verdict = String(message.qa_verdict || "").toLowerCase();
+  const hasSignals =
+    qaScore !== null ||
+    qaConfidence !== null ||
+    clsConfidence !== null ||
+    verdict.length > 0 ||
+    riskFlags > 0;
+
+  if (!hasSignals) return null;
+
+  let score =
+    qaScore !== null
+      ? qaScore
+      : qaConfidence !== null
+        ? qaConfidence
+        : clsConfidence !== null
+          ? clsConfidence
+          : 0.6;
+  if (qaConfidence !== null) score = score * 0.72 + qaConfidence * 0.28;
+  if (clsConfidence !== null) score = score * 0.78 + clsConfidence * 0.22;
+
+  if (verdict === "fail") score -= 0.35;
+  else if (verdict === "warn") score -= 0.18;
+
+  score -= Math.min(0.25, riskFlags * 0.06);
+
+  const sendStatus = String(message.send_status || "").toLowerCase();
+  if (sendStatus === "failed") score -= 0.25;
+
+  return Math.round(Math.max(0, Math.min(1, score)) * 100);
+}
+
+function qualityTone(score: number | null): string {
+  if (score === null)
+    return "border-gray-200 bg-gray-50 text-gray-600";
+  if (score >= 80) return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (score >= 60) return "border-amber-200 bg-amber-50 text-amber-900";
+  return "border-red-200 bg-red-50 text-red-700";
+}
+
+function buildApprovalWhy(message: ApprovalMessage): {
+  reasons: string[];
+  recommendation: string;
+} {
+  const reasons: string[] = [];
+  const qaMeta =
+    message.qa_meta && typeof message.qa_meta === "object"
+      ? message.qa_meta
+      : null;
+  const metaReasons = Array.isArray(qaMeta?.approval_reasons_de)
+    ? qaMeta!.approval_reasons_de
+        .map((x: any) => String(x || "").trim())
+        .filter(Boolean)
+        .slice(0, 2)
+    : Array.isArray(qaMeta?.reasons_de)
+      ? qaMeta!.reasons_de
+          .map((x: any) => String(x || "").trim())
+          .filter(Boolean)
+          .slice(0, 2)
+      : null;
+  const metaRecommendationRaw =
+    qaMeta?.recommendation_de ??
+    qaMeta?.approval_recommendation_de ??
+    qaMeta?.recommendation ??
+    null;
+  const metaRecommendation = String(metaRecommendationRaw || "").trim();
+
+  const verdict = String(message.qa_verdict || "").toLowerCase();
+  const qaReason = String(message.qa_reason || "").trim();
+  const qaReasonLong = String(message.qa_reason_long || "").trim();
+  const clsReason = String(message.classification_reason || "").trim();
+  const confidence =
+    typeof message.classification_confidence === "number"
+      ? message.classification_confidence
+      : null;
+  const risks = Array.isArray(message.qa_risk_flags)
+    ? message.qa_risk_flags.map((x) => String(x).toLowerCase())
+    : [];
+
+  if (verdict === "fail") {
+    reasons.push("Mindestens ein Qualitätscheck ist auf „Fail“ gelaufen.");
+  } else if (verdict === "warn") {
+    reasons.push("Die Qualitätsprüfung meldet einen Warnhinweis.");
+  }
+
+  if (confidence !== null && confidence < 0.8) {
+    reasons.push(
+      `Die Zuordnung ist noch unsicher (Confidence ${confidence.toFixed(2)}).`,
+    );
+  }
+
+  if (risks.length > 0) {
+    reasons.push(`Es wurden Risiko-Flags erkannt: ${risks.slice(0, 2).join(", ")}.`);
+  }
+
+  if (!reasons.length && qaReason) {
+    reasons.push(qaReason);
+  }
+  if (!reasons.length && qaReasonLong) {
+    reasons.push(qaReasonLong.split(".")[0]?.trim() || qaReasonLong);
+  }
+  if (!reasons.length && clsReason) {
+    reasons.push(clsReason.split(".")[0]?.trim() || clsReason);
+  }
+  if (!reasons.length) {
+    reasons.push("Der Fall ist nicht eindeutig und benötigt deine Freigabe.");
+  }
+
+  if (metaReasons && metaReasons.length > 0) {
+    reasons.splice(0, reasons.length, ...metaReasons);
+  }
+
+  const recommendation =
+    metaRecommendation ||
+    (verdict === "fail" || risks.length > 0
+      ? "Entwurf kurz bearbeiten, dann freigeben."
+      : confidence !== null && confidence < 0.8
+        ? "Objektbezug prüfen, dann freigeben."
+        : message.qa_action
+          ? String(message.qa_action)
+          : "Kurz prüfen und direkt freigeben.");
+
+  return {
+    reasons: reasons.slice(0, 2),
+    recommendation,
+  };
+}
+
 function buildReplySubject(lead: any) {
   const raw = String(lead?.subject ?? lead?.type ?? "Anfrage").trim();
   if (!raw) return "Re: Anfrage";
@@ -348,17 +499,23 @@ function formatAgeLabel(minutes: number | null): string {
 async function readSendResponse(
   res: Response,
 ): Promise<
-  { ok: boolean; status?: string; error?: string } & Record<string, any>
+  { ok: boolean; status?: string; error?: string; http_status?: number } & Record<string, any>
 > {
   const data = await res.json().catch(() => ({}) as any);
   if (!res.ok) {
     return {
       ok: false,
+      http_status: res.status,
       error: String((data as any)?.error || "Versand fehlgeschlagen."),
       ...data,
     };
   }
-  return { ok: true, status: String((data as any)?.status || "ok"), ...data };
+  return {
+    ok: true,
+    http_status: res.status,
+    status: String((data as any)?.status || "ok"),
+    ...data,
+  };
 }
 
 async function trackApprovalReviewEvent(args: {
@@ -366,6 +523,9 @@ async function trackApprovalReviewEvent(args: {
   edited: boolean;
   originalText?: string;
   finalText?: string;
+  editingSeconds?: number | null;
+  qualityScoreBeforeSend?: number | null;
+  approvalAgeMinutes?: number | null;
 }) {
   try {
     const res = await fetch("/api/messages/approval-review", {
@@ -376,6 +536,16 @@ async function trackApprovalReviewEvent(args: {
         edited: args.edited,
         original_text: args.originalText ?? "",
         final_text: args.finalText ?? "",
+        editing_seconds:
+          typeof args.editingSeconds === "number" ? args.editingSeconds : null,
+        quality_score_before_send:
+          typeof args.qualityScoreBeforeSend === "number"
+            ? args.qualityScoreBeforeSend
+            : null,
+        approval_age_minutes:
+          typeof args.approvalAgeMinutes === "number"
+            ? args.approvalAgeMinutes
+            : null,
       }),
     });
     if (!res.ok) {
@@ -400,6 +570,9 @@ export default function ZurFreigabeUI({
 
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editedText, setEditedText] = useState<string>("");
+  const [editStartedAtById, setEditStartedAtById] = useState<
+    Record<string, number>
+  >({});
 
   const [pendingIds, setPendingIds] = useState<Record<string, boolean>>({});
   const [actionError, setActionError] = useState<Record<string, string | null>>(
@@ -555,6 +728,16 @@ export default function ZurFreigabeUI({
       if (acc === null) return current;
       return Math.max(acc, current);
     }, null);
+    const qualityValues = approvalMessages
+      .map((m) => qualityScore(m))
+      .filter((v): v is number => typeof v === "number");
+    const avgQuality =
+      qualityValues.length > 0
+        ? Math.round(
+            qualityValues.reduce((sum, value) => sum + value, 0) /
+              qualityValues.length,
+          )
+        : null;
 
     return {
       highRisk,
@@ -562,6 +745,7 @@ export default function ZurFreigabeUI({
       followups,
       failed,
       oldestMinutes,
+      avgQuality,
     };
   }, [approvalMessages]);
 
@@ -809,6 +993,8 @@ export default function ZurFreigabeUI({
         edited: false,
         originalText: message.text,
         finalText: message.text,
+        qualityScoreBeforeSend: qualityScore(message),
+        approvalAgeMinutes: ageMinutes(message.timestamp),
       });
 
       const res = await fetch(endpoint, {
@@ -821,6 +1007,23 @@ export default function ZurFreigabeUI({
 
       // Idempotency outcomes
       if (!send.ok) {
+        if (send.http_status === 402 && send.error === "payment_required") {
+          void trackFunnelEvent({
+            event: "billing_upgrade_gate_triggered",
+            source: "approval_send_gate",
+            path: "/app/zur-freigabe",
+            meta: { reason: "trial_expired_approval_send" },
+          });
+          router.push(
+            "/app/konto/abo?upgrade_required=1&source=approval_send_gate&next=%2Fapp%2Fzur-freigabe",
+          );
+          throw new Error(
+            String(
+              send.details ||
+                "Testphase beendet. Bitte aktiviere Starter, um weiter zu senden.",
+            ),
+          );
+        }
         throw new Error(send.error || "Versand fehlgeschlagen.");
       }
 
@@ -851,6 +1054,8 @@ export default function ZurFreigabeUI({
           lead_id: message.lead_id,
           edited: false,
           was_followup: Boolean(message.was_followup),
+          quality_score_before_send: qualityScore(message),
+          approval_age_minutes: ageMinutes(message.timestamp),
         },
       });
       setErr(id, null);
@@ -906,6 +1111,10 @@ export default function ZurFreigabeUI({
   const handleEdit = (id: string, text: string) => {
     setEditingMessageId(id);
     setEditedText(text);
+    setEditStartedAtById((prev) => {
+      if (prev[id]) return prev;
+      return { ...prev, [id]: Date.now() };
+    });
   };
 
   const handleSaveEditedMessage = async (id: string) => {
@@ -970,6 +1179,11 @@ export default function ZurFreigabeUI({
         edited: true,
         originalText: message.text,
         finalText: nextText,
+        editingSeconds: editStartedAtById[id]
+          ? Math.max(0, Math.round((Date.now() - editStartedAtById[id]) / 1000))
+          : null,
+        qualityScoreBeforeSend: qualityScore(message),
+        approvalAgeMinutes: ageMinutes(message.timestamp),
       });
 
       const res = await fetch(endpoint, {
@@ -980,6 +1194,23 @@ export default function ZurFreigabeUI({
 
       const send = await readSendResponse(res);
       if (!send.ok) {
+        if (send.http_status === 402 && send.error === "payment_required") {
+          void trackFunnelEvent({
+            event: "billing_upgrade_gate_triggered",
+            source: "approval_edit_send_gate",
+            path: "/app/zur-freigabe",
+            meta: { reason: "trial_expired_approval_edit_send" },
+          });
+          router.push(
+            "/app/konto/abo?upgrade_required=1&source=approval_edit_send_gate&next=%2Fapp%2Fzur-freigabe",
+          );
+          throw new Error(
+            String(
+              send.details ||
+                "Testphase beendet. Bitte aktiviere Starter, um weiter zu senden.",
+            ),
+          );
+        }
         throw new Error(send.error || "Versand fehlgeschlagen.");
       }
       if (send.status === "locked_or_in_progress") {
@@ -1008,6 +1239,14 @@ export default function ZurFreigabeUI({
           lead_id: message.lead_id,
           edited: true,
           was_followup: Boolean(message.was_followup),
+          quality_score_before_send: qualityScore(message),
+          approval_age_minutes: ageMinutes(message.timestamp),
+          correction_time_seconds: editStartedAtById[id]
+            ? Math.max(0, Math.round((Date.now() - editStartedAtById[id]) / 1000))
+            : null,
+          correction_char_delta: Math.abs(
+            String(message.text || "").length - nextText.length,
+          ),
         },
       });
       router.refresh();
@@ -1025,6 +1264,11 @@ export default function ZurFreigabeUI({
 
       setEditingMessageId(null);
       setEditedText("");
+      setEditStartedAtById((prev) => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
       setErr(id, null);
     } catch (e: any) {
       console.error("❌ Save+Approve failed", e);
@@ -1253,7 +1497,7 @@ export default function ZurFreigabeUI({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-6 gap-3">
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-7 gap-3">
           <div className="rounded-2xl border border-gray-200 bg-white p-3 md:col-span-1">
             <div className="text-[11px] text-gray-500">Hohes Risiko</div>
             <div className="mt-1 text-lg font-semibold text-gray-900">
@@ -1282,6 +1526,12 @@ export default function ZurFreigabeUI({
             <div className="text-[11px] text-gray-500">Ältester Fall</div>
             <div className="mt-1 text-lg font-semibold text-gray-900">
               {formatAgeLabel(triageStats.oldestMinutes)}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 md:col-span-1">
+            <div className="text-[11px] text-gray-500">Ø Qualitäts-Score</div>
+            <div className="mt-1 text-lg font-semibold text-gray-900">
+              {triageStats.avgQuality !== null ? `${triageStats.avgQuality}/100` : "–"}
             </div>
           </div>
           <div className="rounded-2xl border border-gray-200 bg-white p-3 md:col-span-1">
@@ -1319,6 +1569,21 @@ export default function ZurFreigabeUI({
           </div>
         )}
 
+        <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-4">
+          <div className="text-sm font-semibold text-gray-900">
+            Prüfbarkeit & Verlauf
+          </div>
+          <div className="mt-1 text-xs text-gray-700">
+            Jede Entscheidung bleibt nachvollziehbar: Eingang, Qualitäts-Score, Freigabe und Versandstatus mit
+            Zeitstempel.
+          </div>
+          <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-gray-700">
+            <li>Freigabegründe sind pro Entwurf sichtbar.</li>
+            <li>Versandfehler bleiben als Status erhalten und sind erneut prüfbar.</li>
+            <li>Im Konversationsverlauf siehst du den Trust-Log pro Fall.</li>
+          </ul>
+        </div>
+
         {/* List */}
         <div className="space-y-3" data-tour="approval-list">
           {approvalMessages.map((message) => {
@@ -1339,6 +1604,8 @@ export default function ZurFreigabeUI({
 
             const ts = message.timestamp ? new Date(message.timestamp) : null;
             const recommendation = recommendedAction(message);
+            const qScore = qualityScore(message);
+            const why = buildApprovalWhy(message);
 
             return (
               <div
@@ -1425,8 +1692,16 @@ export default function ZurFreigabeUI({
                         </div>
                       )}
 
+                      <div
+                        className={`text-xs px-2 py-1 rounded-full border ${qualityTone(
+                          qScore,
+                        )}`}
+                        title="Qualitäts-Score vor dem Versand"
+                      >
+                        {qScore !== null ? `Qualität ${qScore}/100` : "Qualität offen"}
+                      </div>
+
                       {(() => {
-                        const rows = buildReasonRows(message);
                         const open = !!reasonOpen[message.id];
                         return (
                           <button
@@ -1445,7 +1720,7 @@ export default function ZurFreigabeUI({
                             }`}
                             title="Warum ist diese Nachricht zur Freigabe?"
                           >
-                            Warum hier?
+                            Details
                           </button>
                         );
                       })()}
@@ -1494,6 +1769,21 @@ export default function ZurFreigabeUI({
                     <div className={`mt-3 inline-flex items-start gap-2 rounded-xl border px-3 py-2 text-xs ${recommendation.cls}`}>
                       <span className="font-semibold">{recommendation.label}:</span>
                       <span>{recommendation.detail}</span>
+                    </div>
+
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2">
+                      <div className="text-[11px] font-semibold text-amber-900">
+                        Warum Freigabe?
+                      </div>
+                      <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-800">
+                        {why.reasons.map((reason, idx) => (
+                          <li key={`${message.id}-why-${idx}`}>{reason}</li>
+                        ))}
+                      </ul>
+                      <div className="mt-2 text-xs text-gray-800">
+                        <span className="font-semibold">Empfehlung:</span>{" "}
+                        {why.recommendation}
+                      </div>
                     </div>
 
                     {(() => {

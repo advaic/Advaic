@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import { getAutosendBaseline, getLeadPropertyGate } from "@/lib/security/autosend-gate";
+import { formatModelTag, pickCanaryDeployment } from "@/lib/ai/canary-deployment";
 
 export const runtime = "nodejs";
 
@@ -67,6 +68,8 @@ type QaReasonEngine = {
   reason_short_de: string; // <= 120
   reason_long_de?: string | null; // longer explanation for UI
   action_de?: string | null; // what agent should do
+  approval_reasons_de?: string[] | null; // 1-2 concise reasons for approval UI
+  recommendation_de?: string | null; // concise next recommendation for approval UI
   risk_flags?: string[] | null; // machine-readable flags
   confidence?: number | null; // 0..1 optional
 };
@@ -95,6 +98,7 @@ async function fetchJsonWithTimeout(
 async function callAzureQa(args: {
   system: string;
   user: string;
+  rolloutKey: string;
   temperature: number;
   maxTokens: number;
   timeoutMs?: number;
@@ -103,18 +107,31 @@ async function callAzureQa(args: {
   const endpoint = mustEnv("AZURE_OPENAI_ENDPOINT");
   const apiKey = mustEnv("AZURE_OPENAI_API_KEY");
 
-  const deployment =
+  const stableDeployment =
     process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_QA ||
     process.env.AZURE_OPENAI_DEPLOYMENT_QA ||
     "";
 
-  if (!deployment) {
-    return { ok: false as const, raw: "", reason: "qa_not_configured" };
+  if (!stableDeployment) {
+    return {
+      ok: false as const,
+      raw: "",
+      reason: "qa_not_configured",
+      deployment: "",
+      variant: "stable" as const,
+    };
   }
+
+  const selected = pickCanaryDeployment({
+    stableDeployment,
+    candidateDeployment: process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_QA_CANDIDATE,
+    canaryPercent: process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_QA_CANARY_PERCENT,
+    unitKey: args.rolloutKey,
+  });
 
   const apiVersion =
     process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview";
-  const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+  const url = `${endpoint}/openai/deployments/${selected.deployment}/chat/completions?api-version=${apiVersion}`;
 
   const timeoutMs = Number.isFinite(Number(args.timeoutMs))
     ? Number(args.timeoutMs)
@@ -150,22 +167,48 @@ async function callAzureQa(args: {
         lastErr = `http_${resp.status}`;
         if (resp.status === 429 || (resp.status >= 500 && resp.status <= 599))
           continue;
-        return { ok: false as const, raw: "", reason: lastErr };
+        return {
+          ok: false as const,
+          raw: "",
+          reason: lastErr,
+          deployment: selected.deployment,
+          variant: selected.variant,
+        };
       }
 
       const data = (await resp.json().catch(() => null)) as any;
       const out = data?.choices?.[0]?.message?.content;
       const raw = typeof out === "string" ? out.trim() : "";
-      if (!raw) return { ok: false as const, raw: "", reason: "qa_no_output" };
+      if (!raw) {
+        return {
+          ok: false as const,
+          raw: "",
+          reason: "qa_no_output",
+          deployment: selected.deployment,
+          variant: selected.variant,
+        };
+      }
 
-      return { ok: true as const, raw, reason: "ok" };
+      return {
+        ok: true as const,
+        raw,
+        reason: "ok",
+        deployment: selected.deployment,
+        variant: selected.variant,
+      };
     } catch (e: any) {
       lastErr = e?.name === "AbortError" ? "timeout" : "fetch_failed";
       continue;
     }
   }
 
-  return { ok: false as const, raw: "", reason: lastErr };
+  return {
+    ok: false as const,
+    raw: "",
+    reason: lastErr,
+    deployment: selected.deployment,
+    variant: selected.variant,
+  };
 }
 
 function normalizeVerdict(v: any): QaVerdict {
@@ -197,6 +240,21 @@ function normalizeRiskFlags(v: any): string[] | null {
     .map((x) => String(x || "").toLowerCase().trim())
     .filter((x) => x.length > 0)
     .slice(0, 20);
+  return out.length ? out : null;
+}
+
+function pickObject(v: any): Record<string, any> | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  return v as Record<string, any>;
+}
+
+function normalizeStringArray(v: any, maxItems = 2, maxLen = 220): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const out = v
+    .map((x) => String(x || "").trim())
+    .filter((x) => x.length > 0)
+    .slice(0, maxItems)
+    .map((x) => x.slice(0, maxLen));
   return out.length ? out : null;
 }
 
@@ -590,6 +648,7 @@ export async function POST(req: Request) {
     const resp = await callAzureQa({
       system: prompt.system,
       user: qaUserPrompt,
+      rolloutKey: `${agentId}:${leadId}:${draftMessageId}`,
       temperature: prompt.temperature,
       maxTokens: prompt.maxTokens,
       timeoutMs: 25_000,
@@ -603,23 +662,77 @@ export async function POST(req: Request) {
       if (!parsed) {
         qa = { verdict: "warn", reason: "qa_invalid_json", score: null };
       } else {
+        const engineObj = pickObject(parsed.engine);
         const verdict = normalizeVerdict(parsed.verdict);
         const legacyReason = parsed.reason;
         const shortReason = normalizeReason(
-          legacyReason ?? parsed.reason_short_de ?? parsed.reason_short ?? parsed.short_reason
+          legacyReason ??
+            parsed.reason_short_de ??
+            parsed.reason_short ??
+            parsed.short_reason ??
+            engineObj?.reason_short_de ??
+            engineObj?.reason_short ??
+            engineObj?.short_reason
         );
         const score = parsed.score !== undefined ? clamp01(parsed.score) : null;
 
         const engine: QaReasonEngine = {
           reason_short_de: shortReason,
           reason_long_de: normalizeReasonLong(
-            parsed.reason_long_de ?? parsed.reason_long ?? parsed.long_reason
+            parsed.reason_long_de ??
+              parsed.reason_long ??
+              parsed.long_reason ??
+              engineObj?.reason_long_de ??
+              engineObj?.reason_long ??
+              engineObj?.long_reason
           ),
-          action_de: normalizeAction(parsed.action_de ?? parsed.action ?? parsed.next_action),
+          action_de: normalizeAction(
+            parsed.action_de ??
+              parsed.action ??
+              parsed.next_action ??
+              engineObj?.action_de ??
+              engineObj?.action ??
+              engineObj?.next_action
+          ),
+          approval_reasons_de: normalizeStringArray(
+            parsed.approval_reasons_de ??
+              parsed.reasons_de ??
+              parsed.reason_points_de ??
+              engineObj?.approval_reasons_de ??
+              engineObj?.reasons_de ??
+              engineObj?.reason_points_de ??
+              parsed.reasons ??
+              parsed.reason_points ??
+              engineObj?.approval_reasons ??
+              engineObj?.reasons ??
+              engineObj?.reason_points
+          ),
+          recommendation_de: normalizeAction(
+            parsed.recommendation_de ??
+              parsed.approval_recommendation_de ??
+              engineObj?.recommendation_de ??
+              engineObj?.approval_recommendation_de ??
+              parsed.recommendation ??
+              parsed.approval_recommendation ??
+              engineObj?.recommendation ??
+              engineObj?.approval_recommendation
+          ),
           risk_flags: normalizeRiskFlags(
-            parsed.risk_flags ?? parsed.flags ?? parsed.risks ?? parsed.riskFlags
+            parsed.risk_flags ??
+              parsed.flags ??
+              parsed.risks ??
+              parsed.riskFlags ??
+              engineObj?.risk_flags ??
+              engineObj?.flags ??
+              engineObj?.risks ??
+              engineObj?.riskFlags
           ),
-          confidence: parsed.confidence !== undefined ? clamp01(parsed.confidence) : null,
+          confidence:
+            parsed.confidence !== undefined
+              ? clamp01(parsed.confidence)
+              : engineObj?.confidence !== undefined
+                ? clamp01(engineObj?.confidence)
+                : null,
         };
 
         qa = {
@@ -648,10 +761,21 @@ export async function POST(req: Request) {
       meta: qa.engine
         ? {
             confidence: qa.engine.confidence ?? null,
+            approval_reasons_de: qa.engine.approval_reasons_de ?? null,
+            recommendation_de: qa.engine.recommendation_de ?? null,
             kind: item.kind,
+            qa_deployment: resp.deployment || null,
+            qa_variant: resp.variant,
           }
-        : { kind: item.kind },
-      model: "azure",
+        : {
+            kind: item.kind,
+            qa_deployment: resp.deployment || null,
+            qa_variant: resp.variant,
+          },
+      model: formatModelTag({
+        deployment: resp.deployment,
+        variant: resp.variant,
+      }),
       prompt_key: prompt.key,
       prompt_version: prompt.versionTag,
     });
@@ -787,6 +911,8 @@ export async function POST(req: Request) {
       autosendConfigured: autosend.settingEnabled,
       autosendEnabled,
       autosendBlockReasons: autosend.reasons,
+      qaDeployment: resp.deployment || null,
+      qaVariant: resp.variant,
       notification_event_type:
         qa.verdict === "pass"
           ? (autosendEnabled ? "autosend_ready" : "approval_required_created")

@@ -40,6 +40,37 @@ type EventStat = {
   unique_agents: number;
 };
 
+type BillingSourceStat = {
+  source: string;
+  gate_triggered: number;
+  cta_clicked: number;
+  page_viewed: number;
+  checkout_started: number;
+  checkout_success: number;
+  cta_from_gate: number | null;
+  page_from_cta: number | null;
+  checkout_from_cta: number | null;
+  to_checkout_from_page: number | null;
+  to_success_from_checkout: number | null;
+  to_success_from_page: number | null;
+};
+
+type BillingSourceGroupStat = {
+  group: string;
+  sources: number;
+  gate_triggered: number;
+  cta_clicked: number;
+  page_viewed: number;
+  checkout_started: number;
+  checkout_success: number;
+  cta_from_gate: number | null;
+  page_from_cta: number | null;
+  checkout_from_cta: number | null;
+  to_checkout_from_page: number | null;
+  to_success_from_checkout: number | null;
+  to_success_from_page: number | null;
+};
+
 const STEP_LABELS: Record<number, string> = {
   1: "Willkommen",
   2: "Postfach verbinden",
@@ -60,6 +91,12 @@ const TRACKED_EVENTS: Array<{ key: string; label: string }> = [
   { key: "safe_start_preset_applied", label: "Safe-Start angewendet" },
   { key: "first_value_reached", label: "First Value erreicht" },
   { key: "onboarding_recovery_reminder_sent", label: "Recovery-Reminder gesendet" },
+  { key: "trial_upgrade_reminder_sent", label: "Trial-Upgrade-Reminder gesendet" },
+  { key: "billing_upgrade_page_viewed", label: "Abo-Seite geöffnet" },
+  { key: "billing_upgrade_gate_triggered", label: "Upgrade-Gate ausgelöst" },
+  { key: "billing_upgrade_cta_clicked", label: "Upgrade-CTA geklickt" },
+  { key: "billing_checkout_started", label: "Checkout gestartet" },
+  { key: "billing_portal_opened", label: "Billing-Portal geöffnet" },
   { key: "dashboard_home_viewed", label: "Dashboard geöffnet" },
   { key: "approval_message_approved", label: "Freigaben versendet" },
   { key: "followup_sent", label: "Follow-ups gesendet" },
@@ -130,6 +167,38 @@ function median(nums: number[]): number | null {
 
 function isValidAgentId(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
+}
+
+function sourceOfEvent(row: EventLite): string {
+  const payload = row?.payload && typeof row.payload === "object" ? row.payload : {};
+  const meta = payload?.meta && typeof payload.meta === "object" ? payload.meta : {};
+
+  const metaSource = typeof meta.source === "string" ? meta.source.trim() : "";
+  if (metaSource) return metaSource;
+
+  const payloadSource = typeof payload.source === "string" ? payload.source.trim() : "";
+  if (payloadSource) return payloadSource;
+
+  const path = typeof payload.path === "string" ? payload.path.trim() : "";
+  if (path) return `path:${path}`;
+
+  return "unknown";
+}
+
+function sourceGroupOf(rawSource: string): string {
+  const source = String(rawSource || "").trim().toLowerCase();
+  if (!source) return "unknown";
+  if (source.startsWith("path:")) return "path";
+  if (source.startsWith("dashboard_")) return "dashboard";
+  if (source.startsWith("sidebar_")) return "sidebar";
+  if (source.startsWith("konto_")) return "konto";
+  if (source.startsWith("approval_")) return "freigabe";
+  if (source.startsWith("nachrichten_")) return "nachrichten";
+  if (source.startsWith("followups_")) return "followups";
+  if (source.startsWith("onboarding_")) return "onboarding";
+  if (source.startsWith("public_") || source.startsWith("website_")) return "public";
+  if (source.startsWith("ops_")) return "ops";
+  return "sonstige";
 }
 
 function processEvents(args: {
@@ -396,6 +465,186 @@ export async function GET(req: NextRequest) {
       return (Number.isFinite(bt) ? bt : 0) - (Number.isFinite(at) ? at : 0);
     });
 
+  const billingEvents = ((eventsCurrent || []) as EventLite[])
+    .filter((e) => isValidAgentId(e.agent_id))
+    .map((row) => ({ name: getEventName(row), source: sourceOfEvent(row) }))
+    .filter(
+      (row) =>
+        row.name === "billing_upgrade_gate_triggered" ||
+        row.name === "billing_upgrade_cta_clicked" ||
+        row.name === "billing_upgrade_page_viewed" ||
+        row.name === "billing_checkout_started" ||
+        row.name === "billing_checkout_return_success",
+    );
+
+  const bySource = new Map<string, BillingSourceStat>();
+  const ensureSource = (source: string) => {
+    const key = source || "unknown";
+    if (!bySource.has(key)) {
+      bySource.set(key, {
+        source: key,
+        gate_triggered: 0,
+        cta_clicked: 0,
+        page_viewed: 0,
+        checkout_started: 0,
+        checkout_success: 0,
+        cta_from_gate: null,
+        page_from_cta: null,
+        checkout_from_cta: null,
+        to_checkout_from_page: null,
+        to_success_from_checkout: null,
+        to_success_from_page: null,
+      });
+    }
+    return bySource.get(key)!;
+  };
+
+  for (const ev of billingEvents) {
+    const row = ensureSource(ev.source);
+    if (ev.name === "billing_upgrade_gate_triggered") row.gate_triggered += 1;
+    if (ev.name === "billing_upgrade_cta_clicked") row.cta_clicked += 1;
+    if (ev.name === "billing_upgrade_page_viewed") row.page_viewed += 1;
+    if (ev.name === "billing_checkout_started") row.checkout_started += 1;
+    if (ev.name === "billing_checkout_return_success") row.checkout_success += 1;
+  }
+
+  const billingSources = Array.from(bySource.values())
+    .map((row) => ({
+      ...row,
+      cta_from_gate: pct(row.cta_clicked, row.gate_triggered),
+      page_from_cta: pct(row.page_viewed, row.cta_clicked),
+      checkout_from_cta: pct(row.checkout_started, row.cta_clicked),
+      to_checkout_from_page: pct(row.checkout_started, row.page_viewed),
+      to_success_from_checkout: pct(row.checkout_success, row.checkout_started),
+      to_success_from_page: pct(row.checkout_success, row.page_viewed),
+    }))
+    .sort((a, b) => {
+      if (b.checkout_started !== a.checkout_started) {
+        return b.checkout_started - a.checkout_started;
+      }
+      if (b.page_viewed !== a.page_viewed) return b.page_viewed - a.page_viewed;
+      return b.cta_clicked - a.cta_clicked;
+    });
+
+  const byGroup = new Map<string, BillingSourceGroupStat>();
+  for (const row of billingSources) {
+    const group = sourceGroupOf(row.source);
+    if (!byGroup.has(group)) {
+      byGroup.set(group, {
+        group,
+        sources: 0,
+        gate_triggered: 0,
+        cta_clicked: 0,
+        page_viewed: 0,
+        checkout_started: 0,
+        checkout_success: 0,
+        cta_from_gate: null,
+        page_from_cta: null,
+        checkout_from_cta: null,
+        to_checkout_from_page: null,
+        to_success_from_checkout: null,
+        to_success_from_page: null,
+      });
+    }
+    const bucket = byGroup.get(group)!;
+    bucket.sources += 1;
+    bucket.gate_triggered += row.gate_triggered;
+    bucket.cta_clicked += row.cta_clicked;
+    bucket.page_viewed += row.page_viewed;
+    bucket.checkout_started += row.checkout_started;
+    bucket.checkout_success += row.checkout_success;
+  }
+
+  const billingGroups = Array.from(byGroup.values())
+    .map((row) => ({
+      ...row,
+      cta_from_gate: pct(row.cta_clicked, row.gate_triggered),
+      page_from_cta: pct(row.page_viewed, row.cta_clicked),
+      checkout_from_cta: pct(row.checkout_started, row.cta_clicked),
+      to_checkout_from_page: pct(row.checkout_started, row.page_viewed),
+      to_success_from_checkout: pct(row.checkout_success, row.checkout_started),
+      to_success_from_page: pct(row.checkout_success, row.page_viewed),
+    }))
+    .sort((a, b) => {
+      if (b.checkout_started !== a.checkout_started) {
+        return b.checkout_started - a.checkout_started;
+      }
+      return b.page_viewed - a.page_viewed;
+    });
+
+  const billingSummary = {
+    total_gate_triggered: billingSources.reduce((sum, row) => sum + row.gate_triggered, 0),
+    total_cta_clicked: billingSources.reduce((sum, row) => sum + row.cta_clicked, 0),
+    total_page_viewed: billingSources.reduce((sum, row) => sum + row.page_viewed, 0),
+    total_checkout_started: billingSources.reduce(
+      (sum, row) => sum + row.checkout_started,
+      0,
+    ),
+    total_checkout_success: billingSources.reduce(
+      (sum, row) => sum + row.checkout_success,
+      0,
+    ),
+    overall_to_checkout_from_page: pct(
+      billingSources.reduce((sum, row) => sum + row.checkout_started, 0),
+      billingSources.reduce((sum, row) => sum + row.page_viewed, 0),
+    ),
+    overall_to_success_from_checkout: pct(
+      billingSources.reduce((sum, row) => sum + row.checkout_success, 0),
+      billingSources.reduce((sum, row) => sum + row.checkout_started, 0),
+    ),
+    overall_to_success_from_page: pct(
+      billingSources.reduce((sum, row) => sum + row.checkout_success, 0),
+      billingSources.reduce((sum, row) => sum + row.page_viewed, 0),
+    ),
+  };
+
+  const billingEventsPrev = ((eventsPrev || []) as EventLite[])
+    .filter((e) => isValidAgentId(e.agent_id))
+    .map((row) => ({ name: getEventName(row) }))
+    .filter(
+      (row) =>
+        row.name === "billing_upgrade_page_viewed" ||
+        row.name === "billing_checkout_started" ||
+        row.name === "billing_checkout_return_success",
+    );
+
+  const prevPageViewed = billingEventsPrev.filter(
+    (row) => row.name === "billing_upgrade_page_viewed",
+  ).length;
+  const prevCheckoutStarted = billingEventsPrev.filter(
+    (row) => row.name === "billing_checkout_started",
+  ).length;
+  const prevCheckoutSuccess = billingEventsPrev.filter(
+    (row) => row.name === "billing_checkout_return_success",
+  ).length;
+
+  const checkoutStartedDeltaAbs =
+    billingSummary.total_checkout_started - prevCheckoutStarted;
+  const checkoutStartedDeltaPct = pct(
+    checkoutStartedDeltaAbs,
+    Math.max(1, prevCheckoutStarted),
+  );
+
+  const topSourceByCheckout = billingSources[0] || null;
+  const candidatesBySuccess = billingSources
+    .filter((row) => row.checkout_started >= 3 && row.to_success_from_checkout !== null)
+    .sort(
+      (a, b) =>
+        Number(b.to_success_from_checkout || 0) -
+        Number(a.to_success_from_checkout || 0),
+    );
+  const bestSourceBySuccess = candidatesBySuccess[0] || null;
+
+  const leakageCandidates = billingSources
+    .filter((row) => row.page_viewed >= 5)
+    .map((row) => ({
+      ...row,
+      leakage:
+        Number(row.page_viewed || 0) - Number(row.checkout_started || 0),
+    }))
+    .sort((a, b) => b.leakage - a.leakage);
+  const highestLeakageSource = leakageCandidates[0] || null;
+
   return NextResponse.json({
     ok: true,
     days,
@@ -416,6 +665,25 @@ export async function GET(req: NextRequest) {
     },
     steps: current.steps,
     events: current.eventStats,
+    billing: {
+      summary: billingSummary,
+      previous_window: {
+        page_viewed: prevPageViewed,
+        checkout_started: prevCheckoutStarted,
+        checkout_success: prevCheckoutSuccess,
+      },
+      deltas: {
+        checkout_started_abs: checkoutStartedDeltaAbs,
+        checkout_started_pct: checkoutStartedDeltaPct,
+      },
+      spotlight: {
+        top_source_by_checkout: topSourceByCheckout,
+        best_source_by_success: bestSourceBySuccess,
+        highest_leakage_source: highestLeakageSource,
+      },
+      groups: billingGroups.slice(0, 12),
+      sources: billingSources.slice(0, 20),
+    },
     rows,
   });
 }

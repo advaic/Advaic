@@ -1,0 +1,152 @@
+name: AI Fine-Tune Reply Writer
+
+on:
+  workflow_dispatch:
+    inputs:
+      strict_gate:
+        description: "Rollout-Gate hart erzwingen (Fail bei roten Gates)"
+        required: false
+        default: false
+        type: boolean
+      run_rollout_gate:
+        description: "Nach Candidate-Deployment das Rollout-Gate ausführen"
+        required: false
+        default: true
+        type: boolean
+  schedule:
+    - cron: "0 3 * * 1"
+
+jobs:
+  fine_tune_and_deploy_candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      AZURE_OPENAI_API_VERSION_FINE_TUNE: ${{ secrets.AZURE_OPENAI_API_VERSION_FINE_TUNE }}
+      AZURE_FT_BASE_MODEL: ${{ secrets.AZURE_FT_BASE_MODEL }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+      AZURE_OPENAI_ACCOUNT_NAME: ${{ secrets.AZURE_OPENAI_ACCOUNT_NAME }}
+      AZURE_CANDIDATE_DEPLOYMENT_NAME: ${{ secrets.AZURE_CANDIDATE_DEPLOYMENT_NAME_REPLY_WRITER }}
+      AZURE_DEPLOYMENT_API_VERSION: ${{ secrets.AZURE_DEPLOYMENT_API_VERSION }}
+      AZURE_DEPLOYMENT_SKU_NAME: ${{ secrets.AZURE_DEPLOYMENT_SKU_NAME }}
+      AZURE_DEPLOYMENT_SKU_CAPACITY: ${{ secrets.AZURE_DEPLOYMENT_SKU_CAPACITY }}
+      AZURE_DEPLOYMENT_MODEL_VERSION: ${{ secrets.AZURE_DEPLOYMENT_MODEL_VERSION }}
+      AZURE_DEPLOYMENT_RAI_POLICY_NAME: ${{ secrets.AZURE_DEPLOYMENT_RAI_POLICY_NAME }}
+      AZURE_DEPLOYMENT_VERSION_UPGRADE_OPTION: ${{ secrets.AZURE_DEPLOYMENT_VERSION_UPGRADE_OPTION }}
+      AZURE_FT_POLL_SECONDS: "30"
+      AZURE_FT_TIMEOUT_MINUTES: "180"
+      AZURE_DEPLOYMENT_POLL_SECONDS: "20"
+      AZURE_DEPLOYMENT_TIMEOUT_MINUTES: "45"
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      FT_DATA_LOOKBACK_DAYS: "45"
+      FT_DATA_MAX_QA_ROWS: "4000"
+      FT_DATA_MIN_EXAMPLES: "80"
+      FT_DATA_VALID_RATIO: "0.12"
+      FT_DATA_REQUIRE_SENT: "true"
+      FT_DATA_PROMPT_KEYS: "qa_recheck_v1,followup_qa_v2"
+    outputs:
+      fine_tuned_model: ${{ steps.ft.outputs.fine_tuned_model }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate required secrets
+        run: |
+          test -n "$AZURE_OPENAI_ENDPOINT" || (echo "AZURE_OPENAI_ENDPOINT fehlt" && exit 1)
+          test -n "$AZURE_OPENAI_API_KEY" || (echo "AZURE_OPENAI_API_KEY fehlt" && exit 1)
+          test -n "$AZURE_FT_BASE_MODEL" || (echo "AZURE_FT_BASE_MODEL fehlt" && exit 1)
+          test -n "$AZURE_SUBSCRIPTION_ID" || (echo "AZURE_SUBSCRIPTION_ID fehlt" && exit 1)
+          test -n "$AZURE_RESOURCE_GROUP" || (echo "AZURE_RESOURCE_GROUP fehlt" && exit 1)
+          test -n "$AZURE_OPENAI_ACCOUNT_NAME" || (echo "AZURE_OPENAI_ACCOUNT_NAME fehlt" && exit 1)
+          test -n "$AZURE_CANDIDATE_DEPLOYMENT_NAME" || (echo "AZURE_CANDIDATE_DEPLOYMENT_NAME_REPLY_WRITER fehlt" && exit 1)
+          test -n "$NEXT_PUBLIC_SUPABASE_URL" || (echo "NEXT_PUBLIC_SUPABASE_URL fehlt" && exit 1)
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || (echo "SUPABASE_SERVICE_ROLE_KEY fehlt" && exit 1)
+
+      - name: Build fine-tune dataset from Supabase
+        id: dataset
+        run: npm run fine-tune:dataset
+
+      - name: Upload dataset artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fine-tune-dataset-${{ github.run_id }}
+          path: |
+            ${{ steps.dataset.outputs.train_path }}
+            ${{ steps.dataset.outputs.valid_path }}
+          if-no-files-found: error
+
+      - name: Upload train/validation files to Azure OpenAI
+        id: upload_dataset
+        env:
+          AZURE_FT_TRAIN_FILE_PATH: ${{ steps.dataset.outputs.train_path }}
+          AZURE_FT_VALID_FILE_PATH: ${{ steps.dataset.outputs.valid_path }}
+        run: npm run fine-tune:upload
+
+      - name: Create fine-tune job and wait
+        id: ft
+        env:
+          AZURE_FT_SUFFIX: advaic-reply-writer-${{ github.run_number }}
+          AZURE_FT_TRAIN_FILE_ID: ${{ steps.upload_dataset.outputs.training_file_id || secrets.AZURE_FT_TRAIN_FILE_ID }}
+          AZURE_FT_VALID_FILE_ID: ${{ steps.upload_dataset.outputs.validation_file_id || secrets.AZURE_FT_VALID_FILE_ID }}
+        run: npm run fine-tune:job
+
+      - name: Azure Login (ARM)
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get ARM access token
+        run: |
+          token=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)
+          test -n "$token" || (echo "Konnte ARM-Token nicht laden" && exit 1)
+          echo "AZURE_ARM_ACCESS_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: Update candidate deployment slot
+        env:
+          FINE_TUNED_MODEL: ${{ steps.ft.outputs.fine_tuned_model }}
+        run: npm run deploy:candidate
+
+  rollout_gate:
+    runs-on: ubuntu-latest
+    needs: [fine_tune_and_deploy_candidate]
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_rollout_gate == true }}
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ROLLOUT_LOOKBACK_HOURS: "24"
+      ROLLOUT_GATE_PROMPT_KEYS: "qa_reply_v1,qa_recheck_v1,rewrite_reply_v1"
+      ROLLOUT_GATE_MIN_CANDIDATE_SAMPLES: "40"
+      ROLLOUT_GATE_MAX_WARN_DELTA: "0.03"
+      ROLLOUT_GATE_MAX_FAIL_DELTA: "0.01"
+      ROLLOUT_GATE_STRICT: ${{ github.event_name == 'workflow_dispatch' && inputs.strict_gate || 'false' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate gate secrets
+        run: |
+          test -n "$NEXT_PUBLIC_SUPABASE_URL" || (echo "NEXT_PUBLIC_SUPABASE_URL fehlt" && exit 1)
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || (echo "SUPABASE_SERVICE_ROLE_KEY fehlt" && exit 1)
+
+      - name: Run rollout gate
+        run: npm run eval:rollout-gate

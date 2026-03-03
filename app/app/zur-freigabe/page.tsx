@@ -100,32 +100,83 @@ export default async function ZurFreigabePage() {
     .filter(Boolean);
   let qaByMessageId = new Map<
     string,
-    { verdict: string | null; reason: string | null; score: number | null }
+    {
+      verdict: string | null;
+      reason: string | null;
+      reason_long: string | null;
+      action: string | null;
+      risk_flags: string[] | null;
+      score: number | null;
+      confidence: number | null;
+      meta: Record<string, any> | null;
+    }
   >();
 
   if (messageIds.length > 0) {
-    const { data: qaRows } = await (supabase.from("message_qas") as any)
-      .select("draft_message_id, verdict, reason, created_at")
+    let qaRows: any[] = [];
+    const ext = await (supabase.from("message_qas") as any)
+      .select(
+        "draft_message_id, verdict, score, reason, reason_long, action, risk_flags, meta, created_at",
+      )
       .in("draft_message_id", messageIds)
       .order("created_at", { ascending: false })
       .limit(Math.max(1200, messageIds.length * 4));
 
-    if (Array.isArray(qaRows)) {
+    if (ext?.error) {
+      const minimal = await (supabase.from("message_qas") as any)
+        .select("draft_message_id, verdict, reason, created_at")
+        .in("draft_message_id", messageIds)
+        .order("created_at", { ascending: false })
+        .limit(Math.max(1200, messageIds.length * 4));
+      qaRows = Array.isArray(minimal?.data) ? minimal.data : [];
+    } else {
+      qaRows = Array.isArray(ext?.data) ? ext.data : [];
+    }
+
+    if (qaRows.length > 0) {
       for (const row of qaRows) {
         const id = String(row?.draft_message_id || "").trim();
         if (!id || qaByMessageId.has(id)) continue;
         const verdict = row?.verdict ? String(row.verdict) : null;
         const reason = row?.reason ? String(row.reason) : null;
+        const reasonLong = row?.reason_long ? String(row.reason_long) : null;
+        const action = row?.action ? String(row.action) : null;
+        const riskFlags = Array.isArray(row?.risk_flags)
+          ? row.risk_flags.map((x: any) => String(x))
+          : null;
+        const confidenceRaw = Number((row?.meta || {})?.confidence);
+        const confidence =
+          Number.isFinite(confidenceRaw) && confidenceRaw >= 0 && confidenceRaw <= 1
+            ? confidenceRaw
+            : null;
+        const explicitScore =
+          typeof row?.score === "number" && Number.isFinite(row.score)
+            ? Math.max(0, Math.min(1, Number(row.score)))
+            : null;
         const lower = String(verdict || "").toLowerCase();
         const score =
-          lower === "pass"
-            ? 1
-            : lower === "warn"
-              ? 0.6
-              : lower === "fail"
-                ? 0.25
-                : null;
-        qaByMessageId.set(id, { verdict, reason, score });
+          explicitScore !== null
+            ? explicitScore
+            : lower === "pass"
+              ? 1
+              : lower === "warn"
+                ? 0.6
+                : lower === "fail"
+                  ? 0.25
+                  : null;
+        qaByMessageId.set(id, {
+          verdict,
+          reason,
+          reason_long: reasonLong,
+          action,
+          risk_flags: riskFlags,
+          score,
+          confidence,
+          meta:
+            row?.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
+              ? (row.meta as Record<string, any>)
+              : null,
+        });
       }
     }
   }
@@ -161,8 +212,12 @@ export default async function ZurFreigabePage() {
       classification_reason_long: msg.classification_reason ?? null,
       qa_verdict: qa?.verdict ?? null,
       qa_reason: qa?.reason ?? null,
-      qa_reason_long: qa?.reason ?? null,
+      qa_reason_long: qa?.reason_long ?? qa?.reason ?? null,
+      qa_action: qa?.action ?? null,
+      qa_risk_flags: qa?.risk_flags ?? null,
+      qa_confidence: qa?.confidence ?? null,
       qa_score: qa?.score ?? null,
+      qa_meta: qa?.meta ?? null,
 
       attachments: msg.attachments ?? null,
 

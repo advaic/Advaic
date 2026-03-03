@@ -29,6 +29,15 @@ RESEND_API_KEY=re_...
 ADVAIC_EMAIL_FROM="Advaic <billing@deine-domain.tld>"
 ```
 
+Optional für sanfte Trial-Reminder (anti-nervig, mit Cap + Cooldown):
+
+```bash
+BILLING_TRIAL_REMINDER_COOLDOWN_HOURS=72          # default 72
+BILLING_TRIAL_REMINDER_MONTHLY_MAX=4              # default 4
+BILLING_TRIAL_REMINDER_ACTIVE_MILESTONES=7,3,1    # Tage vor Trial-Ende
+BILLING_TRIAL_REMINDER_EXPIRED_MILESTONES=1,4     # Tage nach Trial-Ende
+```
+
 ## 3) SQL-Migration ausführen (Supabase)
 
 Datei:
@@ -95,6 +104,7 @@ Den Signing Secret als `STRIPE_WEBHOOK_SECRET` eintragen.
 - `POST /api/billing/checkout` (auth required)
 - `POST /api/billing/portal` (auth required)
 - `POST /api/billing/webhook` (Stripe signature required)
+- `POST /api/pipeline/billing-trial-reminders/run` (internal/cron secret required)
 - `GET /api/admin/billing/webhook-events` (admin only)
 
 Hinweis Trial:
@@ -137,3 +147,5 @@ Wichtig:
 - Wenn eine Subscription fehlt/abgelaufen ist, wird sie automatisch neu erstellt (Outlook) bzw. erneuert (Gmail).
 - Für Gmail-Renew muss ein Topic verfügbar sein:
   `email_connections.watch_topic` oder `GMAIL_PUBSUB_TOPIC_NAME` oder `GCP_PROJECT_NUMBER/GCP_PROJECT_ID + GMAIL_PUBSUB_TOPIC_ID`.
+- Trial-Reminder-Pipeline (`/api/pipeline/billing-trial-reminders/run`) ist auf sanfte Frequenz gebaut:
+  7/3/1 Tage vor Ende, 1/4 Tage nach Ende, 72h Cooldown, max. 4 Hinweise pro 30 Tage.

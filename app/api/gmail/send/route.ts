@@ -8,6 +8,10 @@ import {
   computeFollowupNextAt,
   normalizeFollowupSendWindow,
 } from "@/lib/followups/scheduling";
+import {
+  getCommercialAccess,
+  paymentRequiredMeta,
+} from "@/lib/billing/commercial-access";
 
 export const runtime = "nodejs";
 
@@ -255,6 +259,16 @@ export async function POST(req: NextRequest) {
     }
 
     user = { id: String(u.id) };
+  }
+
+  const billingAccess = await getCommercialAccess({
+    supabase: supabaseAdmin,
+    agentId: String(user.id),
+  });
+  if (billingAccess.access.upgrade_required) {
+    return NextResponse.json(paymentRequiredMeta(billingAccess.access), {
+      status: 402,
+    });
   }
 
   // 2️⃣ Ensure lead belongs to the authenticated agent and lock recipient/thread defaults

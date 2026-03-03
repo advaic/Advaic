@@ -59,7 +59,81 @@ type Data = {
   };
   steps: StepRow[];
   events: EventRow[];
+  billing: {
+    summary: {
+      total_gate_triggered: number;
+      total_cta_clicked: number;
+      total_page_viewed: number;
+      total_checkout_started: number;
+      total_checkout_success: number;
+      overall_to_checkout_from_page: number | null;
+      overall_to_success_from_checkout: number | null;
+      overall_to_success_from_page: number | null;
+    };
+    previous_window: {
+      page_viewed: number;
+      checkout_started: number;
+      checkout_success: number;
+    };
+    deltas: {
+      checkout_started_abs: number;
+      checkout_started_pct: number | null;
+    };
+    spotlight: {
+      top_source_by_checkout: SourceRow | null;
+      best_source_by_success: SourceRow | null;
+      highest_leakage_source:
+        | (SourceRow & { leakage: number })
+        | null;
+    };
+    groups: SourceGroupRow[];
+    sources: Array<{
+      source: string;
+      gate_triggered: number;
+      cta_clicked: number;
+      page_viewed: number;
+      checkout_started: number;
+      checkout_success: number;
+      cta_from_gate: number | null;
+      page_from_cta: number | null;
+      checkout_from_cta: number | null;
+      to_checkout_from_page: number | null;
+      to_success_from_checkout: number | null;
+      to_success_from_page: number | null;
+    }>;
+  };
   rows: AgentRow[];
+};
+
+type SourceRow = {
+  source: string;
+  gate_triggered: number;
+  cta_clicked: number;
+  page_viewed: number;
+  checkout_started: number;
+  checkout_success: number;
+  cta_from_gate: number | null;
+  page_from_cta: number | null;
+  checkout_from_cta: number | null;
+  to_checkout_from_page: number | null;
+  to_success_from_checkout: number | null;
+  to_success_from_page: number | null;
+};
+
+type SourceGroupRow = {
+  group: string;
+  sources: number;
+  gate_triggered: number;
+  cta_clicked: number;
+  page_viewed: number;
+  checkout_started: number;
+  checkout_success: number;
+  cta_from_gate: number | null;
+  page_from_cta: number | null;
+  checkout_from_cta: number | null;
+  to_checkout_from_page: number | null;
+  to_success_from_checkout: number | null;
+  to_success_from_page: number | null;
 };
 
 type PublicCount = {
@@ -205,6 +279,38 @@ export default function FunnelBoard() {
     [data],
   );
   const rows = useMemo(() => data?.rows || [], [data]);
+  const billing = useMemo(
+    () =>
+      data?.billing || {
+        summary: {
+          total_gate_triggered: 0,
+          total_cta_clicked: 0,
+          total_page_viewed: 0,
+          total_checkout_started: 0,
+          total_checkout_success: 0,
+          overall_to_checkout_from_page: null,
+          overall_to_success_from_checkout: null,
+          overall_to_success_from_page: null,
+        },
+        previous_window: {
+          page_viewed: 0,
+          checkout_started: 0,
+          checkout_success: 0,
+        },
+        deltas: {
+          checkout_started_abs: 0,
+          checkout_started_pct: null,
+        },
+        spotlight: {
+          top_source_by_checkout: null,
+          best_source_by_success: null,
+          highest_leakage_source: null,
+        },
+        groups: [],
+        sources: [],
+      },
+    [data],
+  );
   const publicEventCounts = useMemo(() => {
     const m = new Map<string, number>();
     for (const row of publicData?.event_counts || []) {
@@ -362,6 +468,173 @@ export default function FunnelBoard() {
             value={summary?.active_agents_with_events ?? 0}
             hint="Agenten mit mind. 1 Funnel-Event"
           />
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-gray-200 bg-white overflow-hidden">
+          <div className="border-b border-gray-200 bg-[#fbfbfc] px-4 py-3">
+            <div className="font-medium">Billing Conversion nach Quelle</div>
+            <div className="text-sm text-gray-600">
+              Vergleich von Upgrade-Gates, CTA-Klicks, Checkout-Starts und Erfolgen je Source-Key.
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-5">
+            <KpiCard
+              title="Gate Trigger"
+              value={billing.summary.total_gate_triggered}
+              hint="billing_upgrade_gate_triggered"
+            />
+            <KpiCard
+              title="Checkout Starts"
+              value={billing.summary.total_checkout_started}
+              hint="billing_checkout_started"
+            />
+            <KpiCard
+              title="Checkout Erfolge"
+              value={billing.summary.total_checkout_success}
+              hint="billing_checkout_return_success"
+            />
+            <KpiCard
+              title="Success / Checkout"
+              value={fmtPct(billing.summary.overall_to_success_from_checkout)}
+              hint="Gesamtquote im Zeitraum"
+            />
+            <KpiCard
+              title="Success / Abo-Seite"
+              value={fmtPct(billing.summary.overall_to_success_from_page)}
+              hint="End-to-End ab billing_upgrade_page_viewed"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 px-4 pb-4 md:grid-cols-3">
+            <div className="rounded-xl border border-gray-200 bg-white p-3">
+              <div className="text-xs text-gray-500">Top-Quelle nach Checkout</div>
+              <div className="mt-1 text-sm font-semibold text-gray-900">
+                {billing.spotlight.top_source_by_checkout?.source || "–"}
+              </div>
+              <div className="mt-1 text-xs text-gray-700">
+                {billing.spotlight.top_source_by_checkout?.checkout_started ?? 0} Checkout-Starts
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white p-3">
+              <div className="text-xs text-gray-500">Beste Success-Quote</div>
+              <div className="mt-1 text-sm font-semibold text-gray-900">
+                {billing.spotlight.best_source_by_success?.source || "–"}
+              </div>
+              <div className="mt-1 text-xs text-gray-700">
+                {fmtPct(
+                  billing.spotlight.best_source_by_success
+                    ?.to_success_from_checkout ?? null,
+                )}{" "}
+                Erfolg / Checkout
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white p-3">
+              <div className="text-xs text-gray-500">Größtes Leck (Seite → Checkout)</div>
+              <div className="mt-1 text-sm font-semibold text-gray-900">
+                {billing.spotlight.highest_leakage_source?.source || "–"}
+              </div>
+              <div className="mt-1 text-xs text-gray-700">
+                {billing.spotlight.highest_leakage_source?.leakage ?? 0} verlorene Sessions
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-200 bg-[#fcfcfd] px-4 py-3 text-xs text-gray-600">
+            Vorperiode: {billing.previous_window.checkout_started} Checkout-Starts, aktuell{" "}
+            {billing.summary.total_checkout_started}. Delta:{" "}
+            <span className="font-medium text-gray-900">
+              {billing.deltas.checkout_started_abs >= 0 ? "+" : ""}
+              {billing.deltas.checkout_started_abs}
+            </span>{" "}
+            ({fmtPct(billing.deltas.checkout_started_pct)})
+          </div>
+
+          {loading ? (
+            <div className="space-y-2 p-4">
+              <div className="h-12 animate-pulse rounded-lg bg-gray-100" />
+              <div className="h-12 animate-pulse rounded-lg bg-gray-100" />
+            </div>
+          ) : billing.sources.length === 0 ? (
+            <div className="px-4 pb-4 text-sm text-gray-600">
+              Noch keine Billing-Conversion-Events im ausgewählten Zeitraum.
+            </div>
+          ) : (
+            <div className="overflow-x-auto border-t border-gray-200">
+              <div className="px-4 py-2 text-xs font-medium text-gray-600 bg-[#fbfbfc] border-b border-gray-200">
+                Quellen-Gruppen
+              </div>
+              <table className="min-w-full text-sm border-b border-gray-200">
+                <thead className="bg-white">
+                  <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
+                    <th className="px-4 py-2">Gruppe</th>
+                    <th className="px-4 py-2">Sources</th>
+                    <th className="px-4 py-2">Abo-Seite</th>
+                    <th className="px-4 py-2">Checkout</th>
+                    <th className="px-4 py-2">Erfolg</th>
+                    <th className="px-4 py-2">Checkout / CTA</th>
+                    <th className="px-4 py-2">Erfolg / Checkout</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {billing.groups.map((row) => (
+                    <tr key={row.group} className="border-b border-gray-100 align-top">
+                      <td className="px-4 py-2 font-medium">{row.group}</td>
+                      <td className="px-4 py-2">{row.sources}</td>
+                      <td className="px-4 py-2">{row.page_viewed}</td>
+                      <td className="px-4 py-2">{row.checkout_started}</td>
+                      <td className="px-4 py-2">{row.checkout_success}</td>
+                      <td className="px-4 py-2">{fmtPct(row.checkout_from_cta)}</td>
+                      <td className="px-4 py-2">{fmtPct(row.to_success_from_checkout)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="px-4 py-2 text-xs font-medium text-gray-600 bg-[#fbfbfc] border-b border-gray-200">
+                Source-Key Vergleich (Details)
+              </div>
+              <table className="min-w-full text-sm">
+                <thead className="bg-white">
+                  <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
+                    <th className="px-4 py-3">Source</th>
+                    <th className="px-4 py-3">Gate</th>
+                    <th className="px-4 py-3">CTA</th>
+                    <th className="px-4 py-3">Abo-Seite</th>
+                    <th className="px-4 py-3">Checkout</th>
+                    <th className="px-4 py-3">Erfolg</th>
+                    <th className="px-4 py-3">CTA / Gate</th>
+                    <th className="px-4 py-3">Seite / CTA</th>
+                    <th className="px-4 py-3">Checkout / CTA</th>
+                    <th className="px-4 py-3">Checkout / Seite</th>
+                    <th className="px-4 py-3">Erfolg / Checkout</th>
+                    <th className="px-4 py-3">Erfolg / Seite</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {billing.sources.map((row) => (
+                    <tr
+                      key={row.source}
+                      className="border-b border-gray-100 align-top hover:bg-gray-50"
+                    >
+                      <td className="px-4 py-3 font-medium">{row.source}</td>
+                      <td className="px-4 py-3">{row.gate_triggered}</td>
+                      <td className="px-4 py-3">{row.cta_clicked}</td>
+                      <td className="px-4 py-3">{row.page_viewed}</td>
+                      <td className="px-4 py-3">{row.checkout_started}</td>
+                      <td className="px-4 py-3">{row.checkout_success}</td>
+                      <td className="px-4 py-3">{fmtPct(row.cta_from_gate)}</td>
+                      <td className="px-4 py-3">{fmtPct(row.page_from_cta)}</td>
+                      <td className="px-4 py-3">{fmtPct(row.checkout_from_cta)}</td>
+                      <td className="px-4 py-3">{fmtPct(row.to_checkout_from_page)}</td>
+                      <td className="px-4 py-3">{fmtPct(row.to_success_from_checkout)}</td>
+                      <td className="px-4 py-3">{fmtPct(row.to_success_from_page)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 rounded-2xl border border-gray-200 bg-white overflow-hidden">

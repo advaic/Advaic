@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
     const staleFollowupsMs = nowMs - 20 * 60 * 1000;
     const staleRecoveryMs = nowMs - 120 * 60 * 1000;
     const staleOutlookMs = nowMs - 20 * 60 * 1000;
+    const staleBillingTrialRemindersMs = nowMs - 36 * 60 * 60 * 1000;
 
     const since30m = new Date(nowMs - 30 * 60 * 1000).toISOString();
 
@@ -87,6 +88,11 @@ export async function GET(req: NextRequest) {
       { key: "followups", label: "Follow-ups", staleMs: staleFollowupsMs },
       { key: "onboarding_recovery", label: "Onboarding-Recovery", staleMs: staleRecoveryMs },
       { key: "outlook_fetch", label: "Outlook-Fetch", staleMs: staleOutlookMs },
+      {
+        key: "billing_trial_reminders",
+        label: "Billing Trial-Reminder",
+        staleMs: staleBillingTrialRemindersMs,
+      },
       { key: "ops_alerts", label: "Ops-Alerts", staleMs: staleReplyMs },
     ].map((item) => {
       const row = latestByPipeline.get(item.key) || null;

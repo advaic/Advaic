@@ -4,6 +4,20 @@ import { readRuntimeControl } from "@/lib/ops/runtime-control";
 
 export const runtime = "nodejs";
 
+function median(nums: number[]) {
+  if (!nums.length) return null;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid];
+  return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 export async function GET(req: NextRequest) {
   const gate = await requireAdmin(req);
   if (!gate.ok)
@@ -26,6 +40,7 @@ export async function GET(req: NextRequest) {
     noEditReviewsRes,
     approvalPrevRes,
     noEditPrevRes,
+    approvalReviewRowsRes,
     outboxRes,
     pipelineRunsRes,
     alertsRes,
@@ -81,6 +96,12 @@ export async function GET(req: NextRequest) {
       .eq("verdict", "pass")
       .gte("created_at", prevWeekStartIso)
       .lt("created_at", weekSinceIso),
+    (supa.from("message_qas") as any)
+      .select("draft_message_id, created_at, meta")
+      .eq("prompt_key", "approval_review_v1")
+      .gte("created_at", prevWeekStartIso)
+      .order("created_at", { ascending: false })
+      .limit(20000),
     (supa.from("messages") as any)
       .select("id, send_status, send_error, send_locked_at, status, timestamp")
       .in("send_status", ["pending", "sending", "failed"])
@@ -138,6 +159,98 @@ export async function GET(req: NextRequest) {
   const passPrev7d = Number(noEditReviewsPrev7d ?? 0);
   const ratePrev7d = totalPrev7d > 0 ? passPrev7d / totalPrev7d : null;
 
+  const reviewRows = Array.isArray(approvalReviewRowsRes.data)
+    ? approvalReviewRowsRes.data
+    : [];
+  const weekStartMs = new Date(weekSinceIso).getTime();
+  const trustCurrentRows: any[] = [];
+  const trustPrevRows: any[] = [];
+  for (const row of reviewRows) {
+    const createdMs = new Date(String(row?.created_at || "")).getTime();
+    if (!Number.isFinite(createdMs)) continue;
+    if (createdMs >= weekStartMs) trustCurrentRows.push(row);
+    else trustPrevRows.push(row);
+  }
+
+  const reviewMessageIds = Array.from(
+    new Set(
+      [...trustCurrentRows, ...trustPrevRows]
+        .map((r) => String(r?.draft_message_id || "").trim())
+        .filter(Boolean),
+    ),
+  );
+
+  const sendStatusByMessageId = new Map<string, string>();
+  for (const ids of chunk(reviewMessageIds, 500)) {
+    const { data: messageRows } = await (supa.from("messages") as any)
+      .select("id, send_status")
+      .in("id", ids);
+    for (const row of messageRows || []) {
+      const id = String(row?.id || "").trim();
+      if (!id) continue;
+      sendStatusByMessageId.set(id, String(row?.send_status || "").toLowerCase());
+    }
+  }
+
+  function computeTrustWindow(rows: any[]) {
+    const total = rows.length;
+    if (!total) {
+      return {
+        total: 0,
+        sent_count: 0,
+        send_rate: null as number | null,
+        edited_count: 0,
+        correction_median_seconds: null as number | null,
+      };
+    }
+
+    let sent = 0;
+    let edited = 0;
+    const editingSeconds: number[] = [];
+
+    for (const row of rows) {
+      const messageId = String(row?.draft_message_id || "").trim();
+      if (messageId && sendStatusByMessageId.get(messageId) === "sent") sent += 1;
+
+      const meta =
+        row?.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
+          ? row.meta
+          : {};
+      const isEdited = Boolean(meta?.edited);
+      if (isEdited) edited += 1;
+
+      const sec = Number(meta?.editing_seconds);
+      if (isEdited && Number.isFinite(sec) && sec >= 0) {
+        editingSeconds.push(Math.round(sec));
+      }
+    }
+
+    return {
+      total,
+      sent_count: sent,
+      send_rate: total > 0 ? sent / total : null,
+      edited_count: edited,
+      correction_median_seconds: median(editingSeconds),
+    };
+  }
+
+  const trustCurrent = computeTrustWindow(trustCurrentRows);
+  const trustPrev = computeTrustWindow(trustPrevRows);
+  const sendRateChangeRelPct =
+    trustCurrent.send_rate !== null &&
+    trustPrev.send_rate !== null &&
+    trustPrev.send_rate > 0
+      ? ((trustCurrent.send_rate - trustPrev.send_rate) / trustPrev.send_rate) * 100
+      : null;
+  const correctionMedianChangeRelPct =
+    trustCurrent.correction_median_seconds !== null &&
+    trustPrev.correction_median_seconds !== null &&
+    trustPrev.correction_median_seconds > 0
+      ? ((trustCurrent.correction_median_seconds - trustPrev.correction_median_seconds) /
+          trustPrev.correction_median_seconds) *
+        100
+      : null;
+
   const pipelineRows = Array.isArray(pipelineRunsRes.data) ? pipelineRunsRes.data : [];
   const latestByPipeline = new Map<string, any>();
   for (const row of pipelineRows) {
@@ -168,6 +281,26 @@ export async function GET(req: NextRequest) {
       previous_total_reviews: totalPrev7d,
       previous_no_edit_count: passPrev7d,
       previous_no_edit_rate: ratePrev7d,
+    },
+    trust_kpis: {
+      since: weekSinceIso,
+      previous_since: prevWeekStartIso,
+      approval_to_send: {
+        current_rate: trustCurrent.send_rate,
+        current_total: trustCurrent.total,
+        current_sent: trustCurrent.sent_count,
+        previous_rate: trustPrev.send_rate,
+        previous_total: trustPrev.total,
+        previous_sent: trustPrev.sent_count,
+        relative_change_pct: sendRateChangeRelPct,
+      },
+      correction_time_seconds: {
+        current_median: trustCurrent.correction_median_seconds,
+        current_edited_count: trustCurrent.edited_count,
+        previous_median: trustPrev.correction_median_seconds,
+        previous_edited_count: trustPrev.edited_count,
+        relative_change_pct: correctionMedianChangeRelPct,
+      },
     },
     send_status: sendCounts,
     last_failed: lastFailed || [],

@@ -1,0 +1,39 @@
+name: AI Rollout Gate
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "20 4 * * *"
+
+jobs:
+  rollout-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ROLLOUT_LOOKBACK_HOURS: "24"
+      ROLLOUT_GATE_PROMPT_KEYS: "qa_reply_v1,qa_recheck_v1,rewrite_reply_v1"
+      ROLLOUT_GATE_MIN_CANDIDATE_SAMPLES: "40"
+      ROLLOUT_GATE_MAX_WARN_DELTA: "0.03"
+      ROLLOUT_GATE_MAX_FAIL_DELTA: "0.01"
+      ROLLOUT_GATE_STRICT: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate required secrets
+        run: |
+          test -n "$NEXT_PUBLIC_SUPABASE_URL" || (echo "NEXT_PUBLIC_SUPABASE_URL fehlt" && exit 1)
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || (echo "SUPABASE_SERVICE_ROLE_KEY fehlt" && exit 1)
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run rollout quality gate
+        run: npm run eval:rollout-gate

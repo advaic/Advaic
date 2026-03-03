@@ -4,10 +4,21 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/browserClient";
+import { trackFunnelEvent } from "@/lib/funnel/track";
 
 type BillingSummaryResponse = {
   ok: boolean;
   summary?: {
+    access: {
+      state: "paid_active" | "trial_active" | "trial_expired";
+      trial_days_total: number;
+      trial_day_number: number;
+      trial_days_remaining: number;
+      trial_started_at: string | null;
+      trial_ends_at: string | null;
+      is_urgent: boolean;
+      upgrade_required: boolean;
+    };
     plan: {
       key: string;
       name: string;
@@ -34,6 +45,9 @@ export default function KontoUebersichtPage() {
   const [owner, setOwner] = useState("—");
   const [planName, setPlanName] = useState("Advaic Free");
   const [nextBilling, setNextBilling] = useState("—");
+  const [trialState, setTrialState] = useState<
+    BillingSummaryResponse["summary"]["access"] | null
+  >(null);
 
   useEffect(() => {
     (async () => {
@@ -54,6 +68,7 @@ export default function KontoUebersichtPage() {
       if (billingRes.ok && billingData?.ok && billingData.summary?.plan) {
         setPlanName(String(billingData.summary.plan.name || "Advaic Free"));
         setNextBilling(formatDate(billingData.summary.plan.current_period_end || null));
+        setTrialState(billingData.summary.access || null);
       }
 
       setLoading(false);
@@ -70,6 +85,46 @@ export default function KontoUebersichtPage() {
           Hier findest du alle wichtigen Informationen zu deinem Konto.
         </p>
       </div>
+
+      {trialState?.state !== "paid_active" ? (
+        <div
+          className={`rounded-xl border p-4 text-sm ${
+            trialState?.state === "trial_expired"
+              ? "border-red-300 bg-red-50 text-red-800"
+              : trialState?.is_urgent
+                ? "border-amber-300 bg-amber-50 text-amber-900"
+                : "border-sky-200 bg-sky-50 text-sky-900"
+          }`}
+        >
+          <p className="font-semibold">
+            {trialState?.state === "trial_expired"
+              ? "Testphase beendet"
+              : "Testphase aktiv"}
+          </p>
+          <p className="mt-1">
+            {trialState?.state === "trial_expired"
+              ? "Auto-Senden und Follow-ups sind pausiert, bis Starter aktiv ist."
+              : `Tag ${trialState?.trial_day_number ?? 1} von ${trialState?.trial_days_total ?? 14}. Noch ${trialState?.trial_days_remaining ?? 0} Tage.`}
+          </p>
+          <Link
+            href="/app/konto/abo?source=konto_trial_card&next=%2Fapp%2Fkonto"
+            className="mt-3 inline-flex"
+            onClick={() => {
+              void trackFunnelEvent({
+                event: "billing_upgrade_cta_clicked",
+                source: "konto_trial_card",
+                path: "/app/konto",
+                meta: {
+                  trial_state: trialState?.state || null,
+                  trial_days_remaining: trialState?.trial_days_remaining ?? null,
+                },
+              });
+            }}
+          >
+            <Button>Starter aktivieren</Button>
+          </Link>
+        </div>
+      ) : null}
 
       <div
         className="grid grid-cols-1 md:grid-cols-2 gap-4"
@@ -94,7 +149,17 @@ export default function KontoUebersichtPage() {
       </div>
 
       <div className="space-y-4" data-tour="account-actions">
-        <Link href="/app/konto/abo" data-tour="account-change-plan">
+        <Link
+          href="/app/konto/abo?source=konto_manage_plan&next=%2Fapp%2Fkonto"
+          data-tour="account-change-plan"
+          onClick={() => {
+            void trackFunnelEvent({
+              event: "billing_upgrade_cta_clicked",
+              source: "konto_manage_plan",
+              path: "/app/konto",
+            });
+          }}
+        >
           <Button variant="secondary">Plan & Zahlungen verwalten</Button>
         </Link>
         <Link href="/app/konto/persoenliche-daten" data-tour="account-personal-data">

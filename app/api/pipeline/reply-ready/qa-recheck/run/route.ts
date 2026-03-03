@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import { getAutosendBaseline, getLeadPropertyGate } from "@/lib/security/autosend-gate";
+import { formatModelTag, pickCanaryDeployment } from "@/lib/ai/canary-deployment";
 
 export const runtime = "nodejs";
 
@@ -80,6 +81,7 @@ function extractLabel(raw: string): "pass" | "warn" | "fail" {
 async function callAzureQaLabel(args: {
   system: string;
   user: string;
+  rolloutKey: string;
   temperature: number;
   maxTokens: number;
   timeoutMs?: number;
@@ -89,24 +91,33 @@ async function callAzureQaLabel(args: {
   const apiKey = mustEnv("AZURE_OPENAI_API_KEY");
 
   // Prefer a dedicated deployment; fallback to general QA deployment
-  const deployment =
+  const stableDeployment =
     process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_QA_RECHECK ||
     process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_QA ||
     process.env.AZURE_OPENAI_DEPLOYMENT_QA ||
     "";
 
-  if (!deployment) {
+  if (!stableDeployment) {
     return {
       ok: false as const,
       label: "fail" as const,
       reason: "qa_recheck_not_configured",
       raw: "",
+      deployment: "",
+      variant: "stable" as const,
     };
   }
 
+  const selected = pickCanaryDeployment({
+    stableDeployment,
+    candidateDeployment: process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_QA_RECHECK_CANDIDATE,
+    canaryPercent: process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_QA_RECHECK_CANARY_PERCENT,
+    unitKey: args.rolloutKey,
+  });
+
   const apiVersion =
     process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview";
-  const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+  const url = `${endpoint}/openai/deployments/${selected.deployment}/chat/completions?api-version=${apiVersion}`;
 
   const timeoutMs = Number.isFinite(Number(args.timeoutMs))
     ? Number(args.timeoutMs)
@@ -148,6 +159,8 @@ async function callAzureQaLabel(args: {
           label: "fail" as const,
           reason: lastErr,
           raw: "",
+          deployment: selected.deployment,
+          variant: selected.variant,
         };
       }
 
@@ -156,14 +169,28 @@ async function callAzureQaLabel(args: {
       const raw = typeof out === "string" ? out.trim() : "";
 
       const label = extractLabel(raw);
-      return { ok: true as const, label, reason: "ok", raw };
+      return {
+        ok: true as const,
+        label,
+        reason: "ok",
+        raw,
+        deployment: selected.deployment,
+        variant: selected.variant,
+      };
     } catch (e: any) {
       lastErr = e?.name === "AbortError" ? "timeout" : "fetch_failed";
       continue;
     }
   }
 
-  return { ok: false as const, label: "fail" as const, reason: lastErr, raw: "" };
+  return {
+    ok: false as const,
+    label: "fail" as const,
+    reason: lastErr,
+    raw: "",
+    deployment: selected.deployment,
+    variant: selected.variant,
+  };
 }
 
 function safeJsonParse<T = any>(raw: string): { ok: true; value: T } | { ok: false; error: string } {
@@ -187,6 +214,7 @@ function safeJsonParse<T = any>(raw: string): { ok: true; value: T } | { ok: fal
 async function callAzureQaReasonJson(args: {
   system: string;
   user: string;
+  rolloutKey: string;
   temperature: number;
   maxTokens: number;
   timeoutMs?: number;
@@ -196,25 +224,36 @@ async function callAzureQaReasonJson(args: {
   const apiKey = mustEnv("AZURE_OPENAI_API_KEY");
 
   // Prefer a dedicated deployment; fallback to general QA deployment
-  const deployment =
+  const stableDeployment =
     process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_QA_RECHECK_REASON ||
     process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_QA_RECHECK ||
     process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_QA ||
     process.env.AZURE_OPENAI_DEPLOYMENT_QA ||
     "";
 
-  if (!deployment) {
+  if (!stableDeployment) {
     return {
       ok: false as const,
       error: "qa_recheck_reason_not_configured",
       raw: "",
       parsed: null as any,
+      deployment: "",
+      variant: "stable" as const,
     };
   }
 
+  const selected = pickCanaryDeployment({
+    stableDeployment,
+    candidateDeployment:
+      process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_QA_RECHECK_REASON_CANDIDATE,
+    canaryPercent:
+      process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_QA_RECHECK_REASON_CANARY_PERCENT,
+    unitKey: args.rolloutKey,
+  });
+
   const apiVersion =
     process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview";
-  const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+  const url = `${endpoint}/openai/deployments/${selected.deployment}/chat/completions?api-version=${apiVersion}`;
 
   const timeoutMs = Number.isFinite(Number(args.timeoutMs))
     ? Number(args.timeoutMs)
@@ -254,6 +293,8 @@ async function callAzureQaReasonJson(args: {
           error: lastErr,
           raw: "",
           parsed: null as any,
+          deployment: selected.deployment,
+          variant: selected.variant,
         };
       }
 
@@ -268,17 +309,33 @@ async function callAzureQaReasonJson(args: {
           error: !parsed.ok ? (parsed as { error: string }).error : "unknown",
           raw,
           parsed: null as any,
+          deployment: selected.deployment,
+          variant: selected.variant,
         };
       }
 
-      return { ok: true as const, error: null, raw, parsed: parsed.value };
+      return {
+        ok: true as const,
+        error: null,
+        raw,
+        parsed: parsed.value,
+        deployment: selected.deployment,
+        variant: selected.variant,
+      };
     } catch (e: any) {
       lastErr = e?.name === "AbortError" ? "timeout" : "fetch_failed";
       continue;
     }
   }
 
-  return { ok: false as const, error: lastErr, raw: "", parsed: null as any };
+  return {
+    ok: false as const,
+    error: lastErr,
+    raw: "",
+    parsed: null as any,
+    deployment: selected.deployment,
+    variant: selected.variant,
+  };
 }
 
 function mustInternalSecret() {
@@ -401,6 +458,16 @@ export async function POST(req: Request) {
   function normalizeStringArray(v: any): string[] {
     if (Array.isArray(v)) return v.map((x) => String(x)).filter((s) => !!s);
     return [];
+  }
+
+  function normalizeShortText(v: any, max = 500): string | null {
+    const s = String(v ?? "").trim();
+    return s ? s.slice(0, max) : null;
+  }
+
+  function normalizeLongText(v: any, max = 8000): string | null {
+    const s = String(v ?? "").trim();
+    return s ? s.slice(0, max) : null;
   }
 
   function clampScore(v: any): number {
@@ -620,6 +687,7 @@ export async function POST(req: Request) {
     const qa = await callAzureQaLabel({
       system: String(activePrompt.system),
       user: userPrompt,
+      rolloutKey: `${agentId}:${leadId}:${draftId}`,
       temperature,
       maxTokens,
       timeoutMs: 20_000,
@@ -644,6 +712,8 @@ export async function POST(req: Request) {
       is_followup: isFollowup,
       prompt_key_label: PROMPT_KEY,
       prompt_version_label: promptVersion,
+      label_deployment: qa.deployment || null,
+      label_variant: qa.variant,
     };
 
     if (finalVerdict !== "pass" && reasonPrompt.ok) {
@@ -657,6 +727,7 @@ export async function POST(req: Request) {
       const r = await callAzureQaReasonJson({
         system: String(reasonPrompt.system),
         user: reasonUserPrompt,
+        rolloutKey: `${agentId}:${leadId}:${draftId}:reason`,
         temperature: Number(reasonPrompt.temperature ?? 0),
         maxTokens: Number(reasonPrompt.maxTokens ?? 350),
         timeoutMs: 20_000,
@@ -668,17 +739,58 @@ export async function POST(req: Request) {
         reason_call: { ok: r.ok, error: r.error },
         prompt_key_reason: reasonPrompt.key,
         prompt_version_reason: reasonPrompt.promptVersion,
+        reason_deployment: r.deployment || null,
+        reason_variant: r.variant,
       };
 
       if (r.ok && r.parsed) {
         const obj: any = r.parsed;
         qaScore = clampScore(obj.score);
-        qaReasonShort = obj.reason_short ? String(obj.reason_short).slice(0, 500) : null;
-        qaReasonLong = obj.reason_long ? String(obj.reason_long).slice(0, 8000) : null;
-        qaAction = obj.action ? String(obj.action).slice(0, 120) : null;
-        qaRiskFlags = normalizeStringArray(obj.risk_flags);
+        qaReasonShort = normalizeShortText(
+          obj.reason_short ?? obj.reason_short_de ?? obj.reason ?? null,
+          500,
+        );
+        qaReasonLong = normalizeLongText(
+          obj.reason_long ?? obj.reason_long_de ?? null,
+          8000,
+        );
+        qaAction = normalizeShortText(
+          obj.action ??
+            obj.action_de ??
+            obj.recommendation ??
+            obj.recommendation_de ??
+            obj.approval_recommendation ??
+            obj.approval_recommendation_de ??
+            null,
+          120,
+        );
+        qaRiskFlags = normalizeStringArray(
+          obj.risk_flags ?? obj.flags ?? obj.risks ?? obj.riskFlags ?? [],
+        );
+        const approvalReasons = normalizeStringArray(
+          obj.approval_reasons_de ??
+            obj.reasons_de ??
+            obj.reason_points_de ??
+            obj.approval_reasons ??
+            obj.reasons ??
+            obj.reason_points ??
+            [],
+        ).slice(0, 2);
+        const recommendation = normalizeShortText(
+          obj.recommendation_de ??
+            obj.approval_recommendation_de ??
+            obj.recommendation ??
+            obj.approval_recommendation ??
+            null,
+          220,
+        );
         qaFlags = obj.flags && typeof obj.flags === "object" ? obj.flags : {};
         qaSuggestions = obj.suggestions && typeof obj.suggestions === "object" ? obj.suggestions : {};
+        qaMeta = {
+          ...qaMeta,
+          approval_reasons_de: approvalReasons.length ? approvalReasons : null,
+          recommendation_de: recommendation,
+        };
       } else {
         // Fail-closed: still store something helpful for debugging
         qaReasonShort = `reason_unavailable:${String(r.error || "unknown")}`;
@@ -703,7 +815,10 @@ export async function POST(req: Request) {
         meta: qaMeta,
         prompt_key: PROMPT_KEY,
         prompt_version: promptVersion,
-        model: "azure",
+        model: formatModelTag({
+          deployment: qa.deployment,
+          variant: qa.variant,
+        }),
       });
     } catch {
       // swallow
@@ -818,6 +933,8 @@ export async function POST(req: Request) {
       autosendEnabled,
       autosendConfigured: autosend.settingEnabled,
       autosendBlockReasons: autosend.reasons,
+      qaDeployment: qa.deployment || null,
+      qaVariant: qa.variant,
     });
   }
 

@@ -244,6 +244,69 @@ const PUBLIC_DOCS: PublicKnowledgeDoc[] = [
       "Der Vergleich zeigt, wo manuelle Abläufe Zeit und Qualität verlieren: lange Reaktionszeiten, Inkonsistenz und geringe Transparenz. Advaic setzt auf standardisierte Entscheidungslogik mit Sicherheitsnetz.",
   },
   {
+    id: "roi_calculator_page",
+    kind: "public_page",
+    title: "ROI-Rechner",
+    href: "/roi-rechner",
+    tags: ["roi", "zeitersparnis", "erstreaktion", "kpi", "wirtschaftlichkeit"],
+    content:
+      "Der ROI-Rechner berechnet konservativ den erwarteten Effekt aus Anfragevolumen, Standardfallanteil und Auto-Quote. Neben gesparten Stunden zeigt die Seite auch den Einfluss auf Erstreaktionszeit und Antwortquote im Zielzeitfenster.",
+  },
+  {
+    id: "objections_hub",
+    kind: "public_page",
+    title: "Einwände-Hub",
+    href: "/einwaende",
+    tags: ["einwaende", "dsgvo", "kontrolle", "qualitaet", "kosten"],
+    content:
+      "Der Einwände-Hub bündelt die zentralen Entscheidungsfragen von Maklern und verweist auf detaillierte Antworten mit operativer Umsetzung und KPI.",
+  },
+  {
+    id: "objection_dsgvo",
+    kind: "public_page",
+    title: "Einwand DSGVO",
+    href: "/einwaende/dsgvo",
+    tags: ["dsgvo", "datenschutz", "compliance", "freigabe", "dokumentation"],
+    content:
+      "Die Seite erklärt, wie DSGVO-orientierter Betrieb in Advaic funktioniert: Datenminimierung, klare Zugriffspfade, dokumentierter Verlauf und organisatorische Verantwortlichkeiten.",
+  },
+  {
+    id: "objection_kontrolle",
+    kind: "public_page",
+    title: "Einwand Kontrolle",
+    href: "/einwaende/kontrolle",
+    tags: ["kontrolle", "autopilot", "freigabe", "guardrails", "pause"],
+    content:
+      "Die Kontrollseite zeigt die Kernlogik: Auto nur bei Klarheit, Unsicherheit führt zur Freigabe, Autopilot ist pausierbar und jeder Schritt bleibt im Verlauf nachvollziehbar.",
+  },
+  {
+    id: "objection_qualitaet",
+    kind: "public_page",
+    title: "Einwand Qualität",
+    href: "/einwaende/qualitaet",
+    tags: ["qualitaet", "qa", "kontext", "vollstaendigkeit", "risiko"],
+    content:
+      "Die Qualitätsseite beschreibt den Mehrfach-Check vor Versand und wie warn/fail-Fälle in Freigabe oder Nacharbeit gehen, statt unkontrolliert versendet zu werden.",
+  },
+  {
+    id: "objection_aufwand",
+    kind: "public_page",
+    title: "Einwand Aufwand",
+    href: "/einwaende/aufwand",
+    tags: ["aufwand", "onboarding", "safe start", "rollout", "einfuehrung"],
+    content:
+      "Die Aufwandsseite zeigt einen stufenweisen Einführungsplan ohne Big-Bang: schneller Start mit Kernfällen, danach iteratives Nachschärfen über reale Daten.",
+  },
+  {
+    id: "objection_kosten",
+    kind: "public_page",
+    title: "Einwand Kosten",
+    href: "/einwaende/kosten",
+    tags: ["kosten", "wirtschaftlichkeit", "roi", "kpi", "pilot"],
+    content:
+      "Die Kostenseite erklärt, wie der Business Case über Pilot-KPI entschieden wird: Zeitgewinn, Erstreaktionszeit, Qualität und Freigabe-zu-Versand-Rate.",
+  },
+  {
     id: "use_cases",
     kind: "public_page",
     title: "Use Cases für Makler",

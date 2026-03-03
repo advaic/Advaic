@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { formatModelTag, pickCanaryDeployment } from "@/lib/ai/canary-deployment";
 
 export const runtime = "nodejs";
 
@@ -48,6 +49,7 @@ async function fetchWithTimeout(
 async function callAzureRewrite(args: {
   system: string;
   user: string;
+  rolloutKey: string;
   temperature: number;
   maxTokens: number;
   timeoutMs?: number;
@@ -56,13 +58,29 @@ async function callAzureRewrite(args: {
   const endpoint = mustEnv("AZURE_OPENAI_ENDPOINT");
   const apiKey = mustEnv("AZURE_OPENAI_API_KEY");
 
-  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_REWRITE;
-  if (!deployment)
-    return { ok: false as const, text: "", reason: "rewrite_not_configured" };
+  const stableDeployment = String(
+    process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_REWRITE || ""
+  ).trim();
+  if (!stableDeployment) {
+    return {
+      ok: false as const,
+      text: "",
+      reason: "rewrite_not_configured",
+      deployment: "",
+      variant: "stable" as const,
+    };
+  }
+
+  const selected = pickCanaryDeployment({
+    stableDeployment,
+    candidateDeployment: process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_REWRITE_CANDIDATE,
+    canaryPercent: process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_REWRITE_CANARY_PERCENT,
+    unitKey: args.rolloutKey,
+  });
 
   const apiVersion =
     process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview";
-  const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+  const url = `${endpoint}/openai/deployments/${selected.deployment}/chat/completions?api-version=${apiVersion}`;
 
   const timeoutMs = Number.isFinite(Number(args.timeoutMs))
     ? Number(args.timeoutMs)
@@ -97,22 +115,47 @@ async function callAzureRewrite(args: {
         lastErr = `http_${resp.status}`;
         if (resp.status === 429 || (resp.status >= 500 && resp.status <= 599))
           continue;
-        return { ok: false as const, text: "", reason: lastErr };
+        return {
+          ok: false as const,
+          text: "",
+          reason: lastErr,
+          deployment: selected.deployment,
+          variant: selected.variant,
+        };
       }
 
       const data = (await resp.json().catch(() => null)) as any;
       const out = data?.choices?.[0]?.message?.content;
       const text = typeof out === "string" ? out.trim() : "";
-      if (!text)
-        return { ok: false as const, text: "", reason: "rewrite_no_output" };
-      return { ok: true as const, text, reason: "ok" };
+      if (!text) {
+        return {
+          ok: false as const,
+          text: "",
+          reason: "rewrite_no_output",
+          deployment: selected.deployment,
+          variant: selected.variant,
+        };
+      }
+      return {
+        ok: true as const,
+        text,
+        reason: "ok",
+        deployment: selected.deployment,
+        variant: selected.variant,
+      };
     } catch (e: any) {
       lastErr = e?.name === "AbortError" ? "timeout" : "fetch_failed";
       continue;
     }
   }
 
-  return { ok: false as const, text: "", reason: lastErr };
+  return {
+    ok: false as const,
+    text: "",
+    reason: lastErr,
+    deployment: selected.deployment,
+    variant: selected.variant,
+  };
 }
 
 async function safeUpdate(
@@ -385,6 +428,7 @@ export async function POST(req: Request) {
     const rewrittenResp = await callAzureRewrite({
       system: String(activePrompt.system),
       user: userPrompt,
+      rolloutKey: `${agentId}:${leadId}:${draftId}`,
       temperature: Number(activePrompt.temperature),
       maxTokens: Number(activePrompt.maxTokens),
       timeoutMs: 25_000,
@@ -421,7 +465,10 @@ export async function POST(req: Request) {
           prompt_version: PROMPT_VERSION,
           verdict: "rewrite_failed",
           reason: rewrittenResp.reason,
-          model: "azure",
+          model: formatModelTag({
+            deployment: rewrittenResp.deployment,
+            variant: rewrittenResp.variant,
+          }),
         };
         await (supabase.from("message_qas") as any).insert(row);
       } catch {
@@ -476,7 +523,10 @@ export async function POST(req: Request) {
         reason: "rewrite_applied",
         prompt_key: PROMPT_KEY,
         prompt_version: PROMPT_VERSION,
-        model: "azure",
+        model: formatModelTag({
+          deployment: rewrittenResp.deployment,
+          variant: rewrittenResp.variant,
+        }),
       });
     } catch {
       // swallow
@@ -487,6 +537,8 @@ export async function POST(req: Request) {
       draftId,
       inboundMessageId: String(inboundMsg.id),
       nextStatus: "qa_recheck_pending",
+      rewriteDeployment: rewrittenResp.deployment || null,
+      rewriteVariant: rewrittenResp.variant,
     });
   }
 

@@ -6,43 +6,43 @@ const objections = [
     question: "„Was, wenn Advaic etwas Falsches sendet?“",
     answer:
       "Advaic sendet nur automatisch, wenn der Fall klar ist und alle Checks bestanden sind. Bei Unsicherheit geht der Fall zur Freigabe.",
-    href: "/qualitaetschecks",
-    label: "Qualitätschecks ansehen",
+    href: "/einwaende/qualitaet",
+    label: "Einwand Qualität",
   },
   {
     question: "„Ich will nicht, dass alles blind automatisiert wird.“",
     answer:
       "Der Standard ist ein kontrollierter Start mit mehr Freigaben. Den Automatisierungsgrad erhöhen Sie erst, wenn Ergebnisse stabil sind.",
-    href: "/produkt#setup",
-    label: "Safe-Start verstehen",
+    href: "/einwaende/kontrolle",
+    label: "Einwand Kontrolle",
   },
   {
     question: "„Wie behalte ich die Kontrolle über Sonderfälle?“",
     answer:
       "Heikle, unklare oder konfliktbehaftete Nachrichten landen in der Freigabe-Inbox. Dort entscheiden Sie final.",
-    href: "/freigabe-inbox",
-    label: "Freigabe-Inbox ansehen",
+    href: "/einwaende/kontrolle",
+    label: "Freigabelogik im Detail",
   },
   {
-    question: "„Was passiert bei no-reply, Newslettern oder Systemmails?“",
+    question: "„Wie datenschutzkonform ist der Betrieb?“",
     answer:
-      "Diese Nachrichten werden nicht automatisch beantwortet. Sie werden ignoriert oder bei Unsicherheit zur manuellen Prüfung markiert.",
-    href: "/autopilot-regeln",
-    label: "Regelmatrix öffnen",
+      "DSGVO-orientierter Betrieb braucht Technik und Organisation: klare Zweckbindung, Zugriffsgrenzen und dokumentierte Prozesse.",
+    href: "/einwaende/dsgvo",
+    label: "Einwand DSGVO",
   },
   {
-    question: "„Kann ich Follow-ups stoppen?“",
+    question: "„Wie hoch ist der Einführungsaufwand wirklich?“",
     answer:
-      "Ja. Follow-ups sind pausierbar und stoppen automatisch bei Antwort, Regelstopp oder Sicherheitsverletzung.",
-    href: "/follow-up-logik",
-    label: "Follow-up-Logik prüfen",
+      "Advaic ist auf einen stufenweisen Start ausgelegt. Sie müssen nicht alles auf einmal aktivieren, sondern können mit den wichtigsten Standardfällen beginnen.",
+    href: "/einwaende/aufwand",
+    label: "Einwand Aufwand",
   },
   {
-    question: "„Wie transparent ist das alles wirklich?“",
+    question: "„Rechnet sich das wirtschaftlich?“",
     answer:
-      "Sie sehen pro Nachricht den Verlauf mit Status und Zeitstempeln: Eingang, Entscheidung, Freigabe und Versand.",
-    href: "/sicherheit",
-    label: "Sicherheitsseite öffnen",
+      "Die Entscheidung sollte auf KPI basieren: Zeitgewinn, Erstreaktionszeit, Freigabequote und Qualitätsstabilität.",
+    href: "/einwaende/kosten",
+    label: "Einwand Kosten",
   },
 ];
 
@@ -69,6 +69,17 @@ export default function ObjectionHandling() {
             </article>
           ))}
         </div>
+
+        <article className="card-base mt-4 p-6">
+          <h3 className="text-base font-semibold text-[var(--text)]">Alle Einwände in einer Übersicht</h3>
+          <p className="helper mt-3">
+            Für die Entscheidungsphase gibt es eine eigene Hub-Seite mit strukturierten Detailartikeln zu DSGVO,
+            Kontrolle, Qualität, Aufwand und Kosten.
+          </p>
+          <Link href="/einwaende" className="btn-secondary mt-4">
+            Zur Einwand-Übersicht
+          </Link>
+        </article>
       </Container>
     </section>
   );

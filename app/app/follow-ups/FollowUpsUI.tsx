@@ -5,6 +5,7 @@ import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import type { Database } from "@/types/supabase";
 import { toast } from "sonner";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlarmClock,
   AlertTriangle,
@@ -145,6 +146,7 @@ function nextActionMs(row: FollowupQueueRow): number | null {
 }
 
 export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
+  const router = useRouter();
   const supabase = useSupabaseClient<Database>();
   const [tab, setTab] = useState<TabKey>("waiting");
   const [loading, setLoading] = useState(true);
@@ -221,6 +223,23 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
           });
           const j = await res.json().catch(() => ({}));
           if (!res.ok) {
+            if (res.status === 402 && String(j?.error || "") === "payment_required") {
+              void trackFunnelEvent({
+                event: "billing_upgrade_gate_triggered",
+                source: "followups_settings_gate",
+                path: "/app/follow-ups",
+                meta: { reason: "trial_expired_followups_settings" },
+              });
+              router.push(
+                "/app/konto/abo?upgrade_required=1&source=followups_settings_gate&next=%2Fapp%2Ffollow-ups",
+              );
+              throw new Error(
+                String(
+                  j?.details ||
+                    "Testphase beendet. Bitte aktiviere Starter, um Follow-ups weiter zu nutzen.",
+                ),
+              );
+            }
             lastErr = new Error(
               j?.details || j?.error || "Speichern fehlgeschlagen.",
             );
@@ -778,7 +797,26 @@ export default function FollowUpsUI({ userId }: FollowUpsUIProps) {
       });
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Senden fehlgeschlagen.");
+      if (!res.ok) {
+        if (res.status === 402 && String(data?.error || "") === "payment_required") {
+          void trackFunnelEvent({
+            event: "billing_upgrade_gate_triggered",
+            source: "followups_send_gate",
+            path: "/app/follow-ups",
+            meta: { reason: "trial_expired_followup_send" },
+          });
+          router.push(
+            "/app/konto/abo?upgrade_required=1&source=followups_send_gate&next=%2Fapp%2Ffollow-ups",
+          );
+          throw new Error(
+            String(
+              data?.details ||
+                "Testphase beendet. Bitte aktiviere Starter, um Follow-ups weiter zu senden.",
+            ),
+          );
+        }
+        throw new Error(data?.error || "Senden fehlgeschlagen.");
+      }
 
       toast.success("Follow-up gesendet.");
       void trackFunnelEvent({

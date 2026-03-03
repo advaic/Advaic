@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import BrandLogo from "@/components/brand/BrandLogo";
+import { trackFunnelEvent } from "@/lib/funnel/track";
 
 const navSections = [
   {
@@ -72,43 +73,72 @@ function tourKeyForPath(path: string) {
   }
 }
 
+type BillingAccess = {
+  state: "paid_active" | "trial_active" | "trial_expired";
+  trial_days_total: number;
+  trial_day_number: number;
+  trial_days_remaining: number;
+  trial_started_at: string | null;
+  trial_ends_at: string | null;
+  is_urgent: boolean;
+  upgrade_required: boolean;
+};
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
 
   const [autosendEnabled, setAutosendEnabled] = useState<boolean | null>(null);
   const [autosendBusy, setAutosendBusy] = useState(false);
+  const [billingAccess, setBillingAccess] = useState<BillingAccess | null>(null);
+  const trialExpired = billingAccess?.state === "trial_expired";
 
   const autosendLabel = useMemo(() => {
     if (autosendEnabled === null) return "Lade…";
+    if (trialExpired) return "Starter erforderlich";
     return autosendEnabled ? "Auto-Senden aktiv" : "Auto-Senden pausiert";
-  }, [autosendEnabled]);
+  }, [autosendEnabled, trialExpired]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadAutosend() {
       try {
-        const res = await fetch("/api/agent/settings/autosend", {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          cache: "no-store",
-        });
+        const [autosendRes, billingRes] = await Promise.all([
+          fetch("/api/agent/settings/autosend", {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+            cache: "no-store",
+          }),
+          fetch("/api/billing/summary", { method: "GET", cache: "no-store" }),
+        ]);
 
-        const data = await res.json().catch(() => ({} as any));
+        const autosendData = await autosendRes.json().catch(() => ({} as any));
+        const billingData = await billingRes.json().catch(() => ({} as any));
 
-        if (!res.ok) {
-          // If not logged in or any other error, keep conservative default
-          console.error("[sidebar] autosend GET failed", data);
+        if (!autosendRes.ok) {
+          console.error("[sidebar] autosend GET failed", autosendData);
           if (!cancelled) setAutosendEnabled(false);
-          return;
+        } else {
+          const enabled = autosendData?.settings?.autosend_enabled;
+          if (!cancelled) {
+            setAutosendEnabled(typeof enabled === "boolean" ? enabled : false);
+          }
         }
 
-        const enabled = data?.settings?.autosend_enabled;
-        if (!cancelled) setAutosendEnabled(typeof enabled === "boolean" ? enabled : false);
+        if (billingRes.ok && billingData?.summary?.access) {
+          if (!cancelled) {
+            setBillingAccess(billingData.summary.access as BillingAccess);
+          }
+        } else if (!cancelled) {
+          setBillingAccess(null);
+        }
       } catch (e: any) {
         console.error("[sidebar] load autosend error", e);
-        if (!cancelled) setAutosendEnabled(false);
+        if (!cancelled) {
+          setAutosendEnabled(false);
+          setBillingAccess(null);
+        }
       }
     }
 
@@ -121,6 +151,21 @@ export default function Sidebar() {
   const toggleAutosend = async () => {
     if (autosendEnabled === null) return;
     if (autosendBusy) return;
+    if (trialExpired) {
+      toast.error("Testphase beendet. Bitte aktiviere Starter, um Auto-Senden zu nutzen.");
+      void trackFunnelEvent({
+        event: "billing_upgrade_gate_triggered",
+        source: "sidebar_autosend_gate",
+        path: pathname || "/app/startseite",
+        meta: {
+          reason: "trial_expired_autosend_toggle",
+        },
+      });
+      router.push(
+        `/app/konto/abo?upgrade_required=1&source=sidebar_autosend_gate&next=${encodeURIComponent(pathname || "/app/startseite")}`,
+      );
+      return;
+    }
 
     const prev = autosendEnabled;
     const next = !prev;
@@ -138,6 +183,17 @@ export default function Sidebar() {
       const data = await res.json().catch(() => ({} as any));
 
       if (!res.ok) {
+        if (res.status === 402 && data?.error === "payment_required") {
+          if (data?.billing_access) {
+            setBillingAccess(data.billing_access as BillingAccess);
+          }
+          throw new Error(
+            String(
+              data?.details ||
+                "Testphase beendet. Bitte aktiviere Starter, um Auto-Senden zu nutzen.",
+            ),
+          );
+        }
         throw new Error(String(data?.error || "Failed to update autosend"));
       }
 
@@ -149,10 +205,10 @@ export default function Sidebar() {
           ? "Auto-Senden aktiviert."
           : "Auto-Senden pausiert."
       );
-    } catch (e: any) {
-      console.error("[sidebar] toggle autosend failed", e);
-      setAutosendEnabled(prev); // rollback
-      toast.error(e?.message ?? "Konnte Auto-Senden nicht ändern.");
+      } catch (e: any) {
+        console.error("[sidebar] toggle autosend failed", e);
+        setAutosendEnabled(prev); // rollback
+        toast.error(e?.message ?? "Konnte Auto-Senden nicht ändern.");
     } finally {
       setAutosendBusy(false);
     }
@@ -201,7 +257,7 @@ export default function Sidebar() {
           <button
             type="button"
             onClick={toggleAutosend}
-            disabled={autosendEnabled === null || autosendBusy}
+            disabled={autosendEnabled === null || autosendBusy || trialExpired}
             aria-pressed={!!autosendEnabled}
             className={`relative inline-flex h-7 w-12 items-center rounded-full border transition disabled:opacity-60 disabled:cursor-not-allowed ${
               autosendEnabled
@@ -223,6 +279,49 @@ export default function Sidebar() {
           Stoppt/aktiviert das automatische Versenden. Entwürfe landen bei Bedarf weiterhin in „Zur Freigabe“.
         </div>
       </div>
+
+      {billingAccess && billingAccess.state !== "paid_active" ? (
+        <div
+          className={`mb-6 rounded-2xl border p-3 ${
+            trialExpired
+              ? "border-red-200 bg-red-50"
+              : billingAccess?.is_urgent
+                ? "border-amber-200 bg-amber-50"
+                : "border-sky-200 bg-sky-50"
+          }`}
+        >
+          <div className="text-xs font-semibold text-gray-700">
+            {trialExpired ? "Testphase beendet" : "Testphase läuft"}
+          </div>
+          <div className="mt-1 text-sm font-medium text-gray-900">
+            {trialExpired
+              ? "Automatik ist pausiert"
+              : `Noch ${billingAccess.trial_days_remaining} Tage`}
+          </div>
+          <div className="mt-1 text-xs text-gray-700">
+            {trialExpired
+              ? "Aktiviere Starter, um Auto-Senden und Follow-ups wieder freizuschalten."
+              : `Tag ${billingAccess.trial_day_number} von ${billingAccess.trial_days_total}.`}
+          </div>
+          <Link
+            href={`/app/konto/abo?source=sidebar_trial_card&next=${encodeURIComponent(pathname || "/app/startseite")}`}
+            onClick={() => {
+              void trackFunnelEvent({
+                event: "billing_upgrade_cta_clicked",
+                source: "sidebar_trial_card",
+                path: pathname || "/app/startseite",
+                meta: {
+                  trial_state: billingAccess.state,
+                  trial_days_remaining: billingAccess.trial_days_remaining,
+                },
+              });
+            }}
+            className="mt-3 inline-flex w-full items-center justify-center rounded-lg border border-gray-900 bg-gray-900 px-3 py-2 text-sm font-medium text-amber-200 hover:bg-gray-800"
+          >
+            Starter aktivieren
+          </Link>
+        </div>
+      ) : null}
 
       <nav className="space-y-6">
         {navSections.map((section, index) => (

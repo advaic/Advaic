@@ -14,6 +14,55 @@ type Body = {
   gmail_message_id?: string;
 };
 
+function clamp01(v: unknown): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(1, n));
+}
+
+function computeQualityScoreForReview(input: {
+  qaScore?: number | null;
+  qaConfidence?: number | null;
+  clsConfidence?: number | null;
+  verdict?: string | null;
+  riskFlags?: string[] | null;
+  sendStatus?: string | null;
+}): number | null {
+  const qaScore = clamp01(input.qaScore);
+  const qaConfidence = clamp01(input.qaConfidence);
+  const clsConfidence = clamp01(input.clsConfidence);
+  const verdict = String(input.verdict || "").toLowerCase();
+  const riskFlags = Array.isArray(input.riskFlags) ? input.riskFlags.length : 0;
+  const sendStatus = String(input.sendStatus || "").toLowerCase();
+  const hasSignals =
+    qaScore !== null ||
+    qaConfidence !== null ||
+    clsConfidence !== null ||
+    verdict.length > 0 ||
+    riskFlags > 0;
+
+  if (!hasSignals) return null;
+
+  let score =
+    qaScore !== null
+      ? qaScore
+      : qaConfidence !== null
+        ? qaConfidence
+        : clsConfidence !== null
+          ? clsConfidence
+          : 0.6;
+
+  if (qaConfidence !== null) score = score * 0.72 + qaConfidence * 0.28;
+  if (clsConfidence !== null) score = score * 0.78 + clsConfidence * 0.22;
+
+  if (verdict === "fail") score -= 0.35;
+  else if (verdict === "warn") score -= 0.18;
+  score -= Math.min(0.25, riskFlags * 0.06);
+  if (sendStatus === "failed") score -= 0.25;
+
+  return Math.round(Math.max(0, Math.min(1, score)) * 100);
+}
+
 function jsonError(message: string, status: number, extra?: Record<string, any>) {
   return NextResponse.json({ error: message, ...(extra || {}) }, { status });
 }
@@ -94,7 +143,7 @@ export async function POST(req: NextRequest) {
   const msgQuery = admin
     .from("messages")
     .select(
-      "id, agent_id, lead_id, gmail_message_id, status, approval_required, send_status, text"
+      "id, agent_id, lead_id, gmail_message_id, status, approval_required, send_status, text, timestamp, classification_confidence"
     );
 
   const { data: msg, error: msgErr } = messageId
@@ -125,6 +174,42 @@ export async function POST(req: NextRequest) {
     if (leadErr) return jsonError(leadErr.message, 400);
     if (!lead?.email) return jsonError("Lead has no email", 400);
 
+    const { data: latestQa } = await (admin.from("message_qas") as any)
+      .select("score, verdict, risk_flags, meta, created_at")
+      .eq("draft_message_id", String((msg as any).id))
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const qaConfidenceRaw = Number((latestQa as any)?.meta?.confidence);
+    const qaConfidence =
+      Number.isFinite(qaConfidenceRaw) &&
+      qaConfidenceRaw >= 0 &&
+      qaConfidenceRaw <= 1
+        ? qaConfidenceRaw
+        : null;
+    const qualityScoreBeforeSend = computeQualityScoreForReview({
+      qaScore:
+        typeof (latestQa as any)?.score === "number"
+          ? (latestQa as any).score
+          : null,
+      qaConfidence,
+      clsConfidence:
+        typeof (msg as any).classification_confidence === "number"
+          ? (msg as any).classification_confidence
+          : null,
+      verdict: (latestQa as any)?.verdict ?? null,
+      riskFlags: Array.isArray((latestQa as any)?.risk_flags)
+        ? ((latestQa as any).risk_flags as string[])
+        : null,
+      sendStatus: (msg as any).send_status ?? null,
+    });
+    const ts = new Date(String((msg as any).timestamp || "")).getTime();
+    const approvalAgeMinutes =
+      Number.isFinite(ts) && ts > 0
+        ? Math.max(0, Math.floor((Date.now() - ts) / 60000))
+        : null;
+
     const track = await upsertHumanApprovalReview(admin, {
       agentId: String(user.id),
       leadId,
@@ -133,6 +218,8 @@ export async function POST(req: NextRequest) {
       originalText: String((msg as any).text || ""),
       finalText: String((msg as any).text || ""),
       source: "other",
+      qualityScoreBeforeSend,
+      approvalAgeMinutes,
     });
     if (!track.ok) {
       console.warn("⚠️ approval review tracking failed in /api/gmail/approval:", track.error);

@@ -12,6 +12,8 @@ const detailLinks = [
   { title: "Qualitätschecks", href: "/qualitaetschecks" },
   { title: "Freigabe-Inbox", href: "/freigabe-inbox" },
   { title: "Follow-up-Logik", href: "/follow-up-logik" },
+  { title: "ROI-Rechner", href: "/roi-rechner" },
+  { title: "Einwand-Hub", href: "/einwaende" },
   { title: "Anwendungsfälle", href: "/use-cases" },
   { title: "Vergleich", href: "/manuell-vs-advaic" },
   { title: "E-Mail-Automatisierung", href: "/email-automatisierung-immobilienmakler" },

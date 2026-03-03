@@ -309,7 +309,7 @@ export default function Step6Client() {
               className="mt-1 text-[13px] leading-relaxed"
               style={{ color: "var(--textMuted, rgba(14,14,17,0.65))" }}
             >
-              Advaic fokussiert auf Lead- & Portal-Mails, blendet irrelevantes
+              Advaic fokussiert auf Interessenten- und Portal-Mails, blendet irrelevantes
               aus und gibt dir volle Kontrolle über alles, was rausgeht.
             </div>
           </div>
@@ -384,6 +384,10 @@ export default function Step6Client() {
           title="5) Erste 3 Antworten"
           desc="Öffne danach direkt „Zur Freigabe“ und sende zuerst drei klare Standardfälle. Danach kannst du Auto-Senden kontrolliert hochfahren."
         />
+        <MiniCard
+          title="6) Follow-ups sicher starten"
+          desc="Lass Follow-ups zunächst ebenfalls über Freigabe laufen. So siehst du Timing und Inhalt, bevor du später mehr Automatik aktivierst."
+        />
       </div>
 
       {/* Footer actions */}
@@ -400,6 +404,12 @@ export default function Step6Client() {
         >
           {done ? "Zum Dashboard" : "Fertigstellen & starten"}
         </PrimaryButton>
+      </div>
+
+      <div className="mt-3">
+        <SecondaryButton onClick={() => router.push("/app/startseite#quickstart")}>
+          First-Value-Checkliste öffnen
+        </SecondaryButton>
       </div>
 
       <div

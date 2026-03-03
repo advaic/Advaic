@@ -49,6 +49,9 @@ type Body = {
   edited?: boolean;
   original_text?: string;
   final_text?: string;
+  editing_seconds?: number;
+  quality_score_before_send?: number;
+  approval_age_minutes?: number;
 };
 
 export async function POST(req: NextRequest) {
@@ -83,6 +86,16 @@ export async function POST(req: NextRequest) {
     originalText: String(body?.original_text ?? msg.text ?? ""),
     finalText: String(body?.final_text ?? msg.text ?? ""),
     source: "approval_inbox",
+    editingSeconds:
+      typeof body?.editing_seconds === "number" ? body.editing_seconds : null,
+    qualityScoreBeforeSend:
+      typeof body?.quality_score_before_send === "number"
+        ? body.quality_score_before_send
+        : null,
+    approvalAgeMinutes:
+      typeof body?.approval_age_minutes === "number"
+        ? body.approval_age_minutes
+        : null,
   });
 
   if (!tracked.ok) {

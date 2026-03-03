@@ -3,12 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import {
+  computeFollowupNextAt,
   normalizeFollowupSendWindow,
   type FollowupSendWindowConfig,
 } from "@/lib/followups/scheduling";
 import { getCommercialAccess } from "@/lib/billing/commercial-access";
 import { isPipelinePaused, readRuntimeControl } from "@/lib/ops/runtime-control";
 import { logPipelineRun } from "@/lib/ops/pipeline-runs";
+import { pickCanaryDeployment } from "@/lib/ai/canary-deployment";
 
 export const runtime = "nodejs";
 
@@ -56,6 +58,86 @@ function addMinutesIso(minutes: number) {
   return new Date(Date.now() + minutes * 60 * 1000).toISOString();
 }
 
+function localClockParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const pick = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const hourNum = Number(pick("hour"));
+  return {
+    weekday: pick("weekday"),
+    hour: Number.isFinite(hourNum) ? hourNum : 0,
+  };
+}
+
+function hourAllowed(hour: number, start: number, end: number) {
+  if (start === end) return true;
+  if (start < end) return hour >= start && hour < end;
+  return hour >= start || hour < end;
+}
+
+function isWithinSendWindow(now: Date, sendWindow: FollowupSendWindowConfig) {
+  const local = localClockParts(now, sendWindow.timezone);
+  const isWeekend = local.weekday === "Sat" || local.weekday === "Sun";
+  if (!sendWindow.sendOnWeekends && isWeekend) return false;
+  return hourAllowed(local.hour, sendWindow.sendStartHour, sendWindow.sendEndHour);
+}
+
+function normalizeLeadStatus(status: unknown) {
+  const s = String(status ?? "").trim().toLowerCase();
+  if (!s) return "";
+  if (s === "closed" || s === "erledigt" || s === "abgeschlossen") return "closed";
+  if (s === "lost" || s === "verloren") return "lost";
+  if (s === "won" || s === "gewonnen") return "won";
+  if (s === "archived" || s === "archiviert") return "archived";
+  return s;
+}
+
+const FOLLOWUP_RISK_KEYWORDS = [
+  "beschwerde",
+  "anwalt",
+  "drohung",
+  "mangel",
+  "schaden",
+  "frist",
+  "datenschutz",
+  "widerspruch",
+  "konflikt",
+  "ärger",
+  "mahnung",
+  "kündigung",
+];
+
+function detectRiskKeyword(messages: MessageCtx[]) {
+  const latestUserMessage = messages.find(
+    (m) => String(m.sender ?? "").toLowerCase() === "user",
+  );
+  const content = String(
+    latestUserMessage?.text || latestUserMessage?.snippet || latestUserMessage?.subject || "",
+  ).toLowerCase();
+  if (!content) return null;
+  return FOLLOWUP_RISK_KEYWORDS.find((k) => content.includes(k)) || null;
+}
+
+function minConfidenceForFollowup(intent: "rent" | "buy", stage: number) {
+  if (intent === "rent") {
+    if (stage <= 0) return 0.75;
+    return 0.82;
+  }
+  if (stage <= 0) return 0.72;
+  return 0.78;
+}
+
+function buildReviewFallbackText(name: string | null | undefined) {
+  const safeName = String(name || "").trim();
+  const greeting = safeName ? `Hallo ${safeName},` : "Guten Tag,";
+  return `${greeting} vielen Dank für Ihre Nachricht. Damit ich korrekt antworten kann, prüfe ich den Fall kurz persönlich und melde mich zeitnah mit den nächsten Schritten.`;
+}
+
 function baseUrlFromReq(req: NextRequest) {
   // Prefer explicit site URL, then Vercel, then the request origin.
   const explicit = process.env.NEXT_PUBLIC_SITE_URL;
@@ -96,6 +178,8 @@ type LeadRow = {
 
   last_user_message_at: string | null;
   last_agent_message_at: string | null;
+  escalated?: boolean | null;
+  status?: string | null;
 };
 
 type MessageCtx = {
@@ -114,6 +198,8 @@ type AzureFollowupResult = {
   text: string;
   reason?: string;
   hard_stop_reason?: string | null;
+  deployment?: string | null;
+  variant?: "stable" | "candidate";
 };
 
 type AiPromptRow = {
@@ -317,22 +403,35 @@ async function azureGenerateFollowup(args: {
 }): Promise<AzureFollowupResult> {
   const endpoint = mustEnv("AZURE_OPENAI_ENDPOINT");
   const apiKey = mustEnv("AZURE_OPENAI_API_KEY");
-  // Follow-ups use the same writer deployment as normal replies (prompt differs by key).
-  // Keep a backwards-compatible fallback if an older env var is still set.
-  const deployment =
+  const stableDeployment =
     process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_WRITER ||
     process.env.AZURE_OPENAI_DEPLOYMENT_FOLLOWUPS ||
     process.env.AZURE_OPENAI_DEPLOYMENT_EMAIL_CLASSIFIER; // last-resort fallback
 
-  if (!deployment) {
+  if (!stableDeployment) {
     return {
       ok: false,
       should_send: false,
       confidence: 0,
       text: "",
       hard_stop_reason: "missing_azure_deployment",
+      deployment: null,
+      variant: "stable",
     };
   }
+
+  const selected = pickCanaryDeployment({
+    stableDeployment,
+    candidateDeployment:
+      process.env.AZURE_OPENAI_DEPLOYMENT_FOLLOWUPS_CANDIDATE ||
+      process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_WRITER_CANDIDATE ||
+      null,
+    canaryPercent:
+      process.env.AZURE_OPENAI_DEPLOYMENT_FOLLOWUPS_CANARY_PERCENT ||
+      process.env.AZURE_OPENAI_DEPLOYMENT_REPLY_WRITER_CANARY_PERCENT ||
+      0,
+    unitKey: `${args.lead.agent_id}:${args.lead.id}:${args.stage}`,
+  });
 
   const stageLabel =
     args.stage === 0
@@ -395,11 +494,13 @@ async function azureGenerateFollowup(args: {
       text: "",
       hard_stop_reason: "missing_prompt_content",
       reason: "Prompt row is missing system_prompt or user_prompt",
+      deployment: selected.deployment,
+      variant: selected.variant,
     };
   }
 
   const url = `${endpoint.replace(/\/+$/, "")}/openai/deployments/${encodeURIComponent(
-    deployment,
+    selected.deployment,
   )}/chat/completions?api-version=2024-02-15-preview`;
 
   const wantJson =
@@ -439,6 +540,8 @@ async function azureGenerateFollowup(args: {
       text: "",
       reason: `azure_failed_${resp?.status ?? "network"}`,
       hard_stop_reason: safeString(txt, 300),
+      deployment: selected.deployment,
+      variant: selected.variant,
     };
   }
 
@@ -465,6 +568,8 @@ async function azureGenerateFollowup(args: {
     hard_stop_reason: parsed?.hard_stop_reason
       ? safeString(parsed.hard_stop_reason, 200)
       : null,
+    deployment: selected.deployment,
+    variant: selected.variant,
   };
 }
 
@@ -474,6 +579,20 @@ function hardStopReason(lead: LeadRow, policy?: EffectiveFollowupPolicy): string
 
   // No email -> cannot send
   if (!lead.email) return "missing_lead_email";
+
+  if (lead.escalated === true) return "escalated_case_open";
+
+  const normalizedStatus = normalizeLeadStatus(lead.status);
+  if (
+    normalizedStatus === "closed" ||
+    normalizedStatus === "lost" ||
+    normalizedStatus === "won" ||
+    normalizedStatus === "archived"
+  ) {
+    return "lead_not_active";
+  }
+
+  if (!lead.last_agent_message_at) return "missing_agent_context";
 
   // Paused into the future
   if (isFutureIso(lead.followup_paused_until)) return "paused";
@@ -489,6 +608,11 @@ function hardStopReason(lead: LeadRow, policy?: EffectiveFollowupPolicy): string
 
   if (Number.isFinite(u) && Number.isFinite(a) && u > a) {
     return "user_replied_last";
+  }
+
+  if (Number.isFinite(a)) {
+    const ageDays = (Date.now() - a) / (24 * 60 * 60 * 1000);
+    if (ageDays > 45) return "stale_conversation";
   }
 
   return null;
@@ -574,6 +698,8 @@ export async function POST(req: NextRequest) {
     "followup_last_sent_at",
     "last_user_message_at",
     "last_agent_message_at",
+    "escalated",
+    "status",
   ].join(",");
   const leadSelectLegacy = [
     "id",
@@ -593,6 +719,8 @@ export async function POST(req: NextRequest) {
     "followup_last_sent_at",
     "last_user_message_at",
     "last_agent_message_at",
+    "escalated",
+    "status",
   ].join(",");
 
   let leads: LeadRow[] | null = null;
@@ -878,6 +1006,32 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
+      if (!isWithinSendWindow(new Date(), policy.sendWindow)) {
+        const deferredTo = computeFollowupNextAt({
+          baseIso: nowIso(),
+          delayHours: 1,
+          window: policy.sendWindow,
+        });
+
+        await (supabase.from("leads") as any)
+          .update({
+            followup_status: "planned",
+            followup_stop_reason: "outside_send_window",
+            followup_next_at: deferredTo,
+          })
+          .eq("id", leadId)
+          .eq("agent_id", agentId);
+
+        results.push({
+          leadId,
+          ok: true,
+          skipped: true,
+          reason: "outside_send_window",
+          retry_at: deferredTo,
+        });
+        continue;
+      }
+
       // 3) Try lock (prevents double send by parallel runs)
       const lock = await lockLeadForSending(supabase, leadId, agentId);
       if (!lock.ok) {
@@ -885,19 +1039,107 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // 4) Load last messages for context
-      const { data: msgs, error: msgsErr } = await (
-        supabase.from("messages") as any
-      )
-        .select("id, sender, text, snippet, subject, timestamp")
-        .eq("lead_id", leadId)
-        .order("timestamp", { ascending: false })
-        .limit(10);
+      // 4) Load last messages for context (with legacy fallback when `subject` is unavailable)
+      let msgs: MessageCtx[] | null = null;
+      let msgsErr: any = null;
+      try {
+        const ext = await (supabase.from("messages") as any)
+          .select("id, sender, text, snippet, subject, timestamp")
+          .eq("lead_id", leadId)
+          .order("timestamp", { ascending: false })
+          .limit(10);
+        msgs = (ext?.data as MessageCtx[] | null) ?? null;
+        msgsErr = ext?.error ?? null;
+      } catch (e: any) {
+        msgsErr = e;
+      }
 
-      if (msgsErr)
+      if (msgsErr) {
+        const legacy = await (supabase.from("messages") as any)
+          .select("id, sender, text, snippet, timestamp")
+          .eq("lead_id", leadId)
+          .order("timestamp", { ascending: false })
+          .limit(10);
+        msgs = Array.isArray(legacy?.data)
+          ? (legacy.data as any[]).map((m) => ({
+              ...m,
+              subject: null,
+            }))
+          : null;
+        msgsErr = legacy?.error ?? null;
+      }
+
+      if (msgsErr) {
         throw new Error(`Failed to load messages context: ${msgsErr.message}`);
+      }
 
       const messages = (msgs ?? []) as MessageCtx[];
+      const riskKeyword = detectRiskKeyword(messages);
+      if (riskKeyword) {
+        const now = nowIso();
+        const { data: reviewInserted, error: reviewErr } = await (
+          supabase.from("messages") as any
+        )
+          .insert({
+            agent_id: agentId,
+            lead_id: leadId,
+            sender: "agent",
+            text: buildReviewFallbackText(raw.name),
+            timestamp: now,
+            was_followup: true,
+            email_provider: normalizeProvider(raw.email_provider),
+            send_status: "pending",
+            approval_required: true,
+            status: "needs_approval",
+            gmail_thread_id: raw.gmail_thread_id ?? null,
+            outlook_conversation_id: raw.outlook_conversation_id ?? null,
+          })
+          .select("id")
+          .maybeSingle();
+
+        if (reviewErr || !reviewInserted?.id) {
+          await (supabase.from("leads") as any)
+            .update({
+              followup_status: "failed",
+              followup_stop_reason: safeString(
+                `risk_keyword_requires_approval: ${reviewErr?.message || "approval_insert_failed"}`,
+                2000,
+              ),
+              followup_next_at: addMinutesIso(30),
+            })
+            .eq("id", leadId)
+            .eq("agent_id", agentId);
+
+          results.push({
+            leadId,
+            ok: false,
+            step: "approval_insert",
+            error: reviewErr?.message || "approval_insert_failed",
+            reason: "risk_keyword_requires_approval",
+            risk_keyword: riskKeyword,
+          });
+          continue;
+        }
+
+        await (supabase.from("leads") as any)
+          .update({
+            followup_status: "idle",
+            followup_stop_reason: "risk_keyword_requires_approval",
+            followup_next_at: null,
+          })
+          .eq("id", leadId)
+          .eq("agent_id", agentId);
+
+        results.push({
+          leadId,
+          ok: true,
+          skipped: true,
+          reason: "risk_keyword_requires_approval",
+          risk_keyword: riskKeyword,
+          message_id: String(reviewInserted.id),
+        });
+        continue;
+      }
 
       const stage = Math.max(0, Number(raw.followup_stage ?? 0));
       // If policy max stage is 0, never send.
@@ -968,15 +1210,90 @@ export async function POST(req: NextRequest) {
           .eq("id", leadId)
           .eq("agent_id", agentId);
 
-        results.push({ leadId, ok: false, step: "ai", error: ai.reason });
+        results.push({
+          leadId,
+          ok: false,
+          step: "ai",
+          error: ai.reason,
+          ai_deployment: ai.deployment || null,
+          ai_variant: ai.variant || null,
+        });
         continue;
       }
 
-      if (!ai.should_send || ai.confidence < 0.7 || !ai.text.trim()) {
+      const minConfidence = minConfidenceForFollowup(policy.intent, stage);
+      const textCandidate = ai.text.trim();
+      const lowConfidence = ai.confidence < minConfidence;
+
+      if (!ai.should_send || !textCandidate || lowConfidence) {
+        const shouldRouteToApproval = textCandidate.length > 0;
+        let reviewMessageId: string | null = null;
+        let reviewInsertError: string | null = null;
+
+        if (shouldRouteToApproval) {
+          const now = nowIso();
+          const { data: reviewInserted, error: reviewErr } = await (
+            supabase.from("messages") as any
+          )
+            .insert({
+              agent_id: agentId,
+              lead_id: leadId,
+              sender: "agent",
+              text: textCandidate,
+              timestamp: now,
+              was_followup: true,
+              email_provider: normalizeProvider(raw.email_provider),
+              send_status: "pending",
+              approval_required: true,
+              status: "needs_approval",
+              gmail_thread_id: raw.gmail_thread_id ?? null,
+              outlook_conversation_id: raw.outlook_conversation_id ?? null,
+            })
+            .select("id")
+            .maybeSingle();
+
+          if (!reviewErr && reviewInserted?.id) {
+            reviewMessageId = String(reviewInserted.id);
+          } else {
+            reviewInsertError = reviewErr?.message || "approval_insert_failed";
+          }
+        }
+
+        const failSafeReason = lowConfidence
+          ? "ai_low_confidence_requires_approval"
+          : ai.hard_stop_reason || "ai_requires_approval";
+
+        if (shouldRouteToApproval && !reviewMessageId) {
+          await (supabase.from("leads") as any)
+            .update({
+              followup_status: "failed",
+              followup_stop_reason: safeString(
+                `${failSafeReason}: ${reviewInsertError || "approval_insert_failed"}`,
+                2000,
+              ),
+              followup_next_at: addMinutesIso(30),
+            })
+            .eq("id", leadId)
+            .eq("agent_id", agentId);
+
+          results.push({
+            leadId,
+            ok: false,
+            step: "approval_insert",
+            error: reviewInsertError || "approval_insert_failed",
+            reason: failSafeReason,
+            confidence: ai.confidence,
+            min_confidence: minConfidence,
+            ai_deployment: ai.deployment || null,
+            ai_variant: ai.variant || null,
+          });
+          continue;
+        }
+
         await (supabase.from("leads") as any)
           .update({
             followup_status: "idle",
-            followup_stop_reason: ai.hard_stop_reason || "ai_says_no",
+            followup_stop_reason: failSafeReason,
             followup_next_at: null,
           })
           .eq("id", leadId)
@@ -986,8 +1303,15 @@ export async function POST(req: NextRequest) {
           leadId,
           ok: true,
           skipped: true,
-          reason: ai.hard_stop_reason || "ai_says_no",
+          reason: failSafeReason,
           confidence: ai.confidence,
+          min_confidence: minConfidence,
+          intent: policy.intent,
+          stage,
+          sent_to_approval: shouldRouteToApproval,
+          message_id: reviewMessageId,
+          ai_deployment: ai.deployment || null,
+          ai_variant: ai.variant || null,
         });
         continue;
       }
@@ -1112,6 +1436,8 @@ export async function POST(req: NextRequest) {
           skipped: true,
           reason: "needs_approval",
           message_id: String(inserted.id),
+          ai_deployment: ai.deployment || null,
+          ai_variant: ai.variant || null,
         });
 
         continue;
@@ -1179,6 +1505,12 @@ export async function POST(req: NextRequest) {
         ok: true,
         enqueued: true,
         provider,
+        intent: policy.intent,
+        stage,
+        confidence: ai.confidence,
+        min_confidence: minConfidenceForFollowup(policy.intent, stage),
+        ai_deployment: ai.deployment || null,
+        ai_variant: ai.variant || null,
         message_id: String(inserted.id),
       });
     } catch (e: any) {
