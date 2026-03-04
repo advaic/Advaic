@@ -23,8 +23,37 @@ async function getHealth() {
   return data as any;
 }
 
+async function getFineTuneReadiness() {
+  const base = process.env.NEXT_PUBLIC_SITE_URL || "";
+  const url = base
+    ? `${base}/api/admin/ai/finetune-readiness`
+    : "/api/admin/ai/finetune-readiness";
+
+  const res = await fetch(url, {
+    method: "GET",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg =
+      (data as any)?.error ||
+      (data as any)?.message ||
+      "Failed to load fine-tune readiness";
+    throw new Error(String(msg));
+  }
+  return data as any;
+}
+
 export default async function AdminOverviewPage() {
-  const health = await getHealth();
+  const [health, fineTuneReadiness] = await Promise.all([
+    getHealth(),
+    getFineTuneReadiness().catch((error) => ({
+      ok: false,
+      error: error instanceof Error ? error.message : "unknown_error",
+    })),
+  ]);
 
   const readyToSend = Number(health.queue?.ready_to_send ?? 0);
   const needsApproval = Number(health.queue?.needs_approval ?? 0);
@@ -102,6 +131,21 @@ export default async function AdminOverviewPage() {
     approvalToSendRelChangePct !== null && approvalToSendRelChangePct >= 15;
   const sprint3GoalCorrectionMet =
     correctionRelChangePct !== null && correctionRelChangePct <= -20;
+
+  const ftOk = Boolean(fineTuneReadiness?.ok);
+  const ftReady = Boolean(ftOk && fineTuneReadiness?.ready);
+  const ftStatus = String(fineTuneReadiness?.status || "not_ready");
+  const ftQualified = Number(fineTuneReadiness?.dataset?.qualified_examples ?? 0);
+  const ftPassRate = Number(fineTuneReadiness?.qa?.pass_rate ?? 0);
+  const ftRecentPass = Number(fineTuneReadiness?.dataset?.recent_pass_30d ?? 0);
+  const ftMinExamples = Number(fineTuneReadiness?.thresholds?.min_examples ?? 0);
+  const ftMinRecentPass = Number(
+    fineTuneReadiness?.thresholds?.min_recent_pass_30d ?? 0,
+  );
+  const ftMinPassRate = Number(fineTuneReadiness?.thresholds?.min_pass_rate ?? 0);
+  const ftBlockers: string[] = Array.isArray(fineTuneReadiness?.blockers)
+    ? fineTuneReadiness.blockers
+    : [];
 
   // heuristic health level (V1):
   // red if failed sends >= 3 or needs_human >= 5
@@ -401,6 +445,116 @@ export default async function AdminOverviewPage() {
               Ziel 2 (-20%): {sprint3GoalCorrectionMet ? "erreicht" : "noch offen"}
             </span>
           </div>
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-4 md:p-5">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold text-gray-900">
+                Fine-Tune Readiness · Reply Writer
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                Automatischer Trigger-Status für den nächsten Fine-Tune-Start.
+              </div>
+            </div>
+            <span
+              className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${
+                !ftOk
+                  ? "border-red-200 bg-red-50 text-red-800"
+                  : ftReady
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : ftStatus === "warming_up"
+                      ? "border-amber-200 bg-amber-50 text-amber-900"
+                      : "border-gray-200 bg-gray-50 text-gray-700"
+              }`}
+            >
+              {!ftOk
+                ? "Readiness-Check Fehler"
+                : ftReady
+                  ? "Ready für Fine-Tune"
+                  : ftStatus === "warming_up"
+                    ? "Im Aufbau"
+                    : "Noch nicht ready"}
+            </span>
+          </div>
+
+          {!ftOk ? (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              {String(fineTuneReadiness?.error || "Readiness konnte nicht geladen werden.")}
+            </div>
+          ) : (
+            <>
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                  <div className="text-[11px] text-gray-500">Qualifizierte Beispiele</div>
+                  <div className="mt-1 text-lg font-semibold text-gray-900">
+                    {ftQualified}
+                  </div>
+                  <div className="mt-1 text-[11px] text-gray-600">
+                    Ziel: mindestens {ftMinExamples}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                  <div className="text-[11px] text-gray-500">QA-Pass-Rate</div>
+                  <div className="mt-1 text-lg font-semibold text-gray-900">
+                    {(ftPassRate * 100).toFixed(1)}%
+                  </div>
+                  <div className="mt-1 text-[11px] text-gray-600">
+                    Ziel: mindestens {(ftMinPassRate * 100).toFixed(1)}%
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                  <div className="text-[11px] text-gray-500">Pass-Fälle (30 Tage)</div>
+                  <div className="mt-1 text-lg font-semibold text-gray-900">
+                    {ftRecentPass}
+                  </div>
+                  <div className="mt-1 text-[11px] text-gray-600">
+                    Ziel: mindestens {ftMinRecentPass}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                  <div className="text-[11px] text-gray-500">QA-Fälle im Fenster</div>
+                  <div className="mt-1 text-lg font-semibold text-gray-900">
+                    {Number(fineTuneReadiness?.qa?.total ?? 0)}
+                  </div>
+                  <div className="mt-1 text-[11px] text-gray-600">
+                    seit {new Date(String(fineTuneReadiness?.since || new Date())).toLocaleDateString("de-DE")}
+                  </div>
+                </div>
+              </div>
+
+              {ftBlockers.length > 0 ? (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                  <div className="text-xs font-medium text-amber-900">
+                    Warum noch nicht ready
+                  </div>
+                  <ul className="mt-1 list-disc pl-4 text-xs text-amber-900 space-y-1">
+                    {ftBlockers.slice(0, 4).map((b) => (
+                      <li key={b}>{b}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <a
+                  href="/api/admin/ai/finetune-readiness"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs hover:bg-gray-50"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Readiness JSON
+                </a>
+                <span className="text-xs text-gray-600">
+                  {String(
+                    fineTuneReadiness?.recommendation ||
+                      "Noch keine Empfehlung vorhanden.",
+                  )}
+                </span>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="mt-2 text-xs text-gray-600">

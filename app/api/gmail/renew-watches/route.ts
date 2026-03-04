@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
 import type { Database } from "@/types/supabase";
 import { decryptSecretFromStorage } from "@/lib/security/secrets";
+import { logPipelineRun } from "@/lib/ops/pipeline-runs";
 
 export const runtime = "nodejs";
 
@@ -105,6 +106,7 @@ async function runRenewWatches() {
   if (error) throw new Error(error.message);
 
   const now = Date.now();
+  const nowIso = new Date(now).toISOString();
 
   // Gmail watch expiration is short-lived (often ~7 days). Renew early.
   // Keep 36h buffer so a single missed day doesn't kill pushes.
@@ -127,6 +129,7 @@ async function runRenewWatches() {
   let renewed = 0;
   let skipped = 0;
   let failed = 0;
+  const checked = Array.isArray(conns) ? conns.length : 0;
   const failures: Array<{ id: string; email: string | null; error: string }> = [];
 
   for (const conn of conns || []) {
@@ -137,6 +140,18 @@ async function runRenewWatches() {
       const refreshToken = decryptSecretFromStorage(conn.refresh_token || "");
       if (!refreshToken) {
         failed++;
+        try {
+          await (supabase.from("email_connections") as any)
+            .update({
+              status: "connected",
+              watch_active: false,
+              watch_last_renewed_at: nowIso,
+              last_error: "missing_refresh_token",
+            })
+            .eq("id", connId);
+        } catch {
+          // ignore
+        }
         failures.push({
           id: connId,
           email: maskEmail(email),
@@ -147,7 +162,8 @@ async function runRenewWatches() {
 
       const expRaw = conn.watch_expiration ? String(conn.watch_expiration) : "";
       const expMs = expRaw ? Date.parse(expRaw) : NaN; // DB stores ISO timestamptz
-      const needsRenew = !Number.isFinite(expMs) || expMs - now < renewBeforeMs;
+      const needsRenew =
+        conn.watch_active === false || !Number.isFinite(expMs) || expMs - now < renewBeforeMs;
 
       if (!needsRenew) {
         skipped++;
@@ -157,6 +173,18 @@ async function runRenewWatches() {
       const topicName = (conn.watch_topic ? String(conn.watch_topic) : "").trim() || defaultTopicName;
       if (!topicName) {
         failed++;
+        try {
+          await (supabase.from("email_connections") as any)
+            .update({
+              status: "connected",
+              watch_active: false,
+              watch_last_renewed_at: nowIso,
+              last_error: "missing_gmail_topic_name",
+            })
+            .eq("id", connId);
+        } catch {
+          // ignore
+        }
         failures.push({
           id: connId,
           email: maskEmail(email),
@@ -204,6 +232,7 @@ async function runRenewWatches() {
         watch_expiration: expirationIso,
         watch_active: true,
         watch_topic: topicName,
+        watch_last_renewed_at: nowIso,
         last_error: null,
         status: "active",
       };
@@ -235,6 +264,7 @@ async function runRenewWatches() {
           .update({
             status: "connected",
             watch_active: false,
+            watch_last_renewed_at: nowIso,
             last_error: msg,
           })
           .eq("id", connId);
@@ -246,6 +276,7 @@ async function runRenewWatches() {
 
   return {
     ok: true,
+    checked,
     renewed,
     skipped,
     failed,
@@ -259,10 +290,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const startedAtMs = Date.now();
+  const supabase = supabaseAdmin();
   try {
     const result = await runRenewWatches();
+    await logPipelineRun(supabase as any, {
+      pipeline: "gmail_watch_renew",
+      status:
+        result.failed === 0 ? "ok" : result.failed >= Math.max(1, result.checked) ? "error" : "warning",
+      startedAtMs,
+      processed: result.checked,
+      success: result.renewed,
+      failed: result.failed,
+      skipped: result.skipped,
+      meta: {
+        failures_sample: result.failures,
+      },
+    });
     return NextResponse.json(result, { status: 200 });
   } catch (e: any) {
+    await logPipelineRun(supabase as any, {
+      pipeline: "gmail_watch_renew",
+      status: "error",
+      startedAtMs,
+      processed: 0,
+      success: 0,
+      failed: 1,
+      skipped: 0,
+      meta: {
+        error: String(e?.message || "Failed to renew watches"),
+      },
+    });
     return NextResponse.json(
       { error: String(e?.message || "Failed to renew watches") },
       { status: 500 }

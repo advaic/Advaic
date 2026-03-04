@@ -5,7 +5,9 @@ const baseUrl = (process.env.BASE_URL || "http://127.0.0.1:4010").replace(
   /\/$/,
   "",
 );
-const internalSecret = String(process.env.INTERNAL_SECRET || "").trim();
+const internalSecret = String(
+  process.env.INTERNAL_SECRET || process.env.ADVAIC_INTERNAL_PIPELINE_SECRET || "",
+).trim();
 
 const supabaseUrl = String(process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
 const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();

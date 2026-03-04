@@ -6,6 +6,7 @@ import {
   decryptSecretFromStorage,
   encryptSecretForStorage,
 } from "@/lib/security/secrets";
+import { logPipelineRun } from "@/lib/ops/pipeline-runs";
 
 export const runtime = "nodejs";
 
@@ -443,10 +444,42 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const startedAtMs = Date.now();
+  const supabase = supabaseAdmin();
   try {
     const result = await runOutlookRenewals();
+    await logPipelineRun(supabase as any, {
+      pipeline: "outlook_subscription_renew",
+      status:
+        result.failed === 0
+          ? "ok"
+          : result.failed >= Math.max(1, result.processed)
+            ? "error"
+            : "warning",
+      startedAtMs,
+      processed: result.processed,
+      success: result.renewed + result.created,
+      failed: result.failed,
+      skipped: result.skipped,
+      meta: {
+        renewed: result.renewed,
+        created: result.created,
+      },
+    });
     return NextResponse.json(result);
   } catch (e: any) {
+    await logPipelineRun(supabase as any, {
+      pipeline: "outlook_subscription_renew",
+      status: "error",
+      startedAtMs,
+      processed: 0,
+      success: 0,
+      failed: 1,
+      skipped: 0,
+      meta: {
+        error: String(e?.message || e || "renew_failed"),
+      },
+    });
     return NextResponse.json(
       { error: String(e?.message || e || "renew_failed") },
       { status: 500 },

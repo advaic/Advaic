@@ -15,6 +15,8 @@ type OpsStatus = {
     billing_webhook_stuck_15m?: number;
     signup_locked_30m?: number;
     signup_expired_30m?: number;
+    gmail_unhealthy?: number;
+    outlook_unhealthy?: number;
   };
   control: {
     pause_all: boolean;
@@ -52,6 +54,12 @@ type OpsStatus = {
   }>;
   integrations?: {
     ops_webhook_configured?: boolean;
+  };
+  email_connections?: {
+    by_provider?: {
+      gmail?: { expiring_24h?: number; expired?: number };
+      outlook?: { expiring_24h?: number; expired?: number };
+    };
   };
 };
 
@@ -261,6 +269,18 @@ export default function OpsControlCenter() {
           <Stat label="Billing Webhook Stuck (15m)" value={Number(data.summary.billing_webhook_stuck_15m || 0)} />
           <Stat label="Signup Locked (30m)" value={Number(data.summary.signup_locked_30m || 0)} />
           <Stat label="Signup Expired (30m)" value={Number(data.summary.signup_expired_30m || 0)} />
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
+          <Stat label="Gmail unhealthy" value={Number(data.summary.gmail_unhealthy || 0)} />
+          <Stat label="Outlook unhealthy" value={Number(data.summary.outlook_unhealthy || 0)} />
+          <Stat
+            label="Gmail expiring <24h"
+            value={Number(data.email_connections?.by_provider?.gmail?.expiring_24h || 0)}
+          />
+          <Stat
+            label="Outlook expiring <24h"
+            value={Number(data.email_connections?.by_provider?.outlook?.expiring_24h || 0)}
+          />
         </div>
 
         {data.control.reason ? (

@@ -4,6 +4,7 @@ import type { Database } from "@/types/supabase";
 import { logPipelineRun } from "@/lib/ops/pipeline-runs";
 import { readRuntimeControl } from "@/lib/ops/runtime-control";
 import { getRequestId, jsonWithRequestId, logError, logInfo } from "@/lib/ops/request-id";
+import { summarizeEmailConnectionsHealth } from "@/lib/ops/email-connection-health";
 
 export const runtime = "nodejs";
 
@@ -81,6 +82,14 @@ function parseIsoMs(value: string | null | undefined) {
   if (!value) return null;
   const ms = new Date(value).getTime();
   return Number.isFinite(ms) ? ms : null;
+}
+
+async function safeQuery<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await fn();
+  } catch {
+    return fallback;
+  }
 }
 
 async function probeEndpoint(args: {
@@ -182,6 +191,8 @@ export async function POST(req: NextRequest) {
   const since30m = new Date(nowMs - 30 * 60 * 1000).toISOString();
   const stale20m = nowMs - 20 * 60 * 1000;
   const stale120m = nowMs - 120 * 60 * 1000;
+  const stale12h = nowMs - 12 * 60 * 60 * 1000;
+  const stale24h = nowMs - 24 * 60 * 60 * 1000;
   const supabase = supabaseAdmin();
   const baseUrl = baseUrlFromReq(req);
   const internalSecret = mustEnv("ADVAIC_INTERNAL_PIPELINE_SECRET");
@@ -198,6 +209,7 @@ export async function POST(req: NextRequest) {
     billingWebhookFailedRes,
     billingWebhookStuckRes,
     signupVerifyRowsRes,
+    emailConnectionsRes,
     apiProbes,
   ] = await Promise.all([
     (supabase.from("messages") as any)
@@ -220,29 +232,55 @@ export async function POST(req: NextRequest) {
       .lt("send_locked_at", new Date(nowMs - 15 * 60 * 1000).toISOString()),
     (supabase.from("pipeline_runs") as any)
       .select("pipeline, status, created_at")
-      .in("pipeline", ["reply_ready_send", "followups", "onboarding_recovery", "outlook_fetch"])
+      .in("pipeline", [
+        "reply_ready_send",
+        "followups",
+        "onboarding_recovery",
+        "outlook_fetch",
+        "outlook_subscription_renew",
+        "gmail_watch_renew",
+      ])
       .order("created_at", { ascending: false })
       .limit(200),
     (supabase.from("ops_alert_events") as any)
       .select("id, alert_key, status, last_fired_at")
       .eq("status", "open"),
     readRuntimeControl(supabase),
-    (supabase.from("billing_webhook_events") as any)
-      .select("event_id", { count: "exact", head: true })
-      .eq("status", "failed")
-      .gte("last_attempt_at", since30m)
-      .catch(() => ({ count: 0 })),
-    (supabase.from("billing_webhook_events") as any)
-      .select("event_id", { count: "exact", head: true })
-      .eq("status", "processing")
-      .lt("last_attempt_at", new Date(nowMs - 15 * 60 * 1000).toISOString())
-      .catch(() => ({ count: 0 })),
-    (supabase.from("signup_verifications") as any)
-      .select("attempts, max_attempts, expires_at, used_at")
-      .gte("created_at", since30m)
-      .is("used_at", null)
-      .limit(500)
-      .catch(() => ({ data: [] })),
+    safeQuery(
+      async () =>
+        (supabase.from("billing_webhook_events") as any)
+          .select("event_id", { count: "exact", head: true })
+          .eq("status", "failed")
+          .gte("last_attempt_at", since30m),
+      { count: 0 } as any,
+    ),
+    safeQuery(
+      async () =>
+        (supabase.from("billing_webhook_events") as any)
+          .select("event_id", { count: "exact", head: true })
+          .eq("status", "processing")
+          .lt("last_attempt_at", new Date(nowMs - 15 * 60 * 1000).toISOString()),
+      { count: 0 } as any,
+    ),
+    safeQuery(
+      async () =>
+        (supabase.from("signup_verifications") as any)
+          .select("attempts, max_attempts, expires_at, used_at")
+          .gte("created_at", since30m)
+          .is("used_at", null)
+          .limit(500),
+      { data: [] } as any,
+    ),
+    safeQuery(
+      async () =>
+        (supabase.from("email_connections") as any)
+          .select(
+            "provider, status, watch_active, watch_expiration, outlook_subscription_expiration, refresh_token, last_error",
+          )
+          .in("provider", ["gmail", "outlook"])
+          .limit(2000),
+      { data: [] } as any,
+    ),
     Promise.all([
       probeEndpoint({
         baseUrl,
@@ -281,6 +319,10 @@ export async function POST(req: NextRequest) {
     const expiresMs = parseIsoMs(String(row?.expires_at || ""));
     return !!expiresMs && expiresMs < nowMs;
   }).length;
+  const connectionHealth = summarizeEmailConnectionsHealth(
+    Array.isArray(emailConnectionsRes?.data) ? emailConnectionsRes.data : [],
+    nowMs,
+  );
 
   const latestRunByPipeline = new Map<string, { created_at: string; status: string }>();
   for (const row of ((recentRunsRes.data || []) as any[])) {
@@ -390,6 +432,54 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  if (connectionHealth.by_provider.gmail.expired > 0) {
+    alerts.push({
+      key: "gmail_watch_expired",
+      severity: "critical",
+      title: "Kritisch: Gmail-Watches abgelaufen",
+      body: `${connectionHealth.by_provider.gmail.expired} Gmail-Verbindungen haben eine abgelaufene Watch und brauchen sofortige Erneuerung.`,
+      value: connectionHealth.by_provider.gmail.expired,
+      threshold: 1,
+      deepLink: "/app/konto/verknuepfungen",
+    });
+  }
+
+  if (connectionHealth.by_provider.outlook.expired > 0) {
+    alerts.push({
+      key: "outlook_subscription_expired",
+      severity: "critical",
+      title: "Kritisch: Outlook-Subscriptions abgelaufen",
+      body: `${connectionHealth.by_provider.outlook.expired} Outlook-Verbindungen haben eine abgelaufene Subscription.`,
+      value: connectionHealth.by_provider.outlook.expired,
+      threshold: 1,
+      deepLink: "/app/konto/verknuepfungen",
+    });
+  }
+
+  if (connectionHealth.by_provider.gmail.unhealthy >= 2) {
+    alerts.push({
+      key: "gmail_connections_unhealthy",
+      severity: "warning",
+      title: "Warnung: Gmail-Verbindungen brauchen Aufmerksamkeit",
+      body: `${connectionHealth.by_provider.gmail.unhealthy} Gmail-Verbindungen sind aktuell nicht gesund (Watch inaktiv/Token-Problem/Reconnect nötig).`,
+      value: connectionHealth.by_provider.gmail.unhealthy,
+      threshold: 2,
+      deepLink: "/app/konto/verknuepfungen",
+    });
+  }
+
+  if (connectionHealth.by_provider.outlook.unhealthy >= 2) {
+    alerts.push({
+      key: "outlook_connections_unhealthy",
+      severity: "warning",
+      title: "Warnung: Outlook-Verbindungen brauchen Aufmerksamkeit",
+      body: `${connectionHealth.by_provider.outlook.unhealthy} Outlook-Verbindungen sind aktuell nicht gesund (Subscription inaktiv/Token-Problem/Reconnect nötig).`,
+      value: connectionHealth.by_provider.outlook.unhealthy,
+      threshold: 2,
+      deepLink: "/app/konto/verknuepfungen",
+    });
+  }
+
   for (const probe of apiProbes) {
     if (probe.ok) continue;
     alerts.push({
@@ -408,6 +498,16 @@ export async function POST(req: NextRequest) {
     { pipeline: "followups", staleMs: stale20m, label: "Follow-ups" },
     { pipeline: "outlook_fetch", staleMs: stale20m, label: "Outlook-Fetch" },
     { pipeline: "onboarding_recovery", staleMs: stale120m, label: "Onboarding-Recovery" },
+    {
+      pipeline: "outlook_subscription_renew",
+      staleMs: stale12h,
+      label: "Outlook-Subscription-Renew",
+    },
+    {
+      pipeline: "gmail_watch_renew",
+      staleMs: stale24h,
+      label: "Gmail-Watch-Renew",
+    },
   ];
 
   for (const check of staleChecks) {
@@ -422,7 +522,14 @@ export async function POST(req: NextRequest) {
           ? `${check.label} hatte zuletzt um ${new Date(latestMs).toLocaleString("de-DE")} einen Lauf.`
           : `${check.label} hat keinen dokumentierten Lauf im Monitoring-Fenster.`,
         value: latestMs ? Math.round((nowMs - latestMs) / 60000) : 9999,
-        threshold: check.pipeline === "onboarding_recovery" ? 120 : 20,
+        threshold:
+          check.pipeline === "onboarding_recovery"
+            ? 120
+            : check.pipeline === "outlook_subscription_renew"
+              ? 12 * 60
+              : check.pipeline === "gmail_watch_renew"
+                ? 24 * 60
+                : 20,
         deepLink: "/app/admin/ops",
       });
     }
@@ -648,7 +755,12 @@ export async function POST(req: NextRequest) {
       billing_webhook_stuck_15m: billingWebhookStuck15m,
       signup_verification_locked_30m: signupLocked30m,
       signup_verification_expired_30m: signupExpired30m,
+      gmail_unhealthy: connectionHealth.by_provider.gmail.unhealthy,
+      outlook_unhealthy: connectionHealth.by_provider.outlook.unhealthy,
+      gmail_expired: connectionHealth.by_provider.gmail.expired,
+      outlook_expired: connectionHealth.by_provider.outlook.expired,
     },
     probes: apiProbes,
+    email_connections: connectionHealth,
   });
 }

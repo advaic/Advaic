@@ -140,7 +140,9 @@ export async function POST(req: NextRequest) {
       last_history_id: String(historyId),
       watch_expiration: expirationIso,
       watch_active: true,
-      status: "watching",
+      watch_last_renewed_at: new Date().toISOString(),
+      last_error: null,
+      status: "active",
     };
 
     const withTopic: Record<string, any> = { ...baseUpdate, watch_topic: topicName };

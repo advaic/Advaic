@@ -84,6 +84,30 @@ type BillingAccess = {
   upgrade_required: boolean;
 };
 
+function normalizeBillingAccess(raw: any): BillingAccess | null {
+  if (!raw || typeof raw !== "object") return null;
+  const state =
+    raw.state === "paid_active" || raw.state === "trial_expired"
+      ? raw.state
+      : "trial_active";
+  const trialDaysTotal = Number(raw.trial_days_total);
+  const trialDayNumber = Number(raw.trial_day_number);
+  const trialDaysRemaining = Number(raw.trial_days_remaining);
+  return {
+    state,
+    trial_days_total: Number.isFinite(trialDaysTotal) ? Math.max(0, trialDaysTotal) : 14,
+    trial_day_number: Number.isFinite(trialDayNumber) ? Math.max(0, trialDayNumber) : 0,
+    trial_days_remaining: Number.isFinite(trialDaysRemaining)
+      ? Math.max(0, trialDaysRemaining)
+      : 0,
+    trial_started_at:
+      typeof raw.trial_started_at === "string" ? raw.trial_started_at : null,
+    trial_ends_at: typeof raw.trial_ends_at === "string" ? raw.trial_ends_at : null,
+    is_urgent: !!raw.is_urgent,
+    upgrade_required: !!raw.upgrade_required,
+  };
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -128,7 +152,7 @@ export default function Sidebar() {
 
         if (billingRes.ok && billingData?.summary?.access) {
           if (!cancelled) {
-            setBillingAccess(billingData.summary.access as BillingAccess);
+            setBillingAccess(normalizeBillingAccess(billingData.summary.access));
           }
         } else if (!cancelled) {
           setBillingAccess(null);
@@ -185,7 +209,7 @@ export default function Sidebar() {
       if (!res.ok) {
         if (res.status === 402 && data?.error === "payment_required") {
           if (data?.billing_access) {
-            setBillingAccess(data.billing_access as BillingAccess);
+            setBillingAccess(normalizeBillingAccess(data.billing_access));
           }
           throw new Error(
             String(

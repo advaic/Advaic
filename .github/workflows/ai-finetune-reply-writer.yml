@@ -41,12 +41,12 @@ jobs:
       AZURE_DEPLOYMENT_TIMEOUT_MINUTES: "45"
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      FT_DATA_LOOKBACK_DAYS: "45"
+      FT_DATA_LOOKBACK_DAYS: "180"
       FT_DATA_MAX_QA_ROWS: "4000"
-      FT_DATA_MIN_EXAMPLES: "80"
+      FT_DATA_MIN_EXAMPLES: "20"
       FT_DATA_VALID_RATIO: "0.12"
-      FT_DATA_REQUIRE_SENT: "true"
-      FT_DATA_PROMPT_KEYS: "qa_recheck_v1,followup_qa_v2"
+      FT_DATA_REQUIRE_SENT: "false"
+      FT_DATA_PROMPT_KEYS: "qa_reply_v1,qa_recheck_v1,followup_qa_v1,followup_qa_v2"
     outputs:
       fine_tuned_model: ${{ steps.ft.outputs.fine_tuned_model }}
     steps:

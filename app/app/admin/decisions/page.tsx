@@ -3,6 +3,17 @@ import { ExternalLink, Filter, ShieldCheck } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
+const REJECTION_REASON_FILTERS: Array<{ value: string; label: string }> = [
+  { value: "objektbezug_unklar", label: "Objektbezug unklar" },
+  { value: "wichtige_infos_fehlen", label: "Wichtige Infos fehlen" },
+  { value: "ton_anpassen", label: "Ton anpassen" },
+  { value: "inhalt_praezisieren", label: "Inhalt präzisieren" },
+  { value: "risiko_konflikt", label: "Risiko / Konfliktfall" },
+  { value: "nicht_zustaendig", label: "Nicht zuständig" },
+  { value: "werbung_spam", label: "Werbung / Spam" },
+  { value: "sonstiges", label: "Sonstiges" },
+];
+
 type DecisionRow = {
   id: string;
   created_at: string;
@@ -125,6 +136,9 @@ export default async function AdminDecisionsPage({
 }) {
   const verdict = searchParams.verdict || "";
   const risk = searchParams.risk || "";
+  const prompt_key = searchParams.prompt_key || "";
+  const action = searchParams.action || "";
+  const reason_code = searchParams.reason_code || "";
   const agent_id = searchParams.agent_id || "";
   const lead_id = searchParams.lead_id || "";
   const limit = searchParams.limit || "100";
@@ -132,6 +146,9 @@ export default async function AdminDecisionsPage({
   const data = await getDecisions({
     verdict,
     risk,
+    prompt_key,
+    action,
+    reason_code,
     agent_id,
     lead_id,
     limit,
@@ -201,15 +218,18 @@ export default async function AdminDecisionsPage({
             </div>
           </div>
 
-          <div className="p-4 md:p-6 grid grid-cols-1 md:grid-cols-5 gap-3 text-sm">
+          <div className="p-4 md:p-6 grid grid-cols-1 md:grid-cols-8 gap-3 text-sm">
             <FilterChip label="verdict" value={verdict} />
             <FilterChip label="risk" value={risk} />
+            <FilterChip label="prompt_key" value={prompt_key} />
+            <FilterChip label="action" value={action} />
+            <FilterChip label="reason_code" value={reason_code} />
             <FilterChip label="agent_id" value={agent_id} />
             <FilterChip label="lead_id" value={lead_id} />
             <FilterChip label="limit" value={limit} />
           </div>
 
-          <div className="px-4 md:px-6 pb-4 text-xs text-gray-500">
+          <div className="px-4 md:px-6 pb-4 text-xs text-gray-500 space-y-2">
             Beispiele:{" "}
             <code className="bg-gray-50 border border-gray-200 rounded px-2 py-1">
               /app/admin/decisions?verdict=fail
@@ -217,6 +237,41 @@ export default async function AdminDecisionsPage({
             <code className="bg-gray-50 border border-gray-200 rounded px-2 py-1 ml-2">
               /app/admin/decisions?risk=hallucination
             </code>
+            <code className="bg-gray-50 border border-gray-200 rounded px-2 py-1 ml-2">
+              /app/admin/decisions?prompt_key=approval_decision_v1&action=reject
+            </code>
+            <code className="bg-gray-50 border border-gray-200 rounded px-2 py-1 ml-2">
+              /app/admin/decisions?prompt_key=approval_decision_v1&action=reject&reason_code=objektbezug_unklar
+            </code>
+          </div>
+
+          <div className="px-4 md:px-6 pb-4">
+            <div className="text-xs font-medium text-gray-700 mb-2">
+              Schnellfilter: Ablehnungsgründe
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/app/admin/decisions?prompt_key=approval_decision_v1&action=reject&limit=200"
+                className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+              >
+                Alle Ablehnungen
+              </Link>
+              {REJECTION_REASON_FILTERS.map((f) => (
+                <Link
+                  key={f.value}
+                  href={`/app/admin/decisions?prompt_key=approval_decision_v1&action=reject&reason_code=${encodeURIComponent(f.value)}&limit=200`}
+                  className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  {f.label}
+                </Link>
+              ))}
+              <Link
+                href="/app/admin/decisions?limit=100"
+                className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100"
+              >
+                Filter zurücksetzen
+              </Link>
+            </div>
           </div>
         </div>
 

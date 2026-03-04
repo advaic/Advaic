@@ -41,6 +41,11 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const verdict = (url.searchParams.get("verdict") || "").trim().toLowerCase();
   const risk = (url.searchParams.get("risk") || "").trim().toLowerCase();
+  const promptKey = (url.searchParams.get("prompt_key") || "").trim();
+  const action = (url.searchParams.get("action") || "").trim().toLowerCase();
+  const reasonCode = (url.searchParams.get("reason_code") || "")
+    .trim()
+    .toLowerCase();
   const agentId = (url.searchParams.get("agent_id") || "").trim();
   const leadId = (url.searchParams.get("lead_id") || "").trim();
   const limit = asInt(url.searchParams.get("limit"), 100);
@@ -54,6 +59,9 @@ export async function GET(req: NextRequest) {
 
   if (agentId) q = q.eq("agent_id", agentId);
   if (leadId) q = q.eq("lead_id", leadId);
+  if (promptKey) q = q.eq("prompt_key", promptKey);
+  if (action) q = q.eq("action", action);
+  if (reasonCode) q = q.eq("reason", reasonCode);
 
   if (verdict) {
     // Accept "pass" | "warn" | "fail" (contains match)
@@ -126,6 +134,16 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     count: hydrated.length,
+    filters: {
+      verdict: verdict || null,
+      risk: risk || null,
+      prompt_key: promptKey || null,
+      action: action || null,
+      reason_code: reasonCode || null,
+      agent_id: agentId || null,
+      lead_id: leadId || null,
+      limit,
+    },
     items: hydrated,
   });
 }

@@ -387,6 +387,23 @@ type ApprovalSortKey =
   | "confidence_asc"
   | "confidence_desc";
 
+type ApprovalDecisionAction =
+  | "approve_direct"
+  | "approve_after_edit"
+  | "reject";
+
+const APPROVAL_REASON_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "klarer_standardfall", label: "Klarer Standardfall" },
+  { value: "objektbezug_unklar", label: "Objektbezug unklar" },
+  { value: "wichtige_infos_fehlen", label: "Wichtige Infos fehlen" },
+  { value: "ton_anpassen", label: "Ton musste angepasst werden" },
+  { value: "inhalt_praezisieren", label: "Inhalt musste präzisiert werden" },
+  { value: "risiko_konflikt", label: "Risiko / Konfliktfall" },
+  { value: "nicht_zustaendig", label: "Nicht zuständig / kein passender Fall" },
+  { value: "werbung_spam", label: "Werbung / Spam / nicht relevant" },
+  { value: "sonstiges", label: "Sonstiges" },
+];
+
 function getConfidence(m: ApprovalMessage): number | null {
   const v = (m as any).classification_confidence;
   return typeof v === "number" && Number.isFinite(v) ? v : null;
@@ -558,6 +575,34 @@ async function trackApprovalReviewEvent(args: {
   }
 }
 
+async function trackApprovalDecisionReason(args: {
+  messageId: string;
+  action: ApprovalDecisionAction;
+  reasonCode?: string | null;
+  reasonNote?: string | null;
+}) {
+  const reasonCode = String(args.reasonCode || "").trim();
+  const reasonNote = String(args.reasonNote || "").trim();
+  try {
+    const res = await fetch("/api/messages/approval-decision", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message_id: args.messageId,
+        action: args.action,
+        reason_code: reasonCode || null,
+        reason_note: reasonNote || null,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error(String(body?.error || "approval_decision_track_failed"));
+    }
+  } catch (e: any) {
+    console.warn("⚠️ approval decision tracking failed:", e?.message || e);
+  }
+}
+
 interface ZurFreigabeUIProps {
   messages: ApprovalMessage[];
 }
@@ -596,6 +641,14 @@ export default function ZurFreigabeUI({
   >({});
   const [previewOpen, setPreviewOpen] = useState<Record<string, boolean>>({});
   const [reasonOpen, setReasonOpen] = useState<Record<string, boolean>>({});
+  const [decisionReasonById, setDecisionReasonById] = useState<
+    Record<string, string>
+  >({});
+  const [decisionNoteById, setDecisionNoteById] = useState<
+    Record<string, string>
+  >({});
+  const [bulkRejectReason, setBulkRejectReason] = useState<string>("");
+  const [bulkRejectNote, setBulkRejectNote] = useState<string>("");
   const [helpOpen, setHelpOpen] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -614,6 +667,19 @@ export default function ZurFreigabeUI({
 
   const setErr = (id: string, msg: string | null) =>
     setActionError((prev) => ({ ...prev, [id]: msg }));
+
+  const clearDecisionInputs = (id: string) => {
+    setDecisionReasonById((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setDecisionNoteById((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
 
   const approvalMessages = useMemo(() => {
     const base0 = messages.filter((msg) => msg.approval_required);
@@ -695,6 +761,16 @@ export default function ZurFreigabeUI({
     setExpandedText((prev) => {
       const next: Record<string, boolean> = {};
       for (const id of approvalIds) next[id] = !!prev[id];
+      return next;
+    });
+    setDecisionReasonById((prev) => {
+      const next: Record<string, string> = {};
+      for (const id of approvalIds) next[id] = String(prev[id] || "");
+      return next;
+    });
+    setDecisionNoteById((prev) => {
+      const next: Record<string, string> = {};
+      for (const id of approvalIds) next[id] = String(prev[id] || "");
       return next;
     });
 
@@ -929,6 +1005,8 @@ export default function ZurFreigabeUI({
 
     const message = messages.find((msg) => msg.id === id);
     if (!message) return;
+    const decisionReasonCode = String(decisionReasonById[id] || "").trim();
+    const decisionReasonNote = String(decisionNoteById[id] || "").trim();
 
     // If the message is already being sent (server-side lock), do not attempt again.
     if (String(message.send_status || "").toLowerCase() === "sending") {
@@ -1036,16 +1114,34 @@ export default function ZurFreigabeUI({
 
       if (send.status === "already_sent") {
         // treat as success; server already handled it
+        await trackApprovalDecisionReason({
+          messageId: message.id,
+          action: "approve_direct",
+          reasonCode: decisionReasonCode || null,
+          reasonNote: decisionReasonNote || null,
+        });
         void trackFunnelEvent({
           event: "approval_message_already_sent",
           source: "approval_inbox",
-          meta: { message_id: message.id, lead_id: message.lead_id, edited: false },
+          meta: {
+            message_id: message.id,
+            lead_id: message.lead_id,
+            edited: false,
+            decision_reason: decisionReasonCode || null,
+          },
         });
+        clearDecisionInputs(message.id);
         router.refresh();
         return;
       }
 
       // Send route handles idempotency + DB status updates (approval_required/send_status/etc.).
+      await trackApprovalDecisionReason({
+        messageId: message.id,
+        action: "approve_direct",
+        reasonCode: decisionReasonCode || null,
+        reasonNote: decisionReasonNote || null,
+      });
       void trackFunnelEvent({
         event: "approval_message_approved",
         source: "approval_inbox",
@@ -1056,9 +1152,11 @@ export default function ZurFreigabeUI({
           was_followup: Boolean(message.was_followup),
           quality_score_before_send: qualityScore(message),
           approval_age_minutes: ageMinutes(message.timestamp),
+          decision_reason: decisionReasonCode || null,
         },
       });
       setErr(id, null);
+      clearDecisionInputs(message.id);
       router.refresh();
 
       const idx = approvalIds.indexOf(id);
@@ -1086,15 +1184,37 @@ export default function ZurFreigabeUI({
     }
   };
 
-  const handleReject = async (id: string) => {
+  const handleReject = async (
+    id: string,
+    overrides?: { reasonCode?: string; reasonNote?: string },
+  ) => {
     if (pendingIds[id]) return;
+    const reasonCode = String(
+      overrides?.reasonCode ?? decisionReasonById[id] ?? "",
+    ).trim();
+    const reasonNote = String(
+      overrides?.reasonNote ?? decisionNoteById[id] ?? "",
+    ).trim();
+    if (!reasonCode) {
+      setErr(
+        id,
+        "Bitte wähle einen Grund aus, bevor du die Nachricht ablehnst.",
+      );
+      return;
+    }
     setPending(id, true);
     try {
       await rejectMessage(id);
+      await trackApprovalDecisionReason({
+        messageId: id,
+        action: "reject",
+        reasonCode,
+        reasonNote: reasonNote || null,
+      });
       void trackFunnelEvent({
         event: "approval_message_rejected",
         source: "approval_inbox",
-        meta: { message_id: id },
+        meta: { message_id: id, decision_reason: reasonCode },
       });
       setMessages((prev) => prev.filter((msg) => msg.id !== id));
       setExpandedText((prev) => {
@@ -1102,6 +1222,8 @@ export default function ZurFreigabeUI({
         delete copy[id];
         return copy;
       });
+      clearDecisionInputs(id);
+      setErr(id, null);
     } finally {
       setPending(id, false);
       router.refresh();
@@ -1122,6 +1244,15 @@ export default function ZurFreigabeUI({
 
     const message = messages.find((msg) => msg.id === id);
     if (!message) return;
+    const reasonCode = String(decisionReasonById[id] || "").trim();
+    const reasonNote = String(decisionNoteById[id] || "").trim();
+    if (!reasonCode) {
+      setErr(
+        id,
+        "Bitte wähle einen Grund aus, warum du den Entwurf bearbeitet hast.",
+      );
+      return;
+    }
 
     const nextText = editedText.trim();
     if (!nextText) {
@@ -1221,16 +1352,34 @@ export default function ZurFreigabeUI({
 
       if (send.status === "already_sent") {
         // treat as success; server already handled it
+        await trackApprovalDecisionReason({
+          messageId: message.id,
+          action: "approve_after_edit",
+          reasonCode,
+          reasonNote: reasonNote || null,
+        });
         void trackFunnelEvent({
           event: "approval_message_already_sent",
           source: "approval_inbox",
-          meta: { message_id: message.id, lead_id: message.lead_id, edited: true },
+          meta: {
+            message_id: message.id,
+            lead_id: message.lead_id,
+            edited: true,
+            decision_reason: reasonCode,
+          },
         });
+        clearDecisionInputs(message.id);
         router.refresh();
         return;
       }
 
       // Send route handles DB status updates; we refresh to reflect the latest state.
+      await trackApprovalDecisionReason({
+        messageId: message.id,
+        action: "approve_after_edit",
+        reasonCode,
+        reasonNote: reasonNote || null,
+      });
       void trackFunnelEvent({
         event: "approval_message_approved",
         source: "approval_inbox",
@@ -1247,8 +1396,10 @@ export default function ZurFreigabeUI({
           correction_char_delta: Math.abs(
             String(message.text || "").length - nextText.length,
           ),
+          decision_reason: reasonCode,
         },
       });
+      clearDecisionInputs(message.id);
       router.refresh();
 
       const idx = approvalIds.indexOf(id);
@@ -1313,18 +1464,24 @@ export default function ZurFreigabeUI({
   const bulkReject = async () => {
     const ids = approvalIds.filter((id) => selectedIds[id]);
     if (ids.length === 0) return;
+    const reasonCode = String(bulkRejectReason || "").trim();
+    const reasonNote = String(bulkRejectNote || "").trim();
+    if (!reasonCode) {
+      window.alert("Bitte wähle einen Bulk-Grund für das Ablehnen aus.");
+      return;
+    }
 
     void trackFunnelEvent({
       event: "approval_bulk_reject_started",
       source: "approval_inbox",
-      meta: { count: ids.length },
+      meta: { count: ids.length, decision_reason: reasonCode },
     });
 
     setBulkProgress({ mode: "reject", done: 0, total: ids.length });
     for (let i = 0; i < ids.length; i += 1) {
       const id = ids[i];
       if (pendingIds[id]) continue;
-      await handleReject(id);
+      await handleReject(id, { reasonCode, reasonNote });
       setBulkProgress({ mode: "reject", done: i + 1, total: ids.length });
     }
     setBulkProgress({ mode: null, done: 0, total: 0 });
@@ -1450,9 +1607,30 @@ export default function ZurFreigabeUI({
               >
                 Bulk: Freigeben
               </button>
+              <select
+                value={bulkRejectReason}
+                onChange={(e) => setBulkRejectReason(e.target.value)}
+                disabled={bulkRunning}
+                className="max-w-[260px] px-3 py-2 rounded-xl text-sm border border-gray-200 bg-white text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Pflichtgrund für Bulk-Ablehnen"
+              >
+                <option value="">Bulk-Grund wählen (Pflicht)</option>
+                {APPROVAL_REASON_OPTIONS.map((opt) => (
+                  <option key={`bulk-${opt.value}`} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={bulkRejectNote}
+                onChange={(e) => setBulkRejectNote(e.target.value.slice(0, 240))}
+                placeholder="Optionaler Bulk-Hinweis"
+                disabled={bulkRunning}
+                className="max-w-[260px] px-3 py-2 rounded-xl text-sm border border-gray-200 bg-white text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
               <button
                 type="button"
-                disabled={selectedCount === 0 || bulkRunning}
+                disabled={selectedCount === 0 || bulkRunning || !bulkRejectReason}
                 onClick={bulkReject}
                 className="px-3 py-2 rounded-xl text-sm border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1823,6 +2001,46 @@ export default function ZurFreigabeUI({
                       );
                     })()}
 
+                    <div className="mt-3 rounded-xl border border-gray-200 bg-[#fbfbfc] px-3 py-3">
+                      <div className="text-[11px] font-semibold text-gray-700">
+                        Entscheidungsgrund
+                      </div>
+                      <div className="mt-1 text-[11px] text-gray-600">
+                        Bei „Speichern & Freigeben“ und „Ablehnen“ ist ein Grund
+                        verpflichtend. Bei direkter Freigabe optional.
+                      </div>
+                      <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <select
+                          value={decisionReasonById[message.id] || ""}
+                          onChange={(e) =>
+                            setDecisionReasonById((prev) => ({
+                              ...prev,
+                              [message.id]: e.target.value,
+                            }))
+                          }
+                          className="w-full px-3 py-2 rounded-xl text-sm border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                        >
+                          <option value="">Grund wählen…</option>
+                          {APPROVAL_REASON_OPTIONS.map((opt) => (
+                            <option key={`${message.id}-${opt.value}`} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          value={decisionNoteById[message.id] || ""}
+                          onChange={(e) =>
+                            setDecisionNoteById((prev) => ({
+                              ...prev,
+                              [message.id]: e.target.value.slice(0, 240),
+                            }))
+                          }
+                          placeholder="Optionaler Hinweis"
+                          className="w-full px-3 py-2 rounded-xl text-sm border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                        />
+                      </div>
+                    </div>
+
                     {/* Attachments preview */}
                     {(() => {
                       const atts = normalizeAttachments(message as any);
@@ -1975,6 +2193,11 @@ export default function ZurFreigabeUI({
                         </div>
 
                         <div className="mt-2 flex items-center gap-2">
+                          {!decisionReasonById[message.id] && (
+                            <span className="text-xs rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-amber-900">
+                              Für „Speichern & Freigeben“ bitte Grund wählen.
+                            </span>
+                          )}
                           <button
                             disabled={pending}
                             data-tour="approval-editor-send"

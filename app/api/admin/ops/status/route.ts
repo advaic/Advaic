@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { requireAdmin, supabaseAdmin } from "../../_guard";
 import { readRuntimeControl } from "@/lib/ops/runtime-control";
 import { getRequestId, jsonWithRequestId, logError } from "@/lib/ops/request-id";
+import { summarizeEmailConnectionsHealth } from "@/lib/ops/email-connection-health";
 
 export const runtime = "nodejs";
 
@@ -42,10 +43,20 @@ export async function GET(req: NextRequest) {
     const staleRecoveryMs = nowMs - 120 * 60 * 1000;
     const staleOutlookMs = nowMs - 20 * 60 * 1000;
     const staleBillingTrialRemindersMs = nowMs - 36 * 60 * 60 * 1000;
+    const staleOutlookRenewMs = nowMs - 12 * 60 * 60 * 1000;
+    const staleGmailRenewMs = nowMs - 24 * 60 * 60 * 1000;
 
     const since30m = new Date(nowMs - 30 * 60 * 1000).toISOString();
 
-    const [control, runsRes, alertsRes, billingFailedRes, billingStuckRes, signupRes] =
+    const [
+      control,
+      runsRes,
+      alertsRes,
+      billingFailedRes,
+      billingStuckRes,
+      signupRes,
+      emailConnectionsRes,
+    ] =
       await Promise.all([
         readRuntimeControl(supa),
         (supa.from("pipeline_runs") as any)
@@ -73,6 +84,12 @@ export async function GET(req: NextRequest) {
           .gte("created_at", since30m)
           .is("used_at", null)
           .limit(400),
+        (supa.from("email_connections") as any)
+          .select(
+            "provider, status, watch_active, watch_expiration, outlook_subscription_expiration, refresh_token, last_error",
+          )
+          .in("provider", ["gmail", "outlook"])
+          .limit(2000),
       ]);
 
     const runs = ((runsRes?.data || []) as PipelineRunRow[]) || [];
@@ -92,6 +109,16 @@ export async function GET(req: NextRequest) {
         key: "billing_trial_reminders",
         label: "Billing Trial-Reminder",
         staleMs: staleBillingTrialRemindersMs,
+      },
+      {
+        key: "outlook_subscription_renew",
+        label: "Outlook-Subscription Renew",
+        staleMs: staleOutlookRenewMs,
+      },
+      {
+        key: "gmail_watch_renew",
+        label: "Gmail-Watch Renew",
+        staleMs: staleGmailRenewMs,
       },
       { key: "ops_alerts", label: "Ops-Alerts", staleMs: staleReplyMs },
     ].map((item) => {
@@ -158,17 +185,6 @@ export async function GET(req: NextRequest) {
     ).length;
     const staleCount = pipelineState.filter((p) => p.stale).length;
 
-    const level =
-      control.pause_all ||
-      control.pause_reply_ready_send ||
-      control.pause_followups ||
-      criticalAlerts > 0 ||
-      staleCount >= 2
-        ? "critical"
-        : warningAlerts > 0 || staleCount > 0
-          ? "warning"
-          : "ok";
-
     const signupRows = Array.isArray((signupRes as any)?.data) ? (signupRes as any).data : [];
     const signupLocked = signupRows.filter((row: any) => {
       const attempts = Number(row?.attempts || 0);
@@ -179,6 +195,25 @@ export async function GET(req: NextRequest) {
       const expiresMs = Date.parse(String(row?.expires_at || ""));
       return Number.isFinite(expiresMs) && expiresMs < nowMs;
     }).length;
+    const emailConnections = summarizeEmailConnectionsHealth(
+      Array.isArray((emailConnectionsRes as any)?.data) ? (emailConnectionsRes as any).data : [],
+      nowMs,
+    );
+    const hasConnectionCritical = emailConnections.totals.expired > 0;
+    const hasConnectionWarning =
+      emailConnections.totals.unhealthy > 0 || emailConnections.totals.expiring_24h > 0;
+
+    const level =
+      control.pause_all ||
+      control.pause_reply_ready_send ||
+      control.pause_followups ||
+      criticalAlerts > 0 ||
+      staleCount >= 2 ||
+      hasConnectionCritical
+        ? "critical"
+        : warningAlerts > 0 || staleCount > 0 || hasConnectionWarning
+          ? "warning"
+          : "ok";
 
     return jsonWithRequestId(requestId, {
       ok: true,
@@ -193,11 +228,14 @@ export async function GET(req: NextRequest) {
         billing_webhook_stuck_15m: safeCount(billingStuckRes),
         signup_locked_30m: signupLocked,
         signup_expired_30m: signupExpired,
+        gmail_unhealthy: emailConnections.by_provider.gmail.unhealthy,
+        outlook_unhealthy: emailConnections.by_provider.outlook.unhealthy,
       },
       control,
       pipelines: pipelineState,
       alerts: Array.isArray((alertsRes as any)?.data) ? (alertsRes as any).data : [],
       recent_runs: runs,
+      email_connections: emailConnections,
       integrations: {
         ops_webhook_configured: Boolean(
           String(process.env.ADVAIC_OPS_ALERT_WEBHOOK_URL || "").trim(),

@@ -27,11 +27,15 @@ type ServiceCard = {
 type GmailConnectionRow = {
   email_address: string | null;
   status: string | null;
+  watch_active?: boolean | null;
+  last_error?: string | null;
 } | null;
 
 type OutlookConnectionRow = {
   email_address: string | null;
   status: string | null;
+  watch_active?: boolean | null;
+  last_error?: string | null;
 } | null;
 
 type ImmoScoutConnectionRow = {
@@ -39,8 +43,25 @@ type ImmoScoutConnectionRow = {
   account_label: string | null;
 } | null;
 
+type InfoBanner = {
+  tone: "success" | "warning" | "danger";
+  title: string;
+  body: string;
+};
+
 function classNames(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
+}
+
+function needsReconnect(status: string | null, lastError: string | null) {
+  const statusNorm = String(status || "").toLowerCase();
+  const err = String(lastError || "").toLowerCase();
+  if (statusNorm === "needs_reconnect") return true;
+  return (
+    err.includes("reauth") ||
+    err.includes("missing_refresh_token") ||
+    err.includes("invalid_grant")
+  );
 }
 
 export default function VerknuepfungenPage() {
@@ -56,14 +77,18 @@ export default function VerknuepfungenPage() {
   const [gmailConnected, setGmailConnected] = useState(false);
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
   const [gmailStatus, setGmailStatus] = useState<string | null>(null);
+  const [gmailLastError, setGmailLastError] = useState<string | null>(null);
 
   const [outlookConnected, setOutlookConnected] = useState(false);
   const [outlookEmail, setOutlookEmail] = useState<string | null>(null);
   const [outlookStatus, setOutlookStatus] = useState<string | null>(null);
+  const [outlookLastError, setOutlookLastError] = useState<string | null>(null);
 
   const [immoscoutConnected, setImmoscoutConnected] = useState(false);
   const [immoscoutLabel, setImmoscoutLabel] = useState<string | null>(null);
   const [immoscoutStatus, setImmoscoutStatus] = useState<string | null>(null);
+  const [repairingProvider, setRepairingProvider] = useState<"gmail" | "outlook" | null>(null);
+  const [repairBanner, setRepairBanner] = useState<InfoBanner | null>(null);
 
   const cards: ServiceCard[] = useMemo(
     () => [
@@ -139,13 +164,14 @@ export default function VerknuepfungenPage() {
       setGmailConnected(false);
       setGmailEmail(null);
       setGmailStatus(null);
+      setGmailLastError(null);
       setLoading(false);
       return;
     }
 
     const { data, error } = await supabase
       .from("email_connections")
-      .select("email_address,status")
+      .select("email_address,status,watch_active,last_error")
       .eq("agent_id", user.id)
       .eq("provider", "gmail")
       .maybeSingle<GmailConnectionRow>();
@@ -155,16 +181,24 @@ export default function VerknuepfungenPage() {
       setGmailConnected(false);
       setGmailEmail(null);
       setGmailStatus(null);
+      setGmailLastError(null);
       setLoading(false);
       return;
     }
 
     const status = data?.status ?? null;
-    const connected = status === "connected";
+    const statusNormalized = String(status || "").toLowerCase();
+    const currentLastError = data?.last_error ? String(data.last_error) : null;
+    const hasReconnectError = needsReconnect(status, currentLastError);
+    const connected =
+      ["connected", "active", "watching"].includes(statusNormalized) &&
+      data?.watch_active !== false &&
+      !hasReconnectError;
 
     setGmailConnected(connected);
     setGmailEmail(data?.email_address ?? null);
     setGmailStatus(status);
+    setGmailLastError(currentLastError);
     setLoading(false);
   }, [supabase]);
 
@@ -182,12 +216,13 @@ export default function VerknuepfungenPage() {
       setOutlookConnected(false);
       setOutlookEmail(null);
       setOutlookStatus(null);
+      setOutlookLastError(null);
       return;
     }
 
     const { data, error } = await supabase
       .from("email_connections")
-      .select("email_address,status")
+      .select("email_address,status,watch_active,last_error")
       .eq("agent_id", user.id)
       .eq("provider", "outlook")
       .maybeSingle<OutlookConnectionRow>();
@@ -200,15 +235,23 @@ export default function VerknuepfungenPage() {
       setOutlookConnected(false);
       setOutlookEmail(null);
       setOutlookStatus(null);
+      setOutlookLastError(null);
       return;
     }
 
     const status = data?.status ?? null;
-    const connected = status === "connected" || status === "active";
+    const statusNormalized = String(status || "").toLowerCase();
+    const currentLastError = data?.last_error ? String(data.last_error) : null;
+    const hasReconnectError = needsReconnect(status, currentLastError);
+    const connected =
+      ["connected", "active", "watching"].includes(statusNormalized) &&
+      data?.watch_active !== false &&
+      !hasReconnectError;
 
     setOutlookConnected(connected);
     setOutlookEmail(data?.email_address ?? null);
     setOutlookStatus(status);
+    setOutlookLastError(currentLastError);
   }, [supabase]);
 
   const loadImmoScoutConnection = useCallback(async () => {
@@ -252,6 +295,67 @@ export default function VerknuepfungenPage() {
     setImmoscoutLabel((data as any)?.account_label ?? null);
     setImmoscoutStatus(status);
   }, [supabase]);
+
+  const repairGmailNow = useCallback(async () => {
+    setRepairBanner(null);
+    setRepairingProvider("gmail");
+    try {
+      const res = await fetch("/api/gmail/watch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const json = (await res.json().catch(() => null)) as any;
+      if (!res.ok || json?.ok === false) {
+        throw new Error(String(json?.details || json?.error || "gmail_repair_failed"));
+      }
+      setRepairBanner({
+        tone: "success",
+        title: "Gmail repariert",
+        body: "Watch wurde erfolgreich erneuert und ist wieder aktiv.",
+      });
+      await loadGmailConnection();
+    } catch (e: any) {
+      setRepairBanner({
+        tone: "danger",
+        title: "Gmail-Reparatur fehlgeschlagen",
+        body: String(e?.message || "Bitte erneut versuchen oder neu verbinden."),
+      });
+    } finally {
+      setRepairingProvider(null);
+    }
+  }, [loadGmailConnection]);
+
+  const repairOutlookNow = useCallback(async () => {
+    setRepairBanner(null);
+    setRepairingProvider("outlook");
+    try {
+      const res = await fetch("/api/outlook/repair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const json = (await res.json().catch(() => null)) as any;
+      if (!res.ok || json?.ok === false) {
+        throw new Error(String(json?.details || json?.error || "outlook_repair_failed"));
+      }
+      setRepairBanner({
+        tone: "success",
+        title: "Microsoft 365 repariert",
+        body:
+          json?.action === "created"
+            ? "Subscription wurde neu erstellt und ist wieder aktiv."
+            : "Subscription wurde erfolgreich erneuert und ist wieder aktiv.",
+      });
+      await loadOutlookConnection();
+    } catch (e: any) {
+      setRepairBanner({
+        tone: "danger",
+        title: "Microsoft-365-Reparatur fehlgeschlagen",
+        body: String(e?.message || "Bitte erneut versuchen oder neu verbinden."),
+      });
+    } finally {
+      setRepairingProvider(null);
+    }
+  }, [loadOutlookConnection]);
 
   useEffect(() => {
     loadGmailConnection();
@@ -362,6 +466,22 @@ return (
         </div>
       )}
 
+      {repairBanner && (
+        <div
+          className={classNames(
+            "mb-6 rounded-md border p-4 text-sm",
+            repairBanner.tone === "success" &&
+              "border-green-200 bg-green-50 text-green-900",
+            repairBanner.tone === "warning" &&
+              "border-amber-200 bg-amber-50 text-amber-900",
+            repairBanner.tone === "danger" && "border-red-200 bg-red-50 text-red-900",
+          )}
+        >
+          <div className="font-medium">{repairBanner.title}</div>
+          <div className="mt-1 opacity-90">{repairBanner.body}</div>
+        </div>
+      )}
+
       <div className="space-y-4" data-tour="links-cards">
         {cards.map((service) => {
           const isGmail = service.id === "gmail";
@@ -388,7 +508,7 @@ return (
                 );
               }
 
-              if (gmailStatus === "needs_reconnect") {
+              if (needsReconnect(gmailStatus, gmailLastError)) {
                 return (
                   <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
                     <FaExclamationTriangle className="mr-1" /> Neu verbinden
@@ -412,7 +532,7 @@ return (
                 );
               }
 
-              if (outlookStatus === "needs_reconnect") {
+              if (needsReconnect(outlookStatus, outlookLastError)) {
                 return (
                   <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
                     <FaExclamationTriangle className="mr-1" /> Neu verbinden
@@ -485,9 +605,20 @@ return (
                   {isGmail &&
                     !loading &&
                     !gmailConnected &&
-                    gmailStatus === "needs_reconnect" && (
+                    needsReconnect(gmailStatus, gmailLastError) && (
                       <div className="mt-3 text-sm text-amber-800">
                         Verbindung abgelaufen – bitte neu verbinden.
+                      </div>
+                    )}
+
+                  {isGmail &&
+                    !loading &&
+                    !gmailConnected &&
+                    !needsReconnect(gmailStatus, gmailLastError) &&
+                    (gmailStatus || gmailLastError) && (
+                      <div className="mt-3 text-sm text-amber-800">
+                        Verbindung erkannt, aber technisch nicht vollständig aktiv. Nutze
+                        „Reparieren jetzt“ oder verbinde neu.
                       </div>
                     )}
 
@@ -500,9 +631,19 @@ return (
 
                   {isOutlook &&
                     !outlookConnected &&
-                    outlookStatus === "needs_reconnect" && (
+                    needsReconnect(outlookStatus, outlookLastError) && (
                       <div className="mt-3 text-sm text-amber-800">
                         Verbindung abgelaufen – bitte neu verbinden.
+                      </div>
+                    )}
+
+                  {isOutlook &&
+                    !outlookConnected &&
+                    !needsReconnect(outlookStatus, outlookLastError) &&
+                    (outlookStatus || outlookLastError) && (
+                      <div className="mt-3 text-sm text-amber-800">
+                        Verbindung erkannt, aber technisch nicht vollständig aktiv. Nutze
+                        „Reparieren jetzt“ oder verbinde neu.
                       </div>
                     )}
 
@@ -535,6 +676,21 @@ return (
                     gmailConnected ? (
                       <>
                         <button
+                          type="button"
+                          onClick={repairGmailNow}
+                          disabled={repairingProvider === "gmail"}
+                          className={classNames(
+                            "inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium",
+                            repairingProvider === "gmail"
+                              ? "border-gray-200 bg-gray-100 text-gray-500"
+                              : "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100",
+                          )}
+                        >
+                          {repairingProvider === "gmail"
+                            ? "Repariere…"
+                            : "Reparieren jetzt"}
+                        </button>
+                        <button
                           data-tour="link-gmail-reconnect"
                           type="button"
                           onClick={startGmailOAuth}
@@ -546,26 +702,44 @@ return (
                         <button
                           type="button"
                           onClick={loadGmailConnection}
-                          className="text-xs text-gray-500 hover:text-gray-700"
+                          disabled={repairingProvider === "gmail"}
+                          className="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
                         >
                           Status aktualisieren
                         </button>
                       </>
                     ) : (
-                      <button
-                        data-tour="link-gmail-connect"
-                        type="button"
-                        onClick={startGmailOAuth}
-                        disabled={loading}
-                        className={classNames(
-                          "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium",
-                          loading
-                            ? "bg-gray-200 text-gray-500"
-                            : "bg-blue-600 text-white hover:bg-blue-700"
-                        )}
-                      >
-                        Gmail verbinden
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={repairGmailNow}
+                          disabled={repairingProvider === "gmail" || loading}
+                          className={classNames(
+                            "inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium",
+                            repairingProvider === "gmail" || loading
+                              ? "border-gray-200 bg-gray-100 text-gray-500"
+                              : "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100",
+                          )}
+                        >
+                          {repairingProvider === "gmail"
+                            ? "Repariere…"
+                            : "Reparieren jetzt"}
+                        </button>
+                        <button
+                          data-tour="link-gmail-connect"
+                          type="button"
+                          onClick={startGmailOAuth}
+                          disabled={loading || repairingProvider === "gmail"}
+                          className={classNames(
+                            "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium",
+                            loading || repairingProvider === "gmail"
+                              ? "bg-gray-200 text-gray-500"
+                              : "bg-blue-600 text-white hover:bg-blue-700",
+                          )}
+                        >
+                          Gmail verbinden
+                        </button>
+                      </>
                     )
                   ) : isImmoScout ? (
                     immoscoutConnected ? (
@@ -601,6 +775,21 @@ return (
                     outlookConnected ? (
                       <>
                         <button
+                          type="button"
+                          onClick={repairOutlookNow}
+                          disabled={repairingProvider === "outlook"}
+                          className={classNames(
+                            "inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium",
+                            repairingProvider === "outlook"
+                              ? "border-gray-200 bg-gray-100 text-gray-500"
+                              : "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100",
+                          )}
+                        >
+                          {repairingProvider === "outlook"
+                            ? "Repariere…"
+                            : "Reparieren jetzt"}
+                        </button>
+                        <button
                           data-tour="link-outlook-reconnect"
                           type="button"
                           onClick={startOutlookOAuth}
@@ -612,20 +801,44 @@ return (
                         <button
                           type="button"
                           onClick={loadOutlookConnection}
-                          className="text-xs text-gray-500 hover:text-gray-700"
+                          disabled={repairingProvider === "outlook"}
+                          className="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
                         >
                           Status aktualisieren
                         </button>
                       </>
                     ) : (
-                      <button
-                        data-tour="link-outlook-connect"
-                        type="button"
-                        onClick={startOutlookOAuth}
-                        className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
-                      >
-                        Microsoft 365 verbinden
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={repairOutlookNow}
+                          disabled={repairingProvider === "outlook"}
+                          className={classNames(
+                            "inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium",
+                            repairingProvider === "outlook"
+                              ? "border-gray-200 bg-gray-100 text-gray-500"
+                              : "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100",
+                          )}
+                        >
+                          {repairingProvider === "outlook"
+                            ? "Repariere…"
+                            : "Reparieren jetzt"}
+                        </button>
+                        <button
+                          data-tour="link-outlook-connect"
+                          type="button"
+                          onClick={startOutlookOAuth}
+                          disabled={repairingProvider === "outlook"}
+                          className={classNames(
+                            "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium",
+                            repairingProvider === "outlook"
+                              ? "bg-gray-200 text-gray-500"
+                              : "bg-blue-600 text-white hover:bg-blue-700",
+                          )}
+                        >
+                          Microsoft 365 verbinden
+                        </button>
+                      </>
                     )
                   ) : (
                     <button

@@ -69,23 +69,63 @@ async function loadPassQas({
   promptKeys,
   agentId,
 }) {
+  async function fetchPage(activePromptKeys) {
+    const pageSize = 500;
+    const rows = [];
+    let from = 0;
+
+    while (rows.length < maxRows) {
+      let q = supa
+        .from("message_qas")
+        .select(
+          "id, agent_id, lead_id, inbound_message_id, draft_message_id, prompt_key, verdict, created_at",
+        )
+        .gte("created_at", sinceIso)
+        .eq("verdict", "pass")
+        .not("draft_message_id", "is", null)
+        .order("created_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+
+      if (activePromptKeys.length > 0) q = q.in("prompt_key", activePromptKeys);
+      if (agentId) q = q.eq("agent_id", agentId);
+
+      const { data, error } = await q;
+      if (error) throw new Error(`message_qas query failed: ${error.message}`);
+
+      const page = Array.isArray(data) ? data : [];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
+
+    return rows.slice(0, maxRows);
+  }
+
+  const primary = await fetchPage(promptKeys);
+  if (primary.length > 0 || promptKeys.length === 0) {
+    return { rows: primary, usedPromptKeys: promptKeys, fallbackUsed: false };
+  }
+
+  console.log(
+    `[dataset] Keine pass-QA-Treffer für Prompt-Filter (${promptKeys.join(", ")}). Fallback ohne prompt_key-Filter ...`,
+  );
+  const fallback = await fetchPage([]);
+  return { rows: fallback, usedPromptKeys: [], fallbackUsed: true };
+}
+
+async function loadQaStats({ supa, sinceIso, agentId }) {
   const pageSize = 500;
   const rows = [];
   let from = 0;
 
-  while (rows.length < maxRows) {
+  while (rows.length < 5000) {
     let q = supa
       .from("message_qas")
-      .select(
-        "id, agent_id, lead_id, inbound_message_id, draft_message_id, prompt_key, verdict, created_at",
-      )
+      .select("prompt_key, verdict, created_at")
       .gte("created_at", sinceIso)
-      .eq("verdict", "pass")
-      .not("draft_message_id", "is", null)
       .order("created_at", { ascending: false })
       .range(from, from + pageSize - 1);
 
-    if (promptKeys.length > 0) q = q.in("prompt_key", promptKeys);
     if (agentId) q = q.eq("agent_id", agentId);
 
     const { data, error } = await q;
@@ -97,7 +137,19 @@ async function loadPassQas({
     from += pageSize;
   }
 
-  return rows.slice(0, maxRows);
+  const stats = new Map();
+  for (const row of rows) {
+    const key = String(row?.prompt_key || "unknown");
+    if (!stats.has(key)) stats.set(key, { pass: 0, warn: 0, fail: 0, total: 0 });
+    const item = stats.get(key);
+    const verdict = String(row?.verdict || "").toLowerCase().trim();
+    if (["pass", "warn", "fail"].includes(verdict)) item[verdict] += 1;
+    item.total += 1;
+  }
+  return Array.from(stats.entries())
+    .map(([promptKey, s]) => ({ promptKey, ...s }))
+    .sort((a, b) => b.pass - a.pass)
+    .slice(0, 12);
 }
 
 async function loadMessagesByIds({ supa, ids }) {
@@ -149,16 +201,26 @@ async function main() {
   });
 
   console.log(`[dataset] Lade QA-Daten seit ${sinceIso} ...`);
-  const qaRows = await loadPassQas({
+  const loaded = await loadPassQas({
     supa,
     sinceIso,
     maxRows,
     promptKeys,
     agentId,
   });
+  const qaRows = loaded.rows;
 
   if (!qaRows.length) {
-    throw new Error("Keine passenden QA-Pass-Daten gefunden.");
+    const stats = await loadQaStats({ supa, sinceIso, agentId });
+    const printable = stats
+      .map(
+        (x) =>
+          `${x.promptKey}: pass=${x.pass}, warn=${x.warn}, fail=${x.fail}, total=${x.total}`,
+      )
+      .join(" | ");
+    throw new Error(
+      `Keine passenden QA-Pass-Daten gefunden. Lookback=${lookbackDays}d, prompt_keys=${promptKeys.join(",")}. QA-Statistik: ${printable || "keine QA-Daten im Zeitraum"}`,
+    );
   }
 
   const ids = Array.from(
@@ -252,6 +314,9 @@ async function main() {
   console.log(
     `[dataset] ok train=${train.length} valid=${valid.length} dropped_missing=${droppedMissing} dropped_filter=${droppedFilter}`,
   );
+  if (loaded.fallbackUsed) {
+    console.log("[dataset] Hinweis: Fallback ohne prompt_key-Filter wurde genutzt.");
+  }
   console.log(`[dataset] train: ${trainPath}`);
   console.log(`[dataset] valid: ${validPath}`);
 
