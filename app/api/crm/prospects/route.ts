@@ -50,14 +50,18 @@ export async function GET(req: NextRequest) {
   const supabase = createSupabaseAdminClient();
   let query = (supabase.from("crm_prospects") as any)
     .select(
-      "id, company_name, contact_name, contact_role, city, region, object_focus, preferred_channel, priority, fit_score, stage, last_contacted_at, next_action, next_action_at, personalization_hook, pain_point_hypothesis, created_at, updated_at",
+      "id, company_name, contact_name, contact_email, contact_role, city, region, object_focus, preferred_channel, priority, fit_score, stage, last_contacted_at, next_action, next_action_at, personalization_hook, pain_point_hypothesis, created_at, updated_at",
     )
     .eq("agent_id", auth.user.id)
     .order("updated_at", { ascending: false })
     .limit(limit);
 
   if (stage) query = query.eq("stage", stage);
-  if (q) query = query.or(`company_name.ilike.%${q}%,contact_name.ilike.%${q}%,city.ilike.%${q}%`);
+  if (q) {
+    query = query.or(
+      `company_name.ilike.%${q}%,contact_name.ilike.%${q}%,contact_email.ilike.%${q}%,city.ilike.%${q}%`,
+    );
+  }
 
   const { data, error } = await query;
   if (error) {
@@ -87,6 +91,7 @@ export async function POST(req: NextRequest) {
     agent_id: auth.user.id,
     company_name: companyName,
     contact_name: String(body?.contact_name || "").trim() || null,
+    contact_email: String(body?.contact_email || "").trim().toLowerCase() || null,
     contact_role: String(body?.contact_role || "").trim() || null,
     city: String(body?.city || "").trim() || null,
     region: String(body?.region || "").trim() || null,

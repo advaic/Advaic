@@ -1,0 +1,53 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/routeAuth";
+import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
+
+export const runtime = "nodejs";
+
+function isRelationMissing(message: string) {
+  const text = String(message || "").toLowerCase();
+  return text.includes("does not exist") || text.includes("relation");
+}
+
+export async function GET(req: NextRequest) {
+  const auth = await requireOwnerApiUser(req);
+  if (!auth.ok) return auth.response;
+
+  const supabase = createSupabaseAdminClient();
+  const agentId = String(auth.user.id);
+
+  const { data, error } = await (supabase.from("crm_next_actions") as any)
+    .select(
+      "prospect_id, company_name, contact_name, contact_email, object_focus, preferred_channel, priority, fit_score, stage, recommended_action, recommended_reason, recommended_code, recommended_primary_label, recommended_at",
+    )
+    .eq("agent_id", agentId)
+    .not("recommended_action", "is", null)
+    .order("recommended_at", { ascending: true, nullsFirst: false })
+    .order("priority", { ascending: true })
+    .order("fit_score", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (isRelationMissing(error.message)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "crm_schema_missing",
+          details: "CRM-Schema noch nicht angewendet. Bitte Migration ausführen.",
+        },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json(
+      { ok: false, error: "crm_next_action_failed", details: error.message },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    next_action: data || null,
+  });
+}
+

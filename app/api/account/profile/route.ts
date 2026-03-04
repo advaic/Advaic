@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
+import { isOwnerUserId } from "@/lib/auth/ownerAccess";
 
 export const runtime = "nodejs";
 
@@ -99,6 +100,8 @@ export async function GET(req: NextRequest) {
     ok: true,
     profile: {
       ...profile,
+      user_id: String(user.id || ""),
+      is_owner: isOwnerUserId(user.id),
       email: String(user.email || ""),
     },
   });
@@ -176,6 +179,8 @@ export async function POST(req: NextRequest) {
     profile: {
       vorname,
       nachname,
+      user_id: String(user.id || ""),
+      is_owner: isOwnerUserId(user.id),
       email: String(user.email || ""),
       telefon,
       firma,

@@ -160,3 +160,82 @@ Für frühen Markteintritt besser:
 4. Erst nach Pilot einen kommerziellen Schritt anbieten
 
 Das passt gut zu deinem aktuellen Produktstadium und erhöht Antwortquote und Vertrauen.
+
+## Optional: KI für Einladungsentwürfe
+Der Endpoint `/api/crm/prospects/[id]/invite-template` nutzt standardmäßig einen deterministischen Template-Generator.
+Wenn Azure + Prompt aktiv sind, wird automatisch ein personalisierter KI-Entwurf genutzt.
+
+Prompt-Key in `ai_prompts`:
+
+- `crm_tester_invite_v1` (active)
+
+Erwartete Prompt-Variablen:
+
+- `{{COMPANY_NAME}}`
+- `{{CONTACT_NAME}}`
+- `{{CITY}}`
+- `{{OBJECT_FOCUS}}`
+- `{{HOOK}}`
+- `{{PAIN_POINT}}`
+- `{{CHANNEL}}`
+
+Wenn Prompt oder Azure nicht verfügbar sind, bleibt der sichere Fallback aktiv.
+
+## Direktversand aus dem CRM
+Neue API-Endpunkte:
+
+- `POST /api/crm/messages/[id]/send`
+- `POST /api/crm/tracking/sync`
+- `POST /api/crm/tracking/bounces/sync`
+- `POST /api/crm/sequences/run`
+- `GET /api/crm/next-action`
+
+### Versand
+`/api/crm/messages/[id]/send` sendet den Draft direkt über verbundene Mailboxen:
+
+- Provider: `auto` (Default), `gmail` oder `outlook`
+- schreibt Tracking in `crm_outreach_messages.metadata`
+- setzt `status='sent'`, `sent_at`, `external_message_id`
+- erzeugt Event `message_sent`
+- bei Fehler: `status='failed'` + Event `message_failed`
+
+Voraussetzung:
+
+- `crm_prospects.contact_email` muss gepflegt sein.
+
+### Reply-Tracking Sync
+`/api/crm/tracking/sync` prüft gesendete CRM-Nachrichten gegen eingehende Postfachantworten (bestehende Leads/Messages-Pipeline) und erzeugt bei Treffer:
+
+- Event `reply_received`
+- automatische Stage-Aktualisierung über `crm_register_outreach_event`.
+
+### Bounce/NDR-Sync (Fail-Safe)
+`/api/crm/tracking/bounces/sync` erkennt Zustellfehler (Bounce/NDR) aus eingehenden Systemantworten (aktuell Gmail-Thread-basiert) und:
+
+- setzt CRM-Nachricht auf `status='failed'`
+- schreibt Event `message_failed` mit `bounce_detected=true`
+- setzt Prospect auf `do_not_contact=true`
+- setzt eine klare nächste Aktion für Kanalwechsel/Kontaktdatenprüfung
+
+### Sequenz-Automation mit Stop-Regeln
+`/api/crm/sequences/run` erzeugt automatisch `ready`-Drafts für:
+
+- Erstkontakt
+- Follow-up 1
+- Follow-up 2
+- Follow-up 3
+
+Stop-Regeln greifen über `crm_next_actions`:
+
+- `do_not_contact=true`
+- Stage `won|lost|pilot_finished`
+- Antwort bereits eingegangen
+- Bounce/NDR erkannt
+
+### Next-Best-Action
+`/api/crm/next-action` liefert eine priorisierte Einzel-Empfehlung mit:
+
+- `recommended_action`
+- `recommended_reason`
+- `recommended_code`
+- `recommended_primary_label`

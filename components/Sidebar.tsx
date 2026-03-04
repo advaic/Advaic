@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import BrandLogo from "@/components/brand/BrandLogo";
 import { trackFunnelEvent } from "@/lib/funnel/track";
 
-const navSections = [
+const baseNavSections = [
   {
     title: null,
     items: [{ label: "Startseite", path: "/app/startseite", icon: "🏠" }],
@@ -43,6 +43,17 @@ const navSections = [
   },
 ];
 
+function getNavSections(isOwner: boolean) {
+  const sections = [...baseNavSections];
+  if (isOwner) {
+    sections.push({
+      title: "🧪 Intern",
+      items: [{ label: "CRM", path: "/app/crm", icon: "🧭" }],
+    });
+  }
+  return sections;
+}
+
 function tourKeyForPath(path: string) {
   // keep this deterministic + stable for tour targeting
   switch (path) {
@@ -68,6 +79,8 @@ function tourKeyForPath(path: string) {
       return "nav-benachrichtigungen";
     case "/app/konto":
       return "nav-konto";
+    case "/app/crm":
+      return "nav-crm";
     default:
       return null;
   }
@@ -115,7 +128,9 @@ export default function Sidebar() {
   const [autosendEnabled, setAutosendEnabled] = useState<boolean | null>(null);
   const [autosendBusy, setAutosendBusy] = useState(false);
   const [billingAccess, setBillingAccess] = useState<BillingAccess | null>(null);
+  const [isOwner, setIsOwner] = useState(false);
   const trialExpired = billingAccess?.state === "trial_expired";
+  const navSections = useMemo(() => getNavSections(isOwner), [isOwner]);
 
   const autosendLabel = useMemo(() => {
     if (autosendEnabled === null) return "Lade…";
@@ -128,17 +143,19 @@ export default function Sidebar() {
 
     async function loadAutosend() {
       try {
-        const [autosendRes, billingRes] = await Promise.all([
+        const [autosendRes, billingRes, profileRes] = await Promise.all([
           fetch("/api/agent/settings/autosend", {
             method: "GET",
             headers: { "Content-Type": "application/json" },
             cache: "no-store",
           }),
           fetch("/api/billing/summary", { method: "GET", cache: "no-store" }),
+          fetch("/api/account/profile", { method: "GET", cache: "no-store" }),
         ]);
 
         const autosendData = await autosendRes.json().catch(() => ({} as any));
         const billingData = await billingRes.json().catch(() => ({} as any));
+        const profileData = await profileRes.json().catch(() => ({} as any));
 
         if (!autosendRes.ok) {
           console.error("[sidebar] autosend GET failed", autosendData);
@@ -157,11 +174,16 @@ export default function Sidebar() {
         } else if (!cancelled) {
           setBillingAccess(null);
         }
+
+        if (!cancelled) {
+          setIsOwner(Boolean(profileRes.ok && profileData?.profile?.is_owner));
+        }
       } catch (e: any) {
         console.error("[sidebar] load autosend error", e);
         if (!cancelled) {
           setAutosendEnabled(false);
           setBillingAccess(null);
+          setIsOwner(false);
         }
       }
     }
