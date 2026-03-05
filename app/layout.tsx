@@ -20,6 +20,7 @@ const manrope = Manrope({
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
+  applicationName: "Advaic",
   title: "Advaic",
   description: "KI-gestützter Maklerassistent für sichere und nachvollziehbare E-Mail-Automatisierung",
   openGraph: {
@@ -50,12 +51,13 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/brand/advaic-icon.png", type: "image/png", sizes: "32x32" },
-      { url: "/brand/advaic-icon.png", type: "image/png", sizes: "192x192" },
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/brand/advaic-icon-48.png", type: "image/png", sizes: "48x48" },
+      { url: "/brand/advaic-icon-192.png", type: "image/png", sizes: "192x192" },
       { url: "/brand/advaic-icon.png", type: "image/png", sizes: "512x512" },
     ],
-    apple: [{ url: "/brand/advaic-icon.png", sizes: "180x180", type: "image/png" }],
-    shortcut: ["/brand/advaic-icon.png"],
+    apple: [{ url: "/brand/advaic-icon-180.png", sizes: "180x180", type: "image/png" }],
+    shortcut: ["/favicon.ico"],
   },
   manifest: "/site.webmanifest",
 };
