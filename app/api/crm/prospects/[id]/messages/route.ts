@@ -37,7 +37,7 @@ export async function GET(
   const supabase = createSupabaseAdminClient();
   const { data, error } = await (supabase.from("crm_outreach_messages") as any)
     .select(
-      "id, channel, message_kind, subject, body, personalization_score, status, sent_at, external_message_id, created_at, updated_at",
+      "id, channel, message_kind, subject, body, personalization_score, status, sent_at, external_message_id, metadata, created_at, updated_at",
     )
     .eq("agent_id", auth.user.id)
     .eq("prospect_id", prospectId)
@@ -97,7 +97,7 @@ export async function POST(
       metadata: body?.metadata && typeof body.metadata === "object" ? body.metadata : {},
     })
     .select(
-      "id, channel, message_kind, subject, body, personalization_score, status, sent_at, created_at, updated_at",
+      "id, channel, message_kind, subject, body, personalization_score, status, sent_at, metadata, created_at, updated_at",
     )
     .single();
 

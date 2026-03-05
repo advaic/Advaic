@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Prospect = {
@@ -28,6 +29,7 @@ type Prospect = {
   primary_objection?: string | null;
   automation_readiness?: string | null;
   cta_preference_guess?: string | null;
+  updated_at?: string | null;
 };
 
 type FollowupDue = {
@@ -116,6 +118,37 @@ type OutreachEvent = {
   created_at: string;
 };
 
+type PerformanceChannelMetric = {
+  channel: string;
+  sent_messages: number;
+  touched_prospects: number;
+  reply_prospects: number;
+  reply_rate_pct: number;
+  pilot_prospects: number;
+  pilot_rate_pct: number;
+  avg_response_hours: number | null;
+};
+
+type PerformanceTemplateMetric = {
+  channel: string;
+  template_variant: string;
+  sent_messages: number;
+  touched_prospects: number;
+  reply_prospects: number;
+  reply_rate_pct: number;
+  pilot_prospects: number;
+  pilot_rate_pct: number;
+};
+
+type PerformanceResponse = {
+  ok: boolean;
+  updated_at: string;
+  channel_metrics: PerformanceChannelMetric[];
+  template_metrics: PerformanceTemplateMetric[];
+  error?: string;
+  details?: string;
+};
+
 type NewProspectForm = {
   company_name: string;
   contact_name: string;
@@ -128,6 +161,8 @@ type NewProspectForm = {
   source_checked_at: string;
   linkedin_url: string;
   linkedin_search_url: string;
+  linkedin_headline: string;
+  linkedin_relevance_note: string;
   object_focus: "miete" | "kauf" | "neubau" | "gemischt";
   priority: "A" | "B" | "C";
   fit_score: number;
@@ -136,6 +171,9 @@ type NewProspectForm = {
   share_miete_percent: number | "";
   share_kauf_percent: number | "";
   object_types_csv: string;
+  response_promise_public: string;
+  appointment_flow_public: string;
+  docs_flow_public: string;
   brand_tone: "kurz_direkt" | "freundlich" | "professionell" | "gemischt" | "";
   primary_objection: string;
   cta_preference_guess: "kurze_mail_antwort" | "15_min_call" | "video_link" | "formular_antwort" | "";
@@ -227,6 +265,8 @@ const defaultForm: NewProspectForm = {
   source_checked_at: "",
   linkedin_url: "",
   linkedin_search_url: "",
+  linkedin_headline: "",
+  linkedin_relevance_note: "",
   object_focus: "gemischt",
   priority: "B",
   fit_score: 70,
@@ -235,6 +275,9 @@ const defaultForm: NewProspectForm = {
   share_miete_percent: "",
   share_kauf_percent: "",
   object_types_csv: "",
+  response_promise_public: "",
+  appointment_flow_public: "",
+  docs_flow_public: "",
   brand_tone: "",
   primary_objection: "",
   cta_preference_guess: "",
@@ -264,6 +307,9 @@ export default function CrmControlCenter({
   const [success, setSuccess] = useState<string | null>(null);
   const [pipelineQuery, setPipelineQuery] = useState("");
   const [pipelineStage, setPipelineStage] = useState("all");
+  const [pipelineSort, setPipelineSort] = useState<
+    "fit_desc" | "priority_fit" | "next_action_asc" | "updated_desc" | "company_asc"
+  >("fit_desc");
 
   const [selectedProspectId, setSelectedProspectId] = useState<string | null>(
     initialData.prospects?.[0]?.id || null,
@@ -282,6 +328,8 @@ export default function CrmControlCenter({
   const [noteBusy, setNoteBusy] = useState(false);
   const [draftBusy, setDraftBusy] = useState(false);
   const [nextAction, setNextAction] = useState<NextBestAction | null>(null);
+  const [performance, setPerformance] = useState<PerformanceResponse | null>(null);
+  const [performanceLoading, setPerformanceLoading] = useState(false);
 
   const loadNextAction = useCallback(async () => {
     try {
@@ -293,6 +341,22 @@ export default function CrmControlCenter({
       setNextAction((json?.next_action || null) as NextBestAction | null);
     } catch {
       // Keep UI usable even if this card fails.
+    }
+  }, []);
+
+  const loadPerformance = useCallback(async () => {
+    setPerformanceLoading(true);
+    try {
+      const res = await fetch("/api/crm/performance", { cache: "no-store" });
+      const json = (await res.json().catch(() => ({}))) as PerformanceResponse;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Performance-Daten konnten nicht geladen werden.");
+      }
+      setPerformance(json);
+    } catch {
+      setPerformance(null);
+    } finally {
+      setPerformanceLoading(false);
     }
   }, []);
 
@@ -309,6 +373,7 @@ export default function CrmControlCenter({
       }
       setData(json);
       await loadNextAction();
+      await loadPerformance();
       if (!selectedProspectId && json.prospects?.[0]?.id) {
         setSelectedProspectId(json.prospects[0].id);
       }
@@ -317,7 +382,7 @@ export default function CrmControlCenter({
     } finally {
       setLoading(false);
     }
-  }, [loadNextAction, selectedProspectId]);
+  }, [loadNextAction, loadPerformance, selectedProspectId]);
 
   const loadProspectDetail = useCallback(async (prospectId: string) => {
     setDetailLoading(true);
@@ -360,7 +425,8 @@ export default function CrmControlCenter({
 
   useEffect(() => {
     void loadNextAction();
-  }, [loadNextAction]);
+    void loadPerformance();
+  }, [loadNextAction, loadPerformance]);
 
   useEffect(() => {
     if (!selectedProspectId) {
@@ -396,6 +462,34 @@ export default function CrmControlCenter({
       return haystack.includes(q);
     });
   }, [data.prospects, pipelineQuery, pipelineStage]);
+
+  const sortedProspects = useMemo(() => {
+    const rankPriority = (p: "A" | "B" | "C") => (p === "A" ? 0 : p === "B" ? 1 : 2);
+    return [...filteredProspects].sort((a, b) => {
+      if (pipelineSort === "fit_desc") {
+        if (b.fit_score !== a.fit_score) return b.fit_score - a.fit_score;
+        return rankPriority(a.priority) - rankPriority(b.priority);
+      }
+      if (pipelineSort === "priority_fit") {
+        const prio = rankPriority(a.priority) - rankPriority(b.priority);
+        if (prio !== 0) return prio;
+        return b.fit_score - a.fit_score;
+      }
+      if (pipelineSort === "next_action_asc") {
+        const aTs = a.next_action_at ? new Date(a.next_action_at).getTime() : Number.POSITIVE_INFINITY;
+        const bTs = b.next_action_at ? new Date(b.next_action_at).getTime() : Number.POSITIVE_INFINITY;
+        if (aTs !== bTs) return aTs - bTs;
+        return b.fit_score - a.fit_score;
+      }
+      if (pipelineSort === "updated_desc") {
+        const aTs = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const bTs = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        if (bTs !== aTs) return bTs - aTs;
+        return b.fit_score - a.fit_score;
+      }
+      return String(a.company_name || "").localeCompare(String(b.company_name || ""), "de");
+    });
+  }, [filteredProspects, pipelineSort]);
 
   const conversionRates = useMemo(() => {
     const s = data.summary;
@@ -443,7 +537,17 @@ export default function CrmControlCenter({
       setSuccess(`Prospect „${json?.prospect?.company_name || "Neu"}“ wurde angelegt.`);
       await refresh();
       const createdId = String(json?.prospect?.id || "").trim();
-      if (createdId) setSelectedProspectId(createdId);
+      if (createdId) {
+        setSelectedProspectId(createdId);
+        try {
+          await fetch(`/api/crm/prospects/${createdId}/enrich`, {
+            method: "POST",
+          });
+          await refresh();
+        } catch {
+          // Fail-open: prospect creation remains successful.
+        }
+      }
     } catch (e: any) {
       setError(String(e?.message || "Prospect konnte nicht erstellt werden."));
     } finally {
@@ -556,6 +660,10 @@ export default function CrmControlCenter({
           body: newDraftBody,
           status: "ready",
           personalization_score: 85,
+          metadata: {
+            source: "crm_control_center",
+            template_variant: `manual_${newDraftKind}`,
+          },
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -779,6 +887,12 @@ export default function CrmControlCenter({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/app/crm/sales-intel"
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              Sales Intel Lab
+            </Link>
             <button
               onClick={() => void refresh()}
               className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
@@ -838,6 +952,82 @@ export default function CrmControlCenter({
           <div className="text-xs font-medium text-gray-500">Gewonnen</div>
           <div className="mt-2 text-2xl font-semibold text-gray-900">{data.summary?.won_total || 0}</div>
         </div>
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Performance-Layer</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Kanal- und Variantenvergleich für Antwortquote, Pilotquote und Reaktionszeit.
+            </p>
+          </div>
+          <button
+            onClick={() => void loadPerformance()}
+            className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
+            disabled={performanceLoading}
+          >
+            {performanceLoading ? "Aktualisiere…" : "Performance aktualisieren"}
+          </button>
+        </div>
+        {!performance || performance.channel_metrics.length === 0 ? (
+          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-600">
+            Noch keine belastbaren Daten. Sende zuerst Nachrichten, damit Kanal- und Variantenvergleich sichtbar wird.
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                    <th className="px-3 py-2">Kanal</th>
+                    <th className="px-3 py-2">Sent</th>
+                    <th className="px-3 py-2">Reply %</th>
+                    <th className="px-3 py-2">Pilot %</th>
+                    <th className="px-3 py-2">Ø h bis Reply</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {performance.channel_metrics.map((row) => (
+                    <tr key={row.channel} className="border-t border-gray-100">
+                      <td className="px-3 py-2 font-medium text-gray-900">{row.channel}</td>
+                      <td className="px-3 py-2 text-gray-700">{row.sent_messages}</td>
+                      <td className="px-3 py-2 text-gray-700">{row.reply_rate_pct}%</td>
+                      <td className="px-3 py-2 text-gray-700">{row.pilot_rate_pct}%</td>
+                      <td className="px-3 py-2 text-gray-700">
+                        {row.avg_response_hours === null ? "–" : `${row.avg_response_hours}h`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                    <th className="px-3 py-2">Variante</th>
+                    <th className="px-3 py-2">Kanal</th>
+                    <th className="px-3 py-2">Sent</th>
+                    <th className="px-3 py-2">Reply %</th>
+                    <th className="px-3 py-2">Pilot %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {performance.template_metrics.slice(0, 10).map((row) => (
+                    <tr key={`${row.channel}-${row.template_variant}`} className="border-t border-gray-100">
+                      <td className="px-3 py-2 font-medium text-gray-900">{row.template_variant}</td>
+                      <td className="px-3 py-2 text-gray-700">{row.channel}</td>
+                      <td className="px-3 py-2 text-gray-700">{row.sent_messages}</td>
+                      <td className="px-3 py-2 text-gray-700">{row.reply_rate_pct}%</td>
+                      <td className="px-3 py-2 text-gray-700">{row.pilot_rate_pct}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -973,6 +1163,20 @@ export default function CrmControlCenter({
                 placeholder="LinkedIn-Such-URL (optional)"
                 value={form.linkedin_search_url}
                 onChange={(e) => setForm((s) => ({ ...s, linkedin_search_url: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <input
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                placeholder="LinkedIn-Headline (optional)"
+                value={form.linkedin_headline}
+                onChange={(e) => setForm((s) => ({ ...s, linkedin_headline: e.target.value }))}
+              />
+              <input
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                placeholder="LinkedIn-Relevanznotiz (optional)"
+                value={form.linkedin_relevance_note}
+                onChange={(e) => setForm((s) => ({ ...s, linkedin_relevance_note: e.target.value }))}
               />
             </div>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -1167,7 +1371,33 @@ export default function CrmControlCenter({
                     <option value="15_min_call">15-Minuten-Call</option>
                     <option value="video_link">Video-Link</option>
                     <option value="formular_antwort">Formular-Antwort</option>
-                  </select>
+                    </select>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <input
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                    placeholder="Öffentliches Reaktionsversprechen"
+                    value={form.response_promise_public}
+                    onChange={(e) =>
+                      setForm((s) => ({ ...s, response_promise_public: e.target.value }))
+                    }
+                  />
+                  <input
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                    placeholder="Terminablauf öffentlich"
+                    value={form.appointment_flow_public}
+                    onChange={(e) =>
+                      setForm((s) => ({ ...s, appointment_flow_public: e.target.value }))
+                    }
+                  />
+                  <input
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                    placeholder="Unterlagenablauf öffentlich"
+                    value={form.docs_flow_public}
+                    onChange={(e) =>
+                      setForm((s) => ({ ...s, docs_flow_public: e.target.value }))
+                    }
+                  />
                 </div>
                 <textarea
                   className="min-h-[72px] rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
@@ -1226,11 +1456,17 @@ export default function CrmControlCenter({
                     className={`border-t border-gray-100 ${selectedProspectId === row.prospect_id ? "bg-amber-50/40" : ""}`}
                   >
                     <td className="py-2 pr-3 font-medium text-gray-900">
-                      <button
+                      <Link
+                        href={`/app/crm/${row.prospect_id}`}
                         className="text-left hover:underline"
-                        onClick={() => setSelectedProspectId(row.prospect_id)}
                       >
                         {row.company_name}
+                      </Link>
+                      <button
+                        className="ml-2 text-xs text-gray-500 hover:underline"
+                        onClick={() => setSelectedProspectId(row.prospect_id)}
+                      >
+                        Schnellansicht
                       </button>
                     </td>
                     <td className="py-2 pr-3 text-gray-700">{row.contact_name || "–"}</td>
@@ -1272,6 +1508,17 @@ export default function CrmControlCenter({
             />
             <select
               className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+              value={pipelineSort}
+              onChange={(e) => setPipelineSort(e.target.value as any)}
+            >
+              <option value="fit_desc">Sortierung: Fit absteigend</option>
+              <option value="priority_fit">Sortierung: Priorität + Fit</option>
+              <option value="next_action_asc">Sortierung: Nächste Aktion</option>
+              <option value="updated_desc">Sortierung: Zuletzt aktualisiert</option>
+              <option value="company_asc">Sortierung: Firmenname A-Z</option>
+            </select>
+            <select
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
               value={pipelineStage}
               onChange={(e) => setPipelineStage(e.target.value)}
             >
@@ -1297,15 +1544,15 @@ export default function CrmControlCenter({
               </tr>
             </thead>
             <tbody>
-              {filteredProspects.map((p) => (
+              {sortedProspects.map((p) => (
                 <tr key={p.id} className="border-t border-gray-100 align-top">
                   <td className="py-3 pr-3">
-                    <button
+                    <Link
+                      href={`/app/crm/${p.id}`}
                       className={`text-left ${selectedProspectId === p.id ? "font-semibold text-gray-900" : "font-medium text-gray-900"} hover:underline`}
-                      onClick={() => setSelectedProspectId(p.id)}
                     >
                       {p.company_name}
-                    </button>
+                    </Link>
                     <div className="text-xs text-gray-500">
                       {p.contact_name || "Kein Name"} · {p.contact_email || "keine E-Mail"} · {p.city || "Kein Ort"} · {p.object_focus}
                       {typeof p.active_listings_count === "number" ? ` · ${p.active_listings_count} Inserate` : ""}
@@ -1344,6 +1591,12 @@ export default function CrmControlCenter({
                           Quelle
                         </a>
                       ) : null}
+                      <button
+                        className="text-gray-600 hover:underline"
+                        onClick={() => setSelectedProspectId(p.id)}
+                      >
+                        Schnellansicht
+                      </button>
                     </div>
                   </td>
                   <td className="max-w-[320px] py-3 pr-3 text-gray-700">
@@ -1411,7 +1664,7 @@ export default function CrmControlCenter({
                   </td>
                 </tr>
               ))}
-              {filteredProspects.length === 0 ? (
+              {sortedProspects.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-6 text-sm text-gray-500">
                     Keine Treffer. Passe Suche/Stage an oder lege oben einen neuen Tester-Kandidaten an.

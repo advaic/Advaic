@@ -178,7 +178,7 @@ export default function PublicEvidenceGap() {
     <section id="oeffentliche-benchmarks" className="marketing-section-clear py-20 md:py-28">
       <Container>
         <div className="max-w-[74ch]">
-          <h2 className="h2">Öffentliche Benchmarks statt erfundener Pilotzahlen</h2>
+          <h2 className="h2">Öffentliche Benchmarks</h2>
           <p className="body mt-4 text-[var(--muted)]">
             Weil wir noch keine veröffentlichten Pilot-Referenzen zeigen, arbeiten wir mit transparenten öffentlichen
             Kennzahlen. So sehen Sie klar, wo im aktuellen Ablauf Zeit, Qualität und Antwortgeschwindigkeit verloren

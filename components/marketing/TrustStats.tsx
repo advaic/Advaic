@@ -31,7 +31,7 @@ export default function TrustStats() {
   return (
     <section id="proof" className="marketing-section-clear py-20 md:py-28">
       <Container>
-        <h2 className="h2">Verifizierbare Produktfakten statt Marketing-Floskeln</h2>
+        <h2 className="h2">Verifizierbare Produktfakten</h2>
         <p className="body mt-4 max-w-[70ch] text-[var(--muted)]">
           Die folgenden Punkte basieren direkt auf der aktuellen Systemlogik von Advaic und sind keine externen
           Schätzwerte.

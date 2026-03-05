@@ -48,7 +48,10 @@ function getNavSections(isOwner: boolean) {
   if (isOwner) {
     sections.push({
       title: "🧪 Intern",
-      items: [{ label: "CRM", path: "/app/crm", icon: "🧭" }],
+      items: [
+        { label: "CRM", path: "/app/crm", icon: "🧭" },
+        { label: "Sales Intel", path: "/app/crm/sales-intel", icon: "📈" },
+      ],
     });
   }
   return sections;
@@ -81,6 +84,8 @@ function tourKeyForPath(path: string) {
       return "nav-konto";
     case "/app/crm":
       return "nav-crm";
+    case "/app/crm/sales-intel":
+      return "nav-crm-sales-intel";
     default:
       return null;
   }
@@ -379,7 +384,10 @@ export default function Sidebar() {
             )}
             <ul className="space-y-1">
               {section.items.map((item) => {
-                const isActive = pathname.startsWith(item.path);
+                const isActive =
+                  item.path === "/app/crm"
+                    ? pathname === "/app/crm"
+                    : pathname.startsWith(item.path);
                 const tourKey = tourKeyForPath(item.path);
                 return (
                   <li key={item.path}>

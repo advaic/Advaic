@@ -6,6 +6,10 @@ import {
   decryptSecretFromStorage,
   encryptSecretForStorage,
 } from "@/lib/security/secrets";
+import {
+  computeObjectiveQualityScore,
+  inferSegmentAndPlaybook,
+} from "@/lib/crm/acqIntelligence";
 
 export const runtime = "nodejs";
 
@@ -390,7 +394,7 @@ export async function POST(
 
   const { data: message, error: messageErr } = await (supabase.from("crm_outreach_messages") as any)
     .select(
-      "id, prospect_id, agent_id, subject, body, status, sent_at, external_message_id, metadata",
+      "id, prospect_id, agent_id, channel, message_kind, subject, body, status, sent_at, external_message_id, metadata",
     )
     .eq("id", messageId)
     .eq("agent_id", auth.user.id)
@@ -415,7 +419,9 @@ export async function POST(
   }
 
   const { data: prospect, error: prospectErr } = await (supabase.from("crm_prospects") as any)
-    .select("id, company_name, contact_name, contact_email, preferred_channel")
+    .select(
+      "id, company_name, contact_name, contact_email, preferred_channel, object_focus, share_miete_percent, share_kauf_percent, active_listings_count, automation_readiness",
+    )
     .eq("id", String(message.prospect_id))
     .eq("agent_id", auth.user.id)
     .maybeSingle();
@@ -431,6 +437,14 @@ export async function POST(
     message.metadata && typeof message.metadata === "object"
       ? (message.metadata as Record<string, any>)
       : {};
+  const inferred = inferSegmentAndPlaybook(prospect || null);
+  const templateVariant =
+    String(
+      (oldMeta as any)?.template_variant ||
+        (oldMeta as any)?.recommended_code ||
+        message.message_kind ||
+        "",
+    ).trim() || null;
   const toEmail = explicitTo || normalizeLine(prospect.contact_email || "", 320).toLowerCase();
   if (!toEmail || !isValidEmail(toEmail)) {
     return jsonError(
@@ -510,6 +524,40 @@ export async function POST(
       },
     }) as any);
 
+    await (supabase.from("crm_acq_activity_log") as any).insert({
+      agent_id: auth.user.id,
+      prospect_id: String(message.prospect_id),
+      occurred_at: nowIso,
+      channel: String(message.channel || "email"),
+      action_type: "outbound_sent",
+      segment_key: inferred.segment_key,
+      playbook_key: inferred.playbook_key,
+      template_variant: templateVariant,
+      cta_type: null,
+      outcome: "negative",
+      failure_reason: String(sendResult.error || "").trim() || "send_failed",
+      quality_objective_score: computeObjectiveQualityScore({
+        action_type: "outbound_sent",
+        outcome: "negative",
+        response_time_hours: null,
+        personalization_depth: null,
+        quality_self_score: null,
+        has_postmortem: true,
+      }),
+      analysis_note: `Versand fehlgeschlagen über ${providerResolved.provider}`,
+      postmortem_root_cause: "Technischer Versandfehler oder Provider-Antwort negativ.",
+      postmortem_fix: "Adresse/Kanal prüfen und Versandpfad erneut ausführen.",
+      postmortem_prevention:
+        "Vor Versand Deliverability und Provider-Status automatisch prüfen.",
+      metadata: {
+        source: "crm_send",
+        provider: providerResolved.provider,
+        error: sendResult.error,
+        segment_key: inferred.segment_key,
+        playbook_key: inferred.playbook_key,
+      },
+    });
+
     return jsonError(500, sendResult.error, sendResult.details);
   }
 
@@ -556,6 +604,43 @@ export async function POST(
       provider_thread_id: sendResult.providerThreadId,
     },
   }) as any);
+
+  await (supabase.from("crm_acq_activity_log") as any).insert({
+    agent_id: auth.user.id,
+    prospect_id: String(message.prospect_id),
+    occurred_at: nowIso,
+    channel: String(message.channel || "email"),
+    action_type: "outbound_sent",
+    segment_key: inferred.segment_key,
+    playbook_key: inferred.playbook_key,
+    template_variant: templateVariant,
+    cta_type: null,
+    outcome: "pending",
+    personalization_depth:
+      typeof (updated as any)?.personalization_score === "number"
+        ? Math.max(0, Math.min(100, Math.round((updated as any).personalization_score)))
+        : null,
+    quality_self_score: null,
+    quality_objective_score: computeObjectiveQualityScore({
+      action_type: "outbound_sent",
+      outcome: "pending",
+      response_time_hours: null,
+      personalization_depth:
+        typeof (updated as any)?.personalization_score === "number"
+          ? Math.max(0, Math.min(100, Math.round((updated as any).personalization_score)))
+          : null,
+      quality_self_score: null,
+      has_postmortem: false,
+    }),
+    analysis_note: `Versendet über ${sendResult.provider}`,
+    metadata: {
+      source: "crm_send",
+      provider: sendResult.provider,
+      provider_message_id: sendResult.providerMessageId,
+      segment_key: inferred.segment_key,
+      playbook_key: inferred.playbook_key,
+    },
+  });
 
   return NextResponse.json({
     ok: true,
