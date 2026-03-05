@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
+import { getSiteUrl } from "@/lib/seo/site-url";
 
-const BASE = "https://advaic.com";
+const BASE = getSiteUrl();
 
 const paths = [
   "/",

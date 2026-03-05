@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import BreadcrumbJsonLd from "@/components/seo/BreadcrumbJsonLd";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -96,6 +97,12 @@ export default function FAQPage() {
 
   return (
     <PageShell>
+      <BreadcrumbJsonLd
+        items={[
+          { name: "Startseite", path: "/" },
+          { name: "FAQ", path: "/faq" },
+        ]}
+      />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}

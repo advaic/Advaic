@@ -1,10 +1,12 @@
 import "../styles/globals.css";
 import SupabaseProvider from "./supabase-provider";
 import ClientRootLayout from "@/app/ClientRootLayout";
+import GlobalStructuredData from "@/components/seo/GlobalStructuredData";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import { Inter, Manrope } from "next/font/google";
 import type { Metadata } from "next";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://advaic.com";
+const siteUrl = getSiteUrl();
 
 const inter = Inter({
   subsets: ["latin"],
@@ -70,6 +72,7 @@ export default function RootLayout({
   return (
     <html lang="de">
       <body className={`${inter.variable} ${manrope.variable}`}>
+        <GlobalStructuredData />
         <SupabaseProvider initialSession={null}>
           <ClientRootLayout session={null}>{children}</ClientRootLayout>
         </SupabaseProvider>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import BreadcrumbJsonLd from "@/components/seo/BreadcrumbJsonLd";
 import PageShell from "@/components/marketing/PageShell";
 import Hero from "@/components/marketing/produkt/Hero";
 import TrustFoundations from "@/components/marketing/produkt/TrustFoundations";
@@ -71,6 +72,12 @@ export default function ProduktPage() {
 
   return (
     <PageShell proofContext="produkt">
+      <BreadcrumbJsonLd
+        items={[
+          { name: "Startseite", path: "/" },
+          { name: "Produkt", path: "/produkt" },
+        ]}
+      />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareSchema) }}

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import BreadcrumbJsonLd from "@/components/seo/BreadcrumbJsonLd";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -62,6 +63,12 @@ export const metadata: Metadata = {
 export default function PreisePage() {
   return (
     <PageShell>
+      <BreadcrumbJsonLd
+        items={[
+          { name: "Startseite", path: "/" },
+          { name: "Preise", path: "/preise" },
+        ]}
+      />
       <PageIntro
         kicker="Preise"
         title="Transparenter Einstieg mit Starter"

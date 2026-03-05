@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import BreadcrumbJsonLd from "@/components/seo/BreadcrumbJsonLd";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -55,6 +56,12 @@ export const metadata: Metadata = {
 export default function TrustPage() {
   return (
     <PageShell proofContext="trust">
+      <BreadcrumbJsonLd
+        items={[
+          { name: "Startseite", path: "/" },
+          { name: "Trust Center", path: "/trust" },
+        ]}
+      />
       <PageIntro
         kicker="Trust Center"
         title="Sicherheit, DSGVO und operative Kontrolle"

@@ -1,6 +1,8 @@
 import type { MetadataRoute } from "next";
+import { getSiteUrl } from "@/lib/seo/site-url";
 
 export default function robots(): MetadataRoute.Robots {
+  const siteUrl = getSiteUrl();
   return {
     rules: [
       {
@@ -15,7 +17,7 @@ export default function robots(): MetadataRoute.Robots {
         ],
       },
     ],
-    sitemap: "https://advaic.com/sitemap.xml",
-    host: "https://advaic.com",
+    sitemap: `${siteUrl}/sitemap.xml`,
+    host: siteUrl,
   };
 }

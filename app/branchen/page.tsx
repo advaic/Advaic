@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import BreadcrumbJsonLd from "@/components/seo/BreadcrumbJsonLd";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -89,6 +90,12 @@ export const metadata: Metadata = {
 export default function BranchenPage() {
   return (
     <PageShell>
+      <BreadcrumbJsonLd
+        items={[
+          { name: "Startseite", path: "/" },
+          { name: "Branchen", path: "/branchen" },
+        ]}
+      />
       <PageIntro
         kicker="Branchenprofile"
         title="Welche Konfiguration passt zu Ihrem Markt?"

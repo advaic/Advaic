@@ -53,60 +53,8 @@ export const metadata: Metadata = {
 };
 
 export default function HomePage() {
-  const organizationId = "https://advaic.com/#organization";
-  const websiteId = "https://advaic.com/#website";
-  const websiteUrl = "https://advaic.com";
-  const navigationItems = [
-    { name: "Produkt", url: `${websiteUrl}/produkt` },
-    { name: "Branchen", url: `${websiteUrl}/branchen` },
-    { name: "So funktioniert's", url: `${websiteUrl}/so-funktionierts` },
-    { name: "Sicherheit", url: `${websiteUrl}/sicherheit` },
-    { name: "Preise", url: `${websiteUrl}/preise` },
-    { name: "FAQ", url: `${websiteUrl}/faq` },
-  ];
-
-  const structuredData = {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "Organization",
-        "@id": organizationId,
-        name: "Advaic",
-        url: websiteUrl,
-        email: "support@advaic.com",
-        logo: {
-          "@type": "ImageObject",
-          url: `${websiteUrl}/brand/advaic-icon.png`,
-          width: 512,
-          height: 512,
-        },
-      },
-      {
-        "@type": "WebSite",
-        "@id": websiteId,
-        url: websiteUrl,
-        name: "Advaic",
-        inLanguage: "de-DE",
-        publisher: {
-          "@id": organizationId,
-        },
-        description:
-          "Autopilot für Interessenten-Anfragen per E-Mail mit Guardrails, Freigabe-Logik und Qualitätschecks vor Versand.",
-      },
-      ...navigationItems.map((item) => ({
-        "@type": "SiteNavigationElement",
-        name: item.name,
-        url: item.url,
-      })),
-    ],
-  };
-
   return (
     <main className="marketing-page-bg bg-[var(--bg)] text-[var(--text)]">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-      />
       <MarketingNavbar />
       <Hero />
       <ProductVisualAuthority
