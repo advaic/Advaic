@@ -24,6 +24,19 @@ function normalizeText(value: unknown, max = 2000) {
   return String(value ?? "").replace(/\r/g, "").trim().slice(0, max);
 }
 
+function isSchemaMismatch(error: { message?: string; details?: string; hint?: string; code?: string } | null | undefined) {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
+  const code = String(error?.code || "").toLowerCase();
+  return (
+    code === "42703" ||
+    code === "42p01" ||
+    text.includes("does not exist") ||
+    text.includes("schema cache") ||
+    text.includes("could not find the") ||
+    text.includes("relation")
+  );
+}
+
 function buildSequenceDraft(args: {
   code: string;
   companyName: string;
@@ -136,6 +149,17 @@ export async function POST(req: NextRequest) {
 
   const { data: dueActions, error: dueErr } = await query;
   if (dueErr) {
+    if (isSchemaMismatch(dueErr as any)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "crm_schema_missing",
+          details:
+            "CRM-Schema ist veraltet. Bitte nacheinander ausführen: 20260304_crm_prospects_contact_email.sql und 20260304_crm_next_actions_sequence_logic.sql.",
+        },
+        { status: 503 },
+      );
+    }
     return NextResponse.json(
       { ok: false, error: "crm_sequence_due_fetch_failed", details: dueErr.message },
       { status: 500 },
@@ -308,4 +332,3 @@ export async function POST(req: NextRequest) {
     actions,
   });
 }
-

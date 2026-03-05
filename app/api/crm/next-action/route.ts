@@ -4,9 +4,17 @@ import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
 
 export const runtime = "nodejs";
 
-function isRelationMissing(message: string) {
-  const text = String(message || "").toLowerCase();
-  return text.includes("does not exist") || text.includes("relation");
+function isSchemaMismatch(error: { message?: string; details?: string; hint?: string; code?: string } | null | undefined) {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
+  const code = String(error?.code || "").toLowerCase();
+  return (
+    code === "42703" || // undefined_column
+    code === "42p01" || // undefined_table / relation missing
+    text.includes("does not exist") ||
+    text.includes("schema cache") ||
+    text.includes("could not find the") ||
+    text.includes("relation")
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -29,12 +37,13 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
 
   if (error) {
-    if (isRelationMissing(error.message)) {
+    if (isSchemaMismatch(error as any)) {
       return NextResponse.json(
         {
           ok: false,
           error: "crm_schema_missing",
-          details: "CRM-Schema noch nicht angewendet. Bitte Migration ausführen.",
+          details:
+            "CRM-Schema ist veraltet. Bitte nacheinander ausführen: 20260304_crm_prospects_contact_email.sql und 20260304_crm_next_actions_sequence_logic.sql.",
         },
         { status: 503 },
       );
@@ -50,4 +59,3 @@ export async function GET(req: NextRequest) {
     next_action: data || null,
   });
 }
-
