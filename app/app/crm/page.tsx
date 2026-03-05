@@ -91,7 +91,7 @@ export default async function CrmPage() {
         .limit(15),
       (admin.from("crm_prospects") as any)
         .select(
-          "id, company_name, contact_name, contact_email, city, object_focus, priority, fit_score, stage, preferred_channel, last_contacted_at, next_action, next_action_at, personalization_hook",
+          "id, company_name, contact_name, contact_email, city, object_focus, priority, fit_score, stage, preferred_channel, last_contacted_at, next_action, next_action_at, personalization_hook, source_url, source_checked_at, linkedin_url, linkedin_search_url, linkedin_relevance_note, active_listings_count, share_miete_percent, share_kauf_percent, brand_tone, primary_objection, automation_readiness, cta_preference_guess",
         )
         .eq("agent_id", user.id)
         .order("updated_at", { ascending: false })

@@ -11,6 +11,15 @@ type InviteContext = {
   objectFocus: string;
   hook: string | null;
   painPoint: string | null;
+  primaryObjection: string | null;
+  activeListingsCount: number | null;
+  shareMietePercent: number | null;
+  shareKaufPercent: number | null;
+  automationReadiness: string | null;
+  brandTone: string | null;
+  sourceCheckedAt: string | null;
+  linkedinUrl: string | null;
+  evidence: string | null;
   channel: string;
 };
 
@@ -43,6 +52,15 @@ function applyVars(template: string, context: InviteContext) {
     .replaceAll("{{OBJECT_FOCUS}}", context.objectFocus || "gemischt")
     .replaceAll("{{HOOK}}", context.hook || "")
     .replaceAll("{{PAIN_POINT}}", context.painPoint || "")
+    .replaceAll("{{PRIMARY_OBJECTION}}", context.primaryObjection || "")
+    .replaceAll("{{ACTIVE_LISTINGS_COUNT}}", String(context.activeListingsCount ?? ""))
+    .replaceAll("{{SHARE_MIETE_PERCENT}}", String(context.shareMietePercent ?? ""))
+    .replaceAll("{{SHARE_KAUF_PERCENT}}", String(context.shareKaufPercent ?? ""))
+    .replaceAll("{{AUTOMATION_READINESS}}", context.automationReadiness || "")
+    .replaceAll("{{BRAND_TONE}}", context.brandTone || "")
+    .replaceAll("{{SOURCE_CHECKED_AT}}", context.sourceCheckedAt || "")
+    .replaceAll("{{LINKEDIN_URL}}", context.linkedinUrl || "")
+    .replaceAll("{{PERSONALIZATION_EVIDENCE}}", context.evidence || "")
     .replaceAll("{{CHANNEL}}", context.channel || "email");
 }
 
@@ -73,7 +91,7 @@ async function maybeGenerateInviteWithAi(args: {
 
   const fallbackSystemPrompt =
     "Du schreibst kurze, persönliche Akquise-Nachrichten für deutsche Immobilienmakler. Kein Kaufdruck. Klare, respektvolle Sprache. Gib nur JSON zurück.";
-  const fallbackUserPrompt = `Erzeuge eine personalisierte Tester-Einladung.
+const fallbackUserPrompt = `Erzeuge eine personalisierte Tester-Einladung.
 Kontext:
 - Firma: {{COMPANY_NAME}}
 - Kontakt: {{CONTACT_NAME}}
@@ -81,6 +99,14 @@ Kontext:
 - Fokus: {{OBJECT_FOCUS}}
 - Hook: {{HOOK}}
 - Pain Point: {{PAIN_POINT}}
+- Primäre Objection: {{PRIMARY_OBJECTION}}
+- Aktive Inserate: {{ACTIVE_LISTINGS_COUNT}}
+- Mix Miete/Kauf: {{SHARE_MIETE_PERCENT}}/{{SHARE_KAUF_PERCENT}}
+- Readiness: {{AUTOMATION_READINESS}}
+- Brand-Ton: {{BRAND_TONE}}
+- Quelle geprüft am: {{SOURCE_CHECKED_AT}}
+- LinkedIn: {{LINKEDIN_URL}}
+- Evidenz: {{PERSONALIZATION_EVIDENCE}}
 - Kanal: {{CHANNEL}}
 
 Ziel:
@@ -150,6 +176,15 @@ function buildTesterInvite(args: {
   objectFocus: string;
   hook: string | null;
   painPoint: string | null;
+  primaryObjection: string | null;
+  activeListingsCount: number | null;
+  shareMietePercent: number | null;
+  shareKaufPercent: number | null;
+  automationReadiness: string | null;
+  brandTone: string | null;
+  sourceCheckedAt: string | null;
+  linkedinUrl: string | null;
+  evidence: string | null;
   channel: string;
 }) {
   const salutation = args.contactName
@@ -166,15 +201,32 @@ function buildTesterInvite(args: {
   const pain = args.painPoint
     ? `Meine Hypothese: ${args.painPoint}.`
     : `Gerade bei wiederkehrenden Interessentenanfragen entsteht oft viel manueller Aufwand im Postfach.`;
+  const mixLine =
+    typeof args.activeListingsCount === "number" &&
+    (typeof args.shareMietePercent === "number" || typeof args.shareKaufPercent === "number")
+      ? `Öffentlich sichtbar sind aktuell etwa ${args.activeListingsCount} aktive Inserate (Miete ${args.shareMietePercent ?? "?"}% / Kauf ${args.shareKaufPercent ?? "?"}%).`
+      : "";
+  const objectionLine = args.primaryObjection
+    ? `Mir ist wichtig: ${args.primaryObjection} adressieren wir sauber mit klaren Guardrails.`
+    : "";
+  const readinessLine = args.automationReadiness
+    ? `Für euch passt wahrscheinlich ein ${args.automationReadiness}er Start: zuerst mehr Freigabe, dann schrittweise Automation.`
+    : "";
+  const evidenceLine = args.evidence ? `Konkreter Hinweis: ${args.evidence}` : "";
+  const sourceLine = args.sourceCheckedAt ? `(Quelle geprüft am ${args.sourceCheckedAt})` : "";
 
   const body = `${salutation}
 
 ${hook}
 ${pain}
+${mixLine}
+${evidenceLine} ${sourceLine}
 
 Wir suchen aktuell wenige Makler${focusLine}, die Advaic als Tester früh nutzen wollen. Ohne Kaufdruck: Wir möchten gemeinsam prüfen, wie stark sich Antwortgeschwindigkeit und Postfachaufwand verbessern lassen.
 
 Wichtig: Autopilot sendet nur bei klaren Fällen. Unklare Fälle gehen zur Freigabe, und vor jedem Versand laufen Qualitätschecks.
+${objectionLine}
+${readinessLine}
 
 Wenn das relevant klingt, können wir in 15 Minuten schauen, ob ein vorsichtiger Pilot für euch passt.`;
 
@@ -206,7 +258,7 @@ export async function GET(
   const supabase = createSupabaseAdminClient();
   const { data: prospect, error: prospectErr } = await (supabase.from("crm_prospects") as any)
     .select(
-      "id, company_name, contact_name, city, object_focus, personalization_hook, pain_point_hypothesis",
+      "id, company_name, contact_name, city, object_focus, personalization_hook, pain_point_hypothesis, primary_objection, active_listings_count, share_miete_percent, share_kauf_percent, automation_readiness, brand_tone, source_checked_at, linkedin_url, personalization_evidence",
     )
     .eq("id", prospectId)
     .eq("agent_id", auth.user.id)
@@ -240,6 +292,18 @@ export async function GET(
       firstKeyNote ||
       (String(prospect.personalization_hook || "").trim() || null),
     painPoint: String(prospect.pain_point_hypothesis || "").trim() || null,
+    primaryObjection: String(prospect.primary_objection || "").trim() || null,
+    activeListingsCount:
+      typeof prospect.active_listings_count === "number" ? prospect.active_listings_count : null,
+    shareMietePercent:
+      typeof prospect.share_miete_percent === "number" ? prospect.share_miete_percent : null,
+    shareKaufPercent:
+      typeof prospect.share_kauf_percent === "number" ? prospect.share_kauf_percent : null,
+    automationReadiness: String(prospect.automation_readiness || "").trim() || null,
+    brandTone: String(prospect.brand_tone || "").trim() || null,
+    sourceCheckedAt: String(prospect.source_checked_at || "").trim() || null,
+    linkedinUrl: String(prospect.linkedin_url || "").trim() || null,
+    evidence: String(prospect.personalization_evidence || "").trim() || null,
     channel,
   };
 

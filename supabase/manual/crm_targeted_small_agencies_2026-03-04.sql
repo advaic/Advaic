@@ -483,9 +483,28 @@ upserted as (
     city,
     region,
     website_url,
+    source_url,
+    source_checked_at,
+    linkedin_url,
+    linkedin_search_url,
+    linkedin_relevance_note,
     object_focus,
+    active_listings_count,
+    share_miete_percent,
+    share_kauf_percent,
+    object_types,
     target_group,
     process_hint,
+    primary_objection,
+    primary_pain_hypothesis,
+    secondary_pain_hypothesis,
+    automation_readiness,
+    cta_preference_guess,
+    personalization_evidence,
+    hypothesis_confidence,
+    owner_led,
+    brand_tone,
+    trust_signals,
     pain_point_hypothesis,
     personalization_hook,
     fit_score,
@@ -505,7 +524,30 @@ upserted as (
     s.city,
     s.region,
     s.website_url,
+    s.source_url,
+    '2026-03-04'::date,
+    case
+      when s.company_name = 'Mosler Immobilien' then 'https://de.linkedin.com/company/dirk-mosler-immobilien'
+      else null
+    end,
+    format(
+      'https://www.linkedin.com/search/results/all/?keywords=%s',
+      replace(concat_ws(' ', s.contact_name, s.company_name, s.city, 'Immobilienmakler'), ' ', '%20')
+    ),
+    case
+      when s.company_name = 'Mosler Immobilien'
+        then 'LinkedIn-Firmenseite gefunden. Sichtbares Posting im PropCon/BVFI-Kontext (Makler-Automatisierung).'
+      else null
+    end,
     s.object_focus,
+    s.active_listings_count,
+    s.share_miete_percent,
+    s.share_kauf_percent,
+    case
+      when s.object_focus = 'miete' then array['Wohnung', 'Miete']::text[]
+      when s.object_focus = 'kauf' then array['Wohnung', 'Haus']::text[]
+      else array['Wohnung', 'Haus', 'Gemischt']::text[]
+    end,
     s.target_group,
     format(
       'ImmoScout24-Profil aktiv: %s Inserate (%s%% Kauf / %s%% Miete).',
@@ -513,6 +555,33 @@ upserted as (
       s.share_kauf_percent,
       s.share_miete_percent
     ),
+    'Kontrollverlust bei Auto-Antworten',
+    s.pain_point_hypothesis,
+    'Unsichere Sonderfälle sollten immer in die Freigabe gehen.',
+    case
+      when s.fit_score >= 86 then 'hoch'
+      when s.fit_score >= 80 then 'mittel'
+      else 'niedrig'
+    end,
+    case
+      when s.preferred_channel = 'email' then 'kurze_mail_antwort'
+      when s.preferred_channel = 'kontaktformular' then 'formular_antwort'
+      else '15_min_call'
+    end,
+    format(
+      'Beleg: %s Inserate mit Mix %s%% Kauf / %s%% Miete (Quelle: %s).',
+      s.active_listings_count,
+      s.share_kauf_percent,
+      s.share_miete_percent,
+      s.source_url
+    ),
+    0.82,
+    (s.contact_role in ('Inhaber', 'Inhaberin')),
+    'professionell',
+    case
+      when s.company_name = 'Mosler Immobilien' then array['LinkedIn-Aktivitaet (PropCon/BVFI Kontext)']::text[]
+      else '{}'::text[]
+    end,
     s.pain_point_hypothesis,
     s.personalization_hook,
     s.fit_score,
@@ -548,9 +617,28 @@ upserted as (
     contact_role = excluded.contact_role,
     region = excluded.region,
     website_url = excluded.website_url,
+    source_url = excluded.source_url,
+    source_checked_at = excluded.source_checked_at,
+    linkedin_url = excluded.linkedin_url,
+    linkedin_search_url = excluded.linkedin_search_url,
+    linkedin_relevance_note = excluded.linkedin_relevance_note,
     object_focus = excluded.object_focus,
+    active_listings_count = excluded.active_listings_count,
+    share_miete_percent = excluded.share_miete_percent,
+    share_kauf_percent = excluded.share_kauf_percent,
+    object_types = excluded.object_types,
     target_group = excluded.target_group,
     process_hint = excluded.process_hint,
+    primary_objection = excluded.primary_objection,
+    primary_pain_hypothesis = excluded.primary_pain_hypothesis,
+    secondary_pain_hypothesis = excluded.secondary_pain_hypothesis,
+    automation_readiness = excluded.automation_readiness,
+    cta_preference_guess = excluded.cta_preference_guess,
+    personalization_evidence = excluded.personalization_evidence,
+    hypothesis_confidence = excluded.hypothesis_confidence,
+    owner_led = excluded.owner_led,
+    brand_tone = excluded.brand_tone,
+    trust_signals = excluded.trust_signals,
     pain_point_hypothesis = excluded.pain_point_hypothesis,
     personalization_hook = excluded.personalization_hook,
     fit_score = excluded.fit_score,

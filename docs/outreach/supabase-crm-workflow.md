@@ -22,6 +22,10 @@ SQL ausführen:
 
 `supabase/migrations/20260304_crm_outreach_pilot_suite.sql`
 
+danach für erweiterten Personalisierungskern:
+
+`supabase/migrations/20260305_crm_personalization_core_fields.sql`
+
 Wenn du Supabase Studio nutzt: SQL Editor öffnen und die Datei ausführen.
 
 ## Zugriffsschutz (nur du)

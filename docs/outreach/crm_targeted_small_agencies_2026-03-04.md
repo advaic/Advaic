@@ -8,14 +8,19 @@ Diese Liste ist auf schnelle Pilot-Akquise ausgelegt:
 2. Klarer Miete/Kauf-Fokus fuer eine saubere Hook in der Erstnachricht
 3. Oeffentliche Signale, die im CRM als Personalisierung nutzbar sind
 
+Hinweis LinkedIn:
+Wo ein verifizierbarer Profil-Link gefunden wurde, ist er direkt in `linkedin_url` enthalten.
+Zusätzlich wird pro Prospect eine `linkedin_search_url` gesetzt, damit die Recherche mit einem Klick weitergeführt werden kann.
+
 ## Felder, die im SQL-Seed gesetzt werden
 
 1. `company_name`, `contact_name`, `contact_email`, `contact_role`
 2. `city`, `region`, `website_url`
-3. `object_focus`, `target_group`, `process_hint`
-4. `pain_point_hypothesis`, `personalization_hook`
-5. `fit_score`, `priority`, `preferred_channel`
-6. `metadata` mit Angebotszahl, Miete/Kauf-Anteil, Online-Praesenz-Signal, Quelle
+3. `source_url`, `source_checked_at`, `linkedin_url`, `linkedin_search_url`
+4. `object_focus`, `active_listings_count`, `share_miete_percent`, `share_kauf_percent`, `object_types`
+5. `target_group`, `process_hint`, `primary_objection`, `primary_pain_hypothesis`, `secondary_pain_hypothesis`
+6. `automation_readiness`, `cta_preference_guess`, `personalization_evidence`, `hypothesis_confidence`
+7. `fit_score`, `priority`, `preferred_channel`, plus `metadata` mit Online-Praesenz-Signal
 
 ## Quick-Review der Ziel-Prospects
 
@@ -47,6 +52,10 @@ Diese Liste ist auf schnelle Pilot-Akquise ausgelegt:
 ## Import
 
 Fuehre aus:
+
+`supabase/migrations/20260305_crm_personalization_core_fields.sql`
+
+danach:
 
 `supabase/manual/crm_targeted_small_agencies_2026-03-04.sql`
 

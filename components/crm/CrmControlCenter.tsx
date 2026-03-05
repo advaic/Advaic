@@ -16,6 +16,18 @@ type Prospect = {
   next_action: string | null;
   next_action_at: string | null;
   personalization_hook: string | null;
+  source_url?: string | null;
+  source_checked_at?: string | null;
+  linkedin_url?: string | null;
+  linkedin_search_url?: string | null;
+  linkedin_relevance_note?: string | null;
+  active_listings_count?: number | null;
+  share_miete_percent?: number | null;
+  share_kauf_percent?: number | null;
+  brand_tone?: string | null;
+  primary_objection?: string | null;
+  automation_readiness?: string | null;
+  cta_preference_guess?: string | null;
 };
 
 type FollowupDue = {
@@ -112,9 +124,24 @@ type NewProspectForm = {
   city: string;
   region: string;
   website_url: string;
+  source_url: string;
+  source_checked_at: string;
+  linkedin_url: string;
+  linkedin_search_url: string;
   object_focus: "miete" | "kauf" | "neubau" | "gemischt";
   priority: "A" | "B" | "C";
   fit_score: number;
+  active_listings_count: number | "";
+  new_listings_30d: number | "";
+  share_miete_percent: number | "";
+  share_kauf_percent: number | "";
+  object_types_csv: string;
+  brand_tone: "kurz_direkt" | "freundlich" | "professionell" | "gemischt" | "";
+  primary_objection: string;
+  cta_preference_guess: "kurze_mail_antwort" | "15_min_call" | "video_link" | "formular_antwort" | "";
+  automation_readiness: "niedrig" | "mittel" | "hoch" | "";
+  personalization_evidence: string;
+  hypothesis_confidence: number | "";
   preferred_channel: "email" | "telefon" | "linkedin" | "kontaktformular";
   target_group: string;
   process_hint: string;
@@ -174,6 +201,12 @@ function formatDate(iso: string | null | undefined) {
   }).format(d);
 }
 
+function buildLinkedInSearchUrl(companyName: string, contactName: string, city: string) {
+  const q = [contactName, companyName, city, "LinkedIn Immobilien"].filter(Boolean).join(" ");
+  if (!q.trim()) return "";
+  return `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(q)}`;
+}
+
 function stageBadgeClass(stage: string) {
   if (stage === "won") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
   if (stage === "lost") return "bg-rose-50 text-rose-700 ring-rose-200";
@@ -190,9 +223,24 @@ const defaultForm: NewProspectForm = {
   city: "",
   region: "",
   website_url: "",
+  source_url: "",
+  source_checked_at: "",
+  linkedin_url: "",
+  linkedin_search_url: "",
   object_focus: "gemischt",
   priority: "B",
   fit_score: 70,
+  active_listings_count: "",
+  new_listings_30d: "",
+  share_miete_percent: "",
+  share_kauf_percent: "",
+  object_types_csv: "",
+  brand_tone: "",
+  primary_objection: "",
+  cta_preference_guess: "",
+  automation_readiness: "",
+  personalization_evidence: "",
+  hypothesis_confidence: "",
   preferred_channel: "email",
   target_group: "",
   process_hint: "",
@@ -340,6 +388,8 @@ export default function CrmControlCenter({
         p.city || "",
         p.object_focus || "",
         p.personalization_hook || "",
+        p.linkedin_url || "",
+        p.primary_objection || "",
       ]
         .join(" ")
         .toLowerCase();
@@ -366,10 +416,24 @@ export default function CrmControlCenter({
     setError(null);
     setSuccess(null);
     try {
+      const autoLinkedInSearchUrl =
+        form.linkedin_search_url.trim() ||
+        buildLinkedInSearchUrl(form.company_name, form.contact_name, form.city);
+      const objectTypes = form.object_types_csv
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const payload = {
+        ...form,
+        linkedin_search_url: autoLinkedInSearchUrl,
+        object_types: objectTypes,
+        primary_pain_hypothesis: form.pain_point_hypothesis || "",
+        secondary_pain_hypothesis: form.process_hint || "",
+      };
       const res = await fetch("/api/crm/prospects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) {
@@ -833,7 +897,7 @@ export default function CrmControlCenter({
         <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm xl:col-span-2">
           <h2 className="text-lg font-semibold text-gray-900">Neuen Tester-Kandidaten anlegen</h2>
           <p className="mt-1 text-sm text-gray-600">
-            Fokus auf persönliche Relevanz: Hook und Pain-Point sauber eintragen.
+            Fokus auf persönliche Relevanz: valide Quellen, Angebotsmix, Objection und Hook sauber eintragen.
           </p>
           <div className="mt-4 grid gap-3">
             <input
@@ -883,6 +947,90 @@ export default function CrmControlCenter({
               value={form.website_url}
               onChange={(e) => setForm((s) => ({ ...s, website_url: e.target.value }))}
             />
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <input
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                placeholder="Quell-URL (Portal/Website)"
+                value={form.source_url}
+                onChange={(e) => setForm((s) => ({ ...s, source_url: e.target.value }))}
+              />
+              <input
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                placeholder="Quelle geprüft am (YYYY-MM-DD)"
+                value={form.source_checked_at}
+                onChange={(e) => setForm((s) => ({ ...s, source_checked_at: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <input
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                placeholder="LinkedIn-Profil-URL (optional)"
+                value={form.linkedin_url}
+                onChange={(e) => setForm((s) => ({ ...s, linkedin_url: e.target.value }))}
+              />
+              <input
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                placeholder="LinkedIn-Such-URL (optional)"
+                value={form.linkedin_search_url}
+                onChange={(e) => setForm((s) => ({ ...s, linkedin_search_url: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <input
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                type="number"
+                min={0}
+                placeholder="Aktive Inserate"
+                value={form.active_listings_count}
+                onChange={(e) =>
+                  setForm((s) => ({
+                    ...s,
+                    active_listings_count: e.target.value === "" ? "" : Number(e.target.value),
+                  }))
+                }
+              />
+              <input
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                type="number"
+                min={0}
+                placeholder="Neue Inserate (30d)"
+                value={form.new_listings_30d}
+                onChange={(e) =>
+                  setForm((s) => ({
+                    ...s,
+                    new_listings_30d: e.target.value === "" ? "" : Number(e.target.value),
+                  }))
+                }
+              />
+              <input
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                type="number"
+                min={0}
+                max={100}
+                placeholder="% Miete"
+                value={form.share_miete_percent}
+                onChange={(e) =>
+                  setForm((s) => ({
+                    ...s,
+                    share_miete_percent: e.target.value === "" ? "" : Number(e.target.value),
+                  }))
+                }
+              />
+              <input
+                className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                type="number"
+                min={0}
+                max={100}
+                placeholder="% Kauf"
+                value={form.share_kauf_percent}
+                onChange={(e) =>
+                  setForm((s) => ({
+                    ...s,
+                    share_kauf_percent: e.target.value === "" ? "" : Number(e.target.value),
+                  }))
+                }
+              />
+            </div>
             <div className="grid grid-cols-3 gap-3">
               <select
                 className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
@@ -953,6 +1101,97 @@ export default function CrmControlCenter({
               value={form.pain_point_hypothesis}
               onChange={(e) => setForm((s) => ({ ...s, pain_point_hypothesis: e.target.value }))}
             />
+            <details className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <summary className="cursor-pointer text-sm font-medium text-gray-800">
+                Erweiterte Personalisierungsdaten
+              </summary>
+              <div className="mt-3 grid gap-3">
+                <input
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  placeholder="Objekttypen (CSV, z. B. Wohnung,Haus,Gewerbe)"
+                  value={form.object_types_csv}
+                  onChange={(e) => setForm((s) => ({ ...s, object_types_csv: e.target.value }))}
+                />
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <select
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                    value={form.brand_tone}
+                    onChange={(e) =>
+                      setForm((s) => ({
+                        ...s,
+                        brand_tone: e.target.value as NewProspectForm["brand_tone"],
+                      }))
+                    }
+                  >
+                    <option value="">Brand-Ton (optional)</option>
+                    <option value="kurz_direkt">Kurz & direkt</option>
+                    <option value="freundlich">Freundlich</option>
+                    <option value="professionell">Professionell</option>
+                    <option value="gemischt">Gemischt</option>
+                  </select>
+                  <select
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                    value={form.automation_readiness}
+                    onChange={(e) =>
+                      setForm((s) => ({
+                        ...s,
+                        automation_readiness: e.target.value as NewProspectForm["automation_readiness"],
+                      }))
+                    }
+                  >
+                    <option value="">Automation-Readiness</option>
+                    <option value="niedrig">Niedrig</option>
+                    <option value="mittel">Mittel</option>
+                    <option value="hoch">Hoch</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <input
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                    placeholder="Primäre Objection (z. B. Kontrollverlust)"
+                    value={form.primary_objection}
+                    onChange={(e) => setForm((s) => ({ ...s, primary_objection: e.target.value }))}
+                  />
+                  <select
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                    value={form.cta_preference_guess}
+                    onChange={(e) =>
+                      setForm((s) => ({
+                        ...s,
+                        cta_preference_guess: e.target.value as NewProspectForm["cta_preference_guess"],
+                      }))
+                    }
+                  >
+                    <option value="">CTA-Präferenz</option>
+                    <option value="kurze_mail_antwort">Kurze Mail-Antwort</option>
+                    <option value="15_min_call">15-Minuten-Call</option>
+                    <option value="video_link">Video-Link</option>
+                    <option value="formular_antwort">Formular-Antwort</option>
+                  </select>
+                </div>
+                <textarea
+                  className="min-h-[72px] rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  placeholder="Personalisierungs-Evidenz (welches konkrete Faktum stützt die Nachricht?)"
+                  value={form.personalization_evidence}
+                  onChange={(e) => setForm((s) => ({ ...s, personalization_evidence: e.target.value }))}
+                />
+                <input
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  placeholder="Hypothesis Confidence (0.00-1.00)"
+                  value={form.hypothesis_confidence}
+                  onChange={(e) =>
+                    setForm((s) => ({
+                      ...s,
+                      hypothesis_confidence: e.target.value === "" ? "" : Number(e.target.value),
+                    }))
+                  }
+                />
+              </div>
+            </details>
             <button
               onClick={() => void createProspect()}
               disabled={formBusy}
@@ -1069,6 +1308,42 @@ export default function CrmControlCenter({
                     </button>
                     <div className="text-xs text-gray-500">
                       {p.contact_name || "Kein Name"} · {p.contact_email || "keine E-Mail"} · {p.city || "Kein Ort"} · {p.object_focus}
+                      {typeof p.active_listings_count === "number" ? ` · ${p.active_listings_count} Inserate` : ""}
+                      {typeof p.share_miete_percent === "number" || typeof p.share_kauf_percent === "number"
+                        ? ` · Miete ${p.share_miete_percent ?? "?"}% / Kauf ${p.share_kauf_percent ?? "?"}%`
+                        : ""}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                      {p.linkedin_url ? (
+                        <a
+                          className="text-blue-700 hover:underline"
+                          href={p.linkedin_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          LinkedIn-Profil
+                        </a>
+                      ) : null}
+                      {!p.linkedin_url && p.linkedin_search_url ? (
+                        <a
+                          className="text-blue-700 hover:underline"
+                          href={p.linkedin_search_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          LinkedIn suchen
+                        </a>
+                      ) : null}
+                      {p.source_url ? (
+                        <a
+                          className="text-gray-600 hover:underline"
+                          href={p.source_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Quelle
+                        </a>
+                      ) : null}
                     </div>
                   </td>
                   <td className="max-w-[320px] py-3 pr-3 text-gray-700">
@@ -1154,6 +1429,56 @@ export default function CrmControlCenter({
           <p className="mt-1 text-xs text-gray-600">
             {selectedProspect ? `Ausgewählt: ${selectedProspect.company_name}` : "Kein Prospect ausgewählt"}
           </p>
+          {selectedProspect ? (
+            <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+              <div>
+                Fokus: {selectedProspect.object_focus} · Fit {selectedProspect.fit_score} ·{" "}
+                {selectedProspect.automation_readiness || "Readiness offen"}
+              </div>
+              <div className="mt-1">
+                Objection: {selectedProspect.primary_objection || "nicht gepflegt"} · Tone:{" "}
+                {selectedProspect.brand_tone || "nicht gepflegt"}
+              </div>
+              <div className="mt-1">
+                Quelle geprüft: {selectedProspect.source_checked_at || "unbekannt"}
+              </div>
+              {selectedProspect.linkedin_relevance_note ? (
+                <div className="mt-1">LinkedIn-Hinweis: {selectedProspect.linkedin_relevance_note}</div>
+              ) : null}
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                {selectedProspect.linkedin_url ? (
+                  <a
+                    href={selectedProspect.linkedin_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-700 hover:underline"
+                  >
+                    LinkedIn-Profil öffnen
+                  </a>
+                ) : null}
+                {!selectedProspect.linkedin_url && selectedProspect.linkedin_search_url ? (
+                  <a
+                    href={selectedProspect.linkedin_search_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-700 hover:underline"
+                  >
+                    LinkedIn-Suche öffnen
+                  </a>
+                ) : null}
+                {selectedProspect.source_url ? (
+                  <a
+                    href={selectedProspect.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-gray-600 hover:underline"
+                  >
+                    Quellseite öffnen
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           <div className="mt-3 grid gap-2">
             <textarea
               className="min-h-[90px] rounded-xl border border-gray-200 px-3 py-2 text-sm"
