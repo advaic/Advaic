@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/routeAuth";
 import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
 import { getPlaybookForSegment, inferSegmentFromProspect } from "@/lib/crm/salesIntelResearch";
 import { routeObjection } from "@/lib/crm/objectionLibrary";
+import { collectTriggerEvidence, evaluateFirstTouchGuardrails } from "@/lib/crm/cadenceRules";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,30 @@ function compactBody(text: string) {
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function sanitizeOutreachSnippet(value: string | null | undefined, max = 260) {
+  let text = normalizeMultiline(value, max);
+  text = text
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\bkontaktquelle\b\s*:?/gi, "")
+    .replace(/\bquelle\b\s*:?/gi, "")
+    .replace(/\bimpressum\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (!text) return "";
+  const chunks = text
+    .split(/[.!?]/)
+    .map((x) => normalizeLine(x, 170))
+    .filter(Boolean);
+  const unique: string[] = [];
+  for (const c of chunks) {
+    if (!unique.includes(c)) unique.push(c);
+    if (unique.length >= 2) break;
+  }
+  const compact = unique.join(". ").trim();
+  if (!compact) return "";
+  return compact.endsWith(".") ? compact : `${compact}.`;
 }
 
 function hasMessageSafetySignals(text: string) {
@@ -101,14 +126,6 @@ function fallbackPack(args: {
   const salutation = args.contactName
     ? `Hallo ${args.contactName},`
     : `Hallo ${args.companyName}-Team,`;
-  const focus =
-    args.objectFocus && args.objectFocus !== "gemischt"
-      ? args.objectFocus === "miete"
-        ? "Vermietungsanfragen"
-        : args.objectFocus === "kauf"
-          ? "Kaufanfragen"
-          : "Interessentenanfragen"
-      : "Interessentenanfragen";
   const hook =
     args.hook ||
     `${args.companyName} fällt mit einer klaren Positionierung im Markt auf.`;
@@ -128,34 +145,27 @@ function fallbackPack(args: {
       ? `${args.newListings30d} neue Inserate in 30 Tagen sprechen für laufenden Anfragefluss.`
       : "";
   const evidenceHint = [args.evidence, args.researchInsights].filter(Boolean).join(" ");
+  const signalLine =
+    listingHint || growthHint || evidenceHint || `${args.companyName} wirkt in ${args.city || args.region || "Ihrer Region"} sehr präsent.`;
 
   const emailBody = compactBody(`${salutation}
 
-ich melde mich mit einer konkreten Beobachtung zu ${args.companyName}: ${hook}
-${pain}
-${listingHint}
-${growthHint}
-${evidenceHint}
-
-Advaic nimmt genau diesen Routine-Teil ab: klare Fälle können automatisch beantwortet werden, unklare Fälle gehen zur Freigabe, und vor jedem Versand laufen Qualitätschecks.
-Für Sie bedeutet das: ${args.valueNarrative}.
-${objection}
-${objectionRoute.short_rebuttal}
-
-Wenn Sie möchten, schauen wir uns in 15 Minuten unverbindlich an, ob ein vorsichtiger Start für Ihre ${focus} passt.`);
+ich bin Kilian von Advaic, weil mir bei ${args.companyName} besonders ${hook} aufgefallen ist.
+${pain} ${signalLine}
+Advaic beantwortet klare Fälle automatisch, schickt unklare Fälle in die Freigabe und führt vor jedem Versand Qualitätschecks auf Relevanz, Kontext und Ton aus.
+Ist das bei Ihnen aktuell ein relevantes Thema oder haben Sie es intern bereits sauber gelöst?`);
 
   const linkedinBody = compactBody(`Hallo ${args.contactName || args.companyName},
 kurze Beobachtung zu ${args.companyName}: ${hook}
-Bei ähnlichen Büros kostet genau das im Alltag viel Zeit.
-Advaic arbeitet mit klaren Guardrails: klare Fälle automatisch, unklare zur Freigabe, vor Versand Qualitätschecks.
-Wenn es für Sie passt, gerne 15 Minuten unverbindlich zum Safe-Start.`);
+${pain}
+Klar = Auto, unklar = Freigabe, plus Qualitätschecks vor jedem Versand. Ist das für Sie gerade relevant?`);
 
   const phoneBody = compactBody(`Telefonleitfaden:
 1) Bezug herstellen: "${hook}"
-2) Pain spiegeln: "${pain} ${listingHint}"
+2) Pain spiegeln: "${pain} ${signalLine}"
 3) Sicherheitslogik erklären: "Klar = Auto, unklar = Freigabe, vor Versand Qualitätschecks."
-4) Einwand aufnehmen: "${objectionRoute.short_rebuttal}"
-5) Abschlussfrage: "Wollen wir 15 Minuten unverbindlich prüfen, ob ein vorsichtiger Pilot für Ihre ${focus} passt?"`);
+4) Einwand aufnehmen: "${objection} ${objectionRoute.short_rebuttal}"
+5) Abschlussfrage: "Ist das aktuell relevant oder intern bereits sauber gelöst?"`);
 
   return {
     reason:
@@ -163,21 +173,21 @@ Wenn es für Sie passt, gerne 15 Minuten unverbindlich zum Safe-Start.`);
     messages: [
       {
         channel: "email" as const,
-        variant: "email_personal_v2",
-        subject: `Kurze Idee für ${args.companyName}: weniger Routine im Postfach`,
+        variant: "email_personal_v3",
+        subject: "Anfragen",
         body: emailBody,
         why: "Persönlich, konkret, druckfrei und mit klarer Sicherheitslogik.",
       },
       {
         channel: "linkedin" as const,
-        variant: "linkedin_compact_v2",
+        variant: "linkedin_compact_v3",
         subject: "",
         body: linkedinBody,
         why: "Sehr kompakt, menschlich und ohne Sales-Druck.",
       },
       {
         channel: "telefon" as const,
-        variant: "call_script_v2",
+        variant: "call_script_v3",
         subject: "",
         body: phoneBody,
         why: "Gesprächsleitfaden mit klarer Struktur und natürlicher Sprache.",
@@ -189,6 +199,7 @@ Wenn es für Sie passt, gerne 15 Minuten unverbindlich zum Safe-Start.`);
 async function maybeGenerateWithAi(args: {
   prompt: PromptRow | null;
   vars: Record<string, string>;
+  triggerEvidenceCount: number;
 }) {
   const endpoint = normalizeLine(process.env.AZURE_OPENAI_ENDPOINT, 400);
   const apiKey = normalizeLine(process.env.AZURE_OPENAI_API_KEY, 400);
@@ -234,9 +245,17 @@ Kontext:
 Regeln:
 - Keine Aufzählungsüberschriften im Fließtext.
 - Kein Buzzword-Sprech.
-- E-Mail: 90 bis 130 Wörter.
-- LinkedIn: 50 bis 85 Wörter.
+- E-Mail: 65 bis 95 Wörter, maximal 4 Sätze.
+- LinkedIn: 35 bis 65 Wörter.
 - Telefon-Skript: 5 klare Schritte.
+- Kein Demo-/Termin-Ask in E-Mail oder LinkedIn.
+- Keine URLs im Fließtext.
+
+Stilvorlage für E-Mail/LinkedIn (nicht wörtlich kopieren, nur Struktur):
+1) Mini-Intro (wer schreibt)
+2) Konkreter Trigger (warum genau diese Firma)
+3) Plausibles Problem im Alltag
+4) Kleine Relevanzfrage
 
 Gib nur JSON zurück:
 {
@@ -309,6 +328,11 @@ Gib nur JSON zurück:
   if (!hasMessageSafetySignals(email.body) || !hasPersonalSignals(email.body, args.vars.COMPANY_NAME || "", args.vars.CITY || null, args.vars.HOOK || null)) {
     return null;
   }
+  const guardrail = evaluateFirstTouchGuardrails({
+    body: email.body,
+    triggerEvidenceCount: args.triggerEvidenceCount,
+  });
+  if (!guardrail.pass) return null;
   return { reason, messages };
 }
 
@@ -328,7 +352,7 @@ export async function GET(
   const supabase = createSupabaseAdminClient();
   const { data: prospect, error } = await (supabase.from("crm_prospects") as any)
     .select(
-      "id, company_name, contact_name, city, region, object_focus, personalization_hook, pain_point_hypothesis, primary_objection, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, personalization_evidence",
+      "id, company_name, contact_name, city, region, object_focus, personalization_hook, pain_point_hypothesis, primary_objection, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, personalization_evidence, target_group, process_hint, source_checked_at",
     )
     .eq("id", prospectId)
     .eq("agent_id", auth.user.id)
@@ -363,15 +387,15 @@ export async function GET(
     city: normalizeLine(prospect.city, 120) || null,
     region: normalizeLine(prospect.region, 120) || null,
     objectFocus: normalizeLine(prospect.object_focus, 40) || "gemischt",
-    hook: normalizeMultiline(prospect.personalization_hook, 280) || null,
-    pain: normalizeMultiline(prospect.pain_point_hypothesis, 280) || null,
-    objection: normalizeMultiline(prospect.primary_objection, 240) || null,
+    hook: sanitizeOutreachSnippet(prospect.personalization_hook, 280) || null,
+    pain: sanitizeOutreachSnippet(prospect.pain_point_hypothesis, 280) || null,
+    objection: sanitizeOutreachSnippet(prospect.primary_objection, 240) || null,
     activeListingsCount:
       typeof prospect.active_listings_count === "number" ? prospect.active_listings_count : null,
     newListings30d: typeof prospect.new_listings_30d === "number" ? prospect.new_listings_30d : null,
     mix,
-    evidence: normalizeMultiline(prospect.personalization_evidence, 300) || "",
-    researchInsights,
+    evidence: sanitizeOutreachSnippet(prospect.personalization_evidence, 300) || "",
+    researchInsights: sanitizeOutreachSnippet(researchInsights, 320),
   };
 
   const personalizationSignalCount = [
@@ -437,6 +461,23 @@ export async function GET(
     PLAYBOOK_TITLE: playbook?.title || "",
     VALUE_NARRATIVE: valueNarrative,
   };
+  const triggerEvidenceCount = collectTriggerEvidence({
+    companyName: args.companyName,
+    city: args.city,
+    region: args.region,
+    objectFocus: args.objectFocus,
+    activeListingsCount: args.activeListingsCount,
+    newListings30d: args.newListings30d,
+    shareMietePercent:
+      typeof prospect.share_miete_percent === "number" ? prospect.share_miete_percent : null,
+    shareKaufPercent:
+      typeof prospect.share_kauf_percent === "number" ? prospect.share_kauf_percent : null,
+    targetGroup: normalizeMultiline(prospect.target_group, 220) || null,
+    processHint: normalizeMultiline(prospect.process_hint, 220) || null,
+    personalizationHook: args.hook,
+    personalizationEvidence: args.evidence || null,
+    sourceCheckedAt: normalizeLine(prospect.source_checked_at, 40) || null,
+  }).length;
 
   const fallback = fallbackPack({
     ...args,
@@ -450,7 +491,7 @@ export async function GET(
 
   try {
     const prompt = await loadPrompt(supabase);
-    const aiResult = await maybeGenerateWithAi({ prompt, vars });
+    const aiResult = await maybeGenerateWithAi({ prompt, vars, triggerEvidenceCount });
     if (aiResult?.messages?.length === 3) {
       reason = aiResult.reason || reason;
       messages = aiResult.messages;

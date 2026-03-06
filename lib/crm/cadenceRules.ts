@@ -165,11 +165,18 @@ export function evaluateFirstTouchGuardrails(args: {
   if (sentences > 5) reasons.push("Erstkontakt hat zu viele Sätze (maximal 5).");
   if (!lower.includes("?")) reasons.push("Erstkontakt endet nicht mit einer kleinen Frage.");
   if (args.triggerEvidenceCount < 2) reasons.push("Zu wenig Trigger-Evidenz (mindestens 2 konkrete Signale).");
+  if (/https?:\/\/\S+/i.test(body)) {
+    reasons.push("Erstkontakt enthält rohe URLs.");
+  }
 
   const bannedPitchPatterns = [
     /\bdemo\b/i,
     /\bkostenlos testen\b/i,
+    /\b15\s*minuten\b/i,
     /\b30 minuten\b/i,
+    /\btermin\b/i,
+    /\bkontaktquelle\b/i,
+    /\bimpressum\b/i,
     /\bangebot\b/i,
     /\bpreis\b/i,
     /\bvertrag\b/i,

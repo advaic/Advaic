@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/routeAuth";
 import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
 import { getPlaybookForSegment, inferSegmentFromProspect } from "@/lib/crm/salesIntelResearch";
 import { routeObjection } from "@/lib/crm/objectionLibrary";
+import { collectTriggerEvidence, evaluateFirstTouchGuardrails } from "@/lib/crm/cadenceRules";
 
 export const runtime = "nodejs";
 
@@ -117,6 +118,36 @@ function compactBody(text: string) {
     .trim();
 }
 
+function sanitizeOutreachSnippet(value: string | null | undefined, max = 240) {
+  let text = normalizeMultiline(value, max);
+  text = text
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\bkontaktquelle\b\s*:?/gi, "")
+    .replace(/\bquelle\b\s*:?/gi, "")
+    .replace(/\bimpressum\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (!text) return "";
+
+  const chunks = text
+    .split(/[.!?]/)
+    .map((x) => normalizeLine(x, 180))
+    .filter(Boolean);
+  const unique: string[] = [];
+  for (const c of chunks) {
+    if (!unique.includes(c)) unique.push(c);
+    if (unique.length >= 2) break;
+  }
+  const compact = unique.join(". ").trim();
+  if (!compact) return "";
+
+  const digits = (compact.match(/\d/g) || []).length;
+  const digitRatio = compact.length > 0 ? digits / compact.length : 0;
+  if (digitRatio > 0.14) return "";
+
+  return compact.endsWith(".") ? compact : `${compact}.`;
+}
+
 function deriveHookFromSignals(args: {
   companyName: string;
   city: string | null;
@@ -195,6 +226,7 @@ async function maybeLoadPrompt(supabase: any) {
 async function maybeGenerateInviteWithAi(args: {
   prompt: PromptRow | null;
   context: InviteContext;
+  triggerEvidenceCount: number;
 }) {
   const endpoint = normalizeLine(process.env.AZURE_OPENAI_ENDPOINT, 400);
   const apiKey = normalizeLine(process.env.AZURE_OPENAI_API_KEY, 400);
@@ -252,9 +284,22 @@ Ziel:
   "klar = Auto, unklar = Freigabe, vor Versand Qualitätschecks".
 - Kein Buzzword-Sprech, keine Floskeln wie "revolutionär", "next level", "ich hoffe, es geht Ihnen gut".
 - Keine Aufzählungen und keine Abschnittsüberschriften im E-Mail-Text.
-- Maximal 120 Wörter.
+- Maximal 95 Wörter und maximal 4 Sätze.
 - Genau ein druckfreier CTA-Satz am Ende.
+- Kein Demo- oder Termin-Ask im Erstkontakt.
 - Schreibe ausschließlich in Sie-Ansprache.
+
+Nutze als Stilvorlage diese Struktur:
+"Hallo [Name],
+ich bin Kilian, Gründer von Advaic.
+Ich bin auf euch gestoßen, weil mir aufgefallen ist, dass ihr mehrere Objekte parallel aktiv vermarktet und gleichzeitig stark auf persönliche Betreuung setzt.
+Genau in so einem Setup wird es oft schwierig, eingehende Anfragen schnell genug zu beantworten, ohne dass die Kommunikation generisch wirkt oder jemand liegen bleibt.
+Ist das für euch gerade überhaupt ein relevantes Thema?"
+
+Wichtig:
+- Schreibe diese Vorlage nicht wörtlich ab.
+- Übertrage nur Struktur, Natürlichkeit und Ton auf die konkreten Prospect-Daten.
+- Keine URLs oder Rohdaten-Blöcke im Fließtext.
 
 Ausgabe als JSON:
 {
@@ -317,6 +362,13 @@ Ausgabe als JSON:
   ) {
     return null;
   }
+  if (args.context.channel === "email") {
+    const guardrail = evaluateFirstTouchGuardrails({
+      body,
+      triggerEvidenceCount: args.triggerEvidenceCount,
+    });
+    if (!guardrail.pass) return null;
+  }
   return { subject, body };
 }
 
@@ -371,14 +423,6 @@ function buildTesterInvite(args: {
       "im Tagesgeschäft gehen bei vielen wiederkehrenden Interessentenanfragen schnell wertvolle Minuten im Postfach verloren.",
     280,
   );
-  const focusLabel =
-    args.objectFocus && args.objectFocus !== "gemischt"
-      ? args.objectFocus === "miete"
-        ? "Vermietungsanfragen"
-        : args.objectFocus === "kauf"
-          ? "Kaufanfragen"
-          : "Interessentenanfragen"
-      : "Interessentenanfragen";
   const mixLine =
     typeof args.activeListingsCount === "number"
       ? `Öffentlich sichtbar sind derzeit rund ${args.activeListingsCount} aktive Inserate${
@@ -390,36 +434,53 @@ function buildTesterInvite(args: {
   const newListingsLine =
     typeof args.newListings30d === "number" ? `${args.newListings30d} neue Inserate in 30 Tagen deuten auf laufenden Anfragefluss hin.` : "";
   const evidenceLine = joinNonEmpty([args.evidence, args.researchInsights], " ");
-  const readinessLine = args.automationReadiness
-    ? `Für den Start passt meist ${args.automationReadiness}: erst mehr Freigabe, dann schrittweise mehr Auto-Senden.`
-    : "Für den Start funktioniert ein Safe-Setup mit hoher Freigabequote besonders gut.";
+  const signalLine =
+    mixLine ||
+    newListingsLine ||
+    evidenceLine ||
+    `Ihre Präsenz in ${args.city || args.region || "Ihrer Region"} wirkt klar sichtbar.`;
   const objectionLine = args.primaryObjection
-    ? `Falls bei Ihnen der Punkt "${args.primaryObjection}" im Raum steht: ${args.objectionResponse || "diesen Teil steuern Sie über klare Regeln und Freigabe."}`
+    ? `Wenn der Punkt "${args.primaryObjection}" relevant ist: ${args.objectionResponse || "das lässt sich über klare Freigaberegeln sauber steuern."}`
     : "";
-  const sourceLine = args.sourceCheckedAt ? `Stand der öffentlichen Daten: ${args.sourceCheckedAt}.` : "";
 
   const body = compactBody(`${salutation}
 
-ich melde mich, weil ${hook}
-${pain}
-${mixLine}
-${newListingsLine}
-${evidenceLine}
-
-Genau dafür ist Advaic gedacht: klare Fälle können automatisch beantwortet werden, unklare Fälle gehen zur Freigabe, und vor jedem Versand laufen Qualitätschecks.
-So gewinnen Sie bei ${focusLabel} Zeit, ohne Kontrolle über Ton und Inhalte abzugeben.
-${readinessLine}
-${objectionLine}
-${sourceLine}
-
-Wenn Sie möchten, zeige ich Ihnen in 15 Minuten unverbindlich, wie ein vorsichtiger Pilot für ${args.companyName} konkret aussehen kann.`);
+ich bin Kilian von Advaic, weil mir bei ${args.companyName} besonders Folgendes aufgefallen ist: ${hook}
+${pain} ${signalLine}
+Advaic beantwortet klare Fälle automatisch, schickt unklare Fälle in die Freigabe und führt vor jedem Versand Qualitätschecks auf Relevanz, Kontext und Ton aus.
+${objectionLine ? `${objectionLine} ` : ""}Ist das bei Ihnen aktuell ein relevantes Thema oder haben Sie es intern bereits gut gelöst?`);
 
   const subject =
     args.channel === "email"
-      ? `Kurze Idee für ${args.companyName}: weniger Routine im Postfach`
-      : `Unverbindlicher Pilot-Check für ${args.companyName}`;
+      ? "Anfragen"
+      : "Relevanzcheck";
 
   return { subject, body };
+}
+
+function buildStrictFallbackInvite(args: {
+  companyName: string;
+  contactName: string | null;
+  hook: string | null;
+  painPoint: string | null;
+}) {
+  const salutation = args.contactName ? `Hallo ${args.contactName},` : `Hallo ${args.companyName}-Team,`;
+  const hook =
+    sanitizeOutreachSnippet(args.hook, 220) ||
+    `${args.companyName} vermarktet mehrere Objekte parallel und setzt gleichzeitig auf persönliche Betreuung.`;
+  const pain =
+    sanitizeOutreachSnippet(args.painPoint, 220) ||
+    "In so einem Setup wird es schnell schwierig, Anfragen gleichzeitig zügig und individuell zu beantworten.";
+
+  return {
+    subject: "Anfragen",
+    body: compactBody(`${salutation}
+
+ich bin Kilian, Gründer von Advaic, weil mir bei ${args.companyName} besonders Folgendes aufgefallen ist: ${hook}
+${pain}
+Advaic beantwortet klare Fälle automatisch, schickt unklare Fälle in die Freigabe und führt vor jedem Versand Qualitätschecks auf Relevanz, Kontext und Ton aus.
+Ist das bei Ihnen aktuell ein relevantes Thema oder haben Sie es intern bereits gut gelöst?`),
+  };
 }
 
 export async function GET(
@@ -479,8 +540,9 @@ export async function GET(
     region: String(prospect.region || "").trim() || null,
     objectFocus: String(prospect.object_focus || "gemischt").trim(),
     hook:
-      firstKeyNote ||
-      (String(prospect.personalization_hook || "").trim() || null),
+      sanitizeOutreachSnippet(firstKeyNote, 220) ||
+      sanitizeOutreachSnippet(String(prospect.personalization_hook || "").trim(), 220) ||
+      null,
     painPoint: String(prospect.pain_point_hypothesis || "").trim() || null,
     primaryObjection: String(prospect.primary_objection || "").trim() || null,
     activeListingsCount:
@@ -503,8 +565,8 @@ export async function GET(
     brandTone: String(prospect.brand_tone || "").trim() || null,
     sourceCheckedAt: String(prospect.source_checked_at || "").trim() || null,
     linkedinUrl: String(prospect.linkedin_url || "").trim() || null,
-    evidence: String(prospect.personalization_evidence || "").trim() || null,
-    researchInsights: mergedResearchInsights || null,
+    evidence: sanitizeOutreachSnippet(String(prospect.personalization_evidence || "").trim(), 260) || null,
+    researchInsights: sanitizeOutreachSnippet(mergedResearchInsights, 320) || null,
     channel,
     segmentKey: "unspezifisch",
     playbookTitle: null,
@@ -559,14 +621,44 @@ export async function GET(
   inviteContext.objectionResponse = objection.short_rebuttal;
   inviteContext.objectionProof = objection.recommended_proof;
   inviteContext.objectionNextQuestion = objection.next_question;
+  const triggerEvidenceCount = collectTriggerEvidence({
+    companyName: inviteContext.companyName,
+    city: inviteContext.city,
+    region: inviteContext.region,
+    objectFocus: inviteContext.objectFocus,
+    activeListingsCount: inviteContext.activeListingsCount,
+    newListings30d: inviteContext.newListings30d,
+    shareMietePercent: inviteContext.shareMietePercent,
+    shareKaufPercent: inviteContext.shareKaufPercent,
+    targetGroup: inviteContext.targetGroup,
+    processHint: inviteContext.processHint,
+    personalizationHook: inviteContext.hook,
+    personalizationEvidence: inviteContext.evidence,
+    sourceCheckedAt: inviteContext.sourceCheckedAt,
+  }).length;
 
   let tpl = buildTesterInvite(inviteContext);
+  if (inviteContext.channel === "email") {
+    const fallbackGuardrail = evaluateFirstTouchGuardrails({
+      body: tpl.body,
+      triggerEvidenceCount,
+    });
+    if (!fallbackGuardrail.pass) {
+      tpl = buildStrictFallbackInvite({
+        companyName: inviteContext.companyName,
+        contactName: inviteContext.contactName,
+        hook: inviteContext.hook,
+        painPoint: inviteContext.painPoint,
+      });
+    }
+  }
 
   try {
     const activePrompt = await maybeLoadPrompt(supabase);
     const aiTemplate = await maybeGenerateInviteWithAi({
       prompt: activePrompt,
       context: inviteContext,
+      triggerEvidenceCount,
     });
     if (aiTemplate?.body) {
       tpl = {
