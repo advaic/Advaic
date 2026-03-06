@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/routeAuth";
 import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
+import {
+  collectTriggerEvidence,
+  deriveAbFields,
+  evaluateFirstTouchGuardrails,
+} from "@/lib/crm/cadenceRules";
 
 export const runtime = "nodejs";
 
@@ -20,6 +25,43 @@ const ALLOWED_KINDS = new Set([
   "follow_up_3",
   "custom",
 ]);
+
+function normalizeLine(value: unknown, max = 240) {
+  return String(value ?? "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
+function normalizeText(value: unknown, max = 5000) {
+  return String(value ?? "").replace(/\r/g, "").trim().slice(0, max);
+}
+
+function asObject(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, any>) : {};
+}
+
+function parseCadenceStep(value: unknown) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.round(n);
+  if (rounded < 1 || rounded > 5) return null;
+  return rounded as 1 | 2 | 3 | 4 | 5;
+}
+
+function isSchemaMismatch(error: { message?: string; details?: string; hint?: string; code?: string } | null | undefined) {
+  const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
+  const code = String(error?.code || "").toLowerCase();
+  return (
+    code === "42703" ||
+    code === "42p01" ||
+    text.includes("does not exist") ||
+    text.includes("schema cache") ||
+    text.includes("could not find the") ||
+    text.includes("relation")
+  );
+}
 
 export async function GET(
   req: NextRequest,
@@ -82,25 +124,165 @@ export async function POST(
   const scoreRaw = Number(body?.personalization_score);
   const personalizationScore =
     Number.isFinite(scoreRaw) && scoreRaw >= 0 && scoreRaw <= 100 ? Math.round(scoreRaw) : null;
+  const metadataInput = asObject(body?.metadata);
 
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await (supabase.from("crm_outreach_messages") as any)
-    .insert({
-      prospect_id: prospectId,
-      agent_id: auth.user.id,
-      channel: safeChannel,
-      message_kind: safeKind,
-      subject: String(body?.subject || "").trim() || null,
-      body: messageBody,
-      personalization_score: personalizationScore,
-      status: safeStatus,
-      metadata: body?.metadata && typeof body.metadata === "object" ? body.metadata : {},
-    })
+
+  let prospectSignalsRes = await (supabase.from("crm_prospects") as any)
+    .select(
+      "company_name, city, region, object_focus, target_group, process_hint, personalization_hook, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, personalization_evidence, source_checked_at",
+    )
+    .eq("id", prospectId)
+    .eq("agent_id", auth.user.id)
+    .maybeSingle();
+
+  if (prospectSignalsRes.error && String((prospectSignalsRes.error as any).code || "") === "42703") {
+    prospectSignalsRes = await (supabase.from("crm_prospects") as any)
+      .select("company_name, city, region, object_focus, target_group, process_hint, personalization_hook")
+      .eq("id", prospectId)
+      .eq("agent_id", auth.user.id)
+      .maybeSingle();
+  }
+  if (prospectSignalsRes.error) {
+    return NextResponse.json(
+      { ok: false, error: "crm_prospect_lookup_failed", details: prospectSignalsRes.error.message },
+      { status: 500 },
+    );
+  }
+  const prospectSignals = (prospectSignalsRes.data || {}) as Record<string, any>;
+  const triggerEvidence = collectTriggerEvidence({
+    companyName: normalizeLine(prospectSignals.company_name, 160),
+    city: normalizeLine(prospectSignals.city, 120) || null,
+    region: normalizeLine(prospectSignals.region, 120) || null,
+    objectFocus: normalizeLine(prospectSignals.object_focus, 24) || null,
+    activeListingsCount: Number.isFinite(Number(prospectSignals.active_listings_count))
+      ? Number(prospectSignals.active_listings_count)
+      : null,
+    newListings30d: Number.isFinite(Number(prospectSignals.new_listings_30d))
+      ? Number(prospectSignals.new_listings_30d)
+      : null,
+    shareMietePercent: Number.isFinite(Number(prospectSignals.share_miete_percent))
+      ? Number(prospectSignals.share_miete_percent)
+      : null,
+    shareKaufPercent: Number.isFinite(Number(prospectSignals.share_kauf_percent))
+      ? Number(prospectSignals.share_kauf_percent)
+      : null,
+    targetGroup: normalizeText(prospectSignals.target_group, 180) || null,
+    processHint: normalizeText(prospectSignals.process_hint, 220) || null,
+    personalizationHook: normalizeText(prospectSignals.personalization_hook, 220) || null,
+    personalizationEvidence: normalizeText(prospectSignals.personalization_evidence, 240) || null,
+    sourceCheckedAt: normalizeLine(prospectSignals.source_checked_at, 40) || null,
+  });
+  const triggerEvidenceCount = triggerEvidence.length;
+
+  const cadenceStep =
+    parseCadenceStep(metadataInput.cadence_step) ??
+    (safeKind === "first_touch"
+      ? 1
+      : safeKind === "follow_up_1"
+        ? 2
+        : safeKind === "follow_up_2"
+          ? 3
+          : safeKind === "follow_up_3"
+            ? 4
+            : null);
+  const cadenceKey = normalizeLine(metadataInput.cadence_key, 120) || "cadence_v1_5touch_14d";
+  const templateVariant =
+    normalizeLine(metadataInput.template_variant, 120) ||
+    normalizeLine(body?.template_variant, 120) ||
+    `manual_${safeKind}`;
+  const ab = deriveAbFields({
+    messageKind: safeKind as any,
+    templateVariant,
+    cadenceStep,
+  });
+
+  const firstTouchGuardrail =
+    safeKind === "first_touch"
+      ? evaluateFirstTouchGuardrails({
+          body: messageBody,
+          triggerEvidenceCount,
+        })
+      : null;
+
+  if (safeKind === "first_touch" && safeStatus === "ready" && firstTouchGuardrail && !firstTouchGuardrail.pass) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "first_touch_guardrail_failed",
+        details: "Erstkontakt blockiert: Bitte natürlicher, kürzer und mit klaren Triggern schreiben.",
+        guardrail: firstTouchGuardrail,
+      },
+      { status: 422 },
+    );
+  }
+
+  const mergedMetadata = {
+    ...metadataInput,
+    source: normalizeLine(metadataInput.source, 80) || "crm_manual",
+    cadence_key: cadenceKey,
+    cadence_step: cadenceStep,
+    template_variant: templateVariant,
+    ab_intro_variant: normalizeLine(metadataInput.ab_intro_variant, 80) || ab.ab_intro_variant,
+    ab_trigger_variant: normalizeLine(metadataInput.ab_trigger_variant, 80) || ab.ab_trigger_variant,
+    ab_cta_variant: normalizeLine(metadataInput.ab_cta_variant, 80) || ab.ab_cta_variant,
+    ab_subject_variant: normalizeLine(metadataInput.ab_subject_variant, 80) || ab.ab_subject_variant,
+    trigger_evidence: triggerEvidence,
+    trigger_evidence_count: triggerEvidenceCount,
+    first_touch_guardrail: firstTouchGuardrail,
+    first_touch_guardrail_pass:
+      safeKind === "first_touch" ? Boolean(firstTouchGuardrail?.pass) : null,
+    generated_at: normalizeLine(metadataInput.generated_at, 60) || new Date().toISOString(),
+  };
+
+  const insertWithColumns = {
+    prospect_id: prospectId,
+    agent_id: auth.user.id,
+    channel: safeChannel,
+    message_kind: safeKind,
+    subject: normalizeLine(body?.subject, 240) || null,
+    body: messageBody,
+    personalization_score: personalizationScore,
+    status: safeStatus,
+    metadata: mergedMetadata,
+    cadence_key: cadenceKey,
+    cadence_step: cadenceStep,
+    ab_intro_variant: mergedMetadata.ab_intro_variant,
+    ab_trigger_variant: mergedMetadata.ab_trigger_variant,
+    ab_cta_variant: mergedMetadata.ab_cta_variant,
+    ab_subject_variant: mergedMetadata.ab_subject_variant,
+    trigger_evidence_count: triggerEvidenceCount,
+    first_touch_guardrail_pass:
+      safeKind === "first_touch" ? Boolean(firstTouchGuardrail?.pass) : null,
+  };
+
+  let insertRes = await (supabase.from("crm_outreach_messages") as any)
+    .insert(insertWithColumns)
     .select(
       "id, channel, message_kind, subject, body, personalization_score, status, sent_at, metadata, created_at, updated_at",
     )
     .single();
 
+  if (insertRes.error && isSchemaMismatch(insertRes.error as any)) {
+    insertRes = await (supabase.from("crm_outreach_messages") as any)
+      .insert({
+        prospect_id: prospectId,
+        agent_id: auth.user.id,
+        channel: safeChannel,
+        message_kind: safeKind,
+        subject: normalizeLine(body?.subject, 240) || null,
+        body: messageBody,
+        personalization_score: personalizationScore,
+        status: safeStatus,
+        metadata: mergedMetadata,
+      })
+      .select(
+        "id, channel, message_kind, subject, body, personalization_score, status, sent_at, metadata, created_at, updated_at",
+      )
+      .single();
+  }
+
+  const { data, error } = insertRes;
   if (error) {
     return NextResponse.json(
       { ok: false, error: "crm_message_create_failed", details: error.message },
@@ -108,5 +290,33 @@ export async function POST(
     );
   }
 
-  return NextResponse.json({ ok: true, message: data });
+  const { error: logErr } = await ((supabase as any).rpc("crm_register_outreach_event", {
+    p_prospect_id: prospectId,
+    p_agent_id: auth.user.id,
+    p_event_type: "follow_up_due",
+    p_message_id: String(data?.id || ""),
+    p_details: `${safeKind} als ${safeStatus === "ready" ? "ready" : "draft"} gespeichert`,
+    p_metadata: {
+      source: mergedMetadata.source,
+      template_variant: templateVariant,
+      cadence_key: cadenceKey,
+      cadence_step: cadenceStep,
+      ab_intro_variant: mergedMetadata.ab_intro_variant,
+      ab_trigger_variant: mergedMetadata.ab_trigger_variant,
+      ab_cta_variant: mergedMetadata.ab_cta_variant,
+      ab_subject_variant: mergedMetadata.ab_subject_variant,
+    },
+  }) as any);
+  if (logErr && !isSchemaMismatch(logErr as any)) {
+    return NextResponse.json(
+      { ok: false, error: "crm_message_event_log_failed", details: logErr.message },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    message: data,
+    guardrail: firstTouchGuardrail,
+  });
 }

@@ -109,9 +109,10 @@ type MessagePackItem = {
 };
 
 type SequenceStep = {
+  step_number: 1 | 2 | 3 | 4 | 5;
   day_offset: number;
-  message_kind: "first_touch" | "follow_up_1" | "follow_up_2";
-  channel: "email" | "linkedin" | "telefon" | "kontaktformular";
+  message_kind: "first_touch" | "follow_up_1" | "follow_up_2" | "follow_up_3" | "custom";
+  channel: "email" | "linkedin" | "telefon" | "kontaktformular" | "whatsapp";
   label: string;
 };
 
@@ -210,6 +211,15 @@ function isEmailChannel(channel: string | null | undefined) {
   return String(channel || "").trim().toLowerCase() === "email";
 }
 
+function cadenceStepForMessageKind(kind: string) {
+  if (kind === "first_touch") return 1;
+  if (kind === "follow_up_1") return 2;
+  if (kind === "follow_up_2") return 3;
+  if (kind === "follow_up_3") return 4;
+  if (kind === "custom") return 5;
+  return null;
+}
+
 function buildExternalChannelLink(
   channel: string | null | undefined,
   prospect: Prospect,
@@ -275,9 +285,41 @@ export default function CrmProspectDetail({
     toDateTimeLocalValue(new Date().toISOString()),
   );
   const [sequenceSteps, setSequenceSteps] = useState<SequenceStep[]>([
-    { day_offset: 0, message_kind: "first_touch", channel: "email", label: "Tag 0 · Erstkontakt" },
-    { day_offset: 3, message_kind: "follow_up_1", channel: "linkedin", label: "Tag 3 · Follow-up 1" },
-    { day_offset: 7, message_kind: "follow_up_2", channel: "telefon", label: "Tag 7 · Follow-up 2" },
+    {
+      step_number: 1,
+      day_offset: 0,
+      message_kind: "first_touch",
+      channel: "email",
+      label: "Tag 0 · Relevanz prüfen",
+    },
+    {
+      step_number: 2,
+      day_offset: 2,
+      message_kind: "follow_up_1",
+      channel: "linkedin",
+      label: "Tag 2 · Kurz nachfassen",
+    },
+    {
+      step_number: 3,
+      day_offset: 5,
+      message_kind: "follow_up_2",
+      channel: "email",
+      label: "Tag 5 · Lösung öffnen",
+    },
+    {
+      step_number: 4,
+      day_offset: 9,
+      message_kind: "follow_up_3",
+      channel: "telefon",
+      label: "Tag 9 · Einwand adressieren",
+    },
+    {
+      step_number: 5,
+      day_offset: 13,
+      message_kind: "custom",
+      channel: "email",
+      label: "Tag 13 · Breakup",
+    },
   ]);
 
   const risk = useMemo(
@@ -500,8 +542,15 @@ export default function CrmProspectDetail({
           scheduled_for: plannedAt ? new Date(plannedAt).toISOString() : null,
           recommended_code: nextAction?.recommended_code || null,
           recommended_reason: nextAction?.recommended_reason || null,
+          cadence_key: "cadence_v1_5touch_14d",
+          cadence_step: cadenceStepForMessageKind(draftKind),
+          cadence_segment: "detail_manual",
           template_variant: selectedVariant || `manual_${draftKind}`,
           template_origin: messagePackSource || null,
+          ab_intro_variant: "human_context_v1",
+          ab_trigger_variant: "visible_signal_v1",
+          ab_cta_variant: "relevance_question_v1",
+          ab_subject_variant: draftChannel === "email" ? "operativ_kurz_v1" : "none",
         },
       };
       const createRes = await fetch(`/api/crm/prospects/${prospectId}/messages`, {
@@ -1034,9 +1083,9 @@ export default function CrmProspectDetail({
         </article>
 
         <article className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm xl:col-span-5">
-          <h2 className="text-base font-semibold text-gray-900">Sequenz‑Planer (Tag 0/3/7)</h2>
+          <h2 className="text-base font-semibold text-gray-900">Sequenz‑Planer (5 Touches / 14 Tage)</h2>
           <p className="mt-1 text-xs text-gray-600">
-            Stop-Regeln sind hart aktiv: Antwort, Bounce, Opt-out oder hohes Risiko stoppen die Sequenz.
+            Fokus auf persönliche, druckfreie Akquise: erst Relevanz prüfen, dann behutsam nachfassen.
           </p>
           <div className="mt-3 space-y-2">
             <input
@@ -1085,6 +1134,7 @@ export default function CrmProspectDetail({
                     <option value="linkedin">LinkedIn</option>
                     <option value="telefon">Telefon</option>
                     <option value="kontaktformular">Kontaktformular</option>
+                    <option value="whatsapp">WhatsApp</option>
                   </select>
                 </div>
               </div>

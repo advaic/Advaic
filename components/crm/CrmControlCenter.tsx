@@ -732,7 +732,22 @@ export default function CrmControlCenter({
           personalization_score: 85,
           metadata: {
             source: "crm_control_center",
+            cadence_key: "cadence_v1_5touch_14d",
+            cadence_step:
+              newDraftKind === "first_touch"
+                ? 1
+                : newDraftKind === "follow_up_1"
+                  ? 2
+                  : newDraftKind === "follow_up_2"
+                    ? 3
+                    : newDraftKind === "follow_up_3"
+                      ? 4
+                      : 5,
             template_variant: `manual_${newDraftKind}`,
+            ab_intro_variant: "human_context_v1",
+            ab_trigger_variant: "visible_signal_v1",
+            ab_cta_variant: "relevance_question_v1",
+            ab_subject_variant: newDraftChannel === "email" ? "operativ_kurz_v1" : "none",
           },
         }),
       });

@@ -23,8 +23,7 @@ export async function GET(req: NextRequest) {
 
   const supabase = createSupabaseAdminClient();
   const agentId = String(auth.user.id);
-
-  const { data, error } = await (supabase.from("crm_next_actions") as any)
+  let res = await (supabase.from("crm_next_actions") as any)
     .select(
       "prospect_id, company_name, contact_name, contact_email, object_focus, preferred_channel, priority, fit_score, stage, recommended_action, recommended_reason, recommended_code, recommended_primary_label, recommended_at",
     )
@@ -35,6 +34,30 @@ export async function GET(req: NextRequest) {
     .order("fit_score", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  if (res.error && String((res.error as any)?.code || "") === "42703") {
+    const fallback = await (supabase.from("crm_next_actions") as any)
+      .select(
+        "prospect_id, company_name, contact_name, object_focus, preferred_channel, priority, fit_score, stage, recommended_action, recommended_reason, recommended_code, recommended_primary_label, recommended_at",
+      )
+      .eq("agent_id", agentId)
+      .not("recommended_action", "is", null)
+      .order("recommended_at", { ascending: true, nullsFirst: false })
+      .order("priority", { ascending: true })
+      .order("fit_score", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    res = {
+      data: fallback.data
+        ? {
+            ...(fallback.data as any),
+            contact_email: null,
+          }
+        : null,
+      error: fallback.error,
+    } as any;
+  }
+  const { data, error } = res as any;
 
   if (error) {
     if (isSchemaMismatch(error as any)) {
