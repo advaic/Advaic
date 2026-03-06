@@ -1,15 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import BreadcrumbJsonLd from "@/components/seo/BreadcrumbJsonLd";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
-import PageShell from "@/components/marketing/PageShell";
-import PageIntro from "@/components/marketing/PageIntro";
-import StageCTA from "@/components/marketing/StageCTA";
+import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 import TransparencyBox from "@/components/marketing/TransparencyBox";
 import Security from "@/components/marketing/Security";
 import TrustByDesign from "@/components/marketing/TrustByDesign";
 import Guarantee from "@/components/marketing/Guarantee";
-import FinalCTA from "@/components/marketing/FinalCTA";
 
 const highlights = [
   {
@@ -69,14 +66,22 @@ const sources = [
   {
     label: "EUR-Lex – DSGVO Volltext (EU 2016/679)",
     href: "https://eur-lex.europa.eu/eli/reg/2016/679/oj",
+    note: "Primärquelle für datenschutzrechtliche Anforderungen.",
   },
   {
     label: "BfDI – Informationen zur DSGVO",
     href: "https://www.bfdi.bund.de/DE/Buerger/Inhalte/Datenschutz/Allgemein/DatenschutzGrundverordnung.html",
+    note: "Nationale Orientierung für die DSGVO-Anwendung in Deutschland.",
   },
   {
     label: "BSI – IT-Grundschutz",
     href: "https://www.bsi.bund.de/DE/Themen/Unternehmen-und-Organisationen/Standards-und-Zertifizierung/IT-Grundschutz/it-grundschutz_node.html",
+    note: "Rahmen für organisatorische und technische Schutzmaßnahmen.",
+  },
+  {
+    label: "NIST – AI Risk Management Framework",
+    href: "https://www.nist.gov/itl/ai-risk-management-framework",
+    note: "Einordnung für kontrollierte KI-Entscheidungen mit Fail-Safe-Prinzipien.",
   },
 ];
 
@@ -103,37 +108,45 @@ export const metadata: Metadata = {
 };
 
 export default function SicherheitPage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Sicherheitslogik von Advaic",
+    inLanguage: "de-DE",
+    about: ["Sicherheit", "DSGVO", "Freigabe", "Qualitätschecks", "Verlauf"],
+    mainEntityOfPage: `${siteUrl}/sicherheit`,
+  };
+
   return (
-    <PageShell>
-      <BreadcrumbJsonLd
-        items={[
-          { name: "Startseite", path: "/" },
-          { name: "Sicherheit", path: "/sicherheit" },
-        ]}
-      />
-      <PageIntro
-        kicker="Sicherheit und Datenschutz"
-        title="Transparenz, Kontrolle und klare Grenzen"
-        description="Advaic ist so aufgebaut, dass Sie jederzeit nachvollziehen können, was automatisiert wird und was bewusst in Ihrer Entscheidung bleibt."
-        actions={
-          <>
-            <Link href="/autopilot" className="btn-secondary">
-              Autopilot-Regeln
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              14 Tage testen
-            </Link>
-          </>
-        }
-      />
-      <StageCTA
-        stage="bewertung"
-        primaryHref="/signup"
-        primaryLabel="Sicher testen"
-        secondaryHref="/autopilot-regeln"
-        secondaryLabel="Regeln prüfen"
-        context="sicherheit"
-      />
+    <AiDiscoveryPageTemplate
+      breadcrumbItems={[
+        { name: "Startseite", path: "/" },
+        { name: "Sicherheit", path: "/sicherheit" },
+      ]}
+      schema={schema}
+      kicker="Sicherheit und Datenschutz"
+      title="Transparenz, Kontrolle und klare Grenzen"
+      description="Advaic ist so aufgebaut, dass Sie jederzeit nachvollziehen können, was automatisiert wird und was bewusst in Ihrer Entscheidung bleibt."
+      actions={
+        <>
+          <Link href="/autopilot" className="btn-secondary">
+            Autopilot-Regeln
+          </Link>
+          <Link href="/signup" className="btn-primary">
+            14 Tage testen
+          </Link>
+        </>
+      }
+      stage="bewertung"
+      stageContext="sicherheit"
+      primaryHref="/signup"
+      primaryLabel="Sicher testen"
+      secondaryHref="/autopilot-regeln"
+      secondaryLabel="Regeln prüfen"
+      sources={sources}
+      sourcesDescription="Diese Seite beschreibt den technischen und organisatorischen Sicherheitsrahmen. Für rechtliche Bewertung im Einzelfall ist eigene Prüfung erforderlich."
+    >
 
       <section id="kurzfassung" className="py-8 md:py-10">
         <Container>
@@ -151,8 +164,8 @@ export default function SicherheitPage() {
               <a href="#sicherheit-details" className="btn-secondary">
                 Technische Details
               </a>
-              <a href="#sicherheit-quellen" className="btn-secondary">
-                Quellen
+              <a href="#stage-cta" className="btn-secondary">
+                Nächster Schritt
               </a>
             </div>
           </article>
@@ -210,29 +223,6 @@ export default function SicherheitPage() {
             ))}
           </div>
 
-          <article id="sicherheit-quellen" className="card-base mt-8 p-6">
-            <h2 className="h3">Quellen & Einordnung</h2>
-            <p className="helper mt-3">
-              Diese Seite beschreibt die technische und organisatorische Sicherheitslogik von Advaic. Für die konkrete
-              rechtliche Bewertung Ihres Betriebs ist eine eigene Prüfung erforderlich.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link href="/unterauftragsverarbeiter" className="btn-secondary">
-                Unterauftragsverarbeiter
-              </Link>
-              {sources.map((source) => (
-                <a
-                  key={source.href}
-                  href={source.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-secondary"
-                >
-                  {source.label}
-                </a>
-              ))}
-            </div>
-          </article>
         </Container>
       </section>
 
@@ -240,7 +230,6 @@ export default function SicherheitPage() {
       <Security />
       <TrustByDesign />
       <Guarantee />
-      <FinalCTA />
-    </PageShell>
+    </AiDiscoveryPageTemplate>
   );
 }

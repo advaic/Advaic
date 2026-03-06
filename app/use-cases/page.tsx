@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
-import PageShell from "@/components/marketing/PageShell";
-import PageIntro from "@/components/marketing/PageIntro";
-import StageCTA from "@/components/marketing/StageCTA";
-import FinalCTA from "@/components/marketing/FinalCTA";
+import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 
 const cases = [
   {
@@ -42,12 +40,15 @@ const chooser = [
   "Wie hoch ist der Anteil wiederkehrender Standardfragen?",
   "Wie oft entstehen Sonderfälle mit Konflikt- oder Eskalationspotenzial?",
   "Wie viel Zeit pro Tag bindet aktuell die reine Postfacharbeit?",
+  "Wie hoch ist Ihre aktuelle Freigabe- und Nachbearbeitungslast?",
+  "Welche Antwortzeit erwarten Interessenten realistisch in Ihrem Markt?",
 ];
 
 const rolloutRules = [
   "Konservativ starten: hoher Freigabeanteil, niedriger Auto-Anteil.",
   "Erst stabilen Erstantwort-Prozess aufbauen, dann Follow-ups aktivieren.",
   "Autopilot nur anhand messbarer Qualität erhöhen, nicht aus Bauchgefühl.",
+  "Segmentweise ausrollen: erst ein klarer Bereich, dann der nächste.",
 ];
 
 const kpis = [
@@ -73,14 +74,22 @@ const sources = [
   {
     label: "HBR – The Short Life of Online Sales Leads",
     href: "https://hbr.org/2011/03/the-short-life-of-online-sales-leads",
+    note: "Reaktionszeit als zentraler Hebel in digitalen Anfrageprozessen.",
   },
   {
     label: "McKinsey – The social economy",
     href: "https://www.mckinsey.com/industries/technology-media-and-telecommunications/our-insights/the-social-economy",
+    note: "Einordnung zum Potenzial besserer Kommunikations-Workflows.",
   },
   {
     label: "NIST – AI Risk Management Framework",
     href: "https://www.nist.gov/itl/ai-risk-management-framework",
+    note: "Rahmen für kontrollierten und nachvollziehbaren KI-Betrieb.",
+  },
+  {
+    label: "Google Search Essentials",
+    href: "https://developers.google.com/search/docs/essentials",
+    note: "Best Practices für klare, indexierbare Informationsseiten.",
   },
 ];
 
@@ -107,39 +116,65 @@ export const metadata: Metadata = {
 };
 
 export default function UseCasesPage() {
-  return (
-    <PageShell>
-      <PageIntro
-        kicker="Anwendungsfälle"
-        title="Wo Advaic im Makleralltag den größten Hebel hat"
-        description="Diese Seiten zeigen konkrete Einsatzszenarien statt allgemeiner Marketingversprechen: klare Vorteile, klare Grenzen, klarer Start."
-        actions={
-          <>
-            <Link href="/branchen" className="btn-secondary">
-              Branchenprofile
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              14 Tage testen
-            </Link>
-          </>
-        }
-      />
-      <StageCTA
-        stage="bewertung"
-        primaryHref="/signup"
-        primaryLabel="14 Tage testen"
-        secondaryHref="/produkt#setup"
-        secondaryLabel="Safe-Start ansehen"
-        context="use-cases"
-      />
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        headline: "Anwendungsfälle für Maklerteams",
+        inLanguage: "de-DE",
+        about: ["Immobilienmakler", "Anfrageautomatisierung", "Safe-Start", "Freigabe"],
+        mainEntityOfPage: `${siteUrl}/use-cases`,
+      },
+      {
+        "@type": "ItemList",
+        name: "Use-Case-Profile",
+        itemListElement: cases.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.title,
+          url: `${siteUrl}${item.href}`,
+        })),
+      },
+    ],
+  };
 
+  return (
+    <AiDiscoveryPageTemplate
+      breadcrumbItems={[
+        { name: "Startseite", path: "/" },
+        { name: "Anwendungsfälle", path: "/use-cases" },
+      ]}
+      schema={schema}
+      kicker="Anwendungsfälle"
+      title="Wo Advaic im Makleralltag den größten Hebel hat"
+      description="Diese Seite ist als Entscheidungsgrundlage aufgebaut: Sie sehen für jedes Szenario den klaren Fit, die Grenzen, den Startpfad und die passenden KPI."
+      actions={
+        <>
+          <Link href="/branchen" className="btn-secondary">
+            Branchenprofile
+          </Link>
+          <Link href="/signup" className="btn-primary">
+            14 Tage testen
+          </Link>
+        </>
+      }
+      stage="bewertung"
+      stageContext="use-cases"
+      primaryHref="/signup"
+      primaryLabel="14 Tage testen"
+      secondaryHref="/produkt#setup"
+      secondaryLabel="Safe-Start ansehen"
+      sources={sources}
+    >
       <section className="marketing-section-clear py-20 md:py-28">
         <Container>
           <article className="card-base p-6 md:p-8">
-            <h2 className="h3">So wählen Sie den passenden Anwendungsfall</h2>
+            <h2 className="h3">Diagnose vor Tool-Entscheidung</h2>
             <p className="helper mt-3 max-w-[72ch]">
-              Nutzen Sie diese Seite wie einen Entscheidungsfilter. Nicht die Branche allein ist entscheidend, sondern
-              Ihr tatsächlicher Anfrage-Mix, Ihre Teamgröße und Ihr Risiko-Profil bei Sonderfällen.
+              Nutzen Sie diese Fragen als harte Vorauswahl. Wenn die Antworten klar sind, können Sie den passenden
+              Anwendungsfall belastbar bestimmen, statt nur nach Branche zu entscheiden.
             </p>
             <ul className="mt-4 grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2">
               {chooser.map((item) => (
@@ -166,52 +201,40 @@ export default function UseCasesPage() {
               </article>
             ))}
           </div>
-
-          <article className="card-base mt-4 p-6 md:p-8">
-            <h2 className="h3">Rollout-Regeln für alle Anwendungsfälle</h2>
-            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-              {rolloutRules.map((item) => (
-                <li key={item} className="flex items-start gap-2">
-                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </article>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {kpis.map((item) => (
-              <article key={item.title} className="card-base p-6">
-                <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
-                <p className="helper mt-3">{item.text}</p>
-              </article>
-            ))}
-          </div>
-
-          <article className="card-base mt-4 p-6">
-            <h2 className="h3">Quellen & Einordnung</h2>
-            <p className="helper mt-3">
-              Die Anwendungsfälle basieren auf öffentlicher Forschung zu Reaktionsgeschwindigkeit, Arbeitslast in der
-              Kommunikation und risikobewusster Automatisierung.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {sources.map((source) => (
-                <a
-                  key={source.href}
-                  href={source.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-secondary"
-                >
-                  {source.label}
-                </a>
-              ))}
-            </div>
-          </article>
         </Container>
       </section>
 
-      <FinalCTA />
-    </PageShell>
+      <section className="marketing-soft-cool py-20 md:py-28">
+        <Container>
+          <div className="grid gap-4 md:grid-cols-2">
+            <article className="card-base p-6 md:p-8">
+              <h2 className="h3">Rollout-Regeln für alle Szenarien</h2>
+              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                {rolloutRules.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+            <article className="card-base p-6 md:p-8">
+              <h2 className="h3">KPI, die wirklich steuern</h2>
+              <div className="mt-4 space-y-3">
+                {kpis.map((item) => (
+                  <article
+                    key={item.title}
+                    className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]"
+                  >
+                    <p className="text-sm font-semibold text-[var(--text)]">{item.title}</p>
+                    <p className="helper mt-2">{item.text}</p>
+                  </article>
+                ))}
+              </div>
+            </article>
+          </div>
+        </Container>
+      </section>
+    </AiDiscoveryPageTemplate>
   );
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -53,11 +54,41 @@ export const metadata: Metadata = {
   title: "Anwendungsfall Mittelpreisige Objekte | Advaic",
   description:
     "Wie Advaic bei mittelpreisigen Objekten wiederkehrende Standardfragen automatisiert und bei Sonderfällen zuverlässig auf Freigabe umschaltet.",
+  alternates: {
+    canonical: "/use-cases/mittelpreisige-objekte",
+  },
+  openGraph: {
+    title: "Anwendungsfall Mittelpreisige Objekte | Advaic",
+    description:
+      "Wie Advaic bei mittelpreisigen Objekten wiederkehrende Standardfragen automatisiert und bei Sonderfällen zuverlässig auf Freigabe umschaltet.",
+    url: "/use-cases/mittelpreisige-objekte",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Anwendungsfall Mittelpreisige Objekte | Advaic",
+    description:
+      "Wie Advaic bei mittelpreisigen Objekten wiederkehrende Standardfragen automatisiert und bei Sonderfällen zuverlässig auf Freigabe umschaltet.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function UseCaseMittelpreisigeObjektePage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Anwendungsfall mittelpreisige Objekte",
+    inLanguage: "de-DE",
+    mainEntityOfPage: `${siteUrl}/use-cases/mittelpreisige-objekte`,
+    about: ["mittelpreisige Objekte", "Anfrageautomatisierung", "Freigabe", "Maklerprozess"],
+  };
+
   return (
     <PageShell>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <PageIntro
         kicker="Anwendungsfall"
         title="Mittelpreisige Objekte mit wiederkehrenden Fragen"

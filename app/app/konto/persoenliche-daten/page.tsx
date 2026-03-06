@@ -206,7 +206,7 @@ export default function PersoenlicheDatenPage() {
           <button
             type="submit"
             disabled={loading || saving}
-            className="bg-black text-white px-4 py-2 rounded hover:bg-gray-800 transition"
+            className="w-full sm:w-auto bg-black text-white px-4 py-2 rounded hover:bg-gray-800 transition"
           >
             {saving ? "Speichern..." : "Änderungen speichern"}
           </button>

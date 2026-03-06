@@ -131,7 +131,7 @@ export default function PublicAssistantWidget() {
       {
         id: nextId(),
         role: "assistant",
-        text: "Hi, ich bin dein Advaic Assistent. Ich beantworte Fragen zu Advaic, zum Makleralltag und zu einem sicheren Start mit Autopilot und Freigabe.",
+        text: "Hallo, ich bin Ihr Advaic-Assistent. Ich beantworte Fragen zu Advaic, zum Makleralltag und zu einem sicheren Start mit Autopilot und Freigabe.",
       },
     ]);
   }, [open]);
@@ -191,8 +191,8 @@ export default function PublicAssistantWidget() {
       if (!res.ok) {
         const message =
           data?.error === "rate_limited"
-            ? "Du hast gerade viele Anfragen gesendet. Bitte warte kurz und versuche es erneut."
-            : "Ich konnte gerade nicht antworten. Versuche es bitte gleich noch einmal.";
+            ? "Sie haben gerade viele Anfragen gesendet. Bitte warten Sie kurz und versuchen Sie es erneut."
+            : "Ich konnte gerade nicht antworten. Versuchen Sie es bitte gleich noch einmal.";
         throw new Error(message);
       }
 
@@ -204,7 +204,7 @@ export default function PublicAssistantWidget() {
         role: "assistant",
         text:
           answer ||
-          "Ich helfe dir gern. Frag mich am besten konkret zu Autopilot, Freigabe, Follow-ups oder Setup.",
+          "Ich helfe Ihnen gern. Fragen Sie mich am besten konkret zu Autopilot, Freigabe, Follow-ups oder Setup.",
         ctaLabel: data?.cta_label ? String(data.cta_label) : undefined,
         ctaHref: data?.cta_href ? String(data.cta_href) : undefined,
         followUpSuggestions,
@@ -448,7 +448,7 @@ export default function PublicAssistantWidget() {
                   }
                 }}
                 rows={2}
-                placeholder="Stell deine Frage..."
+                placeholder="Stellen Sie Ihre Frage..."
                 className="min-h-[44px] flex-1 resize-none rounded-xl border border-[var(--border)] px-3 py-2 text-sm text-[var(--text)] outline-none transition focus:ring-2 focus:ring-[var(--gold-soft)]"
               />
               <button

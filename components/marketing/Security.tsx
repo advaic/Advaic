@@ -4,24 +4,24 @@ import Container from "./Container";
 const ignored = [
   "Newsletter",
   "Systemmails",
-  "Offensichtliche Werbung/Spam",
+  "Offensichtliche Werbung und Spam",
 ];
 
 const checkFirst = [
-  "Technische no-reply Absender ohne Reply-To",
+  "Technische no-reply Absender ohne nutzbaren Rückkanal",
 ];
 
 const auto = [
   "Echte Interessenten-Anfragen",
   "Standardfragen zu Verfügbarkeit",
-  "Typische Rückfragen zu Besichtigungen",
-  "Fälle mit klaren Angaben",
+  "Typische Rückfragen zu Besichtigungen und Unterlagen",
+  "Fälle mit klarem Objektbezug und vollständigem Kontext",
 ];
 
 const approval = [
-  "Sonderfälle",
-  "Beschwerden",
-  "Unklare Anliegen",
+  "Sonderfälle und ungewöhnliche Anliegen",
+  "Beschwerden und Konfliktthemen",
+  "Unklarer Objektbezug",
   "Fehlende Pflichtinformationen",
 ];
 
@@ -31,8 +31,8 @@ export default function Security() {
       <Container>
         <h2 className="h2">Sicherheit und Datenschutz</h2>
         <p className="body mt-4 max-w-3xl text-[var(--muted)]">
-          Klarer Zugriff, klare Regeln, klare Grenzen. Sie sehen jederzeit, wie
-          Advaic entscheidet und wo bewusst manuelle Freigabe greift.
+          Klarer Zugriff, klare Regeln, klare Grenzen. Sie sehen jederzeit, wie Advaic entscheidet und wann bewusst
+          manuelle Freigabe greift.
         </p>
         <div className="mt-6">
           <Link href="/sicherheit" className="btn-secondary">
@@ -84,7 +84,9 @@ export default function Security() {
           </article>
         </div>
 
-        <p className="helper mt-6">Dokumentation im Onboarding. Keine Rechtsberatung.</p>
+        <p className="helper mt-6">
+          Dokumentation und Exportmöglichkeiten erhalten Sie im Onboarding. Diese Seite bietet keine Rechtsberatung.
+        </p>
       </Container>
     </section>
   );

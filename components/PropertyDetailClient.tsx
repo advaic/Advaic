@@ -631,12 +631,12 @@ export default function PropertyDetailClient({
       data-tour="property-detail-page"
     >
       <div
-        className="max-w-6xl mx-auto px-4 md:px-6 py-6"
+        className="max-w-6xl mx-auto px-3 md:px-6 py-5 md:py-6"
         data-tour="property-detail-container"
       >
         {/* IMAGE SLIDER CARD */}
         <section
-          className="mb-6 bg-white rounded-2xl border border-gray-200 p-4"
+          className="mb-6 bg-white rounded-2xl border border-gray-200 p-3 max-[375px]:p-2.5 md:p-4"
           data-tour="property-detail-images"
         >
           <h2 className="text-lg font-semibold mb-2 bg-[#fbfbfc] rounded-md px-3 py-1 inline-block">
@@ -651,7 +651,7 @@ export default function PropertyDetailClient({
               <div
                 ref={sliderRef}
                 className="keen-slider rounded-md overflow-hidden"
-                style={{ height: "450px" }}
+                style={{ height: "clamp(260px, 52vw, 450px)" }}
                 data-tour="property-detail-image-slider"
               >
                 {resolvedImageUrls.map((url, idx) => (
@@ -814,11 +814,11 @@ export default function PropertyDetailClient({
 
         {/* HEADER CARD */}
         <section
-          className="mb-6 bg-white rounded-2xl border border-gray-200 p-6"
+          className="mb-6 bg-white rounded-2xl border border-gray-200 p-4 md:p-6"
           data-tour="property-detail-header"
         >
           <h1
-            className="text-3xl font-bold mb-2"
+            className="text-2xl max-[375px]:text-xl md:text-3xl font-bold mb-2"
             data-tour="property-detail-title"
           >
             {property.title}
@@ -836,7 +836,7 @@ export default function PropertyDetailClient({
 
           <div className="flex flex-wrap items-center gap-3 mb-4">
             <div
-              className="text-2xl font-extrabold text-gray-900"
+              className="text-2xl max-[375px]:text-xl font-extrabold text-gray-900"
               data-tour="property-detail-price"
             >
               {formatCurrencyEUR(property.price)}
@@ -888,12 +888,12 @@ export default function PropertyDetailClient({
 
         {/* TWO COLUMN GRID */}
         <section
-          className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6"
+          className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6"
           data-tour="property-detail-main"
         >
           {/* Left Column - Beschreibung */}
           <article
-            className="bg-white rounded-2xl border border-gray-200 p-6 prose max-w-full"
+            className="bg-white rounded-2xl border border-gray-200 p-4 md:p-6 prose max-w-full"
             data-tour="property-detail-description"
           >
             <h2>Beschreibung</h2>
@@ -907,14 +907,14 @@ export default function PropertyDetailClient({
 
           {/* Right Column - Details */}
           <article
-            className="bg-white rounded-2xl border border-gray-200 p-6 text-sm text-gray-700 space-y-3"
+            className="bg-white rounded-2xl border border-gray-200 p-4 md:p-6 text-sm text-gray-700 space-y-3"
             data-tour="property-detail-details"
           >
             <h2 className="mb-3 text-base font-semibold border-b border-gray-200 pb-2">
               Details
             </h2>
 
-            <div className="grid grid-cols-2 gap-y-2 gap-x-4">
+            <div className="grid grid-cols-2 max-[375px]:grid-cols-1 gap-y-2 gap-x-4">
               <div className="font-semibold">Vermarktung:</div>
               <div>{vermarktung.label}</div>
 
@@ -985,7 +985,7 @@ export default function PropertyDetailClient({
                 <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                   Vermietung
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div className="mt-3 grid grid-cols-2 max-[375px]:grid-cols-1 gap-x-4 gap-y-2 text-xs">
                   <div className="text-gray-500">Mindestnettoeinkommen</div>
                   <div className="text-gray-900 font-medium">
                     {property.rent_min_income != null
@@ -1023,7 +1023,7 @@ export default function PropertyDetailClient({
                 <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                   Verkauf
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div className="mt-3 grid grid-cols-2 max-[375px]:grid-cols-1 gap-x-4 gap-y-2 text-xs">
                   <div className="text-gray-500">Finanzierung erforderlich</div>
                   <div className="text-gray-900 font-medium">
                     {renderBool(property.sale_financing_required)}
@@ -1141,7 +1141,7 @@ export default function PropertyDetailClient({
               ) : policyError ? (
                 <div className="mt-3 text-xs text-red-600">{policyError}</div>
               ) : policyRow ? (
-                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div className="mt-3 grid grid-cols-2 max-[375px]:grid-cols-1 gap-x-4 gap-y-2 text-xs">
                   <div className="text-gray-500">Max. Vermietung</div>
                   <div className="text-gray-900 font-medium">
                     {policyRow.max_stage_rent ?? "—"}
@@ -1192,7 +1192,7 @@ export default function PropertyDetailClient({
                     </span>
                   </div>
 
-                  <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                  <div className="mt-2 grid grid-cols-2 max-[375px]:grid-cols-1 gap-x-4 gap-y-2 text-xs">
                     <div className="text-gray-500">Max. Vermietung</div>
                     <div className="text-gray-900 font-medium">
                       {defaultsRow.followups_max_stage_rent}
@@ -1231,7 +1231,7 @@ export default function PropertyDetailClient({
               <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                 System & Workflow
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+              <div className="mt-3 grid grid-cols-2 max-[375px]:grid-cols-1 gap-x-4 gap-y-2 text-xs">
                 <div className="text-gray-500">Status</div>
                 <div className="text-gray-900 font-medium">
                   {firstNonEmpty(property.status, "—")}
@@ -1261,7 +1261,7 @@ export default function PropertyDetailClient({
         {/* Conditional Additional Cards */}
         {property.highlights && property.highlights.trim() !== "" && (
           <section
-            className="mb-6 bg-white rounded-2xl border border-gray-200 p-6 prose max-w-full"
+            className="mb-6 bg-white rounded-2xl border border-gray-200 p-4 md:p-6 prose max-w-full"
             data-tour="property-detail-highlights"
           >
             <h2>Highlights</h2>
@@ -1271,7 +1271,7 @@ export default function PropertyDetailClient({
 
         {property.requirements && property.requirements.trim() !== "" && (
           <section
-            className="mb-6 bg-white rounded-2xl border border-gray-200 p-6 prose max-w-full"
+            className="mb-6 bg-white rounded-2xl border border-gray-200 p-4 md:p-6 prose max-w-full"
             data-tour="property-detail-requirements"
           >
             <h2>Voraussetzungen</h2>
@@ -1282,7 +1282,7 @@ export default function PropertyDetailClient({
         {property.contact_instructions &&
           property.contact_instructions.trim() !== "" && (
             <section
-              className="mb-6 bg-white rounded-2xl border border-gray-200 p-6 prose max-w-full"
+              className="mb-6 bg-white rounded-2xl border border-gray-200 p-4 md:p-6 prose max-w-full"
               data-tour="property-detail-contact"
             >
               <h2>Kontakt / Besichtigung</h2>
@@ -1292,7 +1292,7 @@ export default function PropertyDetailClient({
 
         {property.internal_notes && property.internal_notes.trim() !== "" && (
           <section
-            className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-6 prose max-w-full relative"
+            className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 md:p-6 prose max-w-full relative"
             data-tour="property-detail-internal-notes"
           >
             <h2 className="flex items-center gap-2">

@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
-import PageShell from "@/components/marketing/PageShell";
-import PageIntro from "@/components/marketing/PageIntro";
-import StageCTA from "@/components/marketing/StageCTA";
-import FinalCTA from "@/components/marketing/FinalCTA";
+import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 
 const workflow = [
   {
@@ -39,7 +37,7 @@ const priorityBands = [
   },
   {
     title: "Mittel (heute prüfen)",
-    text: "Unklarer Objektbezug oder fehlende Pflichtinfos bei grundsätzlich relevantem Lead.",
+    text: "Unklarer Objektbezug oder fehlende Pflichtinfos bei grundsätzlich relevanter Interessenten-Anfrage.",
   },
   {
     title: "Niedrig (gebündelt prüfen)",
@@ -83,27 +81,51 @@ export const metadata: Metadata = {
   title: "Makler Freigabe Workflow | Advaic",
   description:
     "So funktioniert ein professioneller Freigabe-Workflow für Immobilienmakler: Fälle erkennen, strukturiert entscheiden und revisionssicher dokumentieren.",
+  alternates: {
+    canonical: "/makler-freigabe-workflow",
+  },
 };
 
 export default function MaklerFreigabeWorkflowPage() {
-  return (
-    <PageShell>
-      <PageIntro
-        kicker="Makler-Freigabe-Workflow"
-        title="Sensible Fälle kontrolliert entscheiden"
-        description="Der Freigabe-Workflow sorgt dafür, dass kritische Nachrichten nicht automatisch rausgehen, sondern strukturiert in Ihrer Entscheidung landen."
-        actions={
-          <>
-            <Link href="/freigabe-inbox" className="btn-secondary">
-              Freigabe-Inbox
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              14 Tage testen
-            </Link>
-          </>
-        }
-      />
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Makler Freigabe Workflow",
+    inLanguage: "de-DE",
+    about: ["Freigabe", "Immobilienmakler", "Qualitätskontrolle", "Mensch-im-Prozess"],
+    mainEntityOfPage: `${siteUrl}/makler-freigabe-workflow`,
+  };
 
+  return (
+    <AiDiscoveryPageTemplate
+      breadcrumbItems={[
+        { name: "Startseite", path: "/" },
+        { name: "Makler Freigabe Workflow", path: "/makler-freigabe-workflow" },
+      ]}
+      schema={schema}
+      kicker="Makler-Freigabe-Workflow"
+      title="Sensible Fälle kontrolliert entscheiden"
+      description="Der Freigabe-Workflow sorgt dafür, dass kritische Nachrichten nicht automatisch rausgehen, sondern strukturiert in Ihrer Entscheidung landen."
+      actions={
+        <>
+          <Link href="/freigabe-inbox" className="btn-secondary">
+            Freigabe-Inbox
+          </Link>
+          <Link href="/signup" className="btn-primary">
+            14 Tage testen
+          </Link>
+        </>
+      }
+      stage="bewertung"
+      stageContext="intent-freigabe-workflow"
+      primaryHref="/signup"
+      primaryLabel="Freigabe-Workflow testen"
+      secondaryHref="/qualitaetschecks"
+      secondaryLabel="Checks verstehen"
+      sources={sources}
+      sourcesDescription="Die Quellen helfen bei der methodischen Einordnung von Risiko, Dokumentation und Priorisierung im Freigabeprozess."
+    >
       <section className="marketing-section-clear py-14 md:py-18">
         <Container>
           <div className="grid gap-6 lg:grid-cols-12">
@@ -129,15 +151,6 @@ export default function MaklerFreigabeWorkflowPage() {
           </div>
         </Container>
       </section>
-
-      <StageCTA
-        stage="bewertung"
-        primaryHref="/signup"
-        primaryLabel="Freigabe-Workflow testen"
-        secondaryHref="/qualitaetschecks"
-        secondaryLabel="Checks verstehen"
-        context="intent-freigabe-workflow"
-      />
 
       <section className="marketing-section-clear py-20 md:py-28">
         <Container>
@@ -200,29 +213,8 @@ export default function MaklerFreigabeWorkflowPage() {
               ))}
             </ul>
           </article>
-
-          <article className="card-base mt-6 p-6">
-            <h2 className="h3">Quellen & Einordnung</h2>
-            <div className="mt-4 space-y-3">
-              {sources.map((source) => (
-                <article key={source.href} className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
-                  <a
-                    href={source.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-semibold text-[var(--text)] underline underline-offset-4"
-                  >
-                    {source.label}
-                  </a>
-                  <p className="helper mt-2">{source.note}</p>
-                </article>
-              ))}
-            </div>
-          </article>
         </Container>
       </section>
-
-      <FinalCTA />
-    </PageShell>
+    </AiDiscoveryPageTemplate>
   );
 }

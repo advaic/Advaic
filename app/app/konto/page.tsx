@@ -148,10 +148,11 @@ export default function KontoUebersichtPage() {
         </div>
       </div>
 
-      <div className="space-y-4" data-tour="account-actions">
+      <div className="space-y-3" data-tour="account-actions">
         <Link
           href="/app/konto/abo?source=konto_manage_plan&next=%2Fapp%2Fkonto"
           data-tour="account-change-plan"
+          className="inline-flex w-full sm:w-auto"
           onClick={() => {
             void trackFunnelEvent({
               event: "billing_upgrade_cta_clicked",
@@ -160,13 +161,27 @@ export default function KontoUebersichtPage() {
             });
           }}
         >
-          <Button variant="secondary">Plan & Zahlungen verwalten</Button>
+          <Button variant="secondary" className="w-full sm:w-auto">
+            Plan & Zahlungen verwalten
+          </Button>
         </Link>
-        <Link href="/app/konto/persoenliche-daten" data-tour="account-personal-data">
-          <Button variant="outline">Persönliche Daten anzeigen</Button>
+        <Link
+          href="/app/konto/persoenliche-daten"
+          data-tour="account-personal-data"
+          className="inline-flex w-full sm:w-auto"
+        >
+          <Button variant="outline" className="w-full sm:w-auto">
+            Persönliche Daten anzeigen
+          </Button>
         </Link>
-        <Link href="/app/konto/loeschen" data-tour="account-delete">
-          <Button variant="destructive">Konto löschen</Button>
+        <Link
+          href="/app/konto/loeschen"
+          data-tour="account-delete"
+          className="inline-flex w-full sm:w-auto"
+        >
+          <Button variant="destructive" className="w-full sm:w-auto">
+            Konto löschen
+          </Button>
         </Link>
       </div>
     </div>

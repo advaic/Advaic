@@ -33,8 +33,8 @@ export default function TrustStats() {
       <Container>
         <h2 className="h2">Verifizierbare Produktfakten</h2>
         <p className="body mt-4 max-w-[70ch] text-[var(--muted)]">
-          Die folgenden Punkte basieren direkt auf der aktuellen Systemlogik von Advaic und sind keine externen
-          Schätzwerte.
+          Die folgenden Punkte basieren auf der aktuellen Systemlogik von Advaic und sind keine externen
+          Schätzungen.
         </p>
         <p className="helper mt-2 max-w-[70ch]">
           Es gibt aktuell noch keine veröffentlichten Kundenbeispiele. Deshalb zeigen wir bewusst konkrete

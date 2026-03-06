@@ -71,12 +71,16 @@ export default function KontoLoeschenPage() {
         Achtung: Das Löschen deines Kontos ist endgültig.
       </div>
 
-      <Button variant="destructive" onClick={() => setOpen(true)}>
+      <Button
+        variant="destructive"
+        onClick={() => setOpen(true)}
+        className="w-full sm:w-auto"
+      >
         Konto unwiderruflich löschen
       </Button>
 
       <Dialog open={open} onClose={closeDialog}>
-        <div className="bg-white dark:bg-zinc-900 p-6 rounded-lg shadow-lg max-w-md mx-auto mt-10">
+        <div className="bg-white dark:bg-zinc-900 p-5 md:p-6 rounded-lg shadow-lg w-[calc(100vw-2rem)] max-w-md mx-auto mt-6 md:mt-10">
           <h2 className="text-lg font-semibold mb-2">
             Konto wirklich löschen?
           </h2>
@@ -114,11 +118,21 @@ export default function KontoLoeschenPage() {
             {message ? <p className="text-sm text-green-700">{message}</p> : null}
           </div>
 
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={closeDialog} disabled={busy}>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={closeDialog}
+              disabled={busy}
+              className="w-full sm:w-auto"
+            >
               Abbrechen
             </Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={busy}>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={busy}
+              className="w-full sm:w-auto"
+            >
               {busy ? "Lösche..." : "Ja, löschen"}
             </Button>
           </div>

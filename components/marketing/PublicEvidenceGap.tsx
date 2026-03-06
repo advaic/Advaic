@@ -9,9 +9,9 @@ import { trackPublicEvent } from "@/lib/funnel/public-track";
 const sources = [
   {
     stat: "7x",
-    title: "höhere Lead-Qualifizierung bei Antwort innerhalb von 1 Stunde",
+    title: "höhere Anfragen-Qualifizierung bei Antwort innerhalb von 1 Stunde",
     detail:
-      "HBR (2011) zeigt: Wer innerhalb einer Stunde reagiert, qualifiziert Leads deutlich häufiger als bei späterer Reaktion.",
+      "HBR (2011) zeigt: Wer innerhalb einer Stunde reagiert, qualifiziert Interessenten-Anfragen deutlich häufiger als bei späterer Reaktion.",
     sourceLabel: "Harvard Business Review (März 2011)",
     sourceUrl: "https://hbr.org/2011/03/the-short-life-of-online-sales-leads",
   },
@@ -115,7 +115,7 @@ export default function PublicEvidenceGap() {
         score: inboxScore,
         issue:
           "Zu viel Zeit geht in manuelles Sortieren und wiederkehrende Antworten statt in aktive Vermarktung.",
-        fix: "Advaic filtert Nicht-Anfragen, priorisiert echte Leads und reduziert Routinearbeit.",
+        fix: "Advaic filtert Nicht-Anfragen, priorisiert echte Interessenten-Anfragen und reduziert Routinearbeit.",
       },
       {
         key: "followup",
@@ -239,7 +239,9 @@ export default function PublicEvidenceGap() {
               </label>
 
               <label className="block">
-                <span className="text-sm font-semibold text-[var(--text)]">Ø Follow-up nach letzter Lead-Nachricht</span>
+                <span className="text-sm font-semibold text-[var(--text)]">
+                  Ø Follow-up nach letzter Interessenten-Nachricht
+                </span>
                 <input
                   type="number"
                   min={1}

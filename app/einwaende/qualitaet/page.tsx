@@ -64,6 +64,19 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/einwaende/qualitaet",
   },
+  openGraph: {
+    title: "Einwand Qualität | Advaic",
+    description:
+      "Wie Advaic Qualitätsrisiken reduziert: Relevanz-, Kontext-, Vollständigkeits-, Stil- und Risiko-Checks vor jedem Versand.",
+    url: "/einwaende/qualitaet",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Einwand Qualität | Advaic",
+    description:
+      "Wie Advaic Qualitätsrisiken reduziert: Relevanz-, Kontext-, Vollständigkeits-, Stil- und Risiko-Checks vor jedem Versand.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function ObjectionQualitaetPage() {

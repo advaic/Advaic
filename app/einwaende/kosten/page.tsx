@@ -43,7 +43,7 @@ const sources = [
   {
     label: "Harvard Business Review – The Short Life of Online Sales Leads",
     href: "https://hbr.org/2011/03/the-short-life-of-online-sales-leads",
-    note: "Reaktionszeit als wirtschaftlicher Hebel im Leadprozess.",
+    note: "Reaktionszeit als wirtschaftlicher Hebel im Interessenten-Prozess.",
   },
   {
     label: "McKinsey – The social economy",
@@ -63,6 +63,19 @@ export const metadata: Metadata = {
     "Wie sich Advaic wirtschaftlich bewerten lässt: konservative ROI-Rechnung mit Zeitgewinn, Reaktionsgeschwindigkeit und Qualitätsstabilität.",
   alternates: {
     canonical: "/einwaende/kosten",
+  },
+  openGraph: {
+    title: "Einwand Kosten | Advaic",
+    description:
+      "Wie sich Advaic wirtschaftlich bewerten lässt: konservative ROI-Rechnung mit Zeitgewinn, Reaktionsgeschwindigkeit und Qualitätsstabilität.",
+    url: "/einwaende/kosten",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Einwand Kosten | Advaic",
+    description:
+      "Wie sich Advaic wirtschaftlich bewerten lässt: konservative ROI-Rechnung mit Zeitgewinn, Reaktionsgeschwindigkeit und Qualitätsstabilität.",
+    images: ["/brand/advaic-icon.png"],
   },
 };
 

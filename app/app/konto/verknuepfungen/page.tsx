@@ -440,9 +440,9 @@ export default function VerknuepfungenPage() {
   }, [gmailParam, outlookParam, immoscoutParam, reasonParam]);
 
 return (
-    <div className="max-w-3xl mx-auto p-6" data-tour="links-page">
+    <div className="max-w-3xl mx-auto px-3 max-[375px]:px-2.5 py-4 md:p-6" data-tour="links-page">
       <div className="mb-6" data-tour="links-header">
-        <h1 className="text-2xl font-semibold" data-tour="links-title">Verknüpfte Dienste</h1>
+        <h1 className="text-2xl max-[375px]:text-xl font-semibold" data-tour="links-title">Verknüpfte Dienste</h1>
         <p className="mt-1 text-sm text-gray-600" data-tour="links-subtitle">
           Verbinde deine Tools, damit Advaic automatisiert für dich arbeiten
           kann. Du kannst Verknüpfungen jederzeit erneuern.
@@ -576,15 +576,15 @@ return (
               key={service.id}
               data-tour={`link-card-${service.id}`}
               className={classNames(
-                "flex items-start justify-between gap-4 rounded-lg border bg-white p-5",
+                "flex flex-col gap-4 md:flex-row md:items-start md:justify-between rounded-lg border bg-white p-4 md:p-5",
                 !service.enabled && "opacity-75"
               )}
             >
-              <div className="flex items-start gap-4">
+              <div className="flex items-start gap-3 md:gap-4">
                 <div className="mt-1" data-tour={`link-icon-${service.id}`}>{service.icon}</div>
 
                 <div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-base font-semibold text-gray-900" data-tour={`link-name-${service.id}`}>
                       {service.name}
                     </h2>
@@ -670,7 +670,7 @@ return (
                 </div>
               </div>
 
-              <div className="flex flex-col items-end gap-2" data-tour={`link-actions-${service.id}`}>
+              <div className="w-full md:w-auto flex flex-col sm:flex-row md:flex-col items-stretch md:items-end gap-2" data-tour={`link-actions-${service.id}`}>
                 {service.enabled ? (
                   isGmail ? (
                     gmailConnected ? (
@@ -680,7 +680,7 @@ return (
                           onClick={repairGmailNow}
                           disabled={repairingProvider === "gmail"}
                           className={classNames(
-                            "inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium",
+                            "inline-flex w-full sm:w-auto items-center justify-center rounded-md border px-3 py-2 text-sm font-medium",
                             repairingProvider === "gmail"
                               ? "border-gray-200 bg-gray-100 text-gray-500"
                               : "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100",
@@ -694,7 +694,7 @@ return (
                           data-tour="link-gmail-reconnect"
                           type="button"
                           onClick={startGmailOAuth}
-                          className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                          className="inline-flex w-full sm:w-auto items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50"
                           title="Falls du die Verbindung erneuern willst"
                         >
                           Neu verbinden
@@ -715,7 +715,7 @@ return (
                           onClick={repairGmailNow}
                           disabled={repairingProvider === "gmail" || loading}
                           className={classNames(
-                            "inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium",
+                            "inline-flex w-full sm:w-auto items-center justify-center rounded-md border px-3 py-2 text-sm font-medium",
                             repairingProvider === "gmail" || loading
                               ? "border-gray-200 bg-gray-100 text-gray-500"
                               : "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100",
@@ -731,7 +731,7 @@ return (
                           onClick={startGmailOAuth}
                           disabled={loading || repairingProvider === "gmail"}
                           className={classNames(
-                            "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium",
+                            "inline-flex w-full sm:w-auto items-center justify-center rounded-md px-4 py-2 text-sm font-medium",
                             loading || repairingProvider === "gmail"
                               ? "bg-gray-200 text-gray-500"
                               : "bg-blue-600 text-white hover:bg-blue-700",
@@ -748,7 +748,7 @@ return (
                           data-tour="link-immoscout-reconnect"
                           type="button"
                           onClick={startImmoScoutOAuth}
-                          className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                          className="inline-flex w-full sm:w-auto items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50"
                           title="Falls du die Verbindung erneuern willst"
                         >
                           Neu verbinden
@@ -766,7 +766,7 @@ return (
                         data-tour="link-immoscout-connect"
                         type="button"
                         onClick={startImmoScoutOAuth}
-                        className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium bg-gray-900 text-amber-200 hover:bg-gray-800"
+                        className="inline-flex w-full sm:w-auto items-center justify-center rounded-md px-4 py-2 text-sm font-medium bg-gray-900 text-amber-200 hover:bg-gray-800"
                       >
                         ImmoScout verbinden
                       </button>
@@ -779,7 +779,7 @@ return (
                           onClick={repairOutlookNow}
                           disabled={repairingProvider === "outlook"}
                           className={classNames(
-                            "inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium",
+                            "inline-flex w-full sm:w-auto items-center justify-center rounded-md border px-3 py-2 text-sm font-medium",
                             repairingProvider === "outlook"
                               ? "border-gray-200 bg-gray-100 text-gray-500"
                               : "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100",
@@ -793,7 +793,7 @@ return (
                           data-tour="link-outlook-reconnect"
                           type="button"
                           onClick={startOutlookOAuth}
-                          className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                          className="inline-flex w-full sm:w-auto items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50"
                           title="Falls du die Verbindung erneuern willst"
                         >
                           Neu verbinden
@@ -814,7 +814,7 @@ return (
                           onClick={repairOutlookNow}
                           disabled={repairingProvider === "outlook"}
                           className={classNames(
-                            "inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium",
+                            "inline-flex w-full sm:w-auto items-center justify-center rounded-md border px-3 py-2 text-sm font-medium",
                             repairingProvider === "outlook"
                               ? "border-gray-200 bg-gray-100 text-gray-500"
                               : "border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100",
@@ -830,7 +830,7 @@ return (
                           onClick={startOutlookOAuth}
                           disabled={repairingProvider === "outlook"}
                           className={classNames(
-                            "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium",
+                            "inline-flex w-full sm:w-auto items-center justify-center rounded-md px-4 py-2 text-sm font-medium",
                             repairingProvider === "outlook"
                               ? "bg-gray-200 text-gray-500"
                               : "bg-blue-600 text-white hover:bg-blue-700",
@@ -844,7 +844,7 @@ return (
                     <button
                       type="button"
                       disabled
-                      className="inline-flex items-center justify-center rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400"
+                      className="inline-flex w-full sm:w-auto items-center justify-center rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400"
                     >
                       Bald verfügbar
                     </button>
@@ -853,7 +853,7 @@ return (
                   <button
                     type="button"
                     disabled
-                    className="inline-flex items-center justify-center rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400"
+                    className="inline-flex w-full sm:w-auto items-center justify-center rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400"
                     title={
                       service.id === "immoscout"
                         ? "ImmoScout24 OAuth erfordert API Credentials (Consumer Key/Secret)."

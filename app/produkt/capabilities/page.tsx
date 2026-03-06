@@ -82,7 +82,7 @@ const capabilityRows = [
     area: "Konto & Integrationen",
     dashboardPath: "/app/konto + /app/konto/verknuepfungen",
     does:
-      "Verwaltet E-Mail- und Plattformintegrationen (z. B. Gmail, Microsoft 365, optional ImmoScout) sowie Sicherheit und Abrechnung.",
+      "Verwaltet E-Mail- und Plattformintegrationen (z. B. Gmail, Microsoft 365, optional ImmoScout24) sowie Sicherheit und Abrechnung.",
     guardrail:
       "Ohne aktive Integration kein produktiver Versandpfad.",
     publicHref: "/sicherheit",
@@ -250,4 +250,3 @@ export default function ProductCapabilitiesPage() {
     </PageShell>
   );
 }
-

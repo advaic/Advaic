@@ -1257,14 +1257,14 @@ export default function HinzufuegenPage() {
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
         <div
-          className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
+          className="sticky top-16 md:top-0 z-30 -mx-4 px-4 md:mx-0 md:px-0 pt-3 md:pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
           data-tour="property-add-header"
         >
-          <div className="flex items-start justify-between gap-4 pb-4">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1
-                  className="text-xl md:text-2xl font-semibold"
+                  className="text-xl max-[375px]:text-lg md:text-2xl font-semibold"
                   data-tour="property-add-title"
                 >
                   Immobilie hinzufügen
@@ -1289,13 +1289,13 @@ export default function HinzufuegenPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="w-full lg:w-auto flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => router.push(returnTo)}
                 disabled={deleting}
                 data-tour="property-add-back"
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
               >
                 Zurück
               </button>
@@ -1305,7 +1305,7 @@ export default function HinzufuegenPage() {
                 onClick={discardDraft}
                 disabled={deleting}
                 data-tour="property-add-discard"
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
                 title="Entwurf verwerfen und löschen"
               >
                 {deleting ? (
@@ -1321,7 +1321,7 @@ export default function HinzufuegenPage() {
                 onClick={forceSaveNow}
                 disabled={disabledHeaderActions}
                 data-tour="property-add-save"
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
                 title="Entwurf speichern"
               >
                 <Save className="h-4 w-4 inline-block mr-2" />
@@ -1339,7 +1339,7 @@ export default function HinzufuegenPage() {
                   !canPublish
                 }
                 data-tour="property-add-publish"
-                className="px-3 py-2 text-sm rounded-lg bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 disabled:opacity-50"
+                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 disabled:opacity-50"
                 title={
                   canPublish
                     ? "Veröffentlichen"

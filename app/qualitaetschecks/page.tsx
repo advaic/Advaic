@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -82,14 +83,17 @@ const sources = [
   {
     label: "NIST – AI Risk Management Framework",
     href: "https://www.nist.gov/itl/ai-risk-management-framework",
+    note: "Rahmen für risikobewusste KI-Steuerung und nachvollziehbare Sicherheitsgrenzen.",
   },
   {
     label: "BSI – IT-Grundschutz",
     href: "https://www.bsi.bund.de/DE/Themen/Unternehmen-und-Organisationen/Standards-und-Zertifizierung/IT-Grundschutz/it-grundschutz_node.html",
+    note: "Orientierung für robuste technische und organisatorische Schutzmaßnahmen.",
   },
   {
     label: "EUR-Lex – DSGVO Zusammenfassung",
     href: "https://eur-lex.europa.eu/DE/legal-content/summary/general-data-protection-regulation-gdpr.html",
+    note: "Rechtlicher Rahmen für datenschutzkonforme, dokumentierte Prozesse.",
   },
 ];
 
@@ -97,11 +101,41 @@ export const metadata: Metadata = {
   title: "Qualitätschecks | Advaic",
   description:
     "Alle Qualitätskontrollen vor dem Auto-Versand: Relevanz, Kontext, Vollständigkeit, Ton, Risiko und Lesbarkeit inklusive Fail-Safe Verhalten.",
+  alternates: {
+    canonical: "/qualitaetschecks",
+  },
+  openGraph: {
+    title: "Qualitätschecks | Advaic",
+    description:
+      "Alle Qualitätskontrollen vor dem Auto-Versand: Relevanz, Kontext, Vollständigkeit, Ton, Risiko und Lesbarkeit inklusive Fail-Safe Verhalten.",
+    url: "/qualitaetschecks",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Qualitätschecks | Advaic",
+    description:
+      "Alle Qualitätskontrollen vor dem Auto-Versand: Relevanz, Kontext, Vollständigkeit, Ton, Risiko und Lesbarkeit inklusive Fail-Safe Verhalten.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function QualitaetschecksPage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Qualitätschecks vor dem Versand",
+    inLanguage: "de-DE",
+    mainEntityOfPage: `${siteUrl}/qualitaetschecks`,
+    about: ["Qualitätschecks", "Fail-Safe", "Freigabe", "Risikocheck"],
+  };
+
   return (
     <PageShell>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <PageIntro
         kicker="Qualität vor Versand"
         title="Wie Advaic Fehler vor dem Senden erkennt"
@@ -209,17 +243,19 @@ export default function QualitaetschecksPage() {
               Die Prüfarchitektur orientiert sich an kontrollierter Risiko-Governance und nachvollziehbarer
               Prozessführung. Die Quellen dienen als Referenzrahmen für den Betriebsstandard.
             </p>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4 space-y-3">
               {sources.map((source) => (
-                <a
-                  key={source.href}
-                  href={source.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-secondary"
-                >
-                  {source.label}
-                </a>
+                <article key={source.href} className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                  <a
+                    href={source.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-semibold text-[var(--text)] underline underline-offset-4"
+                  >
+                    {source.label}
+                  </a>
+                  <p className="helper mt-2">{source.note}</p>
+                </article>
               ))}
             </div>
           </article>

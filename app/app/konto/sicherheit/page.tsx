@@ -232,7 +232,10 @@ export default function PasswortSicherheitPage() {
   };
 
   return (
-    <div className="max-w-xl space-y-6" data-tour="account-link-passwortsicherheit">
+    <div
+      className="max-w-2xl space-y-6"
+      data-tour="account-link-passwortsicherheit"
+    >
       <h1 className="text-2xl font-semibold">Passwort & Sicherheit</h1>
       <p className="text-muted-foreground">
         Aktualisiere dein Passwort oder aktiviere 2-Faktor-Authentifizierung.
@@ -297,7 +300,7 @@ export default function PasswortSicherheitPage() {
         ) : null}
 
         <button
-          className="bg-black text-white px-4 py-2 rounded hover:bg-gray-800 transition disabled:opacity-60"
+          className="w-full sm:w-auto bg-black text-white px-4 py-2 rounded hover:bg-gray-800 transition disabled:opacity-60"
           onClick={handleUpdatePassword}
           disabled={passwordBusy}
           type="button"
@@ -312,12 +315,12 @@ export default function PasswortSicherheitPage() {
           Schütze dein Konto zusätzlich per TOTP (Authenticator-App).
         </p>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
           <button
             onClick={toggleTwoFA}
             disabled={mfaBusy}
             type="button"
-            className="bg-black text-white px-4 py-2 rounded hover:bg-gray-800 transition disabled:opacity-60"
+            className="w-full sm:w-auto bg-black text-white px-4 py-2 rounded hover:bg-gray-800 transition disabled:opacity-60"
           >
             {mfaBusy
               ? "Bitte warten..."
@@ -368,7 +371,7 @@ export default function PasswortSicherheitPage() {
               onClick={verifyTwoFA}
               disabled={mfaBusy}
               type="button"
-              className="bg-black text-white px-4 py-2 rounded hover:bg-gray-800 transition disabled:opacity-60"
+              className="w-full sm:w-auto bg-black text-white px-4 py-2 rounded hover:bg-gray-800 transition disabled:opacity-60"
             >
               Code bestätigen
             </button>

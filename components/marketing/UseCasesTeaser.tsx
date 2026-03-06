@@ -32,8 +32,8 @@ export default function UseCasesTeaser() {
           <div className="max-w-[72ch]">
             <h2 className="h2">Anwendungsfälle aus dem Makleralltag</h2>
             <p className="body mt-4 text-[var(--muted)]">
-              Keine abstrakten Versprechen: Hier sehen Sie, in welchen realen Situationen Advaic besonders sinnvoll ist
-              und wo Grenzen liegen.
+              Keine abstrakten Versprechen: Hier sehen Sie, in welchen Situationen Advaic besonders sinnvoll ist und wo
+              die Grenzen liegen.
             </p>
           </div>
           <Link href="/branchen" className="btn-secondary">

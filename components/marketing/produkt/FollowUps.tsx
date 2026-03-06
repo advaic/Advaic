@@ -2,7 +2,7 @@ import Link from "next/link";
 import Container from "@/components/marketing/Container";
 
 const guardrails = [
-  "Nur wenn Follow-ups aktiv sind (global, pro Lead und optional pro Objekt).",
+  "Nur wenn Follow-ups aktiv sind (global, pro Interessenten-Konversation und optional pro Objekt).",
   "Nur wenn der Interessent zuletzt nicht geantwortet hat.",
   "Bei Pause oder Stopp wird nichts gesendet.",
   "Vor Versand laufen dieselben Qualitätsprüfungen wie bei normalen Antworten.",

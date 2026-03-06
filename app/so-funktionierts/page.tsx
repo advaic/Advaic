@@ -1,21 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import BreadcrumbJsonLd from "@/components/seo/BreadcrumbJsonLd";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
-import PageShell from "@/components/marketing/PageShell";
-import PageIntro from "@/components/marketing/PageIntro";
-import StageCTA from "@/components/marketing/StageCTA";
+import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 import HowItWorks from "@/components/marketing/HowItWorks";
 import StickyTour from "@/components/marketing/StickyTour";
 import DecisionSimulator from "@/components/marketing/DecisionSimulator";
 import UseCasesTeaser from "@/components/marketing/UseCasesTeaser";
 import CTAExperiment from "@/components/marketing/CTAExperiment";
-import FinalCTA from "@/components/marketing/FinalCTA";
 
 const summary = [
   "Advaic arbeitet als kontrollierter Ablauf: Erkennen, Schreiben, Entscheiden, Senden.",
   "Auto-Versand ist an klare Regeln und Qualitätschecks gebunden.",
   "Unsichere Fälle gehen in die Freigabe und bleiben in Ihrer Hand.",
+  "Jede Entscheidung bleibt im Verlauf mit Zeitstempel nachvollziehbar.",
 ];
 
 const flowDetails = [
@@ -89,14 +87,22 @@ const sources = [
   {
     label: "NIST – AI Risk Management Framework",
     href: "https://www.nist.gov/itl/ai-risk-management-framework",
+    note: "Rahmen für kontrollierte KI-Entscheidungen mit dokumentiertem Risikomanagement.",
   },
   {
     label: "HBR – The Short Life of Online Sales Leads",
     href: "https://hbr.org/2011/03/the-short-life-of-online-sales-leads",
+    note: "Einordnung, warum Geschwindigkeit in der Interessentenkommunikation entscheidend ist.",
   },
   {
     label: "McKinsey – The social economy",
     href: "https://www.mckinsey.com/industries/technology-media-and-telecommunications/our-insights/the-social-economy",
+    note: "Kontext zum Produktivitätspotenzial strukturierter Kommunikationsprozesse.",
+  },
+  {
+    label: "Google Search Essentials",
+    href: "https://developers.google.com/search/docs/essentials",
+    note: "Best Practices für klare, verlässliche Informationsarchitektur im Web.",
   },
 ];
 
@@ -123,38 +129,60 @@ export const metadata: Metadata = {
 };
 
 export default function SoFunktioniertsPage() {
-  return (
-    <PageShell>
-      <BreadcrumbJsonLd
-        items={[
-          { name: "Startseite", path: "/" },
-          { name: "So funktioniert's", path: "/so-funktionierts" },
-        ]}
-      />
-      <PageIntro
-        kicker="Prozess im Detail"
-        title="So funktioniert Advaic Schritt für Schritt"
-        description="Der Ablauf ist bewusst so aufgebaut, dass Sie Zeit sparen und gleichzeitig die Kontrolle über sensible Entscheidungen behalten."
-        actions={
-          <>
-            <Link href="/produkt" className="btn-secondary">
-              Zur Produktseite
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              14 Tage testen
-            </Link>
-          </>
-        }
-      />
-      <StageCTA
-        stage="orientierung"
-        primaryHref="/produkt"
-        primaryLabel="Produkt im Detail"
-        secondaryHref="/sicherheit"
-        secondaryLabel="Sicherheitsprinzipien"
-        context="so-funktionierts"
-      />
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        headline: "So funktioniert Advaic Schritt für Schritt",
+        inLanguage: "de-DE",
+        about: ["E-Mail-Autopilot", "Freigabe", "Qualitätschecks", "Maklerprozess"],
+        mainEntityOfPage: `${siteUrl}/so-funktionierts`,
+      },
+      {
+        "@type": "HowTo",
+        name: "Kontrollierte Antwortautomatisierung für Makleranfragen",
+        inLanguage: "de-DE",
+        step: flowDetails.map((item, index) => ({
+          "@type": "HowToStep",
+          position: index + 1,
+          name: item.title,
+          text: item.body,
+        })),
+      },
+    ],
+  };
 
+  return (
+    <AiDiscoveryPageTemplate
+      breadcrumbItems={[
+        { name: "Startseite", path: "/" },
+        { name: "So funktioniert's", path: "/so-funktionierts" },
+      ]}
+      schema={schema}
+      kicker="Prozess im Detail"
+      title="So funktioniert Advaic Schritt für Schritt"
+      description="Der Ablauf ist bewusst als kontrollierter Prozess gebaut: klare Entscheidungspfade, Qualitätsgrenzen vor Versand und vollständige Nachvollziehbarkeit im Verlauf."
+      actions={
+        <>
+          <Link href="/produkt" className="btn-secondary">
+            Zur Produktseite
+          </Link>
+          <Link href="/signup" className="btn-primary">
+            14 Tage testen
+          </Link>
+        </>
+      }
+      stage="orientierung"
+      stageContext="so-funktionierts"
+      primaryHref="/produkt"
+      primaryLabel="Produkt im Detail"
+      secondaryHref="/sicherheit"
+      secondaryLabel="Sicherheitsprinzipien"
+      sources={sources}
+      sourcesDescription="Die Quellen begründen, warum der Prozess auf kontrollierter Automatisierung und messbarer Qualität basiert. Sie ersetzen keine individuelle Rechts- oder Unternehmensberatung."
+    >
       <section id="kurzfassung" className="py-8 md:py-10">
         <Container>
           <article className="card-base p-6">
@@ -171,8 +199,8 @@ export default function SoFunktioniertsPage() {
               <a href="#prozess-details" className="btn-secondary">
                 Prozessdetails
               </a>
-              <a href="#prozess-quellen" className="btn-secondary">
-                Quellen
+              <a href="#stage-cta" className="btn-secondary">
+                Nächster Schritt
               </a>
             </div>
           </article>
@@ -227,27 +255,6 @@ export default function SoFunktioniertsPage() {
               ))}
             </div>
           </div>
-
-          <article id="prozess-quellen" className="card-base mt-8 p-6">
-            <h2 className="h3">Quellen & Einordnung</h2>
-            <p className="helper mt-3">
-              Die Prozesslogik orientiert sich an kontrollierter Automatisierung mit klaren Fail-Safe-Grenzen und
-              messbarer Prozessqualität.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {sources.map((source) => (
-                <a
-                  key={source.href}
-                  href={source.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-secondary"
-                >
-                  {source.label}
-                </a>
-              ))}
-            </div>
-          </article>
         </Container>
       </section>
 
@@ -258,7 +265,6 @@ export default function SoFunktioniertsPage() {
       />
       <UseCasesTeaser />
       <CTAExperiment />
-      <FinalCTA />
-    </PageShell>
+    </AiDiscoveryPageTemplate>
   );
 }

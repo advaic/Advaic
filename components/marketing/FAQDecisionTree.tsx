@@ -116,7 +116,7 @@ export default function FAQDecisionTree() {
         <div className="max-w-[74ch]">
           <h2 className="h2">FAQ mit Entscheidungsbaum</h2>
           <p className="body mt-4 text-[var(--muted)]">
-            Was ist Ihnen aktuell am wichtigsten? Wählen Sie Ihren Fokus und erhalten Sie den schnellsten Antwortpfad.
+            Was ist Ihnen aktuell am wichtigsten? Wählen Sie Ihren Fokus und erhalten Sie den passenden Antwortpfad.
           </p>
         </div>
 
@@ -182,4 +182,3 @@ export default function FAQDecisionTree() {
     </section>
   );
 }
-

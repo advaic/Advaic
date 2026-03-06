@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/routeAuth";
 import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
+import {
+  applySequenceVariantTone,
+  chooseSequenceVariant,
+  loadActiveRolloutWinners,
+  type SequenceMessageKind,
+} from "@/lib/crm/sequenceExperiments";
 
 export const runtime = "nodejs";
 
@@ -183,6 +189,8 @@ export async function POST(req: NextRequest) {
   let skippedExisting = 0;
   let skippedInvalid = 0;
   const actions: any[] = [];
+  const createdByVariant: Record<string, number> = {};
+  const activeWinners = await loadActiveRolloutWinners(supabase, String(auth.user.id));
 
   for (const row of rows) {
     const recommendedCode = normalizeLine(row?.recommended_code || "", 60);
@@ -236,6 +244,18 @@ export async function POST(req: NextRequest) {
       hook: normalizeText(row.personalization_hook || "", 320) || null,
       painPoint: normalizeText(row.pain_point_hypothesis || "", 320) || null,
     });
+    const selectedVariant = chooseSequenceVariant({
+      agentId: String(auth.user.id),
+      prospectId: String(row.prospect_id),
+      kind: messageKind as SequenceMessageKind,
+      activeWinners,
+    });
+    const templateVariant = `${messageKind}__${selectedVariant.variant}`;
+    const variantBody = applySequenceVariantTone({
+      kind: messageKind as SequenceMessageKind,
+      variant: selectedVariant.variant,
+      body: draft.body,
+    });
 
     const toEmail = normalizeLine(row.contact_email || "", 240).toLowerCase();
     if (channel === "email" && !toEmail) {
@@ -267,7 +287,7 @@ export async function POST(req: NextRequest) {
       channel,
       message_kind: messageKind,
       subject: draft.subject,
-      body: draft.body,
+      body: variantBody,
       personalization_score: 82,
       status: "ready",
       metadata: {
@@ -275,6 +295,11 @@ export async function POST(req: NextRequest) {
         recommended_code: recommendedCode,
         recommended_action: normalizeText(row.recommended_action || "", 280) || null,
         recommended_reason: normalizeText(row.recommended_reason || "", 360) || null,
+        template_variant: templateVariant,
+        experiment_kind: messageKind,
+        experiment_variant: selectedVariant.variant,
+        experiment_source: selectedVariant.source,
+        experiment_reason: selectedVariant.reason,
         generated_at: new Date().toISOString(),
       },
     };
@@ -307,16 +332,22 @@ export async function POST(req: NextRequest) {
       p_metadata: {
         source: "sequence_run",
         recommended_code: recommendedCode,
+        template_variant: templateVariant,
+        experiment_kind: messageKind,
+        experiment_variant: selectedVariant.variant,
       },
     }) as any);
 
     created += 1;
+    createdByVariant[templateVariant] = (createdByVariant[templateVariant] || 0) + 1;
     actions.push({
       prospect_id: row.prospect_id,
       company_name: row.company_name,
       recommended_code: recommendedCode,
       message_kind: messageKind,
       channel,
+      template_variant: templateVariant,
+      experiment_source: selectedVariant.source,
       draft_id: createdDraft.id,
       result: "draft_created",
     });
@@ -329,6 +360,13 @@ export async function POST(req: NextRequest) {
     created,
     skipped_existing: skippedExisting,
     skipped_invalid: skippedInvalid,
+    created_by_variant: createdByVariant,
+    active_winner_rollouts: [...activeWinners.entries()].map(([message_kind, row]) => ({
+      message_kind,
+      winner_variant: row.variant,
+      confidence: row.confidence,
+      sample_size: row.sample_size,
+    })),
     actions,
   });
 }

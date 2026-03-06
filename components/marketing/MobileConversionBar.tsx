@@ -11,6 +11,7 @@ type MobileBarConfig = {
   section: string | null;
   title: string;
   subtitle: string;
+  note?: string;
   primaryLabel: string;
   primaryHref: string;
   secondaryLabel: string;
@@ -58,6 +59,29 @@ function sectionsForPath(pathname: string): string[] {
   return [];
 }
 
+const SECTION_LABELS: Record<string, string> = {
+  problem: "Problem",
+  how: "Ablauf",
+  rules: "Regeln",
+  quality: "Checks",
+  pricing: "Preise",
+  cta: "Abschluss",
+  was: "Leistung",
+  ablauf: "Tour",
+  regeln: "Regeln",
+  qualitaet: "Qualität",
+  freigabe: "Freigabe",
+  sicherheit: "Sicherheit",
+  setup: "Setup",
+  followups: "Follow-ups",
+  faq: "FAQ",
+};
+
+function getSectionLabel(section: string | null): string | null {
+  if (!section) return null;
+  return SECTION_LABELS[section] || null;
+}
+
 function getConfig(pathname: string, activeSection: string | null): MobileBarConfig {
   const pageType = classifyPageType(pathname);
 
@@ -68,6 +92,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       section: activeSection,
       title: "Starter in 14 Tagen testen",
       subtitle: "Ohne Risiko starten, dann monatlich weiter.",
+      note: "Kündbar · pausierbar · klare Freigabelogik",
       primaryLabel: "Jetzt testen",
       primaryHref: "/signup?entry=mobile-preise",
       secondaryLabel: "Preisdetails",
@@ -82,6 +107,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       section: activeSection,
       title: "Sicher starten mit Guardrails",
       subtitle: "Unklare Fälle bleiben in Ihrer Freigabe.",
+      note: "Fail-Safe aktiv: im Zweifel kein Auto-Versand",
       primaryLabel: "Sicher testen",
       primaryHref: "/signup?entry=mobile-sicherheit",
       secondaryLabel: "Regeln ansehen",
@@ -96,6 +122,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       section: activeSection,
       title: "Direkt mit Safe-Start testen",
       subtitle: "Konservativ beginnen und kontrolliert ausbauen.",
+      note: "Erst Freigabe stabilisieren, dann Automatisierungsgrad erhöhen",
       primaryLabel: "Test starten",
       primaryHref: "/signup?entry=mobile-vergleich",
       secondaryLabel: "Konfiguration",
@@ -110,6 +137,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       section: activeSection,
       title: "Fragen geklärt? Dann live testen",
       subtitle: "14 Tage Testphase mit klarer Freigabelogik.",
+      note: "Sie behalten die finale Entscheidung in heiklen Fällen",
       primaryLabel: "14 Tage testen",
       primaryHref: "/signup?entry=mobile-faq",
       secondaryLabel: "Trust Center",
@@ -125,6 +153,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
         section: activeSection,
         title: "Ablauf passt zu Ihrem Alltag?",
         subtitle: "Dann starten Sie mit konservativer Auto/Freigabe-Logik.",
+        note: "Standardfälle automatisch, Unklares kontrolliert per Freigabe",
         primaryLabel: "Mit Prozess testen",
         primaryHref: "/signup?entry=mobile-prozess-details",
         secondaryLabel: "Safe-Start",
@@ -138,6 +167,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       section: activeSection,
       title: "Mechanik verstanden? Jetzt live testen",
       subtitle: "Erkennen, Schreiben, Senden mit klaren Guardrails.",
+      note: "Vor Auto-Versand laufen Qualitätschecks und Risikoprüfungen",
       primaryLabel: "14 Tage testen",
       primaryHref: "/signup?entry=mobile-prozess-default",
       secondaryLabel: "Regeln im Detail",
@@ -147,11 +177,12 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
 
   if (pageType === "regeln") {
     return {
-        context: "regeln",
-        pageType,
-        section: activeSection,
-        title: "Regellogik überzeugt?",
-        subtitle: "Dann starten Sie kontrolliert mit hoher Freigabequote.",
+      context: "regeln",
+      pageType,
+      section: activeSection,
+      title: "Regellogik überzeugt?",
+      subtitle: "Dann starten Sie kontrolliert mit hoher Freigabequote.",
+      note: "Im Zweifel stoppt das System und legt zur Freigabe vor",
       primaryLabel: "Regelbasiert testen",
       primaryHref: "/signup?entry=mobile-regeln",
       secondaryLabel: "Qualitätschecks",
@@ -167,6 +198,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
         section: activeSection,
         title: "Mechanik klar? Nächster Schritt",
         subtitle: "Teste die Entscheidungslinie im Praxis-Simulator.",
+        note: "Sie sehen live, wann Auto, Freigabe oder Ignorieren greift",
         primaryLabel: "Jetzt testen",
         primaryHref: "/signup?entry=mobile-produkt-mechanik",
         secondaryLabel: "Simulator öffnen",
@@ -181,6 +213,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
         section: activeSection,
         title: "Regeln und Checks passen?",
         subtitle: "Dann starten Sie kontrolliert mit Freigabe-Guardrails.",
+        note: "Kritische Fälle bleiben bei Ihnen, nicht beim Autopilot",
         primaryLabel: "Sicher starten",
         primaryHref: "/signup?entry=mobile-produkt-sicherheit",
         secondaryLabel: "Trust Center",
@@ -195,6 +228,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
         section: activeSection,
         title: "Ready für den Safe-Start?",
         subtitle: "Lassen Sie Auto/Freigabe/Follow-ups passend vorkonfigurieren.",
+        note: "Schrittweise aktivieren statt sofort vollautomatisch starten",
         primaryLabel: "Konfiguration testen",
         primaryHref: "/signup?entry=mobile-produkt-setup",
         secondaryLabel: "Safe-Start öffnen",
@@ -208,6 +242,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       section: activeSection,
       title: "Produkt verstanden? Jetzt live testen",
       subtitle: "14 Tage Testphase mit vollständigem Sicherheitsnetz.",
+      note: "Auto-Versand nur bei klaren Standardfällen",
       primaryLabel: "Jetzt testen",
       primaryHref: "/signup?entry=mobile-produkt-default",
       secondaryLabel: "Prozess ansehen",
@@ -223,6 +258,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
         section: activeSection,
         title: "Ist das Ihr Hauptproblem?",
         subtitle: "Dann prüfen Sie den Praxisvergleich und starten konservativ.",
+        note: "Mehr Antwortgeschwindigkeit ohne Kontrollverlust",
         primaryLabel: "14 Tage testen",
         primaryHref: "/signup?entry=mobile-home-fit",
         secondaryLabel: "Manuell vs. Advaic",
@@ -237,6 +273,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
         section: activeSection,
         title: "Guardrails überzeugen?",
         subtitle: "Dann starten Sie mit konservativem Autopilot-Profil.",
+        note: "Im Zweifel immer Freigabe statt riskanter Auto-Antwort",
         primaryLabel: "Sicher testen",
         primaryHref: "/signup?entry=mobile-home-sicherheit",
         secondaryLabel: "Regeln prüfen",
@@ -251,6 +288,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
         section: activeSection,
         title: "Bereit für den Live-Test?",
         subtitle: "14 Tage testen, jederzeit pausierbar und kündbar.",
+        note: "Starter bleibt steuerbar, auch bei höherem Anfragevolumen",
         primaryLabel: "14 Tage testen",
         primaryHref: "/signup?entry=mobile-home-entscheidung",
         secondaryLabel: "Preise ansehen",
@@ -264,6 +302,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       section: activeSection,
       title: "Weniger Postfach, mehr Fokus",
       subtitle: "Advaic startet konservativ und bleibt kontrollierbar.",
+      note: "Klare Guardrails für Auto, Freigabe und Ignorieren",
       primaryLabel: "14 Tage testen",
       primaryHref: "/signup?entry=mobile-home-default",
       secondaryLabel: "So funktioniert's",
@@ -278,6 +317,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       section: activeSection,
       title: "Passt Ihr Anwendungsfall?",
       subtitle: "Wählen Sie Safe-Start je nach Volumen und Risiko.",
+      note: "Setup wird auf Miet-/Kauf-Fokus und Teamgröße abgestimmt",
       primaryLabel: "Use Case testen",
       primaryHref: "/signup?entry=mobile-use-cases",
       secondaryLabel: "Safe-Start",
@@ -292,6 +332,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       section: activeSection,
       title: "Trust Center geprüft?",
       subtitle: "Dann testen Sie das Setup im eigenen Ablauf.",
+      note: "Nachvollziehbarer Verlauf für jede Entscheidung",
       primaryLabel: "Mit Trust testen",
       primaryHref: "/signup?entry=mobile-trust",
       secondaryLabel: "Produkt ansehen",
@@ -305,6 +346,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
     section: activeSection,
     title: "Weniger Postfach, mehr Fokus",
     subtitle: "Advaic startet konservativ und bleibt kontrollierbar.",
+    note: "14 Tage Testphase · danach Starter · jederzeit kündbar",
     primaryLabel: "14 Tage testen",
     primaryHref: "/signup?entry=mobile-default",
     secondaryLabel: "So funktioniert's",
@@ -398,6 +440,8 @@ export default function MobileConversionBar() {
   }, [config.context, config.pageType, config.section, hidden, pathname]);
 
   if (hidden) return null;
+  const activeSectionLabel = getSectionLabel(config.section);
+  const note = config.note || "14 Tage Testphase · danach Starter · jederzeit kündbar";
 
   const onPrimaryClick = () =>
     trackPublicEvent({
@@ -431,18 +475,30 @@ export default function MobileConversionBar() {
 
   return (
     <>
-      <div className="h-32 sm:h-24 md:hidden" aria-hidden />
-      <div className="fixed inset-x-0 bottom-0 z-[70] border-t border-[var(--border)] bg-white/95 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.65rem)] shadow-[0_-10px_30px_rgba(11,15,23,0.10)] backdrop-blur-md md:hidden">
+      <div className="h-40 sm:h-32 md:hidden" aria-hidden />
+      <div className="fixed inset-x-0 bottom-0 z-[70] rounded-t-2xl border-t border-[var(--border)] bg-white/96 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.8rem)] shadow-[0_-14px_34px_rgba(11,15,23,0.12)] backdrop-blur-md md:hidden">
         <div className="mx-auto max-w-[1120px]">
-          <p className="text-sm font-semibold text-[var(--text)]">{config.title}</p>
-          <p className="mt-1 text-xs text-[var(--muted)]">{config.subtitle}</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[13px] font-semibold leading-5 text-[var(--text)]">{config.title}</p>
+            {activeSectionLabel ? (
+              <span className="rounded-full bg-[var(--surface-2)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)] ring-1 ring-[var(--gold-soft)]">
+                {activeSectionLabel}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">{config.subtitle}</p>
+          <p className="mt-1 text-[11px] leading-4 text-[var(--muted)]">{note}</p>
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <Link href={config.primaryHref} className="btn-primary h-10 px-3 text-xs" onClick={() => void onPrimaryClick()}>
+            <Link
+              href={config.primaryHref}
+              className="btn-primary !h-11 !px-3 !text-sm"
+              onClick={() => void onPrimaryClick()}
+            >
               {config.primaryLabel}
             </Link>
             <Link
               href={config.secondaryHref}
-              className="btn-secondary h-10 px-3 text-xs"
+              className="btn-secondary !h-11 !px-3 !text-sm"
               onClick={() => void onSecondaryClick()}
             >
               {config.secondaryLabel}

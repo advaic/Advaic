@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/routeAuth";
 import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
+import { getPlaybookForSegment, inferSegmentFromProspect } from "@/lib/crm/salesIntelResearch";
+import { routeObjection } from "@/lib/crm/objectionLibrary";
 
 export const runtime = "nodejs";
 
@@ -58,6 +60,9 @@ function fallbackPack(args: {
   objection: string | null;
   activeListingsCount: number | null;
   mix: string;
+  segmentKey: string;
+  playbookTitle: string | null;
+  valueNarrative: string;
 }) {
   const salutation = args.contactName
     ? `Hallo ${args.contactName},`
@@ -68,10 +73,11 @@ function fallbackPack(args: {
     `mir ist bei ${args.companyName} positiv aufgefallen, wie klar ihr euren Auftritt gestaltet.`;
   const pain =
     args.pain ||
-    "Wahrscheinlich kostet euch gerade die Menge ähnlicher Interessenten-Anfragen unnötig Zeit im Postfach.";
+    "Viele ähnliche Interessenten-Anfragen kosten täglich Zeit und führen oft zu späteren Antworten.";
   const objection =
     args.objection ||
-    "Die wichtigste Frage ist meist die Kontrolle: wann automatisch gesendet wird und wann Freigabe greift.";
+    "Entscheidend ist, dass jederzeit klar ist, wann automatisch gesendet wird und wann Freigabe greift.";
+  const objectionRoute = routeObjection(args.objection);
   const listingHint =
     typeof args.activeListingsCount === "number"
       ? `Mit aktuell ca. ${args.activeListingsCount} aktiven Inseraten dürfte das spürbar sein.`
@@ -83,26 +89,31 @@ ${hook}
 ${pain}
 ${listingHint}
 
-Wir suchen aktuell wenige Makler als Tester, um genau diesen Schritt sauber zu entlasten.
-
-Wichtig: Autopilot sendet nur bei klaren Fällen, unklare Fälle gehen zur Freigabe, vor jedem Versand laufen Qualitätschecks.
+Für euch konkret relevant: ${args.valueNarrative}.
+Die Mechanik ist klar: Eingang prüfen, entscheiden (Auto/Freigabe/Ignorieren), dann Versand mit Qualitätschecks.
 ${objection}
+Einwand-Route: ${objectionRoute.label} (${objectionRoute.response_pillar}).
+Kurze Antwort: ${objectionRoute.short_rebuttal}
+Rückfrage: ${objectionRoute.next_question}
 
-Wenn du magst, können wir in 15 Minuten prüfen, ob ein vorsichtiger Start für euren ${focus}-Prozess passt.`;
+Wenn du magst, prüfen wir in 15 Minuten unverbindlich, ob ein vorsichtiger Start für euren ${focus}-Prozess passt.`;
 
-  const linkedinBody = `Hallo ${args.contactName || args.companyName}, danke für den Einblick in euren Auftritt.
-Ich suche gerade 3-5 Makler für einen frühen Test: weniger Routine im Postfach, klare Guardrails (unklar => Freigabe, Checks vor Versand), kein Kaufdruck.
-Wäre ein kurzer 15-Minuten-Austausch interessant?`;
+  const linkedinBody = `Hallo ${args.contactName || args.companyName}, kurze Beobachtung zu ${args.companyName}: ${hook}
+Spannend wäre ein kurzer Test für ${args.segmentKey}: ${args.valueNarrative}.
+Wichtig: Auto nur bei klaren Fällen, unklar => Freigabe, vor Versand Qualitätschecks.
+Einwand-Route: ${objectionRoute.label} (${objectionRoute.response_pillar}).
+Wäre ein unverbindlicher 15-Minuten-Austausch sinnvoll?`;
 
   const phoneBody = `Telefonleitfaden:
 1) Bezug herstellen: "${hook}"
-2) Problem spiegeln: "${pain}"
-3) Sicherheitskern: "Auto nur bei klaren Fällen, sonst Freigabe, plus Qualitätschecks."
-4) Abschlussfrage: "Sollen wir 15 Minuten unverbindlich prüfen, ob ein vorsichtiger Pilot passt?"`;
+2) Pain spiegeln: "${pain}"
+3) Mechanik: "Erkennen -> Entscheidung -> Versand mit Guardrails."
+4) Risk-Reversal: "Safe-Start mit mehr Freigaben, volle Kontrolle."
+5) Abschlussfrage: "Sollen wir 15 Minuten unverbindlich prüfen, ob ein vorsichtiger Pilot passt?"`;
 
   return {
     reason:
-      "Diese Varianten nutzen konkrete Prospect-Signale (Hook, Pain, Angebotsmix) und halten den Einstieg druckfrei mit klarem Guardrail-Fokus.",
+      "Diese Varianten folgen derselben Struktur: personalisierter Hook, klarer Pain, nachvollziehbare Mechanik, Risk-Reversal und ein druckfreier Micro-CTA.",
     messages: [
       {
         channel: "email" as const,
@@ -151,6 +162,12 @@ async function maybeGenerateWithAi(args: {
 
 Alle müssen den Prospect-Bezug in der gesamten Nachricht tragen.
 Pflicht: erwähne Guardrails (klar=auto, unklar=Freigabe, Checks vor Versand).
+Struktur pro Nachricht:
+1) Hook
+2) Pain
+3) Mechanik
+4) Risk-Reversal
+5) Micro-CTA (genau ein nächster Schritt)
 
 Kontext:
 - Firma: {{COMPANY_NAME}}
@@ -163,6 +180,10 @@ Kontext:
 - Aktive Inserate: {{ACTIVE_LISTINGS}}
 - Mix: {{MIX}}
 - Evidenz: {{EVIDENCE}}
+- Objection-Route: {{OBJECTION_ROUTE}}
+- Objection-Pillar: {{OBJECTION_PILLAR}}
+- Objection-Antwort: {{OBJECTION_RESPONSE}}
+- Objection-Next-Question: {{OBJECTION_NEXT_QUESTION}}
 
 Gib JSON zurück:
 {
@@ -278,6 +299,28 @@ export async function GET(
     evidence: normalizeMultiline(prospect.personalization_evidence, 300) || "",
   };
 
+  const segmentKey = inferSegmentFromProspect({
+    object_focus: args.objectFocus,
+    share_miete_percent: prospect.share_miete_percent,
+    share_kauf_percent: prospect.share_kauf_percent,
+    active_listings_count: args.activeListingsCount,
+    automation_readiness: null,
+  });
+  const playbook = getPlaybookForSegment(segmentKey);
+  const valueNarrative =
+    segmentKey === "solo_miete_volumen"
+      ? "weniger Zeitverlust bei Standardanfragen und schnellere Reaktionszeiten"
+      : segmentKey === "solo_kauf_beratung"
+        ? "mehr Fokus auf Beratung, weniger Routine-Kommunikation"
+        : segmentKey === "kleines_team_gemischt"
+          ? "kontrollierte Entlastung mit Safe-Start statt Risiko-Automation"
+          : segmentKey === "neubau_vertrieb"
+            ? "klare Governance im Anfrageprozess bei mehreren Beteiligten"
+            : segmentKey === "vorsichtig_starter"
+              ? "kontrollierter Einstieg mit Freigabe-First und klaren Stop-Regeln"
+              : "weniger Routineaufwand bei gleicher Kontrolle";
+  const objectionRouteData = routeObjection(args.objection);
+
   const vars = {
     COMPANY_NAME: args.companyName,
     CONTACT_NAME: args.contactName || "",
@@ -289,9 +332,21 @@ export async function GET(
     ACTIVE_LISTINGS: String(args.activeListingsCount ?? ""),
     MIX: args.mix,
     EVIDENCE: args.evidence,
+    OBJECTION_ROUTE: objectionRouteData.label,
+    OBJECTION_PILLAR: objectionRouteData.response_pillar,
+    OBJECTION_RESPONSE: objectionRouteData.short_rebuttal,
+    OBJECTION_NEXT_QUESTION: objectionRouteData.next_question,
+    SEGMENT_KEY: segmentKey,
+    PLAYBOOK_TITLE: playbook?.title || "",
+    VALUE_NARRATIVE: valueNarrative,
   };
 
-  const fallback = fallbackPack(args);
+  const fallback = fallbackPack({
+    ...args,
+    segmentKey,
+    playbookTitle: playbook?.title || null,
+    valueNarrative,
+  });
   let reason = fallback.reason;
   let messages = fallback.messages;
   let generatedWith: "ai" | "fallback" = "fallback";
@@ -315,4 +370,3 @@ export async function GET(
     messages,
   });
 }
-

@@ -297,40 +297,45 @@ export default function NotificationSettingsPage() {
       className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900"
       data-tour="notifications-page"
     >
-      <div className="max-w-3xl mx-auto px-4 md:px-6 py-6" data-tour="notifications-container">
-        <div className="flex items-start justify-between gap-3" data-tour="notifications-header">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl md:text-2xl font-semibold">Benachrichtigungen</h1>
-              <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
-                Advaic
-              </span>
+      <div className="max-w-3xl mx-auto px-3 max-[375px]:px-2.5 md:px-6 py-6" data-tour="notifications-container">
+        <div
+          className="sticky top-16 md:top-0 z-20 -mx-4 px-4 md:mx-0 md:px-0 pt-2 pb-4 bg-[#f7f7f8]/95 backdrop-blur border-b border-gray-200"
+          data-tour="notifications-header"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-xl max-[375px]:text-lg md:text-2xl font-semibold">Benachrichtigungen</h1>
+                <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
+                  Advaic
+                </span>
+              </div>
+              <p className="text-sm text-gray-600 mt-1">
+                Steuern Sie, wann und wie Sie über neue Ereignisse informiert werden.
+                So verpassen Sie keine wichtigen Updates – und behalten trotzdem die Kontrolle.
+              </p>
             </div>
-            <p className="text-sm text-gray-600 mt-1">
-              Steuern Sie, wann und wie Sie über neue Ereignisse informiert werden.
-              So verpassen Sie keine wichtigen Updates – und behalten trotzdem die Kontrolle.
-            </p>
-          </div>
 
-          <div className="shrink-0">
-            <Button
-              onClick={saveSettings}
-              disabled={saving || loading}
-              className="rounded-lg bg-gray-900 text-amber-200 hover:bg-gray-800 gap-2"
-              data-tour="notifications-save"
-              title="Einstellungen speichern"
-            >
-              {saving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              Speichern
-            </Button>
+            <div className="w-full sm:w-auto">
+              <Button
+                onClick={saveSettings}
+                disabled={saving || loading}
+                className="w-full sm:w-auto rounded-lg bg-gray-900 text-amber-200 hover:bg-gray-800 gap-2"
+                data-tour="notifications-save"
+                title="Einstellungen speichern"
+              >
+                {saving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                Speichern
+              </Button>
+            </div>
           </div>
         </div>
 
-        <div className="h-4" />
+        <div className="h-5" />
 
         {loading ? (
           <Card className="rounded-2xl border border-gray-200 bg-white p-5">

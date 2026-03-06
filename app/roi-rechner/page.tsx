@@ -10,19 +10,19 @@ import FinalCTA from "@/components/marketing/FinalCTA";
 const methodRows = [
   {
     title: "Zeitmodell pro Anfrage",
-    text: "Wir trennen zwischen Standardfällen und Sonderfällen. Nur Standardfälle können automatisiert werden. Zusätzlich wird ein Sicherheitsabschlag angesetzt, damit die Rechnung konservativ bleibt.",
+    text: "Wir trennen in Standardfälle (potenziell Auto) und übrige Fälle (manuell/Freigabe). Auto-Fälle werden nicht mit null Minuten gerechnet, sondern mit Restaufwand plus QA-/Monitoring-Anteil.",
   },
   {
     title: "Erstreaktionsmodell",
-    text: "Die Rechnung zeigt den erwarteten Median der Erstreaktionszeit bei gleichem Anfragevolumen. Auto-Fälle werden schneller beantwortet, unsichere Fälle bleiben bewusst in der Freigabe.",
+    text: "Die Rechnung startet mit Ihrem eingegebenen Ist-Median. Es wird kein versteckter Zusatzpuffer addiert. Der Effekt ergibt sich aus der Auto-Quote unter Guardrails.",
   },
   {
     title: "SLA-Fenster innerhalb 60 Minuten",
-    text: "Wir schätzen, wie viel Prozent der relevanten Anfragen innerhalb eines klaren Zeitfensters beantwortet werden können. Das ist ein operativer Frühindikator für bessere Abschlusschancen.",
+    text: "Zusätzlich wird geschätzt, wie stabil Ihr Team Anfragen innerhalb von 60 Minuten beantworten kann. Das ist ein früher Qualitätsindikator für den operativen Rollout.",
   },
   {
-    title: "Keine Überversprechen",
-    text: "Die Ergebnisse sind Planungswerte. Sie ersetzen kein Pilotprojekt. Deshalb empfehlen wir einen Safe-Start mit enger Beobachtung und kontrollierter Skalierung.",
+    title: "Monetäre Einordnung",
+    text: "Gesparte Stunden werden mit Ihrem internen Stundensatz bewertet. So sehen Sie neben Zeit-KPI auch ein konservatives wirtschaftliches Potenzial pro Monat.",
   },
 ];
 
@@ -43,6 +43,17 @@ const kpiInterpretation = [
     title: "Auto-Quote mit Guardrails",
     text: "Nicht maximale Automatisierung, sondern sichere Automatisierung ist das Ziel. Eine gute Quote ist immer an Freigabe und QA gekoppelt.",
   },
+  {
+    title: "Monetäres Potenzial",
+    text: "Zeigt den Gegenwert der freiwerdenden Zeit auf Basis Ihres Stundensatzes. Das ist eine Arbeitswert-Schätzung, keine Umsatzgarantie.",
+  },
+];
+
+const limits = [
+  "Der Rechner bildet operativen Arbeitswert ab, nicht garantierten Mehrumsatz.",
+  "Saisonale Volumenschwankungen, Teamwechsel und Objektmix können Abweichungen erzeugen.",
+  "Die tatsächliche Auto-Quote hängt von Ihrer Regelqualität und Datenlage ab.",
+  "Deshalb gilt: erst 14 Tage pilotieren, dann Regeln und Auto-Anteil stufenweise ausbauen.",
 ];
 
 const rollout = [
@@ -98,7 +109,7 @@ export default function ROIRechnerPage() {
       <PageIntro
         kicker="ROI-Rechner"
         title="Zeitgewinn und Reaktionsgeschwindigkeit realistisch berechnen"
-        description="Der Rechner zeigt, welchen operativen Effekt Advaic bei Ihrem Anfragevolumen haben kann. Fokus: weniger Postfachzeit, schnellere Erstantwort, stabile Qualität durch Guardrails."
+        description="Der Rechner zeigt konservativ, wie sich Zeitaufwand, Erstreaktion und 60-Minuten-Quote entwickeln können. Alle Annahmen sind offen sichtbar."
         actions={
           <>
             <Link href="/produkt" className="btn-secondary">
@@ -153,6 +164,18 @@ export default function ROIRechnerPage() {
               </div>
             </article>
           </div>
+
+          <article className="card-base mt-6 p-6 md:p-8">
+            <h2 className="h3">Wichtige Grenzen der Modellrechnung</h2>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              {limits.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
 
           <article className="card-base mt-6 p-6 md:p-8">
             <h2 className="h3">Empfohlener Rollout nach der ROI-Berechnung</h2>

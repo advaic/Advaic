@@ -17,7 +17,7 @@ const mechanics = [
   },
   {
     title: "Autopilot jederzeit pausierbar",
-    text: "Du kannst den Auto-Modus jederzeit stoppen und erst nach stabiler Qualität wieder schrittweise aktivieren.",
+    text: "Sie können den Auto-Modus jederzeit stoppen und erst nach stabiler Qualität wieder schrittweise aktivieren.",
   },
   {
     title: "Verlauf als Kontrollbeweis",
@@ -63,6 +63,19 @@ export const metadata: Metadata = {
     "Wie Advaic Kontrolle sicherstellt: Auto nur bei Klarheit, verpflichtende Freigabe bei Risiko und vollständig dokumentierter Verlauf.",
   alternates: {
     canonical: "/einwaende/kontrolle",
+  },
+  openGraph: {
+    title: "Einwand Kontrolle | Advaic",
+    description:
+      "Wie Advaic Kontrolle sicherstellt: Auto nur bei Klarheit, verpflichtende Freigabe bei Risiko und vollständig dokumentierter Verlauf.",
+    url: "/einwaende/kontrolle",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Einwand Kontrolle | Advaic",
+    description:
+      "Wie Advaic Kontrolle sicherstellt: Auto nur bei Klarheit, verpflichtende Freigabe bei Risiko und vollständig dokumentierter Verlauf.",
+    images: ["/brand/advaic-icon.png"],
   },
 };
 

@@ -2,9 +2,9 @@ import { AlertCircle } from "lucide-react";
 import Container from "./Container";
 
 const symptoms = [
-  "Anfragen kommen in Wellen.",
-  "Viele Antworten sind Routine.",
-  "Am Ende bleibt alles bei Ihnen hängen.",
+  "Anfragen kommen gebündelt statt gleichmäßig.",
+  "Ein großer Teil der Antworten wiederholt sich.",
+  "Sonderfälle und Routine landen im selben Postfach.",
 ];
 
 export default function Problem() {
@@ -15,13 +15,12 @@ export default function Problem() {
           <div className="col-span-12 lg:col-span-7">
             <h2 className="h2">Ihr Postfach frisst Ihren Feierabend.</h2>
             <p className="body mt-6 text-[var(--muted)]">
-              Interessenten-Anfragen treffen häufig gleichzeitig ein. Dadurch
-              verschiebt sich die Arbeit in den Abend, obwohl ein Großteil der
-              Kommunikation wiederkehrend ist.
+              Interessenten-Anfragen treffen oft gleichzeitig ein. Dadurch verschiebt sich Arbeit in den Abend, obwohl
+              viele Antworten standardisierbar sind.
             </p>
             <p className="body mt-4 text-[var(--muted)]">
-              Ohne klaren Entscheidungsfluss wird aus einem normalen Arbeitstag
-              schnell ein permanenter Reaktionsmodus.
+              Ohne klaren Entscheidungsfluss entsteht ein permanenter Reaktionsmodus: erst sortieren, dann schreiben,
+              dann nachfassen.
             </p>
           </div>
 

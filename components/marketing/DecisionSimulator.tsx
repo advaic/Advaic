@@ -51,7 +51,7 @@ const scenarios: Scenario[] = [
     title: "Newsletter / Nicht-Anfrage",
     input: "„Jetzt abonnieren: Marktbericht 2026“ mit list-unsubscribe Header.",
     decision: "ignorieren",
-    reason: "Keine Interessenten-Anfrage, daher kein Lead-Signal für den Versandprozess.",
+    reason: "Keine relevante Interessenten-Anfrage, daher kein Signal für den Versandprozess.",
     checks: ["Relevanz-Check schlägt an", "Nachricht wird nicht beantwortet"],
     nextStep: "Die Nachricht wird ignoriert oder nur dokumentiert.",
   },

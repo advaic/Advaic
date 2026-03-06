@@ -31,7 +31,7 @@ const rolloutPlan = [
   },
   {
     title: "Woche 2: Standardfälle sauber definieren",
-    text: "Stellen Sie klare Auto-Fälle ein: Verfügbarkeit, Unterlagen, Terminvorschlag, Prozessnächste-Schritte. Konflikt- und Sonderfälle bleiben in der Freigabe.",
+    text: "Stellen Sie klare Auto-Fälle ein: Verfügbarkeit, Unterlagen, Terminvorschlag und nächste Prozessschritte. Konflikt- und Sonderfälle bleiben in der Freigabe.",
   },
   {
     title: "Woche 3: Follow-ups vorsichtig aktivieren",
@@ -47,7 +47,7 @@ const sources = [
   {
     label: "Harvard Business Review – The Short Life of Online Sales Leads",
     href: "https://hbr.org/2011/03/the-short-life-of-online-sales-leads",
-    note: "Referenz für den Zusammenhang zwischen Reaktionsgeschwindigkeit und Lead-Qualifizierung.",
+    note: "Referenz für den Zusammenhang zwischen Reaktionsgeschwindigkeit und Anfragen-Qualifizierung.",
   },
   {
     label: "McKinsey – The social economy",
@@ -83,7 +83,7 @@ export default function ManualVsAdvaicPage() {
       <PageIntro
         kicker="Vergleich"
         title="Manuelle Bearbeitung vs. Advaic"
-        description="Diese Seite zeigt transparent, wo im manuellen Ablauf Zeit und Qualität verloren gehen und wie Advaic mit klaren Regeln, Freigabe und Qualitätschecks strukturiert entlastet."
+        description="Diese Seite zeigt transparent, wo im manuellen Ablauf Zeit und Qualität verloren gehen und wie Advaic mit klaren Regeln, Freigabe und Qualitätschecks entlastet."
         actions={
           <>
             <Link href="/produkt" className="btn-secondary">
@@ -102,8 +102,8 @@ export default function ManualVsAdvaicPage() {
             <article className="card-base p-6 lg:col-span-8 md:p-8">
               <h2 className="h3">Sales Brief: Warum diese Vergleichsseite kaufentscheidend ist</h2>
               <p className="body mt-4 text-[var(--muted)]">
-                Viele Makler prüfen Software nur über Funktionen. Entscheidend ist jedoch die operative Wirkung im
-                Tagesfluss: Wie viel Zeit pro Anfrage bleibt tatsächlich manuell? Wie stark sinkt das Risiko falscher
+                Viele Makler prüfen Software nur über Funktionen. Entscheidend ist die operative Wirkung im
+                Tagesfluss: Wie viel Zeit pro Anfrage bleibt manuell? Wie stark sinkt das Risiko falscher
                 Antworten? Wie klar bleibt die Nachvollziehbarkeit für Team und Support?
               </p>
               <p className="body mt-4 text-[var(--muted)]">

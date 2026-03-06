@@ -297,7 +297,7 @@ export default function AdminOutboxPage() {
                 <>Sending-Stuck (Lock älter als 10 Minuten). </>
               )}
               {tab === "pending" && <>Pending (warten auf Runner). </>}
-              {tab === "all" && <>Alles, was nicht “clean” ist. </>}
+              {tab === "all" && <>Alles, was nicht „clean“ ist. </>}
               <span className="text-xs text-gray-500">
                 Klick auf Lead → Nachrichtenseite.
               </span>

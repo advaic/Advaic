@@ -2363,13 +2363,13 @@ export default function LeadChatView({
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
         <div
-          className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
+          className="sticky top-16 md:top-0 z-30 -mx-4 px-4 md:mx-0 md:px-0 pt-3 md:pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
           data-tour="conversation-header"
         >
-          <div className="flex items-start justify-between gap-4 pb-4">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl md:text-2xl font-semibold truncate">
+                <h1 className="text-xl max-[375px]:text-lg md:text-2xl font-semibold truncate">
                   {lead.name}
                 </h1>
 
@@ -2419,7 +2419,7 @@ export default function LeadChatView({
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="w-full lg:w-auto flex flex-wrap items-center gap-2">
               <div className="hidden md:block">
                 <input
                   value={search}
@@ -2432,7 +2432,7 @@ export default function LeadChatView({
               <button
                 type="button"
                 onClick={handleToggleSolved}
-                className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                className={`w-full sm:w-auto px-3 py-2 text-sm rounded-lg border transition-colors ${
                   isSolved
                     ? "bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"
                     : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
@@ -2454,7 +2454,7 @@ export default function LeadChatView({
                     setTimeout(() => setCopied(null), 1200);
                   }
                 }}
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
                 title="E-Mail kopieren"
                 data-tour="copy-email"
               >
@@ -2464,7 +2464,7 @@ export default function LeadChatView({
               <button
                 type="button"
                 onClick={() => setProfileOpen(true)}
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
                 title="Profil öffnen"
                 data-tour="lead-profile-button"
               >
@@ -2474,7 +2474,7 @@ export default function LeadChatView({
               <button
                 type="button"
                 onClick={handleExportConversation}
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
                 title="Verlauf exportieren"
                 data-tour="export-button"
               >
@@ -2501,7 +2501,7 @@ export default function LeadChatView({
                   }
                 }}
                 disabled={isEscalated}
-                className={`px-3 py-2 text-sm rounded-lg border ${
+                className={`w-full sm:w-auto px-3 py-2 text-sm rounded-lg border ${
                   isEscalated
                     ? "bg-red-50 border-red-200 text-red-700 opacity-60 cursor-not-allowed"
                     : "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
@@ -2522,7 +2522,7 @@ export default function LeadChatView({
             <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
               {/* Messages */}
               <div
-                className="h-[calc(100vh-260px)] overflow-y-auto px-3 md:px-6 py-4 space-y-6 bg-[#fbfbfc]"
+                className="min-h-[420px] md:min-h-0 md:h-[calc(100vh-260px)] overflow-y-auto px-3 md:px-6 py-4 space-y-6 bg-[#fbfbfc]"
                 data-tour="conversation-messages"
               >
                 <div className="sr-only" data-tour="email-truth">
@@ -3443,7 +3443,7 @@ export default function LeadChatView({
                       </a>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 max-[375px]:grid-cols-1 gap-2">
                       <div className="rounded-lg border border-amber-200 bg-white px-2 py-1">
                         <div className="text-[10px] text-amber-700">leadId</div>
                         <div className="font-mono break-all">
@@ -3493,12 +3493,12 @@ export default function LeadChatView({
                 >
                   <div className="text-xs text-gray-500">Property Matching</div>
 
-                  <div className="mt-1 flex items-center justify-between gap-2">
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
                     <div className="text-sm font-medium text-gray-900">
                       {activeProperty ? "Zugeordnet" : "Keine Immobilie"}
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
                       <span className="text-[11px] px-2 py-1 rounded-full border border-gray-200 bg-gray-50 text-gray-700">
                         {propertyState?.updated_at
                           ? formatDateTimeDE(propertyState.updated_at)
@@ -3555,7 +3555,7 @@ export default function LeadChatView({
                         {activeProperty.city || ""}
                       </div>
 
-                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-700">
+                      <div className="mt-2 grid grid-cols-2 max-[375px]:grid-cols-1 gap-2 text-xs text-gray-700">
                         <div>
                           <span className="text-gray-500">Preis:</span>{" "}
                           {typeof activeProperty.price === "number"

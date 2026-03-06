@@ -15,6 +15,7 @@
     "fine-tune:upload": "node scripts/azure-upload-finetune-files.mjs",
     "fine-tune:job": "node scripts/azure-finetune-job.mjs",
     "deploy:candidate": "node scripts/azure-update-candidate-deployment.mjs",
+    "copy:check": "node scripts/check-public-copy-glossary.mjs",
     "launch:check": "node scripts/launch-readiness-check.mjs",
     "launch:env": "node scripts/launch-env-audit.mjs"
   },

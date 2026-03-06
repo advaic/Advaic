@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/routeAuth";
 import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
+import { getPlaybookForSegment, inferSegmentFromProspect } from "@/lib/crm/salesIntelResearch";
+import { routeObjection } from "@/lib/crm/objectionLibrary";
 
 export const runtime = "nodejs";
 
@@ -21,6 +23,15 @@ type InviteContext = {
   linkedinUrl: string | null;
   evidence: string | null;
   channel: string;
+  segmentKey: string;
+  playbookTitle: string | null;
+  valueNarrative: string;
+  objectionRouteKey: string;
+  objectionRouteLabel: string;
+  objectionPillar: string;
+  objectionResponse: string;
+  objectionProof: string;
+  objectionNextQuestion: string;
 };
 
 type PromptRow = {
@@ -61,7 +72,41 @@ function applyVars(template: string, context: InviteContext) {
     .replaceAll("{{SOURCE_CHECKED_AT}}", context.sourceCheckedAt || "")
     .replaceAll("{{LINKEDIN_URL}}", context.linkedinUrl || "")
     .replaceAll("{{PERSONALIZATION_EVIDENCE}}", context.evidence || "")
-    .replaceAll("{{CHANNEL}}", context.channel || "email");
+    .replaceAll("{{CHANNEL}}", context.channel || "email")
+    .replaceAll("{{SEGMENT_KEY}}", context.segmentKey)
+    .replaceAll("{{PLAYBOOK_TITLE}}", context.playbookTitle || "")
+    .replaceAll("{{VALUE_NARRATIVE}}", context.valueNarrative)
+    .replaceAll("{{OBJECTION_ROUTE}}", context.objectionRouteKey)
+    .replaceAll("{{OBJECTION_LABEL}}", context.objectionRouteLabel)
+    .replaceAll("{{OBJECTION_PILLAR}}", context.objectionPillar)
+    .replaceAll("{{OBJECTION_RESPONSE}}", context.objectionResponse)
+    .replaceAll("{{OBJECTION_PROOF}}", context.objectionProof)
+    .replaceAll("{{OBJECTION_NEXT_QUESTION}}", context.objectionNextQuestion);
+}
+
+function valueNarrativeForSegment(segmentKey: string, objectFocus: string) {
+  if (segmentKey === "solo_miete_volumen") {
+    return "weniger Zeitverlust bei Standardanfragen und schnellere Rückmeldungen für Interessenten";
+  }
+  if (segmentKey === "solo_kauf_beratung") {
+    return "Standardfälle schneller beantworten, ohne die Beratungsqualität bei komplexen Fällen zu verlieren";
+  }
+  if (segmentKey === "kleines_team_gemischt") {
+    return "mit Safe-Start kontrolliert automatisieren und das Team spürbar entlasten";
+  }
+  if (segmentKey === "neubau_vertrieb") {
+    return "Anfragen mit klaren Regeln prozesssicher steuern und intern sauber dokumentieren";
+  }
+  if (segmentKey === "vorsichtig_starter") {
+    return "ohne Risiko starten: zuerst mehr Freigabe, dann schrittweise Autopilot aktivieren";
+  }
+  if (objectFocus === "miete") {
+    return "Anfragen schneller beantworten und Termine strukturierter vergeben";
+  }
+  if (objectFocus === "kauf") {
+    return "Rückfragen effizient klären und Beratungszeit auf relevante Fälle konzentrieren";
+  }
+  return "Routine-Kommunikation entlasten und trotzdem die volle Kontrolle behalten";
 }
 
 async function maybeLoadPrompt(supabase: any) {
@@ -108,12 +153,25 @@ Kontext:
 - LinkedIn: {{LINKEDIN_URL}}
 - Evidenz: {{PERSONALIZATION_EVIDENCE}}
 - Kanal: {{CHANNEL}}
+- Segment: {{SEGMENT_KEY}}
+- Playbook: {{PLAYBOOK_TITLE}}
+- Value-Narrativ: {{VALUE_NARRATIVE}}
+- Objection-Route: {{OBJECTION_ROUTE}} ({{OBJECTION_LABEL}})
+- Objection-Pillar: {{OBJECTION_PILLAR}}
+- Objection-Antwort: {{OBJECTION_RESPONSE}}
+- Objection-Proof: {{OBJECTION_PROOF}}
+- Objection-Rückfrage: {{OBJECTION_NEXT_QUESTION}}
 
 Ziel:
+- Struktur strikt einhalten:
+  1) Hook mit konkreter Beobachtung
+  2) Pain mit messbarer Folge
+  3) Mechanik (Erkennen -> Entscheidung -> Versand)
+  4) Risk-Reversal (Safe-Start, volle Kontrolle)
+  5) Micro-CTA (nur ein klarer nächster Schritt)
 - Persönlich in der gesamten Nachricht
 - ohne Druck
-- mit klarer 15-Minuten-Call-Option
-- mit Hinweis auf Guardrails (unklar -> Freigabe, Qualitätschecks)
+- maximal ~140 Wörter
 
 Ausgabe als JSON:
 {
@@ -186,6 +244,15 @@ function buildTesterInvite(args: {
   linkedinUrl: string | null;
   evidence: string | null;
   channel: string;
+  segmentKey: string;
+  playbookTitle: string | null;
+  valueNarrative: string;
+  objectionRouteKey: string;
+  objectionRouteLabel: string;
+  objectionPillar: string;
+  objectionResponse: string;
+  objectionProof: string;
+  objectionNextQuestion: string;
 }) {
   const salutation = args.contactName
     ? `Hallo ${args.contactName},`
@@ -200,14 +267,23 @@ function buildTesterInvite(args: {
     : `Ich habe mir ${args.companyName}${cityLine} angesehen und finde eure Positionierung sehr klar.`;
   const pain = args.painPoint
     ? `Meine Hypothese: ${args.painPoint}.`
-    : `Gerade bei wiederkehrenden Interessentenanfragen entsteht oft viel manueller Aufwand im Postfach.`;
+    : `Wiederkehrende Interessentenanfragen erzeugen schnell manuellen Aufwand und verzögerte Rückmeldungen.`;
   const mixLine =
     typeof args.activeListingsCount === "number" &&
     (typeof args.shareMietePercent === "number" || typeof args.shareKaufPercent === "number")
       ? `Öffentlich sichtbar sind aktuell etwa ${args.activeListingsCount} aktive Inserate (Miete ${args.shareMietePercent ?? "?"}% / Kauf ${args.shareKaufPercent ?? "?"}%).`
       : "";
   const objectionLine = args.primaryObjection
-    ? `Mir ist wichtig: ${args.primaryObjection} adressieren wir sauber mit klaren Guardrails.`
+    ? `Genau bei "${args.primaryObjection}" setzt der Safe-Start an: Kontrolle bleibt bei euch.`
+    : "";
+  const objectionRouteLine = args.objectionPillar
+    ? `Einwand-Route: ${args.objectionRouteLabel} (${args.objectionPillar}).`
+    : "";
+  const objectionResponseLine = args.objectionResponse
+    ? `Kurze Antwort darauf: ${args.objectionResponse}`
+    : "";
+  const objectionQuestionLine = args.objectionNextQuestion
+    ? `Sinnvolle Rückfrage: ${args.objectionNextQuestion}`
     : "";
   const readinessLine = args.automationReadiness
     ? `Für euch passt wahrscheinlich ein ${args.automationReadiness}er Start: zuerst mehr Freigabe, dann schrittweise Automation.`
@@ -222,18 +298,20 @@ ${pain}
 ${mixLine}
 ${evidenceLine} ${sourceLine}
 
-Wir suchen aktuell wenige Makler${focusLine}, die Advaic als Tester früh nutzen wollen. Ohne Kaufdruck: Wir möchten gemeinsam prüfen, wie stark sich Antwortgeschwindigkeit und Postfachaufwand verbessern lassen.
-
-Wichtig: Autopilot sendet nur bei klaren Fällen. Unklare Fälle gehen zur Freigabe, und vor jedem Versand laufen Qualitätschecks.
+Konkret für euch relevant: ${args.valueNarrative}.
+Wichtig dabei: Autopilot sendet nur bei klaren Fällen, unklare Fälle gehen zur Freigabe, und vor jedem Versand laufen Qualitätschecks.
 ${objectionLine}
+${objectionRouteLine}
+${objectionResponseLine}
+${objectionQuestionLine}
 ${readinessLine}
 
-Wenn das relevant klingt, können wir in 15 Minuten schauen, ob ein vorsichtiger Pilot für euch passt.`;
+Wenn das für ${args.companyName}${focusLine} passt, können wir in 15 Minuten unverbindlich prüfen, ob ein vorsichtiger Pilot sinnvoll ist.`;
 
   const subject =
     args.channel === "email"
-      ? `Tester-Einladung für ${args.companyName}`
-      : `Pilot-Tester für Advaic`;
+      ? `Kurzer Pilot-Check für ${args.companyName}`
+      : `Unverbindlicher Pilot-Check für Advaic`;
 
   return { subject, body };
 }
@@ -305,7 +383,35 @@ export async function GET(
     linkedinUrl: String(prospect.linkedin_url || "").trim() || null,
     evidence: String(prospect.personalization_evidence || "").trim() || null,
     channel,
+    segmentKey: "unspezifisch",
+    playbookTitle: null,
+    valueNarrative: "",
+    objectionRouteKey: "unbekannt",
+    objectionRouteLabel: "Noch nicht klar",
+    objectionPillar: "Diagnose zuerst",
+    objectionResponse: "",
+    objectionProof: "",
+    objectionNextQuestion: "",
   };
+
+  const segmentKey = inferSegmentFromProspect({
+    object_focus: inviteContext.objectFocus,
+    share_miete_percent: inviteContext.shareMietePercent,
+    share_kauf_percent: inviteContext.shareKaufPercent,
+    active_listings_count: inviteContext.activeListingsCount,
+    automation_readiness: inviteContext.automationReadiness,
+  });
+  const playbook = getPlaybookForSegment(segmentKey);
+  const objection = routeObjection(inviteContext.primaryObjection);
+  inviteContext.segmentKey = segmentKey;
+  inviteContext.playbookTitle = playbook?.title || null;
+  inviteContext.valueNarrative = valueNarrativeForSegment(segmentKey, inviteContext.objectFocus);
+  inviteContext.objectionRouteKey = objection.key;
+  inviteContext.objectionRouteLabel = objection.label;
+  inviteContext.objectionPillar = objection.response_pillar;
+  inviteContext.objectionResponse = objection.short_rebuttal;
+  inviteContext.objectionProof = objection.recommended_proof;
+  inviteContext.objectionNextQuestion = objection.next_question;
 
   let tpl = buildTesterInvite(inviteContext);
 

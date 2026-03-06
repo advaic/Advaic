@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -61,11 +62,41 @@ export const metadata: Metadata = {
   title: "Anwendungsfall Vermietung | Advaic",
   description:
     "Wie Advaic bei hohem Anfragevolumen in der Vermietung Zeit spart und dabei über Freigabe- und Qualitätslogik sicher bleibt.",
+  alternates: {
+    canonical: "/use-cases/vermietung",
+  },
+  openGraph: {
+    title: "Anwendungsfall Vermietung | Advaic",
+    description:
+      "Wie Advaic bei hohem Anfragevolumen in der Vermietung Zeit spart und dabei über Freigabe- und Qualitätslogik sicher bleibt.",
+    url: "/use-cases/vermietung",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Anwendungsfall Vermietung | Advaic",
+    description:
+      "Wie Advaic bei hohem Anfragevolumen in der Vermietung Zeit spart und dabei über Freigabe- und Qualitätslogik sicher bleibt.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function UseCaseVermietungPage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Anwendungsfall Vermietung mit hohem Anfragevolumen",
+    inLanguage: "de-DE",
+    mainEntityOfPage: `${siteUrl}/use-cases/vermietung`,
+    about: ["Vermietung", "Makleranfragen", "Freigabe", "Qualitätschecks"],
+  };
+
   return (
     <PageShell>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <PageIntro
         kicker="Anwendungsfall"
         title="Vermietung mit hohem Anfragevolumen"

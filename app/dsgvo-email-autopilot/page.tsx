@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
-import PageShell from "@/components/marketing/PageShell";
-import PageIntro from "@/components/marketing/PageIntro";
-import StageCTA from "@/components/marketing/StageCTA";
 import TrustByDesign from "@/components/marketing/TrustByDesign";
-import FinalCTA from "@/components/marketing/FinalCTA";
+import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 
 const compliancePoints = [
   "Datenminimierung: Verarbeitung nur für Erkennen, Entscheiden und Antworten.",
@@ -74,27 +72,65 @@ export const metadata: Metadata = {
   title: "DSGVO E-Mail Autopilot | Advaic",
   description:
     "DSGVO-orientierte Sicherheitslogik für E-Mail-Automatisierung: Datenminimierung, Zugriffskontrolle, Freigabe bei Unsicherheit und dokumentierter Verlauf.",
+  alternates: {
+    canonical: "/dsgvo-email-autopilot",
+  },
+  openGraph: {
+    title: "DSGVO E-Mail Autopilot | Advaic",
+    description:
+      "DSGVO-orientierte Sicherheitslogik für E-Mail-Automatisierung: Datenminimierung, Zugriffskontrolle, Freigabe bei Unsicherheit und dokumentierter Verlauf.",
+    url: "/dsgvo-email-autopilot",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "DSGVO E-Mail Autopilot | Advaic",
+    description:
+      "DSGVO-orientierte Sicherheitslogik für E-Mail-Automatisierung: Datenminimierung, Zugriffskontrolle, Freigabe bei Unsicherheit und dokumentierter Verlauf.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function DSGVOEmailAutopilotPage() {
-  return (
-    <PageShell>
-      <PageIntro
-        kicker="DSGVO & E-Mail-Autopilot"
-        title="Automatisieren mit klaren Datenschutz- und Sicherheitsgrenzen"
-        description="Advaic ist so gebaut, dass Automatisierung innerhalb definierter Leitplanken läuft: klare Regeln, dokumentierte Entscheidungen und Stop-Mechanismen bei Unsicherheit."
-        actions={
-          <>
-            <Link href="/sicherheit" className="btn-secondary">
-              Sicherheitsseite
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              14 Tage testen
-            </Link>
-          </>
-        }
-      />
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "DSGVO E-Mail Autopilot",
+    inLanguage: "de-DE",
+    about: ["DSGVO", "E-Mail-Automatisierung", "Immobilienmakler", "Guardrails"],
+    mainEntityOfPage: `${siteUrl}/dsgvo-email-autopilot`,
+  };
 
+  return (
+    <AiDiscoveryPageTemplate
+      breadcrumbItems={[
+        { name: "Startseite", path: "/" },
+        { name: "DSGVO E-Mail Autopilot", path: "/dsgvo-email-autopilot" },
+      ]}
+      schema={schema}
+      kicker="DSGVO & E-Mail-Autopilot"
+      title="Automatisieren mit klaren Datenschutz- und Sicherheitsgrenzen"
+      description="Advaic ist so gebaut, dass Automatisierung innerhalb definierter Leitplanken läuft: klare Regeln, dokumentierte Entscheidungen und Stop-Mechanismen bei Unsicherheit."
+      actions={
+        <>
+          <Link href="/sicherheit" className="btn-secondary">
+            Sicherheitsseite
+          </Link>
+          <Link href="/signup" className="btn-primary">
+            14 Tage testen
+          </Link>
+        </>
+      }
+      stage="bewertung"
+      stageContext="intent-dsgvo-autopilot"
+      primaryHref="/signup"
+      primaryLabel="Sicher testen"
+      secondaryHref="/datenschutz"
+      secondaryLabel="Datenschutz lesen"
+      sources={sources}
+      sourcesDescription="Diese Seite ist eine technische und organisatorische Einordnung und ersetzt keine individuelle Rechtsberatung."
+      afterSources={<TrustByDesign />}
+    >
       <section className="marketing-section-clear py-14 md:py-18">
         <Container>
           <div className="grid gap-6 lg:grid-cols-12">
@@ -112,22 +148,12 @@ export default function DSGVOEmailAutopilotPage() {
             <article className="card-base p-6 lg:col-span-4">
               <h2 className="h3">Wichtiger Hinweis</h2>
               <p className="helper mt-3">
-                Diese Seite ist eine technische und organisatorische Einordnung. Sie ersetzt keine individuelle
-                Rechtsberatung.
+                Technische und organisatorische Einordnung, keine individuelle Rechtsberatung.
               </p>
             </article>
           </div>
         </Container>
       </section>
-
-      <StageCTA
-        stage="bewertung"
-        primaryHref="/signup"
-        primaryLabel="Sicher testen"
-        secondaryHref="/datenschutz"
-        secondaryLabel="Datenschutz lesen"
-        context="intent-dsgvo-autopilot"
-      />
 
       <section className="marketing-section-clear py-20 md:py-28">
         <Container>
@@ -181,30 +207,8 @@ export default function DSGVOEmailAutopilotPage() {
               ))}
             </div>
           </article>
-
-          <article className="card-base mt-4 p-6">
-            <h2 className="h3">Quellen & Einordnung</h2>
-            <div className="mt-4 space-y-3">
-              {sources.map((source) => (
-                <article key={source.href} className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
-                  <a
-                    href={source.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-semibold text-[var(--text)] underline underline-offset-4"
-                  >
-                    {source.label}
-                  </a>
-                  <p className="helper mt-2">{source.note}</p>
-                </article>
-              ))}
-            </div>
-          </article>
         </Container>
       </section>
-
-      <TrustByDesign />
-      <FinalCTA />
-    </PageShell>
+    </AiDiscoveryPageTemplate>
   );
 }

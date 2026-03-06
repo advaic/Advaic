@@ -364,14 +364,14 @@ export default function InboxItem({
         </div>
 
         {/* Actions */}
-        <div className="shrink-0 flex md:flex-col items-stretch md:items-end gap-2">
+        <div className="shrink-0 flex flex-col sm:flex-row md:flex-col items-stretch md:items-end gap-2 w-full md:w-auto">
           <button
             data-tour="conversation-open"
             onClick={(e) => {
               e.stopPropagation();
               handleClick();
             }}
-            className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold border border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500 transition"
+            className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold border border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500 transition w-full"
             title="Antworten"
             type="button"
           >
@@ -385,7 +385,7 @@ export default function InboxItem({
                 e.stopPropagation();
                 handleClick({ focusApproval: true });
               }}
-              className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold border border-amber-300 bg-white text-amber-900 hover:bg-amber-50"
+              className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-xs font-semibold border border-amber-300 bg-white text-amber-900 hover:bg-amber-50 w-full sm:w-auto"
               title="Zur Freigabe öffnen"
               type="button"
             >
@@ -402,7 +402,7 @@ export default function InboxItem({
                 handleDeescalate();
               }}
               disabled={actionBusy}
-              className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-xs font-medium border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-xs font-medium border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
               title="Deeskalieren"
               type="button"
             >
@@ -416,7 +416,7 @@ export default function InboxItem({
                 handleEscalate();
               }}
               disabled={actionBusy}
-              className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-xs font-medium border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-xs font-medium border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
               title="Eskalieren"
               type="button"
             >

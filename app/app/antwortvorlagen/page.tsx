@@ -449,16 +449,16 @@ export default function AntwortvorlagenPage() {
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
         <div
-          className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
+          className="sticky top-16 md:top-0 z-30 -mx-4 px-4 md:mx-0 md:px-0 pt-3 md:pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
           data-tour="templates-header"
         >
-          <div className="flex items-start justify-between gap-4 pb-4">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl md:text-2xl font-semibold">
+                <h1 className="text-xl max-[375px]:text-lg md:text-2xl font-semibold">
                   Antwortvorlagen
                 </h1>
-                <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
+                <span className="text-xs max-[375px]:text-[11px] font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
                   Advaic
                 </span>
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700">
@@ -471,9 +471,16 @@ export default function AntwortvorlagenPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2" data-tour="templates-actions">
+            <div
+              className="w-full lg:w-auto flex flex-wrap items-center gap-2"
+              data-tour="templates-actions"
+            >
               {isEditing ? (
-                <Button variant="outline" onClick={resetForm} className="gap-2">
+                <Button
+                  variant="outline"
+                  onClick={resetForm}
+                  className="w-full sm:w-auto gap-2"
+                >
                   <X className="h-4 w-4" />
                   Abbrechen
                 </Button>
@@ -482,7 +489,7 @@ export default function AntwortvorlagenPage() {
               <Button
                 onClick={handleSubmit}
                 disabled={!canSave || saving}
-                className="rounded-lg bg-gray-900 text-amber-200 hover:bg-gray-800 gap-2"
+                className="w-full sm:w-auto rounded-lg bg-gray-900 text-amber-200 hover:bg-gray-800 gap-2"
               >
                 {saving ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

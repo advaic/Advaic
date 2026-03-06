@@ -3,20 +3,20 @@ import Container from "./Container";
 
 const steps = [
   {
-    title: "E-Mail verbinden (OAuth)",
-    text: "Sie verbinden Gmail oder Outlook sicher über OAuth.",
+    title: "Postfach verbinden (OAuth)",
+    text: "Sie verbinden Gmail oder Outlook sicher per OAuth.",
   },
   {
     title: "Ton & Stil festlegen",
-    text: "Sie definieren, wie Advaic formuliert und wann Freigabe gilt.",
+    text: "Sie definieren, wie Advaic formuliert und in welchen Fällen Freigabe Pflicht ist.",
   },
   {
     title: "Autopilot aktivieren (optional)",
-    text: "Klare Fälle laufen automatisch. Unklare Fälle bleiben bei Ihnen.",
+    text: "Klare Standardfälle laufen automatisch. Unklare oder heikle Fälle bleiben bei Ihnen.",
   },
   {
     title: "Follow-ups konfigurieren (optional)",
-    text: "Sie steuern Nachfass-Stufen und Abstände; bei Antwort stoppt der Ablauf automatisch.",
+    text: "Sie steuern Nachfass-Stufen und Abstände. Sobald eine Antwort eingeht, stoppt der Ablauf automatisch.",
   },
 ];
 

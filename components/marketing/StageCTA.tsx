@@ -25,24 +25,24 @@ const stageConfig: Record<
   }
 > = {
   orientierung: {
-    label: "Funnel-Stufe: Orientierung",
-    goal: "Ziel: Produktlogik und Sicherheitsprinzipien verstehen.",
+    label: "Nächster Schritt",
+    goal: "Verstehen Sie zuerst Ablauf, Regeln und Sicherheitsprinzipien im Detail.",
     primaryHref: "/produkt",
     primaryLabel: "Produkt im Detail",
     secondaryHref: "/so-funktionierts",
     secondaryLabel: "So funktioniert's",
   },
   bewertung: {
-    label: "Funnel-Stufe: Bewertung",
-    goal: "Ziel: Eignung für Ihren Alltag mit klaren Regeln und Grenzen prüfen.",
+    label: "Nächster Prüfpunkt",
+    goal: "Prüfen Sie jetzt, ob die Logik zu Ihrem Makleralltag und Ihrem Anfragevolumen passt.",
     primaryHref: "/signup",
     primaryLabel: "14 Tage testen",
     secondaryHref: "/autopilot-regeln",
     secondaryLabel: "Regeln prüfen",
   },
   entscheidung: {
-    label: "Funnel-Stufe: Entscheidung",
-    goal: "Ziel: kontrolliert starten und erste Ergebnisse im eigenen Prozess sehen.",
+    label: "Nächste Entscheidung",
+    goal: "Starten Sie kontrolliert mit Safe-Start und messen Sie die ersten Effekte im echten Betrieb.",
     primaryHref: "/signup",
     primaryLabel: "Jetzt starten",
     secondaryHref: "/faq",
@@ -62,40 +62,43 @@ export default function StageCTA({
   const config = stageConfig[stage];
 
   return (
-    <section className="py-8 md:py-10">
+    <section id={sectionId} className="py-8 md:py-10">
       <Container>
-        <article className="card-base p-5 md:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="inline-flex rounded-full bg-[var(--surface-2)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--muted)] ring-1 ring-[var(--gold-soft)]">
-              {config.label}
-            </span>
-            <p className="w-full text-xs text-[var(--muted)] md:w-auto md:text-right">{config.goal}</p>
-          </div>
+        <article className="card-base relative overflow-hidden p-5 md:p-6">
+          <span className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,rgba(11,15,23,0),rgba(201,162,39,0.5),rgba(11,15,23,0))]" />
+          <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <span className="inline-flex rounded-full bg-[var(--surface-2)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--muted)] ring-1 ring-[var(--gold-soft)]">
+                {config.label}
+              </span>
+              <p className="mt-3 text-sm text-[var(--muted)] md:max-w-[64ch]">{config.goal}</p>
+            </div>
 
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-            <TrackedLink
-              href={primaryHref || config.primaryHref}
-              className="btn-primary"
-              event="marketing_stage_primary_click"
-              source="website"
-              pageGroup="marketing"
-              section={sectionId}
-              meta={{ stage, context, section: sectionId }}
-            >
-              {primaryLabel || config.primaryLabel}
-            </TrackedLink>
+            <div className="flex flex-col gap-3 sm:flex-row lg:justify-end">
+              <TrackedLink
+                href={primaryHref || config.primaryHref}
+                className="btn-primary"
+                event="marketing_stage_primary_click"
+                source="website"
+                pageGroup="marketing"
+                section={sectionId}
+                meta={{ stage, context, section: sectionId }}
+              >
+                {primaryLabel || config.primaryLabel}
+              </TrackedLink>
 
-            <TrackedLink
-              href={secondaryHref || config.secondaryHref}
-              className="btn-secondary"
-              event="marketing_stage_secondary_click"
-              source="website"
-              pageGroup="marketing"
-              section={sectionId}
-              meta={{ stage, context, section: sectionId }}
-            >
-              {secondaryLabel || config.secondaryLabel}
-            </TrackedLink>
+              <TrackedLink
+                href={secondaryHref || config.secondaryHref}
+                className="btn-secondary"
+                event="marketing_stage_secondary_click"
+                source="website"
+                pageGroup="marketing"
+                section={sectionId}
+                meta={{ stage, context, section: sectionId }}
+              >
+                {secondaryLabel || config.secondaryLabel}
+              </TrackedLink>
+            </div>
           </div>
         </article>
       </Container>

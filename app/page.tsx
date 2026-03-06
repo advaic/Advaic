@@ -57,6 +57,7 @@ export default function HomePage() {
     <main className="marketing-page-bg bg-[var(--bg)] text-[var(--text)]">
       <MarketingNavbar />
       <Hero />
+      <ConversionPathPanel className="pt-6 md:pt-8" />
       <ProductVisualAuthority
         id="produkt-autoritaet"
         title="So sieht der Ablauf im Produkt aus"
@@ -85,7 +86,6 @@ export default function HomePage() {
       <CTAExperiment />
       <FinalCTA />
       <MessageArchitectureBand compact />
-      <ConversionPathPanel />
       <section className="py-10 md:py-12">
         <div className="mx-auto w-full max-w-[1120px] px-6 md:px-8">
           <ProofLayer context="marketing" />

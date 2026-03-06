@@ -73,7 +73,7 @@ export default function UnterauftragsverarbeiterPage() {
         actions={
           <>
             <Link href="/datenschutz" className="btn-secondary">
-              Zur Datenschutzerklärung
+              Zu den Datenschutzhinweisen
             </Link>
             <Link href="/sicherheit" className="btn-primary">
               Sicherheitsseite

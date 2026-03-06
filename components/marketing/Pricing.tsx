@@ -11,16 +11,16 @@ const starterBullets = [
   "Kontrollierte Follow-up-Stufen mit Stop-Logik",
 ];
 
-const todayIncluded = [
-  "Für Solo-Makler und kleine Teams",
-  "Für Miet- und mittelpreisige Objekte",
-  "Konservativer Start mit mehr Freigaben möglich",
+const starterFit = [
+  "Sie bearbeiten regelmäßig viele Standard-Anfragen",
+  "Sie möchten bei unklaren Fällen bewusst final entscheiden",
+  "Sie wollen zuerst konservativ mit mehr Freigaben starten",
 ];
 
-const futureModel = [
-  "Aktuell gibt es bewusst nur Starter.",
-  "Weitere Pakete folgen später feature-basiert.",
-  "Keine künstlichen Limit-Stufen als Verkaufsdruck.",
+const starterNotIdeal = [
+  "Sie erhalten nur sehr wenige Anfragen pro Woche",
+  "Jede Antwort muss vollständig individuell und ohne Regelwerk entstehen",
+  "Sie möchten aktuell keinerlei Teilautomatisierung zulassen",
 ];
 
 const micro = [
@@ -40,7 +40,10 @@ export default function Pricing({ showDetailButton = true }: PricingProps) {
     <section id="pricing" className="py-20 md:py-28">
       <Container>
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <h2 className="h2">Ein klarer Einstieg statt Plan-Wirrwarr</h2>
+          <div>
+            <p className="section-kicker">Preisstruktur</p>
+            <h2 className="h2 mt-2">Ein klarer Starter statt Tarif-Chaos</h2>
+          </div>
           {showDetailButton ? (
             <Link href="/preise" className="btn-secondary">
               Preisdetails
@@ -48,10 +51,10 @@ export default function Pricing({ showDetailButton = true }: PricingProps) {
           ) : null}
         </div>
         <p className="body mt-4 text-[var(--muted)]">
-          Sie starten mit 14 Tagen Testphase. Danach läuft ein Starter-Abo monatlich weiter, jederzeit kündbar.
+          Sie starten mit 14 Tagen Testphase. Danach läuft Starter monatlich weiter und bleibt jederzeit kündbar.
         </p>
         <p className="helper mt-2">
-          Aktuell ist Starter der einzige öffentliche Plan. Das macht die Entscheidung einfach und transparent.
+          Starter ist aktuell der einzige öffentliche Plan. Das hält die Entscheidung einfach und den Rollout klar.
         </p>
 
         <div className="mt-10 grid gap-4 lg:grid-cols-3">
@@ -63,7 +66,9 @@ export default function Pricing({ showDetailButton = true }: PricingProps) {
                 Testphase → Starter
               </span>
             </div>
-            <p className="helper mt-3">Für Makler, die schnell produktiv werden wollen, ohne Risiko im Versand.</p>
+            <p className="helper mt-3">
+              Für Makler, die Reaktionszeit reduzieren möchten, ohne Sicherheit, Freigabekontrolle und Nachvollziehbarkeit zu verlieren.
+            </p>
             <ul className="mt-5 grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2">
               {starterBullets.map((item) => (
                 <li key={item} className="flex items-start gap-2">
@@ -84,9 +89,9 @@ export default function Pricing({ showDetailButton = true }: PricingProps) {
 
           <div className="space-y-4">
             <article className="card-base card-hover p-6">
-              <h3 className="text-base font-semibold text-[var(--text)]">Heute enthalten</h3>
+              <h3 className="text-base font-semibold text-[var(--text)]">Starter passt, wenn</h3>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {todayIncluded.map((item) => (
+                {starterFit.map((item) => (
                   <li key={item} className="flex items-start gap-2">
                     <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--gold)]" />
                     <span>{item}</span>
@@ -95,9 +100,9 @@ export default function Pricing({ showDetailButton = true }: PricingProps) {
               </ul>
             </article>
             <article className="card-base card-hover p-6">
-              <h3 className="text-base font-semibold text-[var(--text)]">Paket-Logik</h3>
+              <h3 className="text-base font-semibold text-[var(--text)]">Nicht ideal, wenn</h3>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {futureModel.map((item) => (
+                {starterNotIdeal.map((item) => (
                   <li key={item} className="flex items-start gap-2">
                     <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--gold)]" />
                     <span>{item}</span>

@@ -30,6 +30,16 @@ const stageCopy: Record<
   },
 };
 
+const stageReasonByFamily: Record<string, string> = {
+  home: "Sie sind in der Orientierung. Ziel: zuerst Mechanik und Guardrails verstehen, dann kontrolliert testen.",
+  produkt:
+    "Sie sind in der Bewertung. Ziel: klären, wann Auto sendet, wann Freigabe greift und wie der Alltag sicher bleibt.",
+  preise:
+    "Sie sind in der Entscheidung. Ziel: Startkriterien prüfen, Testphase nutzen und mit klarer Erfolgsmessung starten.",
+  trust:
+    "Sie sind in der Vertrauensprüfung. Ziel: Sicherheitslogik und Nachvollziehbarkeit verstehen, bevor Sie live gehen.",
+};
+
 type ConversionPathPanelProps = {
   className?: string;
 };
@@ -38,17 +48,27 @@ export default function ConversionPathPanel({ className = "" }: ConversionPathPa
   const pathname = usePathname() || "/";
   const conversion = useMemo(() => resolveLandingConversion(pathname), [pathname]);
   const activeIndex = Math.max(0, stageOrder.indexOf(conversion.stage));
+  const progressPct = ((activeIndex + 1) / stageOrder.length) * 100;
+  const stageReason =
+    stageReasonByFamily[conversion.family] ||
+    "Sie sehen den nächsten sinnvollen Schritt entlang Orientierung, Bewertung und Entscheidung.";
 
   return (
     <section className={`py-10 md:py-12 ${className}`}>
       <Container>
-        <article className="card-base p-5 md:p-6">
+        <article className="card-base relative overflow-hidden p-5 md:p-6">
+          <span className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,rgba(11,15,23,0),rgba(201,162,39,0.55),rgba(11,15,23,0))]" />
+
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="label">Nächster sinnvoller Schritt</p>
+            <p className="label">Nächster sinnvoller Schritt im Entscheidungsprozess</p>
             <span className="inline-flex rounded-full bg-[var(--surface-2)] px-3 py-1 text-xs font-semibold text-[var(--muted)] ring-1 ring-[var(--gold-soft)]">
-              Funnel-Stufe: {conversion.stage}
+              Aktuelle Phase: {stageCopy[conversion.stage].title}
             </span>
           </div>
+          <div className="mt-4 progress-track">
+            <div className="progress-fill" style={{ width: `${progressPct}%` }} />
+          </div>
+          <p className="helper mt-3 max-w-[74ch]">{stageReason}</p>
 
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             {stageOrder.map((stage, idx) => {

@@ -22,6 +22,19 @@ const trustChips = [
   },
 ];
 
+const trialOutcomes = [
+  "Sie wissen exakt, wann Advaic automatisch sendet und wann bewusst gestoppt wird.",
+  "Sie sehen, wie Qualitätschecks vor jedem Auto-Versand greifen.",
+  "Sie behalten die finale Kontrolle über unklare oder heikle Fälle.",
+];
+
+const quickAnchors = [
+  { href: "#ablauf", label: "Praxisablauf" },
+  { href: "#regeln", label: "Regellogik" },
+  { href: "#setup", label: "Setup" },
+  { href: "#followups", label: "Follow-ups" },
+];
+
 export default function Hero() {
   return (
     <section id="top" className="py-20 md:py-28">
@@ -35,6 +48,14 @@ export default function Hero() {
               Wenn etwas unklar ist, geht es zur Freigabe. Vor jedem automatischen Versand laufen
               Qualitätskontrollen, bei Freigaben entscheiden Sie final.
             </p>
+            <ul className="mt-6 space-y-2">
+              {trialOutcomes.map((item) => (
+                <li key={item} className="flex items-start gap-2 text-sm text-[var(--muted)]">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <TrackedLink
@@ -56,6 +77,13 @@ export default function Hero() {
             <p className="helper mt-3">
               Danach läuft Starter monatlich weiter. Jederzeit kündbar.
             </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {quickAnchors.map((anchor) => (
+                <a key={anchor.href} href={anchor.href} className="btn-secondary !min-h-9 !px-3 !py-2 !text-xs">
+                  {anchor.label}
+                </a>
+              ))}
+            </div>
 
             <div className="mt-8 grid gap-2 sm:grid-cols-2">
               {trustChips.map((chip) => (

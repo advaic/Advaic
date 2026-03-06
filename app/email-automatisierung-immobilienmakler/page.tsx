@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
-import PageShell from "@/components/marketing/PageShell";
-import PageIntro from "@/components/marketing/PageIntro";
-import StageCTA from "@/components/marketing/StageCTA";
 import DecisionSimulator from "@/components/marketing/DecisionSimulator";
-import FinalCTA from "@/components/marketing/FinalCTA";
+import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 
 const outcomes = [
   "Schnellere Erstreaktion bei klaren Standardanfragen",
@@ -70,7 +68,7 @@ const sources = [
   {
     label: "Harvard Business Review – The Short Life of Online Sales Leads",
     href: "https://hbr.org/2011/03/the-short-life-of-online-sales-leads",
-    note: "Referenz für den Zusammenhang zwischen Reaktionsgeschwindigkeit und Lead-Qualifizierung.",
+    note: "Referenz für den Zusammenhang zwischen Reaktionsgeschwindigkeit und Anfragen-Qualifizierung.",
   },
   {
     label: "McKinsey – The social economy",
@@ -93,27 +91,64 @@ export const metadata: Metadata = {
   title: "E-Mail-Automatisierung Immobilienmakler | Advaic",
   description:
     "Wie Immobilienmakler E-Mail-Antworten sicher automatisieren: klare Auto-Regeln, Freigabe bei Unsicherheit und Qualitätschecks vor jedem Versand.",
+  alternates: {
+    canonical: "/email-automatisierung-immobilienmakler",
+  },
+  openGraph: {
+    title: "E-Mail-Automatisierung Immobilienmakler | Advaic",
+    description:
+      "Wie Immobilienmakler E-Mail-Antworten sicher automatisieren: klare Auto-Regeln, Freigabe bei Unsicherheit und Qualitätschecks vor jedem Versand.",
+    url: "/email-automatisierung-immobilienmakler",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "E-Mail-Automatisierung Immobilienmakler | Advaic",
+    description:
+      "Wie Immobilienmakler E-Mail-Antworten sicher automatisieren: klare Auto-Regeln, Freigabe bei Unsicherheit und Qualitätschecks vor jedem Versand.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function EmailAutomatisierungImmobilienmaklerPage() {
-  return (
-    <PageShell>
-      <PageIntro
-        kicker="E-Mail-Automatisierung für Immobilienmakler"
-        title="Schneller antworten, ohne die Kontrolle abzugeben"
-        description="Advaic automatisiert klare Standardanfragen in Ihrem Stil. Unklare Fälle gehen zur Freigabe. Vor jedem Auto-Versand greifen Qualitätschecks."
-        actions={
-          <>
-            <Link href="/produkt" className="btn-secondary">
-              Produkt ansehen
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              14 Tage testen
-            </Link>
-          </>
-        }
-      />
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "E-Mail-Automatisierung für Immobilienmakler",
+    inLanguage: "de-DE",
+    about: ["Immobilienmakler", "E-Mail-Automatisierung", "Freigabe", "Qualitätschecks"],
+    mainEntityOfPage: `${siteUrl}/email-automatisierung-immobilienmakler`,
+  };
 
+  return (
+    <AiDiscoveryPageTemplate
+      breadcrumbItems={[
+        { name: "Startseite", path: "/" },
+        { name: "E-Mail-Automatisierung Immobilienmakler", path: "/email-automatisierung-immobilienmakler" },
+      ]}
+      schema={schema}
+      kicker="E-Mail-Automatisierung für Immobilienmakler"
+      title="Schneller antworten, ohne die Kontrolle abzugeben"
+      description="Advaic automatisiert klare Standardanfragen in Ihrem Stil. Unklare Fälle gehen zur Freigabe. Vor jedem Auto-Versand greifen Qualitätschecks."
+      actions={
+        <>
+          <Link href="/produkt" className="btn-secondary">
+            Produkt ansehen
+          </Link>
+          <Link href="/signup" className="btn-primary">
+            14 Tage testen
+          </Link>
+        </>
+      }
+      stage="bewertung"
+      stageContext="intent-email-automatisierung"
+      primaryHref="/signup"
+      primaryLabel="Automatisierung testen"
+      secondaryHref="/autopilot-regeln"
+      secondaryLabel="Regeln im Detail"
+      sources={sources}
+      sourcesDescription="Die Empfehlungen kombinieren öffentliche Studien und konservative Prozesslogik für Maklerbetriebe."
+    >
       <section className="marketing-section-clear py-14 md:py-18">
         <Container>
           <div className="grid gap-6 lg:grid-cols-12">
@@ -149,15 +184,6 @@ export default function EmailAutomatisierungImmobilienmaklerPage() {
           </div>
         </Container>
       </section>
-
-      <StageCTA
-        stage="bewertung"
-        primaryHref="/signup"
-        primaryLabel="Automatisierung testen"
-        secondaryHref="/autopilot-regeln"
-        secondaryLabel="Regeln im Detail"
-        context="intent-email-automatisierung"
-      />
 
       <section className="marketing-section-clear py-20 md:py-28">
         <Container>
@@ -221,28 +247,6 @@ export default function EmailAutomatisierungImmobilienmaklerPage() {
               ))}
             </ul>
           </article>
-
-          <article className="card-base mt-6 p-6">
-            <h2 className="h3">Quellen & Einordnung</h2>
-            <p className="helper mt-3">
-              Die Empfehlungen kombinieren öffentliche Studien und konservative Prozesslogik für Maklerbetriebe.
-            </p>
-            <div className="mt-4 space-y-3">
-              {sources.map((source) => (
-                <article key={source.href} className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
-                  <a
-                    href={source.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-semibold text-[var(--text)] underline underline-offset-4"
-                  >
-                    {source.label}
-                  </a>
-                  <p className="helper mt-2">{source.note}</p>
-                </article>
-              ))}
-            </div>
-          </article>
         </Container>
       </section>
 
@@ -250,8 +254,6 @@ export default function EmailAutomatisierungImmobilienmaklerPage() {
         title="Direkt prüfen: Wie entscheidet Advaic?"
         description="Mit diesen Beispielen sehen Sie in Sekunden, wann Auto-Versand greift und wann Freigabe verpflichtend ist."
       />
-
-      <FinalCTA />
-    </PageShell>
+    </AiDiscoveryPageTemplate>
   );
 }

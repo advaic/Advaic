@@ -81,7 +81,8 @@ export default function SecurityPrivacy() {
           <article className="rounded-[var(--radius)] bg-white p-4 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
             <h4 className="text-sm font-semibold text-[var(--text)]">Datenminimierung</h4>
             <p className="mt-2 text-sm text-[var(--muted)]">
-              Advaic verarbeitet nur die Inhalte, die für Erkennen, Entscheiden und Antworten im Lead-Prozess
+              Advaic verarbeitet nur die Inhalte, die für Erkennen, Entscheiden und Antworten in der
+              Interessenten-Kommunikation
               erforderlich sind.
             </p>
           </article>

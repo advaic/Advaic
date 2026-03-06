@@ -13,7 +13,7 @@ const mechanics = [
   },
   {
     title: "Schneller Nutzen vor Vollausbau",
-    text: "Du musst nicht sofort alle Sonderfälle modellieren. Erste Entlastung entsteht bereits über klare Standardfälle und saubere Freigabewege.",
+    text: "Sie müssen nicht sofort alle Sonderfälle modellieren. Erste Entlastung entsteht bereits über klare Standardfälle und saubere Freigabewege.",
   },
   {
     title: "Iteratives Nachschärfen",
@@ -64,6 +64,19 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/einwaende/aufwand",
   },
+  openGraph: {
+    title: "Einwand Aufwand | Advaic",
+    description:
+      "Wie hoch ist der echte Einführungsaufwand? Mit stufenweisem Setup, Safe-Start und klarer Rollout-Logik bleibt die Einführung beherrschbar.",
+    url: "/einwaende/aufwand",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Einwand Aufwand | Advaic",
+    description:
+      "Wie hoch ist der echte Einführungsaufwand? Mit stufenweisem Setup, Safe-Start und klarer Rollout-Logik bleibt die Einführung beherrschbar.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function ObjectionAufwandPage() {
@@ -97,7 +110,7 @@ export default function ObjectionAufwandPage() {
       <ObjectionArticle
         context="aufwand"
         concern="„Wir haben im Tagesgeschäft keine Zeit für ein komplexes Tool-Projekt.“"
-        concernSummary="Deshalb ist der Start auf wenige Kernschritte reduziert. Du aktivierst zuerst nur den Teil, der direkt Zeit spart und betrieblich sicher bleibt."
+        concernSummary="Deshalb ist der Start auf wenige Kernschritte reduziert. Sie aktivieren zuerst nur den Teil, der direkt Zeit spart und betrieblich sicher bleibt."
         mechanicsTitle="So bleibt die Einführung operativ schlank"
         mechanics={mechanics}
         implementation={implementation}
@@ -114,4 +127,3 @@ export default function ObjectionAufwandPage() {
     </PageShell>
   );
 }
-

@@ -29,7 +29,7 @@ const entries: Entry[] = [
   {
     name: "`advaic_immoscout_return_to`",
     place: "Cookie",
-    purpose: "Rücksprungpfad für die ImmoScout-Verknüpfung.",
+    purpose: "Rücksprungpfad für die ImmoScout24-Verknüpfung.",
     legalBase: "Art. 6 Abs. 1 lit. b DSGVO, § 25 Abs. 2 Nr. 2 TDDDG",
     retention: "Kurzlebig (maximal 10 Minuten), wird nach dem OAuth-Flow gelöscht.",
   },

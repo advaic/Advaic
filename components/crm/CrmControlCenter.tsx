@@ -126,6 +126,12 @@ type PerformanceChannelMetric = {
   reply_rate_pct: number;
   pilot_prospects: number;
   pilot_rate_pct: number;
+  won_prospects?: number;
+  won_rate_pct?: number;
+  failed_messages?: number;
+  failure_rate_pct?: number;
+  bounce_events?: number;
+  opt_out_events?: number;
   avg_response_hours: number | null;
 };
 
@@ -138,6 +144,65 @@ type PerformanceTemplateMetric = {
   reply_rate_pct: number;
   pilot_prospects: number;
   pilot_rate_pct: number;
+  won_prospects?: number;
+  won_rate_pct?: number;
+};
+
+type DeliverabilityCorrelationRow = {
+  channel: string;
+  sent_messages: number;
+  failed_messages: number;
+  failure_rate_pct: number;
+  bounce_events: number;
+  opt_out_events: number;
+  reply_rate_pct: number;
+  pilot_rate_pct: number;
+  won_rate_pct: number;
+  risk_level: "niedrig" | "mittel" | "hoch";
+  recommendation: string;
+};
+
+type RevenueAttribution = {
+  won_total: number;
+  by_channel: Array<{
+    channel: string;
+    touched: number;
+    reply_rate_pct: number;
+    pilot_rate_pct: number;
+    won_rate_pct: number;
+  }>;
+  by_template_variant: Array<{
+    template_variant: string;
+    touched: number;
+    reply_rate_pct: number;
+    pilot_rate_pct: number;
+    won_rate_pct: number;
+  }>;
+  by_source_domain: Array<{
+    source_domain: string;
+    touched: number;
+    reply_rate_pct: number;
+    pilot_rate_pct: number;
+    won_rate_pct: number;
+  }>;
+  close_loop_examples: Array<{
+    prospect_id: string;
+    company_name: string;
+    source_domain: string | null;
+    first_touch_channel: string;
+    first_touch_variant: string;
+    replied: boolean;
+    pilot: boolean;
+    won: boolean;
+  }>;
+};
+
+type SequenceRollout = {
+  message_kind: string;
+  winner_variant: string;
+  confidence: number;
+  sample_size: number;
+  updated_at: string;
 };
 
 type PerformanceResponse = {
@@ -145,6 +210,9 @@ type PerformanceResponse = {
   updated_at: string;
   channel_metrics: PerformanceChannelMetric[];
   template_metrics: PerformanceTemplateMetric[];
+  deliverability_correlation?: DeliverabilityCorrelationRow[];
+  revenue_attribution?: RevenueAttribution;
+  sequence_rollouts?: SequenceRollout[];
   error?: string;
   details?: string;
 };
@@ -330,6 +398,8 @@ export default function CrmControlCenter({
   const [nextAction, setNextAction] = useState<NextBestAction | null>(null);
   const [performance, setPerformance] = useState<PerformanceResponse | null>(null);
   const [performanceLoading, setPerformanceLoading] = useState(false);
+  const [enrichingAll, setEnrichingAll] = useState(false);
+  const [recomputingExperiments, setRecomputingExperiments] = useState(false);
 
   const loadNextAction = useCallback(async () => {
     try {
@@ -773,7 +843,13 @@ export default function CrmControlCenter({
         );
       }
       setSuccess(
-        `Tracking-Sync abgeschlossen: ${Number(json?.synced_replies || 0)} neue Antworten erkannt.`,
+        `Tracking-Sync abgeschlossen: ${Number(json?.synced_replies || 0)} neue Antworten erkannt.${
+          json?.reply_intents
+            ? ` Intent-Mix: ${Object.entries(json.reply_intents)
+                .map(([k, v]) => `${k}=${v}`)
+                .join(", ")}`
+            : ""
+        }`,
       );
       await refresh();
       if (selectedProspectId) await loadProspectDetail(selectedProspectId);
@@ -808,6 +884,64 @@ export default function CrmControlCenter({
       setError(String(e?.message || "Bounce-Sync fehlgeschlagen."));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runBatchEnrichment(force = false) {
+    setEnrichingAll(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch("/api/crm/enrich/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          force,
+          limit: 40,
+          stale_days: 21,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Batch-Enrichment fehlgeschlagen.");
+      }
+      setSuccess(
+        `Enrichment-Lauf: ${Number(json?.enriched || 0)} angereichert, ${Number(json?.skipped || 0)} ohne Änderungen, ${Number(json?.failed || 0)} Fehler.`,
+      );
+      await refresh();
+      if (selectedProspectId) await loadProspectDetail(selectedProspectId);
+    } catch (e: any) {
+      setError(String(e?.message || "Batch-Enrichment fehlgeschlagen."));
+    } finally {
+      setEnrichingAll(false);
+    }
+  }
+
+  async function recomputeSequenceExperiments() {
+    setRecomputingExperiments(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch("/api/crm/sequences/experiments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          min_samples: 10,
+          lookback_days: 120,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Experiment-Rollout konnte nicht berechnet werden.");
+      }
+      setSuccess(
+        `Experiment-Update: ${Array.isArray(json?.winners) ? json.winners.length : 0} Winner-Rollouts aktiv.`,
+      );
+      await loadPerformance();
+    } catch (e: any) {
+      setError(String(e?.message || "Experiment-Rollout konnte nicht berechnet werden."));
+    } finally {
+      setRecomputingExperiments(false);
     }
   }
 
@@ -921,6 +1055,20 @@ export default function CrmControlCenter({
             >
               Bounces prüfen
             </button>
+            <button
+              onClick={() => void runBatchEnrichment(false)}
+              className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-800 hover:bg-violet-100 disabled:opacity-60"
+              disabled={enrichingAll}
+            >
+              {enrichingAll ? "Enrichment läuft…" : "Prospects anreichern"}
+            </button>
+            <button
+              onClick={() => void recomputeSequenceExperiments()}
+              className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+              disabled={recomputingExperiments}
+            >
+              {recomputingExperiments ? "Berechne…" : "A/B Winner berechnen"}
+            </button>
           </div>
         </div>
         {error ? (
@@ -975,7 +1123,7 @@ export default function CrmControlCenter({
             Noch keine belastbaren Daten. Sende zuerst Nachrichten, damit Kanal- und Variantenvergleich sichtbar wird.
           </div>
         ) : (
-          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <div className="mt-4 grid gap-4">
             <div className="overflow-x-auto rounded-xl border border-gray-200">
               <table className="min-w-full text-sm">
                 <thead>
@@ -984,6 +1132,8 @@ export default function CrmControlCenter({
                     <th className="px-3 py-2">Sent</th>
                     <th className="px-3 py-2">Reply %</th>
                     <th className="px-3 py-2">Pilot %</th>
+                    <th className="px-3 py-2">Won %</th>
+                    <th className="px-3 py-2">Fail %</th>
                     <th className="px-3 py-2">Ø h bis Reply</th>
                   </tr>
                 </thead>
@@ -994,6 +1144,8 @@ export default function CrmControlCenter({
                       <td className="px-3 py-2 text-gray-700">{row.sent_messages}</td>
                       <td className="px-3 py-2 text-gray-700">{row.reply_rate_pct}%</td>
                       <td className="px-3 py-2 text-gray-700">{row.pilot_rate_pct}%</td>
+                      <td className="px-3 py-2 text-gray-700">{row.won_rate_pct ?? 0}%</td>
+                      <td className="px-3 py-2 text-gray-700">{row.failure_rate_pct ?? 0}%</td>
                       <td className="px-3 py-2 text-gray-700">
                         {row.avg_response_hours === null ? "–" : `${row.avg_response_hours}h`}
                       </td>
@@ -1002,30 +1154,107 @@ export default function CrmControlCenter({
                 </tbody>
               </table>
             </div>
-            <div className="overflow-x-auto rounded-xl border border-gray-200">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 text-left text-xs text-gray-500">
-                    <th className="px-3 py-2">Variante</th>
-                    <th className="px-3 py-2">Kanal</th>
-                    <th className="px-3 py-2">Sent</th>
-                    <th className="px-3 py-2">Reply %</th>
-                    <th className="px-3 py-2">Pilot %</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {performance.template_metrics.slice(0, 10).map((row) => (
-                    <tr key={`${row.channel}-${row.template_variant}`} className="border-t border-gray-100">
-                      <td className="px-3 py-2 font-medium text-gray-900">{row.template_variant}</td>
-                      <td className="px-3 py-2 text-gray-700">{row.channel}</td>
-                      <td className="px-3 py-2 text-gray-700">{row.sent_messages}</td>
-                      <td className="px-3 py-2 text-gray-700">{row.reply_rate_pct}%</td>
-                      <td className="px-3 py-2 text-gray-700">{row.pilot_rate_pct}%</td>
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="overflow-x-auto rounded-xl border border-gray-200">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                      <th className="px-3 py-2">Variante</th>
+                      <th className="px-3 py-2">Kanal</th>
+                      <th className="px-3 py-2">Sent</th>
+                      <th className="px-3 py-2">Reply %</th>
+                      <th className="px-3 py-2">Pilot %</th>
+                      <th className="px-3 py-2">Won %</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {performance.template_metrics.slice(0, 12).map((row) => (
+                      <tr key={`${row.channel}-${row.template_variant}`} className="border-t border-gray-100">
+                        <td className="px-3 py-2 font-medium text-gray-900">{row.template_variant}</td>
+                        <td className="px-3 py-2 text-gray-700">{row.channel}</td>
+                        <td className="px-3 py-2 text-gray-700">{row.sent_messages}</td>
+                        <td className="px-3 py-2 text-gray-700">{row.reply_rate_pct}%</td>
+                        <td className="px-3 py-2 text-gray-700">{row.pilot_rate_pct}%</td>
+                        <td className="px-3 py-2 text-gray-700">{row.won_rate_pct ?? 0}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                <h3 className="text-sm font-semibold text-gray-900">A/B Winner-Rollouts</h3>
+                {performance.sequence_rollouts && performance.sequence_rollouts.length > 0 ? (
+                  <div className="mt-2 space-y-2">
+                    {performance.sequence_rollouts.map((rollout) => (
+                      <div key={`${rollout.message_kind}-${rollout.winner_variant}`} className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs">
+                        <div className="font-medium text-gray-900">
+                          {rollout.message_kind} → {rollout.winner_variant}
+                        </div>
+                        <div className="mt-1 text-gray-600">
+                          Confidence {Math.round((rollout.confidence || 0) * 100)}% · Samples {rollout.sample_size}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-2 text-xs text-gray-600">
+                    Noch kein stabiler Winner. „A/B Winner berechnen“ nach mehr Versanddaten ausführen.
+                  </div>
+                )}
+              </div>
             </div>
+            {performance.deliverability_correlation && performance.deliverability_correlation.length > 0 ? (
+              <div className="overflow-x-auto rounded-xl border border-gray-200">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                      <th className="px-3 py-2">Deliverability-Korrelation</th>
+                      <th className="px-3 py-2">Fail %</th>
+                      <th className="px-3 py-2">Bounces</th>
+                      <th className="px-3 py-2">Opt-outs</th>
+                      <th className="px-3 py-2">Risk</th>
+                      <th className="px-3 py-2">Empfehlung</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {performance.deliverability_correlation.map((row) => (
+                      <tr key={`d-${row.channel}`} className="border-t border-gray-100">
+                        <td className="px-3 py-2 font-medium text-gray-900">{row.channel}</td>
+                        <td className="px-3 py-2 text-gray-700">{row.failure_rate_pct}%</td>
+                        <td className="px-3 py-2 text-gray-700">{row.bounce_events}</td>
+                        <td className="px-3 py-2 text-gray-700">{row.opt_out_events}</td>
+                        <td className="px-3 py-2 text-gray-700">{row.risk_level}</td>
+                        <td className="px-3 py-2 text-gray-700">{row.recommendation}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+            {performance.revenue_attribution ? (
+              <div className="grid gap-4 xl:grid-cols-3">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                  <div className="text-xs text-gray-500">Close-Loop Attribution</div>
+                  <div className="mt-1 text-xl font-semibold text-gray-900">
+                    {performance.revenue_attribution.won_total}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-600">Gewonnene Prospects mit First-Touch-Zuordnung</div>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 xl:col-span-2">
+                  <div className="text-xs font-medium text-gray-500">Top-Channel nach Won-Rate</div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    {performance.revenue_attribution.by_channel.slice(0, 4).map((row) => (
+                      <div key={`rev-ch-${row.channel}`} className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs">
+                        <div className="font-medium text-gray-900">{row.channel}</div>
+                        <div className="mt-1 text-gray-600">
+                          Won {row.won_rate_pct}% · Pilot {row.pilot_rate_pct}% · Reply {row.reply_rate_pct}%
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
       </section>

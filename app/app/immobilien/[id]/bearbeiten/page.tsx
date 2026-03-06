@@ -1082,11 +1082,11 @@ export default function EditPropertyPage() {
     <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900">
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
-        <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
-          <div className="flex items-start justify-between gap-4 pb-4">
+        <div className="sticky top-16 md:top-0 z-30 -mx-4 px-4 md:mx-0 md:px-0 pt-3 md:pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl md:text-2xl font-semibold">
+                <h1 className="text-xl max-[375px]:text-lg md:text-2xl font-semibold">
                   Immobilie bearbeiten
                 </h1>
                 <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
@@ -1113,12 +1113,12 @@ export default function EditPropertyPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="w-full lg:w-auto flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => router.push("/app/immobilien")}
                 disabled={deleting}
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
               >
                 Zurück
               </button>
@@ -1127,7 +1127,7 @@ export default function EditPropertyPage() {
                 type="button"
                 onClick={discardAndDelete}
                 disabled={deleting}
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
                 title="Immobilie löschen"
               >
                 {deleting ? (
@@ -1142,7 +1142,7 @@ export default function EditPropertyPage() {
                 type="button"
                 onClick={forceSaveNow}
                 disabled={disabledHeaderActions}
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
                 title="Speichern"
               >
                 <Save className="h-4 w-4 inline-block mr-2" />
@@ -1153,7 +1153,7 @@ export default function EditPropertyPage() {
                 type="button"
                 onClick={publishNow}
                 disabled={disabledHeaderActions || !canPublish}
-                className="px-3 py-2 text-sm rounded-lg bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 disabled:opacity-50"
+                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 disabled:opacity-50"
                 title={
                   canPublish
                     ? "Veröffentlichen"
@@ -1724,7 +1724,7 @@ export default function EditPropertyPage() {
                   <div className="text-xs text-gray-600">
                     Steuert, ob und wie viele Follow-ups für{" "}
                     <b>diese Immobilie</b>
-                    erlaubt sind. „Standard" nutzt die Agent/Lead-Settings.
+                    erlaubt sind. „Standard“ nutzt die Agent/Lead-Settings.
                   </div>
 
                   <div>
@@ -1750,7 +1750,7 @@ export default function EditPropertyPage() {
                     </select>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 max-[375px]:grid-cols-1 gap-3">
                     <div>
                       <div className="text-xs font-medium text-gray-700 mb-1">
                         Max. (Miete)
@@ -1802,7 +1802,7 @@ export default function EditPropertyPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 max-[375px]:grid-cols-1 gap-3">
                     <div>
                       <div className="text-xs font-medium text-gray-700 mb-1">
                         Delay #1 (h)

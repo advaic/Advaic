@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Clock3, PauseCircle, ShieldCheck } from "lucide-react";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -58,7 +59,7 @@ const timelineDetails = [
 const operatingModel = [
   {
     title: "Auslöser",
-    text: "Follow-up wird nur erzeugt, wenn ein Lead zuletzt nicht geantwortet hat und die Funktion aktiv ist.",
+    text: "Follow-up wird nur erzeugt, wenn auf eine vorherige Interessenten-Nachricht noch keine Antwort eingegangen ist und die Funktion aktiv ist.",
   },
   {
     title: "Qualitätsgate",
@@ -73,7 +74,7 @@ const operatingModel = [
 const metrics = [
   "Antwortquote nach Stufe 1",
   "Antwortquote nach Stufe 2",
-  "Anteil gestoppter Follow-ups durch Lead-Antwort",
+  "Anteil gestoppter Follow-ups durch eingegangene Interessenten-Antwort",
   "Freigabequote bei Follow-up-Fällen",
 ];
 
@@ -99,11 +100,41 @@ export const metadata: Metadata = {
   title: "Follow-up-Logik | Advaic",
   description:
     "Kontrollierte Follow-ups mit Guardrails: Stufen, Stop-Gründe, Sicherheitschecks und manuelle Steuerung für den Makleralltag.",
+  alternates: {
+    canonical: "/follow-up-logik",
+  },
+  openGraph: {
+    title: "Follow-up-Logik | Advaic",
+    description:
+      "Kontrollierte Follow-ups mit Guardrails: Stufen, Stop-Gründe, Sicherheitschecks und manuelle Steuerung für den Makleralltag.",
+    url: "/follow-up-logik",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Follow-up-Logik | Advaic",
+    description:
+      "Kontrollierte Follow-ups mit Guardrails: Stufen, Stop-Gründe, Sicherheitschecks und manuelle Steuerung für den Makleralltag.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function FollowUpLogikPage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Follow-up-Logik mit Guardrails",
+    inLanguage: "de-DE",
+    mainEntityOfPage: `${siteUrl}/follow-up-logik`,
+    about: ["Follow-up", "Stop-Regeln", "Qualitätschecks", "Freigabe"],
+  };
+
   return (
     <PageShell>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <PageIntro
         kicker="Nachfass-Prozess"
         title="Follow-ups: kontrolliert planen, sicher stoppen"
@@ -127,7 +158,7 @@ export default function FollowUpLogikPage() {
               <h2 className="h3">Sales Brief: Warum Follow-ups oft falsch umgesetzt werden</h2>
               <p className="body mt-4 text-[var(--muted)]">
                 Viele Teams setzen Nachfassen als starre Erinnerungsfunktion um. Das führt zu unpassenden Nachrichten,
-                unnötigem Druck und schlechter Lead-Erfahrung.
+                unnötigem Druck und einer schlechten Interessenten-Erfahrung.
               </p>
               <p className="body mt-4 text-[var(--muted)]">
                 Advaic behandelt Follow-ups als regelbasierten Prozess mit Qualitätsgates und Stop-Logik. Dadurch bleiben

@@ -1,4 +1,4 @@
-export const PROOF_LAST_CHECKED = "25. Februar 2026";
+export const PROOF_LAST_CHECKED = "6. März 2026";
 
 export const PROOF_SOURCES = [
   {

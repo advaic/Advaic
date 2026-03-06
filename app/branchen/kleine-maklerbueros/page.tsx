@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -59,11 +60,41 @@ export const metadata: Metadata = {
   title: "Kleine Maklerbüros | Branchenprofil Advaic",
   description:
     "Branchenprofil für kleine Maklerbüros: Entlastung bei Standardanfragen mit klaren Guardrails, Freigabelogik und kontrolliertem Safe-Start.",
+  alternates: {
+    canonical: "/branchen/kleine-maklerbueros",
+  },
+  openGraph: {
+    title: "Kleine Maklerbüros | Branchenprofil Advaic",
+    description:
+      "Branchenprofil für kleine Maklerbüros: Entlastung bei Standardanfragen mit klaren Guardrails, Freigabelogik und kontrolliertem Safe-Start.",
+    url: "/branchen/kleine-maklerbueros",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Kleine Maklerbüros | Branchenprofil Advaic",
+    description:
+      "Branchenprofil für kleine Maklerbüros: Entlastung bei Standardanfragen mit klaren Guardrails, Freigabelogik und kontrolliertem Safe-Start.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function BranchenKleineMaklerbuerosPage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Branchenprofil kleine Maklerbüros",
+    inLanguage: "de-DE",
+    mainEntityOfPage: `${siteUrl}/branchen/kleine-maklerbueros`,
+    about: ["kleine Maklerbüros", "Freigabe", "Anfrageprozess", "Guardrails"],
+  };
+
   return (
     <PageShell>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <PageIntro
         kicker="Branchenprofil"
         title="Kleine Maklerbüros"

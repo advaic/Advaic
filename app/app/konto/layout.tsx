@@ -22,19 +22,28 @@ export default function KontoLayout({
   const pathname = usePathname();
 
   return (
-    <div data-tour="account-layout" className="flex flex-col md:flex-row gap-6 p-6">
-      <aside data-tour="account-sidebar" className="w-full md:w-60 border rounded-lg p-4 bg-muted">
+    <div
+      data-tour="account-layout"
+      className="flex flex-col gap-4 md:flex-row md:gap-6 px-4 py-4 md:p-6"
+    >
+      <aside
+        data-tour="account-sidebar"
+        className="w-full md:w-60 border rounded-lg p-3 md:p-4 bg-muted md:sticky md:top-24 h-fit"
+      >
         <h2 data-tour="account-sidebar-title" className="text-sm font-semibold mb-4 text-muted-foreground">
           Konto
         </h2>
-        <nav data-tour="account-sidebar-nav" className="space-y-1">
+        <nav
+          data-tour="account-sidebar-nav"
+          className="flex gap-2 overflow-x-auto pb-1 md:block md:space-y-1 md:overflow-visible md:pb-0"
+        >
           {kontoLinks.map(({ href, label }) => (
             <Link
               key={href}
               href={href}
               data-tour={`account-link-${label.toLowerCase().replace(/[^a-z]/g, "")}`}
               className={cn(
-                "block text-sm rounded px-3 py-2 hover:bg-accent hover:text-accent-foreground transition",
+                "inline-flex md:block whitespace-nowrap text-sm max-[375px]:text-xs rounded px-3 max-[375px]:px-2.5 py-2 hover:bg-accent hover:text-accent-foreground transition",
                 pathname === href
                   ? "bg-accent text-accent-foreground font-medium"
                   : "text-muted-foreground"

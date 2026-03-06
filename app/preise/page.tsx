@@ -1,15 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import BreadcrumbJsonLd from "@/components/seo/BreadcrumbJsonLd";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
-import PageShell from "@/components/marketing/PageShell";
-import PageIntro from "@/components/marketing/PageIntro";
-import StageCTA from "@/components/marketing/StageCTA";
+import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 import Pricing from "@/components/marketing/Pricing";
 import ROICalculator from "@/components/marketing/ROICalculator";
 import ObjectionHandling from "@/components/marketing/ObjectionHandling";
 import CTAExperiment from "@/components/marketing/CTAExperiment";
-import FinalCTA from "@/components/marketing/FinalCTA";
 
 const pricingPrinciples = [
   "Nur ein Starter-Tarif: klare Entscheidung ohne künstliche Paketkomplexität.",
@@ -23,18 +20,44 @@ const roiSignals = [
   "Weniger operative Nacharbeit durch klare Qualitäts- und Risikoprüfungen vor Versand.",
 ];
 
+const starterReadySignals = [
+  "Sie möchten schnelle Erstantworten bei Standardfällen.",
+  "Sie brauchen klare Guardrails statt Blackbox-Automation.",
+  "Sie wollen in unklaren Fällen final selbst freigeben.",
+];
+
+const trialValidationSignals = [
+  "Wie viele Fälle laufen sicher auf Auto statt manuell.",
+  "Wie stark sich Reaktionszeit und Antwortquote verbessern.",
+  "Wie oft Freigabe, Follow-up und Qualitätschecks eingreifen.",
+];
+
+const stopSignals = [
+  "Wenn Ihr Anfragevolumen aktuell sehr niedrig ist.",
+  "Wenn jede Antwort immer vollständig individuell bleiben muss.",
+  "Wenn interne Prozesse noch nicht stabil genug für Regeln sind.",
+];
+
 const sources = [
   {
     label: "HBR – The Short Life of Online Sales Leads",
     href: "https://hbr.org/2011/03/the-short-life-of-online-sales-leads",
+    note: "Einordnung, warum schnelle Erstantwort wirtschaftlich relevant ist.",
   },
   {
     label: "NIST – AI Risk Management Framework",
     href: "https://www.nist.gov/itl/ai-risk-management-framework",
+    note: "Rahmen für risikobewusste Automatisierung mit klaren Kontrollgrenzen.",
   },
   {
     label: "McKinsey – The social economy",
     href: "https://www.mckinsey.com/industries/technology-media-and-telecommunications/our-insights/the-social-economy",
+    note: "Kontext zum Produktivitätsbeitrag strukturierter Kommunikationsprozesse.",
+  },
+  {
+    label: "Google Search Essentials",
+    href: "https://developers.google.com/search/docs/essentials",
+    note: "Leitlinie für klare, verlässliche Informationsstruktur im Web.",
   },
 ];
 
@@ -61,37 +84,111 @@ export const metadata: Metadata = {
 };
 
 export default function PreisePage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        headline: "Preise und Starter",
+        inLanguage: "de-DE",
+        about: ["Preislogik", "Testphase", "Starter", "Pilot-KPI"],
+        mainEntityOfPage: `${siteUrl}/preise`,
+      },
+      {
+        "@type": "Offer",
+        name: "Advaic Starter",
+        url: `${siteUrl}/preise`,
+        priceCurrency: "EUR",
+        availability: "https://schema.org/InStock",
+        description: "14 Tage Testphase, danach monatlicher Starter-Tarif mit Guardrails und Freigabelogik.",
+      },
+    ],
+  };
+
   return (
-    <PageShell>
-      <BreadcrumbJsonLd
-        items={[
-          { name: "Startseite", path: "/" },
-          { name: "Preise", path: "/preise" },
-        ]}
-      />
-      <PageIntro
-        kicker="Preise"
-        title="Transparenter Einstieg mit Starter"
-        description="Starten Sie mit 14 Tagen Testphase. Danach läuft Starter monatlich weiter und bleibt jederzeit kündbar."
-        actions={
-          <>
-            <Link href="/produkt" className="btn-secondary">
-              Produkt ansehen
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              14 Tage testen
-            </Link>
-          </>
-        }
-      />
-      <StageCTA
-        stage="entscheidung"
-        primaryHref="/signup"
-        primaryLabel="14 Tage testen"
-        secondaryHref="/faq"
-        secondaryLabel="Fragen klären"
-        context="preise"
-      />
+    <AiDiscoveryPageTemplate
+      breadcrumbItems={[
+        { name: "Startseite", path: "/" },
+        { name: "Preise", path: "/preise" },
+      ]}
+      schema={schema}
+      kicker="Preise"
+      title="Transparenter Einstieg mit Starter"
+      description="Starten Sie mit 14 Tagen Testphase. Danach läuft Starter monatlich weiter und bleibt jederzeit kündbar."
+      actions={
+        <>
+          <Link href="/produkt" className="btn-secondary">
+            Produkt ansehen
+          </Link>
+          <Link href="/signup" className="btn-primary">
+            14 Tage testen
+          </Link>
+        </>
+      }
+      stage="entscheidung"
+      stageContext="preise"
+      primaryHref="/signup"
+      primaryLabel="14 Tage testen"
+      secondaryHref="/faq"
+      secondaryLabel="Fragen klären"
+      sources={sources}
+      sourcesDescription="Die Quellen unterstützen die Einordnung von Reaktionszeit, Produktivität und kontrollierter Automatisierung. Sie ersetzen keine individuelle Steuer- oder Unternehmensberatung."
+    >
+      <section className="marketing-section-clear py-10 md:py-12">
+        <Container>
+          <article className="card-base p-6 md:p-8">
+            <h2 className="h3">Entscheidungshilfe vor dem Start</h2>
+            <p className="helper mt-3 max-w-[72ch]">
+              Wenn Sie Starter bewerten, prüfen Sie nicht nur Funktionslisten, sondern die operative Wirkung im
+              Tagesgeschäft: Antworttempo, Kontrollgrad und Stabilität bei steigender Last.
+            </p>
+            <div className="mt-5 grid gap-4 md:grid-cols-3">
+              <article className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                <p className="text-sm font-semibold text-[var(--text)]">Starter passt sofort, wenn</p>
+                <ul className="mt-3 space-y-2 text-sm text-[var(--muted)]">
+                  {starterReadySignals.map((item) => (
+                    <li key={item} className="flex items-start gap-2">
+                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+              <article className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                <p className="text-sm font-semibold text-[var(--text)]">Das validieren Sie in 14 Tagen</p>
+                <ul className="mt-3 space-y-2 text-sm text-[var(--muted)]">
+                  {trialValidationSignals.map((item) => (
+                    <li key={item} className="flex items-start gap-2">
+                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+              <article className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                <p className="text-sm font-semibold text-[var(--text)]">Wann Sie bewusst warten sollten</p>
+                <ul className="mt-3 space-y-2 text-sm text-[var(--muted)]">
+                  {stopSignals.map((item) => (
+                    <li key={item} className="flex items-start gap-2">
+                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            </div>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <Link href="/signup" className="btn-primary">
+                14 Tage testen
+              </Link>
+              <Link href="/produkt#setup" className="btn-secondary">
+                Safe-Start ansehen
+              </Link>
+            </div>
+          </article>
+        </Container>
+      </section>
 
       <Pricing showDetailButton={false} />
 
@@ -177,33 +274,34 @@ export default function PreisePage() {
             </div>
           </article>
 
-          <article className="card-base mt-4 p-6">
-            <h2 className="h3">Quellen & Einordnung</h2>
+          <article className="card-base mt-4 p-6 md:p-8">
+            <h2 className="h3">Vor einer Preisentscheidung vergleichen</h2>
             <p className="helper mt-3">
-              Die Preis- und Rolloutlogik stützt sich auf öffentlich dokumentierte Zusammenhänge zu Reaktionszeit,
-              Produktivität in digitaler Kommunikation und kontrolliertem Risikomanagement.
+              Nutzen Sie diese Seiten, um Starter im Kontext von Prozessfit, CRM-Rolle und AI-Auffindbarkeit sauber zu
+              bewerten.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
-              {sources.map((source) => (
-                <a
-                  key={source.href}
-                  href={source.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-secondary"
-                >
-                  {source.label}
-                </a>
-              ))}
+              <Link href="/best-ai-tools-immobilienmakler" className="btn-secondary">
+                Best AI Tools Makler
+              </Link>
+              <Link href="/best-software-immobilienanfragen" className="btn-secondary">
+                Best Software Anfragen
+              </Link>
+              <Link href="/advaic-vs-crm-tools" className="btn-secondary">
+                Advaic vs. CRM-Tools
+              </Link>
+              <Link href="/manuell-vs-advaic" className="btn-secondary">
+                Manuell vs. Advaic
+              </Link>
             </div>
           </article>
+
         </Container>
       </section>
 
       <ROICalculator />
       <ObjectionHandling />
       <CTAExperiment />
-      <FinalCTA />
-    </PageShell>
+    </AiDiscoveryPageTemplate>
   );
 }

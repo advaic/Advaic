@@ -43,20 +43,6 @@ const baseNavSections = [
   },
 ];
 
-function getNavSections(isOwner: boolean) {
-  const sections = [...baseNavSections];
-  if (isOwner) {
-    sections.push({
-      title: "🧪 Intern",
-      items: [
-        { label: "CRM", path: "/app/crm", icon: "🧭" },
-        { label: "Sales Intel", path: "/app/crm/sales-intel", icon: "📈" },
-      ],
-    });
-  }
-  return sections;
-}
-
 function tourKeyForPath(path: string) {
   // keep this deterministic + stable for tour targeting
   switch (path) {
@@ -82,10 +68,6 @@ function tourKeyForPath(path: string) {
       return "nav-benachrichtigungen";
     case "/app/konto":
       return "nav-konto";
-    case "/app/crm":
-      return "nav-crm";
-    case "/app/crm/sales-intel":
-      return "nav-crm-sales-intel";
     default:
       return null;
   }
@@ -126,16 +108,26 @@ function normalizeBillingAccess(raw: any): BillingAccess | null {
   };
 }
 
-export default function Sidebar() {
+type SidebarProps = {
+  variant?: "desktop" | "mobile";
+  className?: string;
+  onNavigate?: () => void;
+};
+
+export default function Sidebar({
+  variant = "desktop",
+  className = "",
+  onNavigate,
+}: SidebarProps = {}) {
   const pathname = usePathname();
   const router = useRouter();
 
   const [autosendEnabled, setAutosendEnabled] = useState<boolean | null>(null);
   const [autosendBusy, setAutosendBusy] = useState(false);
   const [billingAccess, setBillingAccess] = useState<BillingAccess | null>(null);
-  const [isOwner, setIsOwner] = useState(false);
   const trialExpired = billingAccess?.state === "trial_expired";
-  const navSections = useMemo(() => getNavSections(isOwner), [isOwner]);
+  const navSections = useMemo(() => baseNavSections, []);
+  const isMobileVariant = variant === "mobile";
 
   const autosendLabel = useMemo(() => {
     if (autosendEnabled === null) return "Lade…";
@@ -148,19 +140,17 @@ export default function Sidebar() {
 
     async function loadAutosend() {
       try {
-        const [autosendRes, billingRes, profileRes] = await Promise.all([
+        const [autosendRes, billingRes] = await Promise.all([
           fetch("/api/agent/settings/autosend", {
             method: "GET",
             headers: { "Content-Type": "application/json" },
             cache: "no-store",
           }),
           fetch("/api/billing/summary", { method: "GET", cache: "no-store" }),
-          fetch("/api/account/profile", { method: "GET", cache: "no-store" }),
         ]);
 
         const autosendData = await autosendRes.json().catch(() => ({} as any));
         const billingData = await billingRes.json().catch(() => ({} as any));
-        const profileData = await profileRes.json().catch(() => ({} as any));
 
         if (!autosendRes.ok) {
           console.error("[sidebar] autosend GET failed", autosendData);
@@ -180,15 +170,11 @@ export default function Sidebar() {
           setBillingAccess(null);
         }
 
-        if (!cancelled) {
-          setIsOwner(Boolean(profileRes.ok && profileData?.profile?.is_owner));
-        }
       } catch (e: any) {
         console.error("[sidebar] load autosend error", e);
         if (!cancelled) {
           setAutosendEnabled(false);
           setBillingAccess(null);
-          setIsOwner(false);
         }
       }
     }
@@ -269,13 +255,19 @@ export default function Sidebar() {
     try {
       await fetch("/auth/logout", { method: "POST" });
     } catch {}
+    onNavigate?.();
     router.push("/");
     router.refresh();
   };
 
+  const asideClass =
+    variant === "mobile"
+      ? "h-full w-full bg-white px-4 py-5 shadow-sm overflow-y-auto"
+      : "h-screen w-64 shrink-0 border-r bg-white px-4 py-6 shadow-sm overflow-y-auto";
+
   return (
     <aside
-      className="h-screen w-64 bg-white border-r px-4 py-6 shadow-sm"
+      className={`${asideClass} ${className}`}
       data-tour="sidebar"
     >
       {/* Logo and logout */}
@@ -286,7 +278,7 @@ export default function Sidebar() {
         <button
           onClick={handleLogout}
           data-tour="logout"
-          className="text-sm bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded"
+          className="rounded bg-red-500 px-3 py-1 text-sm text-white hover:bg-red-600"
         >
           Logout
         </button>
@@ -357,6 +349,7 @@ export default function Sidebar() {
           <Link
             href={`/app/konto/abo?source=sidebar_trial_card&next=${encodeURIComponent(pathname || "/app/startseite")}`}
             onClick={() => {
+              onNavigate?.();
               void trackFunnelEvent({
                 event: "billing_upgrade_cta_clicked",
                 source: "sidebar_trial_card",
@@ -384,15 +377,17 @@ export default function Sidebar() {
             )}
             <ul className="space-y-1">
               {section.items.map((item) => {
-                const isActive =
-                  item.path === "/app/crm"
-                    ? pathname === "/app/crm"
-                    : pathname.startsWith(item.path);
+                const isActive = pathname.startsWith(item.path);
                 const tourKey = tourKeyForPath(item.path);
                 return (
                   <li key={item.path}>
                     <Link
                       href={item.path}
+                      onClick={() => {
+                        if (isMobileVariant) {
+                          onNavigate?.();
+                        }
+                      }}
                       className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition ${
                         isActive
                           ? "bg-gray-100 text-blue-600"

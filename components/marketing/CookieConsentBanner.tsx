@@ -80,10 +80,10 @@ export default function CookieConsentBanner() {
                 <h3 className="text-base font-semibold text-[var(--text)]">Cookie-Auswahl</h3>
                 <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
                   Wir verwenden notwendige Cookies für Login und Sicherheit. Optionale Cookies für Analyse und
-                  Marketing nutzen wir nur mit deiner Einwilligung.
+                  Marketing nutzen wir nur mit Ihrer Einwilligung.
                 </p>
                 <p className="mt-2 text-xs text-[var(--muted)]">
-                  Details findest du in{" "}
+                  Details finden Sie in{" "}
                   <Link className="underline underline-offset-4 hover:text-[var(--text)]" href="/cookie-und-storage">
                     Cookie & Storage
                   </Link>{" "}

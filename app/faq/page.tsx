@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import BreadcrumbJsonLd from "@/components/seo/BreadcrumbJsonLd";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
-import PageShell from "@/components/marketing/PageShell";
-import PageIntro from "@/components/marketing/PageIntro";
+import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 import FAQDecisionTree from "@/components/marketing/FAQDecisionTree";
 import MarketingFAQ from "@/components/marketing/FAQ";
-import FinalCTA from "@/components/marketing/FinalCTA";
 
 const detailLinks = [
   { title: "Autopilot-Regeln", href: "/autopilot-regeln" },
@@ -23,21 +21,24 @@ const detailLinks = [
 const faqUse = [
   "Wenn Sie wissen wollen, ob der Autopilot sicher ist: mit Entscheidungsbaum und Regeln starten.",
   "Wenn Sie den operativen Ablauf planen: erst Setup, dann Follow-up-Logik und Freigabeprozess prüfen.",
-  "Wenn Sie Compliance bewerten: Sicherheitsseite, DSGVO-Seite und Datenschutzerklärung gemeinsam lesen.",
+  "Wenn Sie Compliance bewerten: Sicherheitsseite, DSGVO-Seite und Datenschutzhinweise gemeinsam lesen.",
 ];
 
 const externalSources = [
   {
     label: "EUR-Lex – DSGVO Zusammenfassung",
     href: "https://eur-lex.europa.eu/DE/legal-content/summary/general-data-protection-regulation-gdpr.html",
+    note: "Rechtliche Grundstruktur für datenschutzkonformen Betrieb.",
   },
   {
     label: "NIST – AI Risk Management Framework",
     href: "https://www.nist.gov/itl/ai-risk-management-framework",
+    note: "Rahmen für Risikokontrolle in KI-gestützten Prozessen.",
   },
   {
     label: "HBR – The Short Life of Online Sales Leads",
     href: "https://hbr.org/2011/03/the-short-life-of-online-sales-leads",
+    note: "Einordnung, warum Reaktionszeit im Interessenten-Prozess entscheidend ist.",
   },
 ];
 
@@ -64,65 +65,78 @@ export const metadata: Metadata = {
 };
 
 export default function FAQPage() {
+  const siteUrl = getSiteUrl();
   const faqSchema = {
     "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: [
+    "@graph": [
       {
-        "@type": "Question",
-        name: "Sendet Advaic automatisch?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "Ja, wenn der Fall klar ist und die Qualitätschecks bestanden sind. Unklare Fälle gehen zur Freigabe.",
-        },
+        "@type": "Article",
+        headline: "FAQ zu Advaic",
+        inLanguage: "de-DE",
+        about: ["Autopilot", "Freigabe", "Qualitätschecks", "Sicherheit", "Follow-up"],
+        mainEntityOfPage: `${siteUrl}/faq`,
       },
       {
-        "@type": "Question",
-        name: "Was verhindert unpassende Antworten?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "Vor jedem Auto-Versand laufen Relevanz-, Kontext-, Vollständigkeits-, Ton-, Risiko- und Lesbarkeitschecks.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "Kann ich den Autopilot jederzeit stoppen?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "Ja, der Autopilot kann jederzeit pausiert werden.",
-        },
+        "@type": "FAQPage",
+        mainEntity: [
+          {
+            "@type": "Question",
+            name: "Sendet Advaic automatisch?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: "Ja, wenn der Fall klar ist und die Qualitätschecks bestanden sind. Unklare Fälle gehen zur Freigabe.",
+            },
+          },
+          {
+            "@type": "Question",
+            name: "Was verhindert unpassende Antworten?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: "Vor jedem Auto-Versand laufen Relevanz-, Kontext-, Vollständigkeits-, Ton-, Risiko- und Lesbarkeitschecks.",
+            },
+          },
+          {
+            "@type": "Question",
+            name: "Kann ich den Autopilot jederzeit stoppen?",
+            acceptedAnswer: {
+              "@type": "Answer",
+              text: "Ja, der Autopilot kann jederzeit pausiert werden.",
+            },
+          },
+        ],
       },
     ],
   };
 
   return (
-    <PageShell>
-      <BreadcrumbJsonLd
-        items={[
-          { name: "Startseite", path: "/" },
-          { name: "FAQ", path: "/faq" },
-        ]}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
-      />
-      <PageIntro
-        kicker="FAQ"
-        title="Häufige Fragen zu Advaic"
-        description="Hier finden Sie die wichtigsten Antworten zu Funktionsweise, Sicherheit, Steuerung und Testphase."
-        actions={
-          <>
-            <Link href="/produkt" className="btn-secondary">
-              Produktdetails
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              14 Tage testen
-            </Link>
-          </>
-        }
-      />
-
+    <AiDiscoveryPageTemplate
+      breadcrumbItems={[
+        { name: "Startseite", path: "/" },
+        { name: "FAQ", path: "/faq" },
+      ]}
+      schema={faqSchema}
+      kicker="FAQ"
+      title="Häufige Fragen zu Advaic"
+      description="Hier finden Sie die wichtigsten Antworten zu Funktionsweise, Sicherheit, Steuerung und Testphase."
+      actions={
+        <>
+          <Link href="/produkt" className="btn-secondary">
+            Produktdetails
+          </Link>
+          <Link href="/signup" className="btn-primary">
+            14 Tage testen
+          </Link>
+        </>
+      }
+      stage="orientierung"
+      stageContext="faq"
+      primaryHref="/produkt"
+      primaryLabel="Produktablauf ansehen"
+      secondaryHref="/einwaende"
+      secondaryLabel="Einwände prüfen"
+      sources={externalSources}
+      sourcesDescription="Die Quellen unterstützen die Einordnung von Datenschutz, Risiko-Governance und Reaktionsgeschwindigkeit."
+    >
       <section className="marketing-section-clear py-12 md:py-16">
         <Container>
           <article className="card-base p-5 md:p-6">
@@ -170,23 +184,24 @@ export default function FAQPage() {
           </div>
 
           <article className="card-base mt-6 p-5 md:p-6">
-            <h2 className="h3">Externe Quellen zur Einordnung</h2>
-            <p className="helper mt-3 max-w-[72ch]">
-              Diese Links helfen bei der Bewertung von Compliance, Risikosteuerung und Reaktionsgeschwindigkeit im
-              Kontext automatisierter E-Mail-Prozesse.
+            <h2 className="h3">Weiterführende Vergleichsseiten</h2>
+            <p className="helper mt-3">
+              Für detaillierte Kaufentscheidungen finden Sie hier zusätzliche Seiten mit Auswahlkriterien, direkter
+              Abgrenzung und operativen Beispielen.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
-              {externalSources.map((source) => (
-                <a
-                  key={source.href}
-                  href={source.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-secondary"
-                >
-                  {source.label}
-                </a>
-              ))}
+              <Link href="/best-ai-tools-immobilienmakler" className="btn-secondary">
+                Best AI Tools Makler
+              </Link>
+              <Link href="/best-software-immobilienanfragen" className="btn-secondary">
+                Best Software Anfragen
+              </Link>
+              <Link href="/advaic-vs-crm-tools" className="btn-secondary">
+                Advaic vs. CRM-Tools
+              </Link>
+              <Link href="/manuell-vs-advaic" className="btn-secondary">
+                Manuell vs. Advaic
+              </Link>
             </div>
           </article>
         </Container>
@@ -194,7 +209,6 @@ export default function FAQPage() {
 
       <FAQDecisionTree />
       <MarketingFAQ showDetailButton={false} />
-      <FinalCTA />
-    </PageShell>
+    </AiDiscoveryPageTemplate>
   );
 }

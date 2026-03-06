@@ -3,9 +3,9 @@ import { CheckCircle2 } from "lucide-react";
 import Container from "./Container";
 
 const outcomes = [
-  "Klare Fälle werden automatisch beantwortet.",
-  "Unklare Fälle gehen strukturiert zur Freigabe.",
-  "Jede Entscheidung bleibt nachvollziehbar dokumentiert.",
+  "Klare Standardfälle werden automatisch beantwortet.",
+  "Unklare und risikobehaftete Fälle gehen in die Freigabe.",
+  "Jede Entscheidung bleibt mit Grund und Status nachvollziehbar.",
 ];
 
 export default function Solution() {
@@ -16,16 +16,13 @@ export default function Solution() {
           <div className="col-span-12 lg:col-span-7">
             <h2 className="h2">Advaic nimmt Ihnen die Inbox-Routine ab.</h2>
             <p className="body mt-6 text-[var(--muted)]">
-              Advaic erkennt eingehende Interessenten-Anfragen und erstellt
-              passende Antworten in Ihrem Stil.
+              Advaic erkennt echte Interessenten-Anfragen und erstellt passende Antworten in Ihrem Stil.
             </p>
             <p className="body mt-4 text-[var(--muted)]">
-              Der automatische Versand läuft nur bei klarer Datenlage und
-              bestandenen Qualitätschecks.
+              Automatischer Versand läuft nur bei klarer Datenlage und bestandenen Qualitätschecks.
             </p>
             <p className="body mt-4 text-[var(--muted)]">
-              Sobald Unsicherheit entsteht, geht der Fall automatisch an Sie zur
-              Freigabe.
+              Sobald Unsicherheit entsteht, geht der Fall automatisch an Sie zur Freigabe.
             </p>
             <div className="mt-6">
               <Link href="/produkt" className="btn-secondary">

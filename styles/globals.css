@@ -101,14 +101,16 @@ h6 {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border-radius: 0.75rem;
+  min-height: 2.75rem;
+  border-radius: 0.8rem;
   border: 1px solid transparent;
   background: var(--black);
   color: #fff;
   box-shadow: var(--shadow-sm);
-  padding: 0.75rem 1.25rem;
-  font-size: 0.9375rem;
+  padding: 0.78rem 1.3rem;
+  font-size: 0.95rem;
   font-weight: 600;
+  letter-spacing: -0.005em;
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
 
@@ -128,14 +130,16 @@ h6 {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border-radius: 0.75rem;
+  min-height: 2.75rem;
+  border-radius: 0.8rem;
   border: 1px solid var(--border);
   background: #fff;
   color: var(--text);
   box-shadow: var(--shadow-sm);
-  padding: 0.75rem 1.25rem;
-  font-size: 0.9375rem;
+  padding: 0.78rem 1.3rem;
+  font-size: 0.95rem;
   font-weight: 600;
+  letter-spacing: -0.005em;
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
 
@@ -152,9 +156,9 @@ h6 {
 
 .card-base {
   border-radius: var(--radius);
-  background: #fff;
+  background: linear-gradient(180deg, #ffffff 0%, #fdfefe 100%);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .card-hover {

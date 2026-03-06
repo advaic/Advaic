@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import BreadcrumbJsonLd from "@/components/seo/BreadcrumbJsonLd";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
-import PageShell from "@/components/marketing/PageShell";
-import PageIntro from "@/components/marketing/PageIntro";
-import StageCTA from "@/components/marketing/StageCTA";
-import FinalCTA from "@/components/marketing/FinalCTA";
+import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 
 const principles = [
   "Keine Blackbox-Automatisierung: Auto-Versand nur bei klaren Standardfällen.",
@@ -47,47 +44,93 @@ const boundaries = [
   "Für Sonderfälle und Konfliktthemen bleibt die Freigabe durch Menschen der Standardpfad.",
 ];
 
+const sources = [
+  {
+    label: "EUR-Lex – DSGVO Volltext (EU 2016/679)",
+    href: "https://eur-lex.europa.eu/eli/reg/2016/679/oj",
+    note: "Primärquelle für datenschutzrechtliche Anforderungen.",
+  },
+  {
+    label: "EDPB Guidelines",
+    href: "https://www.edpb.europa.eu/our-work-tools/our-documents/guidelines_en",
+    note: "Praxisnahe Leitlinien zur europäischen Datenschutzanwendung.",
+  },
+  {
+    label: "BfDI – DSGVO-Informationen",
+    href: "https://www.bfdi.bund.de/DE/Buerger/Inhalte/Datenschutz/Allgemein/DatenschutzGrundverordnung.html",
+    note: "Nationale Orientierung für den Betrieb in Deutschland.",
+  },
+  {
+    label: "NIST – AI Risk Management Framework",
+    href: "https://www.nist.gov/itl/ai-risk-management-framework",
+    note: "Rahmen für kontrollierte KI-Risiko-Governance.",
+  },
+];
+
 export const metadata: Metadata = {
   title: "Trust Center | Advaic",
   description:
     "Trust Center für Advaic: DSGVO-Rahmen, Guardrails, Datenfluss, AVV/TOM-Prozess, Incident-Logik und operative Grenzen.",
+  alternates: {
+    canonical: "/trust",
+  },
+  openGraph: {
+    title: "Trust Center | Advaic",
+    description:
+      "Trust Center für Advaic: DSGVO-Rahmen, Guardrails, Datenfluss, AVV/TOM-Prozess, Incident-Logik und operative Grenzen.",
+    url: "/trust",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Trust Center | Advaic",
+    description:
+      "Trust Center für Advaic: DSGVO-Rahmen, Guardrails, Datenfluss, AVV/TOM-Prozess, Incident-Logik und operative Grenzen.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function TrustPage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Trust Center für Advaic",
+    inLanguage: "de-DE",
+    about: ["DSGVO", "Trust", "AVV", "TOM", "Incident-Management", "Freigabe"],
+    mainEntityOfPage: `${siteUrl}/trust`,
+  };
+
   return (
-    <PageShell proofContext="trust">
-      <BreadcrumbJsonLd
-        items={[
-          { name: "Startseite", path: "/" },
-          { name: "Trust Center", path: "/trust" },
-        ]}
-      />
-      <PageIntro
-        kicker="Trust Center"
-        title="Sicherheit, DSGVO und operative Kontrolle"
-        description="Diese Seite bündelt den Trust-Rahmen von Advaic: wie Auto-Versand abgesichert ist, welche Datenflüsse bestehen und welche Grenzen klar definiert sind."
-        actions={
-          <>
-            <Link href="/sicherheit" className="btn-secondary">
-              Sicherheitsseite
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              14 Tage testen
-            </Link>
-          </>
-        }
-      />
-
-      <StageCTA
-        stage="bewertung"
-        context="trust-center"
-        sectionId="trust-stage"
-        primaryHref="/signup"
-        primaryLabel="Mit Trust-Setup testen"
-        secondaryHref="/dsgvo-email-autopilot"
-        secondaryLabel="DSGVO-Details"
-      />
-
+    <AiDiscoveryPageTemplate
+      breadcrumbItems={[
+        { name: "Startseite", path: "/" },
+        { name: "Trust Center", path: "/trust" },
+      ]}
+      schema={schema}
+      kicker="Trust Center"
+      title="Sicherheit, DSGVO und operative Kontrolle"
+      description="Diese Seite bündelt den Trust-Rahmen von Advaic: wie Auto-Versand abgesichert ist, welche Datenflüsse bestehen und welche Grenzen klar definiert sind."
+      actions={
+        <>
+          <Link href="/sicherheit" className="btn-secondary">
+            Sicherheitsseite
+          </Link>
+          <Link href="/signup" className="btn-primary">
+            14 Tage testen
+          </Link>
+        </>
+      }
+      stage="bewertung"
+      stageContext="trust-center"
+      stageSectionId="trust-stage"
+      proofContext="trust"
+      primaryHref="/signup"
+      primaryLabel="Mit Trust-Setup testen"
+      secondaryHref="/dsgvo-email-autopilot"
+      secondaryLabel="DSGVO-Details"
+      sources={sources}
+      sourcesDescription="Diese Quellen stützen die datenschutz- und governancebezogene Einordnung. Sie ersetzen keine individuelle Rechtsberatung."
+    >
       <section className="marketing-section-clear py-20 md:py-28">
         <Container>
           <article className="card-base p-6 md:p-8">
@@ -161,10 +204,30 @@ export default function TrustPage() {
               ))}
             </ul>
           </article>
+
+          <article className="card-base mt-4 p-6">
+            <h2 className="h3">Weitere Prüfseiten für Entscheidung und Risiko</h2>
+            <p className="helper mt-3">
+              Wenn Sie die Trust-Aspekte mit Produktfit und Tool-Vergleich kombinieren möchten, nutzen Sie diese
+              ergänzenden Seiten.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link href="/best-ai-tools-immobilienmakler" className="btn-secondary">
+                Best AI Tools Makler
+              </Link>
+              <Link href="/best-software-immobilienanfragen" className="btn-secondary">
+                Best Software Anfragen
+              </Link>
+              <Link href="/advaic-vs-crm-tools" className="btn-secondary">
+                Advaic vs. CRM-Tools
+              </Link>
+              <Link href="/manuell-vs-advaic" className="btn-secondary">
+                Manuell vs. Advaic
+              </Link>
+            </div>
+          </article>
         </Container>
       </section>
-
-      <FinalCTA />
-    </PageShell>
+    </AiDiscoveryPageTemplate>
   );
 }

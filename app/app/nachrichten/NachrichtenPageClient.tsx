@@ -118,7 +118,7 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
     <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900" data-tour="messages-page">
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
-        <div className="sticky top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200" data-tour="messages-header">
+        <div className="sticky top-16 md:top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200" data-tour="messages-header">
           <div className="flex flex-col gap-4 pb-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -352,7 +352,7 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
                   </div>
                 </div>
               ) : (
-                <div className="h-[calc(100vh-260px)] overflow-y-auto pr-2" data-tour="messages-scroll">
+                <div className="md:h-[calc(100vh-260px)] md:overflow-y-auto md:pr-2" data-tour="messages-scroll">
                   <InboxView leads={filteredLeads} userId={userId} />
                 </div>
               )}

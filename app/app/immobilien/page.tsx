@@ -191,7 +191,7 @@ export default function ImmobilienPage() {
     >
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 space-y-6">
         <div
-          className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"
+          className="sticky top-16 md:top-0 z-20 -mx-4 px-4 md:mx-0 md:px-0 pt-2 pb-4 bg-[#f7f7f8]/95 backdrop-blur border-b border-gray-200 flex flex-col gap-4"
           data-tour="properties-header"
         >
           <div>
@@ -212,8 +212,8 @@ export default function ImmobilienPage() {
             </p>
           </div>
 
-          <div className="flex flex-col md:flex-row gap-2 md:items-center">
-            <div className="flex gap-2">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 placeholder="Suche nach Titel oder Adresse"
@@ -227,12 +227,12 @@ export default function ImmobilienPage() {
               </Link>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <select
                 value={sortBy}
                 data-tour="properties-sort"
                 onChange={(e) => setSortBy(e.target.value as SortKey)}
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 w-full sm:w-auto"
                 title="Sortierung"
               >
                 <option value="updated_desc">Neueste zuerst</option>
@@ -257,11 +257,11 @@ export default function ImmobilienPage() {
                 type="button"
                 variant={onlyNeedsSetup ? "default" : "outline"}
                 onClick={() => setOnlyNeedsSetup((v) => !v)}
-                className={
+                className={`w-full sm:w-auto ${
                   onlyNeedsSetup
                     ? "bg-gray-900 text-amber-200 border-gray-900"
                     : "border-gray-200"
-                }
+                }`}
                 title="Nur nicht startklare Immobilien anzeigen"
               >
                 {onlyNeedsSetup ? "Nur nicht startklar: AN" : "Nur nicht startklar"}
@@ -270,7 +270,7 @@ export default function ImmobilienPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="rounded-2xl border border-gray-200 bg-white p-4">
             <div className="text-xs text-gray-500">Durchschnitt Readiness</div>
             <div className="text-lg font-semibold text-gray-900">

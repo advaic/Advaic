@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -59,11 +60,41 @@ export const metadata: Metadata = {
   title: "Vermietung in Ballungsräumen | Branchenprofil Advaic",
   description:
     "Branchenprofil für Vermietung in Ballungsräumen: typische Anfragewellen, sichere Startkonfiguration und Guardrails für maklergerechte Automatisierung.",
+  alternates: {
+    canonical: "/branchen/vermietung-ballungsraum",
+  },
+  openGraph: {
+    title: "Vermietung in Ballungsräumen | Branchenprofil Advaic",
+    description:
+      "Branchenprofil für Vermietung in Ballungsräumen: typische Anfragewellen, sichere Startkonfiguration und Guardrails für maklergerechte Automatisierung.",
+    url: "/branchen/vermietung-ballungsraum",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Vermietung in Ballungsräumen | Branchenprofil Advaic",
+    description:
+      "Branchenprofil für Vermietung in Ballungsräumen: typische Anfragewellen, sichere Startkonfiguration und Guardrails für maklergerechte Automatisierung.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function BranchenVermietungBallungsraumPage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Branchenprofil Vermietung in Ballungsräumen",
+    inLanguage: "de-DE",
+    mainEntityOfPage: `${siteUrl}/branchen/vermietung-ballungsraum`,
+    about: ["Vermietung", "Ballungsräume", "Makleranfragen", "Safe-Start"],
+  };
+
   return (
     <PageShell>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <PageIntro
         kicker="Branchenprofil"
         title="Vermietung in Ballungsräumen"

@@ -3,17 +3,30 @@ import { getSiteUrl } from "@/lib/seo/site-url";
 const NAV_ITEMS = [
   { name: "Produkt", path: "/produkt" },
   { name: "Branchen", path: "/branchen" },
+  { name: "Anwendungsfälle", path: "/use-cases" },
+  { name: "Einwände", path: "/einwaende" },
   { name: "So funktioniert's", path: "/so-funktionierts" },
   { name: "Sicherheit", path: "/sicherheit" },
   { name: "Preise", path: "/preise" },
   { name: "FAQ", path: "/faq" },
   { name: "Trust Center", path: "/trust" },
+  { name: "Manuell vs. Advaic", path: "/manuell-vs-advaic" },
+  { name: "Best AI Tools Immobilienmakler", path: "/best-ai-tools-immobilienmakler" },
+  { name: "Best Software Immobilienanfragen", path: "/best-software-immobilienanfragen" },
+  { name: "Advaic vs CRM Tools", path: "/advaic-vs-crm-tools" },
+  { name: "KI für Immobilienmakler", path: "/ki-fuer-immobilienmakler" },
+  { name: "Immobilienanfragen automatisieren", path: "/immobilienanfragen-automatisieren" },
+  { name: "Integrationen", path: "/integrationen" },
+  { name: "Gmail-Integration", path: "/integrationen/gmail" },
+  { name: "Outlook-Integration", path: "/integrationen/outlook" },
 ];
 
 export default function GlobalStructuredData() {
   const siteUrl = getSiteUrl();
   const organizationId = `${siteUrl}/#organization`;
   const websiteId = `${siteUrl}/#website`;
+  const softwareId = `${siteUrl}/#software`;
+  const offerId = `${siteUrl}/#starter-offer`;
 
   const structuredData = {
     "@context": "https://schema.org",
@@ -40,6 +53,41 @@ export default function GlobalStructuredData() {
         description:
           "Autopilot für Interessenten-Anfragen per E-Mail mit Guardrails, Freigabe-Logik und Qualitätschecks vor Versand.",
         publisher: { "@id": organizationId },
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": softwareId,
+        name: "Advaic",
+        url: `${siteUrl}/produkt`,
+        applicationCategory: "BusinessApplication",
+        operatingSystem: "Web",
+        inLanguage: "de-DE",
+        brand: { "@id": organizationId },
+        provider: { "@id": organizationId },
+        audience: {
+          "@type": "Audience",
+          audienceType: "Immobilienmakler und kleine Maklerteams in Deutschland",
+        },
+        description:
+          "Advaic beantwortet Interessenten-Anfragen im Maklerstil, sendet nur bei klaren Standardfällen automatisch und leitet unklare Fälle in die Freigabe weiter.",
+        featureList: [
+          "Autopilot mit Guardrails",
+          "Freigabe-Inbox für unklare Fälle",
+          "Qualitätschecks vor Versand",
+          "Dashboard-Status und Verlauf mit Zeitstempeln",
+          "Steuerbare Follow-up-Logik mit Stop-Regeln",
+        ],
+        offers: { "@id": offerId },
+      },
+      {
+        "@type": "Offer",
+        "@id": offerId,
+        url: `${siteUrl}/preise`,
+        price: "0",
+        priceCurrency: "EUR",
+        category: "SaaS",
+        availability: "https://schema.org/InStock",
+        description: "14 Tage Testphase für den Advaic Starter-Tarif.",
       },
       ...NAV_ITEMS.map((item) => ({
         "@type": "SiteNavigationElement",

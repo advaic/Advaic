@@ -4,7 +4,7 @@ import Container from "./Container";
 const points = [
   "Im Zweifel zur Freigabe",
   "Jederzeit pausierbar",
-  "Volle Transparenz",
+  "Voller Verlauf",
 ];
 
 export default function Guarantee() {
@@ -16,8 +16,8 @@ export default function Guarantee() {
           <div className="p-8 md:p-10">
             <h2 className="h2">Sicherheitsgarantie</h2>
             <p className="body mt-4 text-[var(--muted)]">
-              Advaic ist so aufgebaut, dass im Zweifel nicht automatisch gesendet
-              wird. Sie behalten die finale Kontrolle.
+              Advaic ist so aufgebaut, dass im Zweifel nicht automatisch gesendet wird. Sie behalten die finale
+              Kontrolle.
             </p>
             <ul className="mt-6 grid gap-3 md:grid-cols-3">
               {points.map((point) => (

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -59,11 +60,41 @@ export const metadata: Metadata = {
   title: "Anwendungsfall Kleines Team | Advaic",
   description:
     "Wie kleine Maklerteams mit Advaic Standardkommunikation entlasten, ohne sensible Fälle aus der Hand zu geben.",
+  alternates: {
+    canonical: "/use-cases/kleines-team",
+  },
+  openGraph: {
+    title: "Anwendungsfall Kleines Team | Advaic",
+    description:
+      "Wie kleine Maklerteams mit Advaic Standardkommunikation entlasten, ohne sensible Fälle aus der Hand zu geben.",
+    url: "/use-cases/kleines-team",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Anwendungsfall Kleines Team | Advaic",
+    description:
+      "Wie kleine Maklerteams mit Advaic Standardkommunikation entlasten, ohne sensible Fälle aus der Hand zu geben.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function UseCaseKleinesTeamPage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Anwendungsfall kleines Maklerteam",
+    inLanguage: "de-DE",
+    mainEntityOfPage: `${siteUrl}/use-cases/kleines-team`,
+    about: ["kleines Maklerteam", "E-Mail-Prozess", "Freigabe", "Safe-Start"],
+  };
+
   return (
     <PageShell>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <PageIntro
         kicker="Anwendungsfall"
         title="Kleine Teams mit knapper Zeit"
@@ -159,7 +190,8 @@ export default function UseCaseKleinesTeamPage() {
           <article className="card-base mt-4 p-6">
             <h2 className="h3">Quellen & Einordnung</h2>
             <p className="helper mt-3">
-              Die Empfehlungen orientieren sich an publizierten Erkenntnissen zu Lead-Reaktionszeit,
+              Die Empfehlungen orientieren sich an publizierten Erkenntnissen zu Reaktionszeit auf
+              Interessenten-Anfragen,
               Kommunikationsarbeitslast und risikobewusster Automatisierung.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">

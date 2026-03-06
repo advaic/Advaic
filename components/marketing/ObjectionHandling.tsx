@@ -12,7 +12,7 @@ const objections = [
   {
     question: "„Ich will nicht, dass alles blind automatisiert wird.“",
     answer:
-      "Der Standard ist ein kontrollierter Start mit mehr Freigaben. Den Automatisierungsgrad erhöhen Sie erst, wenn Ergebnisse stabil sind.",
+      "Der Standard ist ein kontrollierter Start mit hoher Freigabequote. Den Automatisierungsgrad erhöhen Sie erst, wenn die Ergebnisse stabil sind.",
     href: "/einwaende/kontrolle",
     label: "Einwand Kontrolle",
   },
@@ -26,14 +26,14 @@ const objections = [
   {
     question: "„Wie datenschutzkonform ist der Betrieb?“",
     answer:
-      "DSGVO-orientierter Betrieb braucht Technik und Organisation: klare Zweckbindung, Zugriffsgrenzen und dokumentierte Prozesse.",
+      "DSGVO-konformer Betrieb braucht Technik und Organisation: klare Zweckbindung, Zugriffsgrenzen und dokumentierte Prozesse.",
     href: "/einwaende/dsgvo",
     label: "Einwand DSGVO",
   },
   {
     question: "„Wie hoch ist der Einführungsaufwand wirklich?“",
     answer:
-      "Advaic ist auf einen stufenweisen Start ausgelegt. Sie müssen nicht alles auf einmal aktivieren, sondern können mit den wichtigsten Standardfällen beginnen.",
+      "Advaic ist auf einen stufenweisen Start ausgelegt. Sie aktivieren nicht alles auf einmal, sondern beginnen mit den wichtigsten Standardfällen.",
     href: "/einwaende/aufwand",
     label: "Einwand Aufwand",
   },
@@ -53,8 +53,8 @@ export default function ObjectionHandling() {
         <div className="max-w-[72ch]">
           <h2 className="h2">Häufige Einwände, klar beantwortet</h2>
           <p className="body mt-4 text-[var(--muted)]">
-            Gute Entscheidungen entstehen nicht durch Marketingversprechen, sondern durch überprüfbare Antworten auf
-            die kritischen Fragen im Makleralltag.
+            Gute Entscheidungen entstehen nicht durch Versprechen, sondern durch überprüfbare Antworten auf die
+            kritischen Fragen im Makleralltag.
           </p>
         </div>
 

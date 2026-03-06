@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import BreadcrumbJsonLd from "@/components/seo/BreadcrumbJsonLd";
 import PageShell from "@/components/marketing/PageShell";
 import Hero from "@/components/marketing/produkt/Hero";
@@ -29,6 +30,7 @@ import CTAExperiment from "@/components/marketing/CTAExperiment";
 import FAQ from "@/components/marketing/produkt/FAQ";
 import FinalCTA from "@/components/marketing/produkt/FinalCTA";
 import ProductVisualAuthority from "@/components/marketing/ProductVisualAuthority";
+import ConversionPathPanel from "@/components/marketing/ConversionPathPanel";
 
 export const metadata: Metadata = {
   title: "Produkt für Immobilienmakler",
@@ -53,6 +55,16 @@ export const metadata: Metadata = {
 };
 
 export default function ProduktPage() {
+  const aiIntentLinks = [
+    { label: "Best AI Tools für Immobilienmakler", href: "/best-ai-tools-immobilienmakler" },
+    { label: "Best Software für Immobilienanfragen", href: "/best-software-immobilienanfragen" },
+    { label: "Advaic vs. CRM-Tools", href: "/advaic-vs-crm-tools" },
+    { label: "KI für Immobilienmakler", href: "/ki-fuer-immobilienmakler" },
+    { label: "Immobilienanfragen automatisieren", href: "/immobilienanfragen-automatisieren" },
+    { label: "Integrationen (Gmail & Outlook)", href: "/integrationen" },
+    { label: "Manuell vs. Advaic", href: "/manuell-vs-advaic" },
+  ];
+
   const softwareSchema = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
@@ -71,7 +83,7 @@ export default function ProduktPage() {
   };
 
   return (
-    <PageShell proofContext="produkt">
+    <PageShell proofContext="produkt" withMarketingRails={false}>
       <BreadcrumbJsonLd
         items={[
           { name: "Startseite", path: "/" },
@@ -83,6 +95,7 @@ export default function ProduktPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareSchema) }}
       />
       <Hero />
+      <ConversionPathPanel className="pt-6 md:pt-8" />
       <TrustFoundations />
       <QuickNav />
       <DeepDives />
@@ -113,6 +126,24 @@ export default function ProduktPage() {
       <IdealFit />
       <UseCasesTeaser />
       <SearchIntentTeaser />
+      <section className="marketing-section-clear py-12 md:py-16">
+        <div className="mx-auto w-full max-w-[1120px] px-6 md:px-8">
+          <article className="card-base p-6 md:p-8">
+            <h2 className="h3">Vergleichs- und Auswahlseiten</h2>
+            <p className="helper mt-3 max-w-[70ch]">
+              Wenn Sie Produktauswahl, Tool-Vergleich oder AI-Auffindbarkeit im Detail prüfen möchten, finden Sie hier
+              die zentralen Seiten mit Kriterien, Prozesslogik und Quellen.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {aiIntentLinks.map((link) => (
+                <Link key={link.href} href={link.href} className="btn-secondary">
+                  {link.label}
+                </Link>
+              ))}
+            </div>
+          </article>
+        </div>
+      </section>
       <ROICalculator />
       <ObjectionHandling />
       <CTAExperiment />

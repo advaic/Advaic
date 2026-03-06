@@ -23,7 +23,7 @@ const items = [
   {
     question: "Antwortet Advaic auf Newsletter?",
     answer:
-      "Nicht automatisch. Newsletter, Systemmails und Spam werden gefiltert; technische no-reply Absender ohne sicheren Rückkanal werden je nach Fall ignoriert oder zur Prüfung markiert.",
+      "Nicht automatisch. Newsletter, Systemmails und Spam werden gefiltert. Technische no-reply Absender ohne nutzbaren Rückkanal werden je nach Fall ignoriert oder zur Prüfung markiert.",
   },
   {
     question: "Wie transparent ist das?",
@@ -43,7 +43,7 @@ const items = [
   {
     question: "Datenschutz und Dokumentation?",
     answer:
-      "Sie erhalten die Dokumentation im Onboarding. Die Verarbeitung ist transparent aufgebaut. Keine Rechtsberatung.",
+      "Sie erhalten die Dokumentation im Onboarding. Die Verarbeitung ist transparent aufgebaut. Diese Seite ersetzt keine Rechtsberatung.",
   },
 ];
 

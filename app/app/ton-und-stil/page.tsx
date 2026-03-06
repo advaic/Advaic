@@ -520,7 +520,7 @@ export default function ToneSettingsPage() {
 
   return (
     <main
-      className="flex-1 p-6 overflow-y-auto bg-[#f7f7f8]"
+      className="flex-1 p-4 md:p-6 overflow-y-auto bg-[#f7f7f8]"
       data-tour="tone-style-page"
     >
       <div
@@ -535,7 +535,7 @@ export default function ToneSettingsPage() {
           >
             <div data-tour="tone-style-intro">
               <h1
-                className="text-2xl font-bold mb-2"
+                className="text-2xl max-[375px]:text-xl font-bold mb-2"
                 data-tour="tone-style-title"
               >
                 Ton & Stil anpassen
@@ -546,11 +546,15 @@ export default function ToneSettingsPage() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2" data-tour="tone-style-actions">
+            <div
+              className="w-full lg:w-auto flex flex-wrap items-center gap-2"
+              data-tour="tone-style-actions"
+            >
               <Button
                 variant="secondary"
                 onClick={() => void loadAll()}
                 disabled={loading || saving}
+                className="w-full sm:w-auto"
                 data-tour="tone-style-reload"
               >
                 Neu laden
@@ -558,6 +562,7 @@ export default function ToneSettingsPage() {
               <Button
                 onClick={handleSave}
                 disabled={loading || saving}
+                className="w-full sm:w-auto"
                 data-tour="tone-style-save"
               >
                 {saving ? "Speichern…" : "Einstellungen speichern"}
@@ -585,7 +590,7 @@ export default function ToneSettingsPage() {
               </Button>
             </div>
 
-            <div className="mt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
+            <div className="mt-3 grid grid-cols-2 max-[375px]:grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
               <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
                 <div className="text-muted-foreground">Geprüfte Freigaben</div>
                 <div className="mt-1 font-semibold text-gray-900">

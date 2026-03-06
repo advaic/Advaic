@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import BreadcrumbJsonLd from "@/components/seo/BreadcrumbJsonLd";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
-import PageShell from "@/components/marketing/PageShell";
-import PageIntro from "@/components/marketing/PageIntro";
-import StageCTA from "@/components/marketing/StageCTA";
-import FinalCTA from "@/components/marketing/FinalCTA";
+import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 
 const profiles = [
   {
@@ -13,40 +10,40 @@ const profiles = [
     text: "Für Teams mit hohem täglichen Anfrageaufkommen, schneller Erstreaktions-Erwartung und klar wiederkehrenden Standardfragen.",
     href: "/branchen/vermietung-ballungsraum",
     fit: "Besonders stark bei hoher Taktung und standardisierbaren Erstanfragen.",
-    caution: "Nicht sinnvoll, wenn nahezu jede Anfrage hochindividuell verhandelt werden muss.",
+    caution: "Weniger passend, wenn nahezu jede Anfrage hochindividuell verhandelt werden muss.",
   },
   {
     title: "Kleine Maklerbüros",
     text: "Für Solo-Makler und kleine Teams, die knappe Zeit ohne Kontrollverlust skalieren möchten.",
     href: "/branchen/kleine-maklerbueros",
     fit: "Besonders stark, wenn Postfacharbeit regelmäßig Beratungszeit verdrängt.",
-    caution: "Nicht sinnvoll, wenn kaum Anfragevolumen vorhanden ist.",
+    caution: "Weniger passend, wenn kaum Anfragevolumen vorhanden ist.",
   },
   {
     title: "Neubau-Vertrieb",
     text: "Für strukturierte Erstantworten bei vielen Projektanfragen über mehrere Objekte und Bauabschnitte.",
     href: "/branchen/neubau-vertrieb",
     fit: "Besonders stark bei wiederkehrenden Projektfragen mit klaren Vorlagen.",
-    caution: "Nicht sinnvoll, wenn jeder Fall individuellen Projektabgleich in Echtzeit erfordert.",
+    caution: "Weniger passend, wenn jeder Fall individuellen Projektabgleich in Echtzeit erfordert.",
   },
 ];
 
 const funnelSteps = [
   {
-    title: "1) Einordnen",
-    text: "Wählen Sie das Branchenprofil, das Ihrem Anfrage-Mix am nächsten kommt. Ziel ist keine perfekte Theorie, sondern ein realistischer Startpunkt.",
+    title: "1) Segment präzise wählen",
+    text: "Wählen Sie das Profil nach Anfrage-Mix und Teamrealität, nicht nur nach Branchenetikett.",
   },
   {
-    title: "2) Engpass verstehen",
-    text: "Prüfen Sie die typischen Fehlmuster des Profils: Reaktionsverzug, Freigabe-Überlast, fehlende Follow-up-Disziplin, unklare Zuständigkeiten.",
+    title: "2) Engpass offenlegen",
+    text: "Prüfen Sie die größten Verlustquellen: Reaktionsverzug, Freigabe-Überlast, unklare Priorisierung.",
   },
   {
-    title: "3) Safe-Start übernehmen",
-    text: "Nutzen Sie die vorgeschlagene Startkonfiguration mit konservativem Auto-Anteil und klarer Freigabelogik.",
+    title: "3) Safe-Start definieren",
+    text: "Legen Sie fest, welche Standardfälle zuerst auf Auto laufen und welche Fälle Pflicht-Freigabe bleiben.",
   },
   {
-    title: "4) KPI-basiert erweitern",
-    text: "Erhöhen Sie die Automatisierung erst, wenn QA-Verlauf, Freigabequote und Antwortzeit stabil sind.",
+    title: "4) KPI-gesteuert ausbauen",
+    text: "Erhöhen Sie Automatisierung nur bei stabiler Qualität, sauberer Nachvollziehbarkeit und klarer Entlastung.",
   },
 ];
 
@@ -54,14 +51,22 @@ const sources = [
   {
     label: "Destatis – Wohnen in Deutschland",
     href: "https://www.destatis.de/DE/Themen/Gesellschaft-Umwelt/Wohnen/_inhalt.html",
+    note: "Öffentliche Markteinordnung für Wohn- und Vermietungsumfelder in Deutschland.",
   },
   {
     label: "McKinsey – The social economy",
     href: "https://www.mckinsey.com/industries/technology-media-and-telecommunications/our-insights/the-social-economy",
+    note: "Kontext zum Produktivitätshebel in Kommunikations- und Wissensarbeit.",
   },
   {
     label: "HBR – The Short Life of Online Sales Leads",
     href: "https://hbr.org/2011/03/the-short-life-of-online-sales-leads",
+    note: "Einordnung, warum schnelle Reaktionszeiten im Interessenten-Prozess kritisch sind.",
+  },
+  {
+    label: "Google Search Essentials",
+    href: "https://developers.google.com/search/docs/essentials",
+    note: "Leitlinien für saubere Informationsarchitektur und Auffindbarkeit.",
   },
 ];
 
@@ -88,47 +93,66 @@ export const metadata: Metadata = {
 };
 
 export default function BranchenPage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        headline: "Branchenprofile für Maklerteams",
+        inLanguage: "de-DE",
+        about: ["Vermietung", "Neubau", "kleine Maklerbüros", "Safe-Start"],
+        mainEntityOfPage: `${siteUrl}/branchen`,
+      },
+      {
+        "@type": "ItemList",
+        name: "Branchenprofile",
+        itemListElement: profiles.map((item, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: item.title,
+          url: `${siteUrl}${item.href}`,
+        })),
+      },
+    ],
+  };
+
   return (
-    <PageShell>
-      <BreadcrumbJsonLd
-        items={[
-          { name: "Startseite", path: "/" },
-          { name: "Branchen", path: "/branchen" },
-        ]}
-      />
-      <PageIntro
-        kicker="Branchenprofile"
-        title="Welche Konfiguration passt zu Ihrem Markt?"
-        description="Diese Seiten zeigen branchenspezifisch, welche Anfragearten dominieren, wo Risiken entstehen und mit welcher Safe-Start-Logik Sie sinnvoll beginnen."
-        actions={
-          <>
-            <Link href="/manuell-vs-advaic" className="btn-secondary">
-              Vergleich ansehen
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              14 Tage testen
-            </Link>
-          </>
-        }
-      />
-
-      <StageCTA
-        stage="bewertung"
-        primaryHref="/produkt#safe-start-konfiguration"
-        primaryLabel="Safe-Start berechnen"
-        secondaryHref="/manuell-vs-advaic"
-        secondaryLabel="Prozessvergleich"
-        context="branchen-hub"
-      />
-
+    <AiDiscoveryPageTemplate
+      breadcrumbItems={[
+        { name: "Startseite", path: "/" },
+        { name: "Branchen", path: "/branchen" },
+      ]}
+      schema={schema}
+      kicker="Branchenprofile"
+      title="Welche Konfiguration passt zu Ihrem Markt?"
+      description="Diese Seite ist als Branchen-Entscheidungsmatrix aufgebaut: typische Engpässe, passende Guardrails und ein sicherer Startpfad je Marktumfeld."
+      actions={
+        <>
+          <Link href="/manuell-vs-advaic" className="btn-secondary">
+            Vergleich ansehen
+          </Link>
+          <Link href="/signup" className="btn-primary">
+            14 Tage testen
+          </Link>
+        </>
+      }
+      stage="bewertung"
+      stageContext="branchen-hub"
+      primaryHref="/produkt#safe-start-konfiguration"
+      primaryLabel="Safe-Start berechnen"
+      secondaryHref="/manuell-vs-advaic"
+      secondaryLabel="Prozessvergleich"
+      sources={sources}
+      sourcesDescription="Die Quellen sind ein Orientierungsrahmen für Marktumfeld, Prozessdruck und Rolloutlogik. Sie ersetzen keine individuelle Unternehmensanalyse."
+    >
       <section className="marketing-section-clear py-20 md:py-28">
         <Container>
           <div className="max-w-[76ch]">
             <h2 className="h2">So lesen Sie die Branchenprofile als Entscheidungsfunnel</h2>
             <p className="body mt-4 text-[var(--muted)]">
-              Diese Seite ist bewusst nicht als oberflächliche Linkliste aufgebaut. Jedes Profil beantwortet drei
-              kaufentscheidende Fragen: Wo entsteht heute der größte operative Verlust, welche Guardrails sind zwingend
-              und welche Startkonfiguration minimiert Risiko bei maximaler Lernkurve.
+              Jedes Profil beantwortet drei kaufentscheidende Fragen: Wo entsteht aktuell der größte operative Verlust,
+              welche Guardrails sind zwingend und welche Startkonfiguration minimiert Risiko bei maximalem Lerngewinn.
             </p>
           </div>
 
@@ -156,31 +180,8 @@ export default function BranchenPage() {
               </article>
             ))}
           </div>
-
-          <article className="card-base mt-8 p-6">
-            <h2 className="h3">Quellenbasis für die Branchenlogik</h2>
-            <p className="helper mt-3">
-              Die Profile kombinieren öffentliche Markteinordnung mit operativer Prozesslogik aus dem Makleralltag.
-              Ziel ist eine realistische Betriebsentscheidung, keine generische Marketingaussage.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {sources.map((source) => (
-                <a
-                  key={source.href}
-                  href={source.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-secondary"
-                >
-                  {source.label}
-                </a>
-              ))}
-            </div>
-          </article>
         </Container>
       </section>
-
-      <FinalCTA />
-    </PageShell>
+    </AiDiscoveryPageTemplate>
   );
 }

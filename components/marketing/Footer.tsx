@@ -43,6 +43,24 @@ export default function MarketingFooter() {
             <Link href="/manuell-vs-advaic" className="focus-ring link-subtle">
               Manuell vs. Advaic
             </Link>
+            <Link href="/advaic-vs-crm-tools" className="focus-ring link-subtle">
+              Advaic vs. CRM-Tools
+            </Link>
+            <Link href="/best-ai-tools-immobilienmakler" className="focus-ring link-subtle">
+              Best AI Tools Makler
+            </Link>
+            <Link href="/best-software-immobilienanfragen" className="focus-ring link-subtle">
+              Best Software Anfragen
+            </Link>
+            <Link href="/ki-fuer-immobilienmakler" className="focus-ring link-subtle">
+              KI für Makler
+            </Link>
+            <Link href="/immobilienanfragen-automatisieren" className="focus-ring link-subtle">
+              Anfragen automatisieren
+            </Link>
+            <Link href="/integrationen" className="focus-ring link-subtle">
+              Integrationen
+            </Link>
             <Link href="/email-automatisierung-immobilienmakler" className="focus-ring link-subtle">
               E-Mail-Automatisierung
             </Link>

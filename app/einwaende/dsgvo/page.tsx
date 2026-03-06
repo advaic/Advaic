@@ -64,6 +64,19 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/einwaende/dsgvo",
   },
+  openGraph: {
+    title: "Einwand DSGVO | Advaic",
+    description:
+      "Wie Advaic datenschutzorientiert betrieben wird, wo Guardrails helfen und welche organisatorischen Schritte Makler zusätzlich brauchen.",
+    url: "/einwaende/dsgvo",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Einwand DSGVO | Advaic",
+    description:
+      "Wie Advaic datenschutzorientiert betrieben wird, wo Guardrails helfen und welche organisatorischen Schritte Makler zusätzlich brauchen.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function ObjectionDSGVOPage() {
@@ -114,4 +127,3 @@ export default function ObjectionDSGVOPage() {
     </PageShell>
   );
 }
-

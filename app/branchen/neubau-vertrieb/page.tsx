@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -59,11 +60,41 @@ export const metadata: Metadata = {
   title: "Neubau-Vertrieb | Branchenprofil Advaic",
   description:
     "Branchenprofil für Neubau-Vertrieb: strukturierte Erstantworten, klare Freigabepfade bei Sonderfällen und nachvollziehbare Statuslogik für Projektanfragen.",
+  alternates: {
+    canonical: "/branchen/neubau-vertrieb",
+  },
+  openGraph: {
+    title: "Neubau-Vertrieb | Branchenprofil Advaic",
+    description:
+      "Branchenprofil für Neubau-Vertrieb: strukturierte Erstantworten, klare Freigabepfade bei Sonderfällen und nachvollziehbare Statuslogik für Projektanfragen.",
+    url: "/branchen/neubau-vertrieb",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Neubau-Vertrieb | Branchenprofil Advaic",
+    description:
+      "Branchenprofil für Neubau-Vertrieb: strukturierte Erstantworten, klare Freigabepfade bei Sonderfällen und nachvollziehbare Statuslogik für Projektanfragen.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function BranchenNeubauVertriebPage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Branchenprofil Neubau-Vertrieb",
+    inLanguage: "de-DE",
+    mainEntityOfPage: `${siteUrl}/branchen/neubau-vertrieb`,
+    about: ["Neubau-Vertrieb", "Projektanfragen", "Freigabe", "Qualitätschecks"],
+  };
+
   return (
     <PageShell>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <PageIntro
         kicker="Branchenprofil"
         title="Neubau-Vertrieb"

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -27,7 +28,7 @@ const matrixRows = [
   {
     signal: "Newsletter, Rundmail, Systemmail, Spam",
     action: "Ignorieren",
-    reason: "Kein Lead-Signal, daher kein Versand.",
+    reason: "Keine relevante Interessenten-Anfrage, daher kein Versand.",
     tone: "border-gray-200 bg-gray-100 text-gray-800",
   },
 ];
@@ -76,14 +77,17 @@ const sources = [
   {
     label: "NIST – AI Risk Management Framework",
     href: "https://www.nist.gov/itl/ai-risk-management-framework",
+    note: "Rahmen für risikobewusste, kontrollierte Automatisierungsentscheidungen.",
   },
   {
     label: "HBR – The Short Life of Online Sales Leads",
     href: "https://hbr.org/2011/03/the-short-life-of-online-sales-leads",
+    note: "Einordnung, warum schnelle und passende Erstreaktion wirtschaftlich relevant ist.",
   },
   {
     label: "McKinsey – The social economy",
     href: "https://www.mckinsey.com/industries/technology-media-and-telecommunications/our-insights/the-social-economy",
+    note: "Kontext zum Anteil kommunikativer Routinearbeit in Wissensarbeit.",
   },
 ];
 
@@ -91,11 +95,41 @@ export const metadata: Metadata = {
   title: "Autopilot-Regeln im Detail | Advaic",
   description:
     "Signal-zu-Aktion Matrix mit Beispielen: wann Advaic automatisch sendet, wann Freigabe greift und wann Nachrichten ignoriert werden.",
+  alternates: {
+    canonical: "/autopilot-regeln",
+  },
+  openGraph: {
+    title: "Autopilot-Regeln im Detail | Advaic",
+    description:
+      "Signal-zu-Aktion Matrix mit Beispielen: wann Advaic automatisch sendet, wann Freigabe greift und wann Nachrichten ignoriert werden.",
+    url: "/autopilot-regeln",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Autopilot-Regeln im Detail | Advaic",
+    description:
+      "Signal-zu-Aktion Matrix mit Beispielen: wann Advaic automatisch sendet, wann Freigabe greift und wann Nachrichten ignoriert werden.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function AutopilotRegelnPage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Autopilot-Regeln im Detail",
+    inLanguage: "de-DE",
+    mainEntityOfPage: `${siteUrl}/autopilot-regeln`,
+    about: ["Autopilot", "Freigabe", "Ignorieren", "Regelmatrix", "Guardrails"],
+  };
+
   return (
     <PageShell>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <PageIntro
         kicker="Entscheidungslogik"
         title="Wann Advaic automatisch sendet und wann bewusst stoppt"
@@ -237,17 +271,19 @@ export default function AutopilotRegelnPage() {
             <p className="helper mt-3">
               Die Regelarchitektur folgt dem Prinzip kontrollierter Automatisierung mit klaren Fail-Safe-Grenzen.
             </p>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4 space-y-3">
               {sources.map((source) => (
-                <a
-                  key={source.href}
-                  href={source.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-secondary"
-                >
-                  {source.label}
-                </a>
+                <article key={source.href} className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                  <a
+                    href={source.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-semibold text-[var(--text)] underline underline-offset-4"
+                  >
+                    {source.label}
+                  </a>
+                  <p className="helper mt-2">{source.note}</p>
+                </article>
               ))}
             </div>
           </article>

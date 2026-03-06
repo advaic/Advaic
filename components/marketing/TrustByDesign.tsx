@@ -5,7 +5,7 @@ import Container from "./Container";
 const pillars = [
   {
     title: "Datenminimierung",
-    text: "Advaic verarbeitet nur Inhalte, die für Erkennen, Entscheiden und Antworten im Lead-Prozess erforderlich sind.",
+    text: "Advaic verarbeitet nur Inhalte, die für Erkennen, Entscheiden und Antworten im Anfrageprozess erforderlich sind.",
     Icon: ListChecks,
   },
   {
@@ -45,8 +45,8 @@ export default function TrustByDesign() {
         <div className="max-w-[74ch]">
           <h2 className="h2">Trust by Design: Sicherheit ist Produktlogik, kein Zusatz</h2>
           <p className="body mt-4 text-[var(--muted)]">
-            Advaic ist so aufgebaut, dass Sie präzise steuern können, was automatisch passieren darf und was bewusst in
-            Ihrer Entscheidung bleibt. Das reduziert Risiko, ohne die Geschwindigkeit im Alltag zu verlieren.
+            Advaic ist so aufgebaut, dass Sie präzise steuern, was automatisch passieren darf und was in Ihrer
+            Entscheidung bleibt. Das reduziert Risiko, ohne Geschwindigkeit im Alltag zu verlieren.
           </p>
         </div>
 
@@ -76,7 +76,7 @@ export default function TrustByDesign() {
           <article className="card-base md:col-span-4 p-6">
             <h3 className="h3">Dokumentation</h3>
             <p className="helper mt-3">
-              Weiterführende Informationen zu Verarbeitung, Speicherlogik und rechtlichen Dokumenten finden Sie hier:
+              Weiterführende Informationen zu Verarbeitung, Speicherlogik und rechtlichen Dokumenten finden Sie hier.
             </p>
             <div className="mt-4 flex flex-col gap-2">
               {docs.map((item) => (

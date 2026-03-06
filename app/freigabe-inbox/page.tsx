@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CheckCheck, PenLine, ShieldCheck, XCircle } from "lucide-react";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
@@ -87,11 +88,41 @@ export const metadata: Metadata = {
   title: "Freigabe-Inbox | Advaic",
   description:
     "So funktioniert die Freigabe-Inbox: unklare Fälle sichten, Entwürfe bearbeiten, manuell freigeben oder ablehnen und alles nachvollziehbar dokumentieren.",
+  alternates: {
+    canonical: "/freigabe-inbox",
+  },
+  openGraph: {
+    title: "Freigabe-Inbox | Advaic",
+    description:
+      "So funktioniert die Freigabe-Inbox: unklare Fälle sichten, Entwürfe bearbeiten, manuell freigeben oder ablehnen und alles nachvollziehbar dokumentieren.",
+    url: "/freigabe-inbox",
+    images: ["/brand/advaic-icon.png"],
+  },
+  twitter: {
+    title: "Freigabe-Inbox | Advaic",
+    description:
+      "So funktioniert die Freigabe-Inbox: unklare Fälle sichten, Entwürfe bearbeiten, manuell freigeben oder ablehnen und alles nachvollziehbar dokumentieren.",
+    images: ["/brand/advaic-icon.png"],
+  },
 };
 
 export default function FreigabeInboxPage() {
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: "Freigabe-Inbox in der Praxis",
+    inLanguage: "de-DE",
+    mainEntityOfPage: `${siteUrl}/freigabe-inbox`,
+    about: ["Freigabe", "Sonderfälle", "manuelle Entscheidung", "Verlauf"],
+  };
+
   return (
     <PageShell>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
       <PageIntro
         kicker="Manuelle Kontrolle"
         title="So funktioniert die Freigabe-Inbox in der Praxis"

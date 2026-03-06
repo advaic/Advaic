@@ -14,6 +14,14 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("de-DE").format(Math.round(value));
 }
 
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("de-DE", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(Math.max(0, Math.round(value)));
+}
+
 type PresetKey = "solo" | "team" | "volume";
 
 const PRESETS: Record<
@@ -25,6 +33,7 @@ const PRESETS: Record<
     standardfallAnteil: number;
     autoAnteilBeiStandard: number;
     firstResponseHeuteMin: number;
+    stundenSatzEur: number;
   }
 > = {
   solo: {
@@ -34,6 +43,7 @@ const PRESETS: Record<
     standardfallAnteil: 62,
     autoAnteilBeiStandard: 45,
     firstResponseHeuteMin: 110,
+    stundenSatzEur: 55,
   },
   team: {
     label: "Kleines Team",
@@ -42,6 +52,7 @@ const PRESETS: Record<
     standardfallAnteil: 68,
     autoAnteilBeiStandard: 56,
     firstResponseHeuteMin: 85,
+    stundenSatzEur: 65,
   },
   volume: {
     label: "Hohes Volumen",
@@ -50,17 +61,20 @@ const PRESETS: Record<
     standardfallAnteil: 74,
     autoAnteilBeiStandard: 64,
     firstResponseHeuteMin: 70,
+    stundenSatzEur: 75,
   },
 };
 
 export default function ROICalculator() {
   const pathname = usePathname();
+  const isRoiPage = pathname === "/roi-rechner";
   const [preset, setPreset] = useState<PresetKey>("team");
   const [anfragenProWoche, setAnfragenProWoche] = useState(PRESETS.team.anfragenProWoche);
   const [minutenProAnfrage, setMinutenProAnfrage] = useState(PRESETS.team.minutenProAnfrage);
   const [standardfallAnteil, setStandardfallAnteil] = useState(PRESETS.team.standardfallAnteil);
   const [autoAnteilBeiStandard, setAutoAnteilBeiStandard] = useState(PRESETS.team.autoAnteilBeiStandard);
   const [firstResponseHeuteMin, setFirstResponseHeuteMin] = useState(PRESETS.team.firstResponseHeuteMin);
+  const [stundenSatzEur, setStundenSatzEur] = useState(PRESETS.team.stundenSatzEur);
 
   const applyPreset = (key: PresetKey) => {
     const p = PRESETS[key];
@@ -70,6 +84,7 @@ export default function ROICalculator() {
     setStandardfallAnteil(p.standardfallAnteil);
     setAutoAnteilBeiStandard(p.autoAnteilBeiStandard);
     setFirstResponseHeuteMin(p.firstResponseHeuteMin);
+    setStundenSatzEur(p.stundenSatzEur);
     void trackPublicEvent({
       event: "marketing_roi_preset_select",
       source: "website",
@@ -82,28 +97,39 @@ export default function ROICalculator() {
   const model = useMemo(() => {
     const standardFaelle = anfragenProWoche * (standardfallAnteil / 100);
     const autoFaelle = standardFaelle * (autoAnteilBeiStandard / 100);
-
-    // Konservativer Sicherheitsabschlag, damit die Schätzung nicht überoptimistisch wird.
-    const wirksameErsparnisProFall = minutenProAnfrage * 0.75;
-    const gesparteMinutenProWoche = autoFaelle * wirksameErsparnisProFall;
-    const gesparteStundenProMonat = (gesparteMinutenProWoche * 4.33) / 60;
+    const manuelleFaelle = Math.max(0, anfragenProWoche - autoFaelle);
     const autoQuote = clamp(autoFaelle / Math.max(1, anfragenProWoche), 0, 1);
-    const manuellePufferzeit = clamp(anfragenProWoche * 0.6, 0, 120);
-    const medianFirstResponseHeute = firstResponseHeuteMin + manuellePufferzeit;
-    const medianFirstResponseMitAdvaic = Math.max(
-      8,
-      medianFirstResponseHeute * (1 - autoQuote * 0.58) - autoQuote * 12,
-    );
+    const minutenProAutoFall = Math.max(1.5, minutenProAnfrage * 0.28);
+    const qaKontrollMinProAutoFall = 0.7;
+
+    const zeitHeuteMinProWoche = anfragenProWoche * minutenProAnfrage;
+    const zeitMitAdvaicMinProWoche =
+      manuelleFaelle * minutenProAnfrage +
+      autoFaelle * minutenProAutoFall +
+      autoFaelle * qaKontrollMinProAutoFall;
+
+    const gesparteMinutenProWoche = Math.max(0, zeitHeuteMinProWoche - zeitMitAdvaicMinProWoche);
+    const gesparteStundenProMonat = (gesparteMinutenProWoche * 4.33) / 60;
+    const monetarerHebelProMonat = gesparteStundenProMonat * stundenSatzEur;
+
+    const medianFirstResponseHeute = firstResponseHeuteMin;
+    const medianFirstResponseMitAdvaic = Math.max(8, medianFirstResponseHeute * (1 - autoQuote * 0.52));
     const firstResponseGewinnMin = Math.max(0, medianFirstResponseHeute - medianFirstResponseMitAdvaic);
     const firstResponseGewinnPct = (firstResponseGewinnMin / Math.max(1, medianFirstResponseHeute)) * 100;
-    const within60Heute = clamp(100 - (medianFirstResponseHeute - 30) * 0.9, 12, 95);
-    const within60MitAdvaic = clamp(within60Heute + autoQuote * 34, within60Heute + 2, 99);
+    const within60Heute = clamp(100 - (medianFirstResponseHeute - 25) * 0.82, 10, 95);
+    const within60MitAdvaic = clamp(within60Heute + autoQuote * 30, within60Heute + 1, 99);
 
     return {
       standardFaelle,
       autoFaelle,
+      manuelleFaelle,
+      minutenProAutoFall,
+      qaKontrollMinProAutoFall,
+      zeitHeuteMinProWoche,
+      zeitMitAdvaicMinProWoche,
       gesparteMinutenProWoche,
       gesparteStundenProMonat,
+      monetarerHebelProMonat,
       autoQuote,
       medianFirstResponseHeute,
       medianFirstResponseMitAdvaic,
@@ -112,7 +138,70 @@ export default function ROICalculator() {
       within60Heute,
       within60MitAdvaic,
     };
-  }, [anfragenProWoche, minutenProAnfrage, standardfallAnteil, autoAnteilBeiStandard, firstResponseHeuteMin]);
+  }, [
+    anfragenProWoche,
+    minutenProAnfrage,
+    standardfallAnteil,
+    autoAnteilBeiStandard,
+    firstResponseHeuteMin,
+    stundenSatzEur,
+  ]);
+
+  const nextAction = useMemo(() => {
+    if (model.autoQuote < 0.28) {
+      return {
+        title: "Nächster Hebel: Regelwerk schärfen",
+        text: "Ihre Auto-Quote ist noch niedrig. Für einen spürbaren ROI sollten zuerst klare Standardfälle präziser definiert werden.",
+        bullets: [
+          "Top-3 Standardfragen explizit als Auto-Fälle setzen",
+          "Unklare Objektbezüge konsequent auf Freigabe lassen",
+          "Nach 7 Tagen Auto- und Freigabe-Quote erneut prüfen",
+        ],
+        href: "/autopilot-regeln",
+        cta: "Regeln konkretisieren",
+      };
+    }
+
+    if (model.medianFirstResponseMitAdvaic > 60) {
+      return {
+        title: "Nächster Hebel: Reaktionszeit unter 60 Minuten bringen",
+        text: "Der Zeitgewinn ist sichtbar, aber Ihre Median-Erstreaktion liegt noch über dem Zielkorridor.",
+        bullets: [
+          "Safe-Start mit klarer Priorität auf Erstreaktionsfälle",
+          "Follow-up-Stufe 1 erst nach stabiler Erstantwort aktivieren",
+          "Freigabe-Inbox täglich auf wiederkehrende Muster prüfen",
+        ],
+        href: "/produkt#setup",
+        cta: "Safe-Start optimieren",
+      };
+    }
+
+    if (model.gesparteStundenProMonat >= 18) {
+      return {
+        title: "Nächster Hebel: Pilot mit KPI-Ziel absichern",
+        text: "Ihr Modell zeigt deutliches Potenzial. Jetzt zählt ein sauberer Pilot mit klaren Go/No-Go-Kriterien.",
+        bullets: [
+          "KPI-Ziel vor Start festlegen (Antwortzeit, QA-Quote, Freigabe-zu-Senden)",
+          "Wöchentlich nur einen Regelsatz gleichzeitig anpassen",
+          "Ab Woche 3 Auto-Anteil nur bei stabiler Qualität erhöhen",
+        ],
+        href: "/signup?entry=roi-next-action",
+        cta: "Pilot starten",
+      };
+    }
+
+    return {
+      title: "Nächster Hebel: konservativ testen",
+      text: "Das Potenzial ist vorhanden, aber noch nicht maximal. Ein konservativer Pilot liefert schnell belastbare echte Werte.",
+      bullets: [
+        "Mit höherer Freigabequote starten und Risiko gering halten",
+        "Reale Zeitersparnis pro Woche im Team dokumentieren",
+        "Nach 14 Tagen Auto- und Qualitätsgrenzen nachschärfen",
+      ],
+      href: "/signup?entry=roi-conservative",
+      cta: "Konservativ testen",
+    };
+  }, [model.autoQuote, model.gesparteStundenProMonat, model.medianFirstResponseMitAdvaic]);
 
   useEffect(() => {
     void trackPublicEvent({
@@ -130,8 +219,8 @@ export default function ROICalculator() {
         <div className="max-w-[74ch]">
           <h2 className="h2">ROI-Rechner: Zeitpotenzial realistisch einschätzen</h2>
           <p className="body mt-4 text-[var(--muted)]">
-            Tragen Sie Ihre Werte ein. Die Schätzung ist bewusst konservativ und zeigt neben Zeitersparnis auch, wie
-            sich die Erstreaktionszeit und die Reaktionsquote im Zielzeitfenster entwickeln kann.
+            Tragen Sie Ihre Werte ein. Die Schätzung ist konservativ aufgebaut, zeigt alle Annahmen offen und verbindet
+            operative KPI mit einer monetären Einordnung.
           </p>
         </div>
 
@@ -178,6 +267,18 @@ export default function ROICalculator() {
                   max={30}
                   value={minutenProAnfrage}
                   onChange={(e) => setMinutenProAnfrage(clamp(Number(e.target.value || 0), 2, 30))}
+                  className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] shadow-[var(--shadow-sm)] focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-semibold text-[var(--text)]">Interner Stundensatz (EUR)</span>
+                <input
+                  type="number"
+                  min={30}
+                  max={250}
+                  value={stundenSatzEur}
+                  onChange={(e) => setStundenSatzEur(clamp(Number(e.target.value || 0), 30, 250))}
                   className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] shadow-[var(--shadow-sm)] focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
                 />
               </label>
@@ -240,9 +341,28 @@ export default function ROICalculator() {
                   <p className="mt-1 text-xl font-semibold text-[var(--text)]">{formatNumber(model.autoFaelle)}</p>
                 </div>
                 <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
+                  <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Auto-Quote gesamt</p>
+                  <p className="mt-1 text-xl font-semibold text-[var(--text)]">{formatNumber(model.autoQuote * 100)} %</p>
+                  <p className="helper mt-1">Rest bleibt bewusst in manuell/Freigabe: {formatNumber(100 - model.autoQuote * 100)} %</p>
+                </div>
+                <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
                   <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Gesparte Stunden/Monat</p>
                   <p className="mt-1 text-2xl font-semibold text-[var(--text)]">
                     {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(model.gesparteStundenProMonat)}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
+                  <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Monetäres Potenzial/Monat</p>
+                  <p className="mt-1 text-xl font-semibold text-[var(--text)]">{formatCurrency(model.monetarerHebelProMonat)}</p>
+                  <p className="helper mt-1">Basierend auf internem Stundensatz: {formatCurrency(stundenSatzEur)} / Stunde</p>
+                </div>
+                <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
+                  <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Zeitbudget pro Woche</p>
+                  <p className="mt-1 text-sm font-semibold text-[var(--text)]">
+                    Heute: {formatNumber(model.zeitHeuteMinProWoche)} Min
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[var(--text)]">
+                    Mit Advaic: {formatNumber(model.zeitMitAdvaicMinProWoche)} Min
                   </p>
                 </div>
                 <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
@@ -269,9 +389,36 @@ export default function ROICalculator() {
               </div>
 
               <p className="helper mt-4">
-                Annahme: Nur ein Teil der heutigen Bearbeitungszeit ist realistisch automatisierbar, da Freigaben,
-                Sonderfälle und Qualitätsgrenzen bewusst erhalten bleiben.
+                Annahme: Nicht jeder Fall wird automatisiert. Unklare und risikobehaftete Fälle bleiben in der Freigabe
+                und werden weiterhin manuell entschieden.
               </p>
+
+              <article className="mt-4 rounded-xl bg-white p-4 ring-1 ring-[var(--border)]">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+                  Annahmen im aktuellen Modell
+                </p>
+                <ul className="mt-2 space-y-1 text-sm text-[var(--muted)]">
+                  <li>Auto-Fall Bearbeitung: {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(model.minutenProAutoFall)} Min</li>
+                  <li>QA-/Monitoring-Aufwand je Auto-Fall: {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(model.qaKontrollMinProAutoFall)} Min</li>
+                  <li>Manuelle Fälle pro Woche: {formatNumber(model.manuelleFaelle)}</li>
+                </ul>
+              </article>
+
+              <article className="mt-4 rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                <h3 className="text-sm font-semibold text-[var(--text)]">{nextAction.title}</h3>
+                <p className="helper mt-2">{nextAction.text}</p>
+                <ul className="mt-2 space-y-1 text-sm text-[var(--muted)]">
+                  {nextAction.bullets.map((item) => (
+                    <li key={item} className="flex items-start gap-2">
+                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Link href={nextAction.href} className="btn-secondary mt-3">
+                  {nextAction.cta}
+                </Link>
+              </article>
 
               <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                 <Link
@@ -289,7 +436,9 @@ export default function ROICalculator() {
                         first_response_heute_min: firstResponseHeuteMin,
                         standardfall_anteil: standardfallAnteil,
                         auto_anteil_standard: autoAnteilBeiStandard,
+                        stunden_satz_eur: stundenSatzEur,
                         gesparte_stunden_monat: Number(model.gesparteStundenProMonat.toFixed(2)),
+                        monetarer_hebel_monat: Number(model.monetarerHebelProMonat.toFixed(0)),
                         first_response_gain_min: Number(model.firstResponseGewinnMin.toFixed(1)),
                       },
                     })
@@ -315,21 +464,23 @@ export default function ROICalculator() {
                 >
                   Safe-Start ansehen
                 </Link>
-                <Link
-                  href="/roi-rechner"
-                  className="btn-secondary"
-                  onClick={() =>
-                    trackPublicEvent({
-                      event: "marketing_roi_detail_click",
-                      source: "website",
-                      path: pathname || "/",
-                      pageGroup: "marketing",
-                      meta: { from_component: true },
-                    })
-                  }
-                >
-                  Vollständige ROI-Seite
-                </Link>
+                {!isRoiPage ? (
+                  <Link
+                    href="/roi-rechner"
+                    className="btn-secondary"
+                    onClick={() =>
+                      trackPublicEvent({
+                        event: "marketing_roi_detail_click",
+                        source: "website",
+                        path: pathname || "/",
+                        pageGroup: "marketing",
+                        meta: { from_component: true },
+                      })
+                    }
+                  >
+                    Vollständige ROI-Seite
+                  </Link>
+                ) : null}
               </div>
             </div>
           </article>
