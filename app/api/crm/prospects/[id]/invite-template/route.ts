@@ -10,18 +10,27 @@ type InviteContext = {
   companyName: string;
   contactName: string | null;
   city: string | null;
+  region: string | null;
   objectFocus: string;
   hook: string | null;
   painPoint: string | null;
   primaryObjection: string | null;
   activeListingsCount: number | null;
+  newListings30d: number | null;
   shareMietePercent: number | null;
   shareKaufPercent: number | null;
+  targetGroup: string | null;
+  processHint: string | null;
+  responsePromisePublic: string | null;
+  appointmentFlowPublic: string | null;
+  docsFlowPublic: string | null;
+  trustSignals: string[];
   automationReadiness: string | null;
   brandTone: string | null;
   sourceCheckedAt: string | null;
   linkedinUrl: string | null;
   evidence: string | null;
+  researchInsights: string | null;
   channel: string;
   segmentKey: string;
   playbookTitle: string | null;
@@ -60,18 +69,27 @@ function applyVars(template: string, context: InviteContext) {
     .replaceAll("{{COMPANY_NAME}}", context.companyName)
     .replaceAll("{{CONTACT_NAME}}", context.contactName || "")
     .replaceAll("{{CITY}}", context.city || "")
+    .replaceAll("{{REGION}}", context.region || "")
     .replaceAll("{{OBJECT_FOCUS}}", context.objectFocus || "gemischt")
     .replaceAll("{{HOOK}}", context.hook || "")
     .replaceAll("{{PAIN_POINT}}", context.painPoint || "")
     .replaceAll("{{PRIMARY_OBJECTION}}", context.primaryObjection || "")
     .replaceAll("{{ACTIVE_LISTINGS_COUNT}}", String(context.activeListingsCount ?? ""))
+    .replaceAll("{{NEW_LISTINGS_30D}}", String(context.newListings30d ?? ""))
     .replaceAll("{{SHARE_MIETE_PERCENT}}", String(context.shareMietePercent ?? ""))
     .replaceAll("{{SHARE_KAUF_PERCENT}}", String(context.shareKaufPercent ?? ""))
+    .replaceAll("{{TARGET_GROUP}}", context.targetGroup || "")
+    .replaceAll("{{PROCESS_HINT}}", context.processHint || "")
+    .replaceAll("{{RESPONSE_PROMISE_PUBLIC}}", context.responsePromisePublic || "")
+    .replaceAll("{{APPOINTMENT_FLOW_PUBLIC}}", context.appointmentFlowPublic || "")
+    .replaceAll("{{DOCS_FLOW_PUBLIC}}", context.docsFlowPublic || "")
+    .replaceAll("{{TRUST_SIGNALS}}", context.trustSignals.join("; "))
     .replaceAll("{{AUTOMATION_READINESS}}", context.automationReadiness || "")
     .replaceAll("{{BRAND_TONE}}", context.brandTone || "")
     .replaceAll("{{SOURCE_CHECKED_AT}}", context.sourceCheckedAt || "")
     .replaceAll("{{LINKEDIN_URL}}", context.linkedinUrl || "")
     .replaceAll("{{PERSONALIZATION_EVIDENCE}}", context.evidence || "")
+    .replaceAll("{{RESEARCH_INSIGHTS}}", context.researchInsights || "")
     .replaceAll("{{CHANNEL}}", context.channel || "email")
     .replaceAll("{{SEGMENT_KEY}}", context.segmentKey)
     .replaceAll("{{PLAYBOOK_TITLE}}", context.playbookTitle || "")
@@ -82,6 +100,62 @@ function applyVars(template: string, context: InviteContext) {
     .replaceAll("{{OBJECTION_RESPONSE}}", context.objectionResponse)
     .replaceAll("{{OBJECTION_PROOF}}", context.objectionProof)
     .replaceAll("{{OBJECTION_NEXT_QUESTION}}", context.objectionNextQuestion);
+}
+
+function joinNonEmpty(parts: Array<string | null | undefined>, separator = " ") {
+  return parts
+    .map((x) => normalizeMultiline(x, 320))
+    .filter(Boolean)
+    .join(separator)
+    .trim();
+}
+
+function compactBody(text: string) {
+  return text
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function deriveHookFromSignals(args: {
+  companyName: string;
+  city: string | null;
+  activeListingsCount: number | null;
+  shareMietePercent: number | null;
+  shareKaufPercent: number | null;
+  targetGroup: string | null;
+}) {
+  if (typeof args.activeListingsCount === "number") {
+    const miete = typeof args.shareMietePercent === "number" ? args.shareMietePercent : "?";
+    const kauf = typeof args.shareKaufPercent === "number" ? args.shareKaufPercent : "?";
+    return `${args.companyName} hat aktuell ca. ${args.activeListingsCount} aktive Inserate (Miete ${miete}% / Kauf ${kauf}%).`;
+  }
+  if (args.targetGroup) return `Ihre Positionierung wirkt klar auf ${args.targetGroup} ausgerichtet.`;
+  if (args.city) return `Ihre Präsenz in ${args.city} fällt durch einen klaren Fokus auf.`;
+  return `Ihre Positionierung bei ${args.companyName} wirkt klar und fokussiert.`;
+}
+
+function hasStrongInviteOutput(args: {
+  body: string;
+  companyName: string;
+  city: string | null;
+  hook: string | null;
+}) {
+  const body = args.body.toLowerCase();
+  const companyToken = normalizeLine(args.companyName, 80).toLowerCase();
+  const cityToken = normalizeLine(args.city, 80).toLowerCase();
+  const hookToken = normalizeLine(args.hook, 40).toLowerCase();
+  const hasPersonalSignal =
+    (companyToken.length > 2 && body.includes(companyToken)) ||
+    (cityToken.length > 2 && body.includes(cityToken)) ||
+    (hookToken.length > 10 && body.includes(hookToken.slice(0, 18)));
+  const hasSafetySignal =
+    (body.includes("freigabe") || body.includes("freigeben")) &&
+    (body.includes("qualitätscheck") ||
+      body.includes("qualitaetscheck") ||
+      body.includes("qualitätskontroll") ||
+      body.includes("qualitaetskontroll"));
+  return hasPersonalSignal && hasSafetySignal;
 }
 
 function valueNarrativeForSegment(segmentKey: string, objectFocus: string) {
@@ -135,23 +209,32 @@ async function maybeGenerateInviteWithAi(args: {
   if (!endpoint || !apiKey || !deployment) return null;
 
   const fallbackSystemPrompt =
-    "Du schreibst kurze, persönliche Akquise-Nachrichten für deutsche Immobilienmakler. Kein Kaufdruck. Klare, respektvolle Sprache. Gib nur JSON zurück.";
-const fallbackUserPrompt = `Erzeuge eine personalisierte Tester-Einladung.
+    "Du bist ein Top-Sales-Writer für B2B-Outreach im Immobilienbereich. Schreibe natürlich, glaubwürdig und konkret in professioneller Sie-Ansprache. Gib nur JSON zurück.";
+  const fallbackUserPrompt = `Erzeuge eine personalisierte Tester-Einladung.
 Kontext:
 - Firma: {{COMPANY_NAME}}
 - Kontakt: {{CONTACT_NAME}}
 - Ort: {{CITY}}
+- Region: {{REGION}}
 - Fokus: {{OBJECT_FOCUS}}
 - Hook: {{HOOK}}
 - Pain Point: {{PAIN_POINT}}
 - Primäre Objection: {{PRIMARY_OBJECTION}}
 - Aktive Inserate: {{ACTIVE_LISTINGS_COUNT}}
+- Neue Inserate 30 Tage: {{NEW_LISTINGS_30D}}
 - Mix Miete/Kauf: {{SHARE_MIETE_PERCENT}}/{{SHARE_KAUF_PERCENT}}
+- Zielgruppe: {{TARGET_GROUP}}
+- Prozess-Hinweis: {{PROCESS_HINT}}
+- Öffentliches Antwortversprechen: {{RESPONSE_PROMISE_PUBLIC}}
+- Öffentlicher Terminablauf: {{APPOINTMENT_FLOW_PUBLIC}}
+- Öffentlicher Unterlagenablauf: {{DOCS_FLOW_PUBLIC}}
+- Trust-Signale: {{TRUST_SIGNALS}}
 - Readiness: {{AUTOMATION_READINESS}}
 - Brand-Ton: {{BRAND_TONE}}
 - Quelle geprüft am: {{SOURCE_CHECKED_AT}}
 - LinkedIn: {{LINKEDIN_URL}}
 - Evidenz: {{PERSONALIZATION_EVIDENCE}}
+- Research-Insights: {{RESEARCH_INSIGHTS}}
 - Kanal: {{CHANNEL}}
 - Segment: {{SEGMENT_KEY}}
 - Playbook: {{PLAYBOOK_TITLE}}
@@ -163,15 +246,15 @@ Kontext:
 - Objection-Rückfrage: {{OBJECTION_NEXT_QUESTION}}
 
 Ziel:
-- Struktur strikt einhalten:
-  1) Hook mit konkreter Beobachtung
-  2) Pain mit messbarer Folge
-  3) Mechanik (Erkennen -> Entscheidung -> Versand)
-  4) Risk-Reversal (Safe-Start, volle Kontrolle)
-  5) Micro-CTA (nur ein klarer nächster Schritt)
-- Persönlich in der gesamten Nachricht
-- ohne Druck
-- maximal ~140 Wörter
+- Die Nachricht muss sich wie von einem echten Menschen geschrieben lesen, nicht wie ein Template.
+- Verwende mindestens 2 konkrete Kontexthinweise aus den Daten.
+- Erkläre die Produktlogik verständlich in 1 Satz:
+  "klar = Auto, unklar = Freigabe, vor Versand Qualitätschecks".
+- Kein Buzzword-Sprech, keine Floskeln wie "revolutionär", "next level", "ich hoffe, es geht Ihnen gut".
+- Keine Aufzählungen und keine Abschnittsüberschriften im E-Mail-Text.
+- Maximal 120 Wörter.
+- Genau ein druckfreier CTA-Satz am Ende.
+- Schreibe ausschließlich in Sie-Ansprache.
 
 Ausgabe als JSON:
 {
@@ -222,8 +305,18 @@ Ausgabe als JSON:
 
   const parsed = JSON.parse(raw);
   const subject = normalizeLine(parsed?.subject, 120);
-  const body = normalizeMultiline(parsed?.body, 1800);
+  const body = compactBody(normalizeMultiline(parsed?.body, 1800));
   if (!body) return null;
+  if (
+    !hasStrongInviteOutput({
+      body,
+      companyName: args.context.companyName,
+      city: args.context.city,
+      hook: args.context.hook,
+    })
+  ) {
+    return null;
+  }
   return { subject, body };
 }
 
@@ -231,18 +324,27 @@ function buildTesterInvite(args: {
   companyName: string;
   contactName: string | null;
   city: string | null;
+  region: string | null;
   objectFocus: string;
   hook: string | null;
   painPoint: string | null;
   primaryObjection: string | null;
   activeListingsCount: number | null;
+  newListings30d: number | null;
   shareMietePercent: number | null;
   shareKaufPercent: number | null;
+  targetGroup: string | null;
+  processHint: string | null;
+  responsePromisePublic: string | null;
+  appointmentFlowPublic: string | null;
+  docsFlowPublic: string | null;
+  trustSignals: string[];
   automationReadiness: string | null;
   brandTone: string | null;
   sourceCheckedAt: string | null;
   linkedinUrl: string | null;
   evidence: string | null;
+  researchInsights: string | null;
   channel: string;
   segmentKey: string;
   playbookTitle: string | null;
@@ -254,64 +356,68 @@ function buildTesterInvite(args: {
   objectionProof: string;
   objectionNextQuestion: string;
 }) {
-  const salutation = args.contactName
-    ? `Hallo ${args.contactName},`
-    : `Hallo Team von ${args.companyName},`;
-  const cityLine = args.city ? ` in ${args.city}` : "";
-  const focusLine =
+  const salutation = args.contactName ? `Hallo ${args.contactName},` : `Hallo ${args.companyName}-Team,`;
+  const defaultHook = deriveHookFromSignals({
+    companyName: args.companyName,
+    city: args.city,
+    activeListingsCount: args.activeListingsCount,
+    shareMietePercent: args.shareMietePercent,
+    shareKaufPercent: args.shareKaufPercent,
+    targetGroup: args.targetGroup,
+  });
+  const hook = normalizeMultiline(args.hook || defaultHook, 280);
+  const pain = normalizeMultiline(
+    args.painPoint ||
+      "im Tagesgeschäft gehen bei vielen wiederkehrenden Interessentenanfragen schnell wertvolle Minuten im Postfach verloren.",
+    280,
+  );
+  const focusLabel =
     args.objectFocus && args.objectFocus !== "gemischt"
-      ? ` mit Fokus auf ${args.objectFocus}`
-      : "";
-  const hook = args.hook
-    ? `Mir ist bei ${args.companyName} besonders aufgefallen: ${args.hook}.`
-    : `Ich habe mir ${args.companyName}${cityLine} angesehen und finde eure Positionierung sehr klar.`;
-  const pain = args.painPoint
-    ? `Meine Hypothese: ${args.painPoint}.`
-    : `Wiederkehrende Interessentenanfragen erzeugen schnell manuellen Aufwand und verzögerte Rückmeldungen.`;
+      ? args.objectFocus === "miete"
+        ? "Vermietungsanfragen"
+        : args.objectFocus === "kauf"
+          ? "Kaufanfragen"
+          : "Interessentenanfragen"
+      : "Interessentenanfragen";
   const mixLine =
-    typeof args.activeListingsCount === "number" &&
-    (typeof args.shareMietePercent === "number" || typeof args.shareKaufPercent === "number")
-      ? `Öffentlich sichtbar sind aktuell etwa ${args.activeListingsCount} aktive Inserate (Miete ${args.shareMietePercent ?? "?"}% / Kauf ${args.shareKaufPercent ?? "?"}%).`
+    typeof args.activeListingsCount === "number"
+      ? `Öffentlich sichtbar sind derzeit rund ${args.activeListingsCount} aktive Inserate${
+          typeof args.shareMietePercent === "number" || typeof args.shareKaufPercent === "number"
+            ? ` (Miete ${args.shareMietePercent ?? "?"}% / Kauf ${args.shareKaufPercent ?? "?"}%).`
+            : "."
+        }`
       : "";
-  const objectionLine = args.primaryObjection
-    ? `Genau bei "${args.primaryObjection}" setzt der Safe-Start an: Kontrolle bleibt bei euch.`
-    : "";
-  const objectionRouteLine = args.objectionPillar
-    ? `Einwand-Route: ${args.objectionRouteLabel} (${args.objectionPillar}).`
-    : "";
-  const objectionResponseLine = args.objectionResponse
-    ? `Kurze Antwort darauf: ${args.objectionResponse}`
-    : "";
-  const objectionQuestionLine = args.objectionNextQuestion
-    ? `Sinnvolle Rückfrage: ${args.objectionNextQuestion}`
-    : "";
+  const newListingsLine =
+    typeof args.newListings30d === "number" ? `${args.newListings30d} neue Inserate in 30 Tagen deuten auf laufenden Anfragefluss hin.` : "";
+  const evidenceLine = joinNonEmpty([args.evidence, args.researchInsights], " ");
   const readinessLine = args.automationReadiness
-    ? `Für euch passt wahrscheinlich ein ${args.automationReadiness}er Start: zuerst mehr Freigabe, dann schrittweise Automation.`
+    ? `Für den Start passt meist ${args.automationReadiness}: erst mehr Freigabe, dann schrittweise mehr Auto-Senden.`
+    : "Für den Start funktioniert ein Safe-Setup mit hoher Freigabequote besonders gut.";
+  const objectionLine = args.primaryObjection
+    ? `Falls bei Ihnen der Punkt "${args.primaryObjection}" im Raum steht: ${args.objectionResponse || "diesen Teil steuern Sie über klare Regeln und Freigabe."}`
     : "";
-  const evidenceLine = args.evidence ? `Konkreter Hinweis: ${args.evidence}` : "";
-  const sourceLine = args.sourceCheckedAt ? `(Quelle geprüft am ${args.sourceCheckedAt})` : "";
+  const sourceLine = args.sourceCheckedAt ? `Stand der öffentlichen Daten: ${args.sourceCheckedAt}.` : "";
 
-  const body = `${salutation}
+  const body = compactBody(`${salutation}
 
-${hook}
+ich melde mich, weil ${hook}
 ${pain}
 ${mixLine}
-${evidenceLine} ${sourceLine}
+${newListingsLine}
+${evidenceLine}
 
-Konkret für euch relevant: ${args.valueNarrative}.
-Wichtig dabei: Autopilot sendet nur bei klaren Fällen, unklare Fälle gehen zur Freigabe, und vor jedem Versand laufen Qualitätschecks.
-${objectionLine}
-${objectionRouteLine}
-${objectionResponseLine}
-${objectionQuestionLine}
+Genau dafür ist Advaic gedacht: klare Fälle können automatisch beantwortet werden, unklare Fälle gehen zur Freigabe, und vor jedem Versand laufen Qualitätschecks.
+So gewinnen Sie bei ${focusLabel} Zeit, ohne Kontrolle über Ton und Inhalte abzugeben.
 ${readinessLine}
+${objectionLine}
+${sourceLine}
 
-Wenn das für ${args.companyName}${focusLine} passt, können wir in 15 Minuten unverbindlich prüfen, ob ein vorsichtiger Pilot sinnvoll ist.`;
+Wenn Sie möchten, zeige ich Ihnen in 15 Minuten unverbindlich, wie ein vorsichtiger Pilot für ${args.companyName} konkret aussehen kann.`);
 
   const subject =
     args.channel === "email"
-      ? `Kurzer Pilot-Check für ${args.companyName}`
-      : `Unverbindlicher Pilot-Check für Advaic`;
+      ? `Kurze Idee für ${args.companyName}: weniger Routine im Postfach`
+      : `Unverbindlicher Pilot-Check für ${args.companyName}`;
 
   return { subject, body };
 }
@@ -336,7 +442,7 @@ export async function GET(
   const supabase = createSupabaseAdminClient();
   const { data: prospect, error: prospectErr } = await (supabase.from("crm_prospects") as any)
     .select(
-      "id, company_name, contact_name, city, object_focus, personalization_hook, pain_point_hypothesis, primary_objection, active_listings_count, share_miete_percent, share_kauf_percent, automation_readiness, brand_tone, source_checked_at, linkedin_url, personalization_evidence",
+      "id, company_name, contact_name, city, region, object_focus, personalization_hook, pain_point_hypothesis, primary_objection, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, target_group, process_hint, response_promise_public, appointment_flow_public, docs_flow_public, trust_signals, automation_readiness, brand_tone, source_checked_at, linkedin_url, personalization_evidence",
     )
     .eq("id", prospectId)
     .eq("agent_id", auth.user.id)
@@ -358,13 +464,19 @@ export async function GET(
     .eq("prospect_id", prospectId)
     .eq("is_key_insight", true)
     .order("created_at", { ascending: false })
-    .limit(1);
+    .limit(3);
 
-  const firstKeyNote = String(notes?.[0]?.note || "").trim();
+  const keyNotes = (notes || [])
+    .map((n: any) => normalizeMultiline(n?.note, 220))
+    .filter(Boolean)
+    .slice(0, 3);
+  const firstKeyNote = keyNotes[0] || "";
+  const mergedResearchInsights = keyNotes.join(" ");
   const inviteContext: InviteContext = {
     companyName: String(prospect.company_name || "").trim(),
     contactName: String(prospect.contact_name || "").trim() || null,
     city: String(prospect.city || "").trim() || null,
+    region: String(prospect.region || "").trim() || null,
     objectFocus: String(prospect.object_focus || "gemischt").trim(),
     hook:
       firstKeyNote ||
@@ -373,15 +485,26 @@ export async function GET(
     primaryObjection: String(prospect.primary_objection || "").trim() || null,
     activeListingsCount:
       typeof prospect.active_listings_count === "number" ? prospect.active_listings_count : null,
+    newListings30d:
+      typeof prospect.new_listings_30d === "number" ? prospect.new_listings_30d : null,
     shareMietePercent:
       typeof prospect.share_miete_percent === "number" ? prospect.share_miete_percent : null,
     shareKaufPercent:
       typeof prospect.share_kauf_percent === "number" ? prospect.share_kauf_percent : null,
+    targetGroup: String(prospect.target_group || "").trim() || null,
+    processHint: String(prospect.process_hint || "").trim() || null,
+    responsePromisePublic: String(prospect.response_promise_public || "").trim() || null,
+    appointmentFlowPublic: String(prospect.appointment_flow_public || "").trim() || null,
+    docsFlowPublic: String(prospect.docs_flow_public || "").trim() || null,
+    trustSignals: Array.isArray(prospect.trust_signals)
+      ? prospect.trust_signals.map((x: any) => normalizeLine(x, 140)).filter(Boolean)
+      : [],
     automationReadiness: String(prospect.automation_readiness || "").trim() || null,
     brandTone: String(prospect.brand_tone || "").trim() || null,
     sourceCheckedAt: String(prospect.source_checked_at || "").trim() || null,
     linkedinUrl: String(prospect.linkedin_url || "").trim() || null,
     evidence: String(prospect.personalization_evidence || "").trim() || null,
+    researchInsights: mergedResearchInsights || null,
     channel,
     segmentKey: "unspezifisch",
     playbookTitle: null,
@@ -393,6 +516,30 @@ export async function GET(
     objectionProof: "",
     objectionNextQuestion: "",
   };
+
+  const personalizationSignalCount = [
+    inviteContext.hook,
+    inviteContext.evidence,
+    inviteContext.researchInsights,
+    inviteContext.targetGroup,
+    inviteContext.processHint,
+    typeof inviteContext.activeListingsCount === "number"
+      ? String(inviteContext.activeListingsCount)
+      : "",
+  ]
+    .map((x) => String(x || "").trim())
+    .filter(Boolean).length;
+  if (personalizationSignalCount === 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "crm_context_too_thin",
+        details:
+          "Zu wenig Kontext für eine hochwertige Sales-Nachricht. Bitte zuerst mindestens Hook, Evidenz oder Research-Notiz ergänzen.",
+      },
+      { status: 422 },
+    );
+  }
 
   const segmentKey = inferSegmentFromProspect({
     object_focus: inviteContext.objectFocus,
