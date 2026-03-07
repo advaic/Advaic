@@ -74,8 +74,9 @@ Automatischer Check:
 - Nachweis:
   - Typecheck ist grün (`npx tsc --noEmit`).
   - Critical E2E lokal erfolgreich ausführbar, inkl. Vertragschecks für Signup-/Billing-Gates und Public-SEO-Endpunkte (`/robots.txt`, `/sitemap.xml`).
+  - Verbindlicher Live-Abnahmelauf dokumentiert in [live-e2e-runbook.md](/Users/kilianziemann/Downloads/advaic-dashboard/docs/live-e2e-runbook.md).
 - Nächster Schritt:
-  - Finalen E2E-Lauf in produktionsnaher Umgebung (Staging/Preview mit stabiler Erreichbarkeit) durchführen und dokumentieren.
+  - Finalen E2E-Lauf gemäß [live-e2e-runbook.md](/Users/kilianziemann/Downloads/advaic-dashboard/docs/live-e2e-runbook.md) in produktionsnaher Umgebung durchführen und dokumentieren.
 
 ## 7) Public Website und Conversion
 - Status: `TEILWEISE`
@@ -97,6 +98,7 @@ Automatischer Check:
 - Status: `PASS`
 - Nachweis:
   - Checkliste + konkrete Ops-Metriken + Rollback-Kriterien in [launch-checklist.md](/Users/kilianziemann/Downloads/advaic-dashboard/docs/launch-checklist.md) enthalten.
+  - Operativer Live-Testablauf inkl. Go/No-Go-Kriterien in [live-e2e-runbook.md](/Users/kilianziemann/Downloads/advaic-dashboard/docs/live-e2e-runbook.md) ergänzt.
 
 ## 10) Gesamturteil
 - Aktueller Status: `TEILWEISE GO`

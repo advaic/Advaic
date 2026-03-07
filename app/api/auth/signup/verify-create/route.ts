@@ -93,19 +93,31 @@ function hasAnyTwilioVerifyEnv() {
   );
 }
 
-async function checkTwilioVerifyCode(config: TwilioVerifyConfig, to: string, code: string) {
+async function checkTwilioVerifyCode(args: {
+  config: TwilioVerifyConfig;
+  code: string;
+  to?: string;
+  verificationSid?: string | null;
+}) {
+  const form = new URLSearchParams();
+  if (String(args.verificationSid || "").trim()) {
+    form.set("VerificationSid", String(args.verificationSid).trim());
+  } else if (String(args.to || "").trim()) {
+    form.set("To", String(args.to).trim());
+  } else {
+    return { ok: false as const, error: "verification_provider_failed", details: "missing_to_or_sid" };
+  }
+  form.set("Code", args.code);
+
   const resp = await fetch(
-    `https://verify.twilio.com/v2/Services/${config.serviceSid}/VerificationCheck`,
+    `https://verify.twilio.com/v2/Services/${args.config.serviceSid}/VerificationCheck`,
     {
       method: "POST",
       headers: {
-        Authorization: `Basic ${Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64")}`,
+        Authorization: `Basic ${Buffer.from(`${args.config.accountSid}:${args.config.authToken}`).toString("base64")}`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({
-        To: to,
-        Code: code,
-      }),
+      body: form,
     },
   );
 
@@ -175,12 +187,58 @@ export async function POST(req: NextRequest) {
   if (twilioVerify) {
     if (!phone.startsWith("+")) return jsonError(400, "invalid_phone_e164");
 
-    const check = await checkTwilioVerifyCode(twilioVerify, phone, code);
+    const { data: verificationRow } = await (supabase.from("signup_verifications") as any)
+      .select("id, attempts, max_attempts, metadata")
+      .eq("email", email)
+      .eq("phone", phone)
+      .is("used_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const verificationSid = String(
+      (verificationRow as any)?.metadata?.twilio_verify_sid ||
+        (verificationRow as any)?.metadata?.verify_sid ||
+        "",
+    ).trim();
+    const attempts = Number((verificationRow as any)?.attempts || 0);
+    const maxAttempts = Math.max(1, Number((verificationRow as any)?.max_attempts || MAX_CODE_ATTEMPTS));
+    if ((verificationRow as any)?.id && attempts >= maxAttempts) {
+      return jsonError(429, "verification_locked");
+    }
+
+    let check = await checkTwilioVerifyCode({
+      config: twilioVerify,
+      code,
+      verificationSid: verificationSid || null,
+      to: verificationSid ? undefined : phone,
+    });
+
+    // Fallback for older rows without sid logging.
+    if (!check.ok && verificationSid) {
+      check = await checkTwilioVerifyCode({
+        config: twilioVerify,
+        code,
+        to: phone,
+      });
+    }
+
     if (!check.ok) {
+      if ((verificationRow as any)?.id) {
+        await (supabase.from("signup_verifications") as any)
+          .update({ attempts: attempts + 1 })
+          .eq("id", (verificationRow as any).id);
+      }
       if (check.error === "verification_locked") return jsonError(429, "verification_locked", check.details);
       if (check.error === "verification_expired") return jsonError(400, "verification_expired", check.details);
       if (check.error === "verification_invalid") return jsonError(400, "verification_invalid", check.details);
       return jsonError(500, "verification_provider_failed", check.details);
+    }
+
+    if ((verificationRow as any)?.id) {
+      await (supabase.from("signup_verifications") as any)
+        .update({ used_at: nowIso, attempts: attempts + 1 })
+        .eq("id", (verificationRow as any).id);
     }
   } else {
     const { data: verification, error: verificationErr } = await (supabase.from("signup_verifications") as any)

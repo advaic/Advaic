@@ -309,6 +309,7 @@ export async function POST(req: NextRequest) {
       { status: 429, headers: { "Retry-After": String(rl.retryAfterSec) } },
     );
   }
+  const supabase = supabaseAdmin();
 
   const twilioVerify = getTwilioVerifyConfig();
   if (!twilioVerify && hasAnyTwilioVerifyEnv()) {
@@ -327,11 +328,43 @@ export async function POST(req: NextRequest) {
       return jsonError(500, "verification_sms_failed", started.error);
     }
 
+    const now = Date.now();
+    const expiresAt = new Date(now + CODE_TTL_MINUTES * 60 * 1000).toISOString();
+
+    // Persist the current Twilio Verify attempt for reliable sid-based checks on verify-create.
+    await (supabase.from("signup_verifications") as any)
+      .delete()
+      .eq("email", email)
+      .eq("phone", phone)
+      .is("used_at", null);
+
+    const { error: twilioStoreErr } = await (supabase.from("signup_verifications") as any).insert({
+      email,
+      phone,
+      code_hash: "twilio_verify",
+      expires_at: expiresAt,
+      attempts: 0,
+      max_attempts: 6,
+      metadata: {
+        provider: "twilio_verify",
+        twilio_verify_sid: started.sid || null,
+        twilio_verify_status: started.status || null,
+        first_name: firstName,
+        requested_at: new Date(now).toISOString(),
+        ip,
+        ua: String(req.headers.get("user-agent") || "").slice(0, 240),
+      },
+    });
+    if (twilioStoreErr) {
+      // Keep flow available even if audit logging fails; verification can still fall back to To+Code.
+      console.error("[signup/request-code] twilio_verification_store_failed", twilioStoreErr);
+    }
+
     return NextResponse.json({
       ok: true,
       method: "sms_verify",
       maskedTarget: maskPhone(phone),
-      expiresAt: new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000).toISOString(),
+      expiresAt,
     });
   }
 
@@ -339,8 +372,6 @@ export async function POST(req: NextRequest) {
   const codeHash = hashCode(email, phone, code);
   const now = Date.now();
   const expiresAt = new Date(now + CODE_TTL_MINUTES * 60 * 1000).toISOString();
-
-  const supabase = supabaseAdmin();
 
   // Clear still-open attempts for this identity before issuing a fresh code.
   await (supabase.from("signup_verifications") as any)

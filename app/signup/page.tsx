@@ -150,7 +150,7 @@ export default function SignupPage() {
   };
 
   const verifyCodeAndCreateAccount = async () => {
-    const normalizedCode = String(verificationCode || "").replace(/\s+/g, "");
+    const normalizedCode = String(verificationCode || "").replace(/[^\d]/g, "");
     if (!/^\d{6}$/.test(normalizedCode)) {
       setErrorMsg("Bitte geben Sie einen gültigen 6-stelligen Verifizierungscode ein.");
       return;
@@ -187,7 +187,9 @@ export default function SignupPage() {
       if (data?.error === "verification_expired") {
         setErrorMsg("Der Code ist abgelaufen. Bitte fordern Sie einen neuen Code an.");
       } else if (data?.error === "verification_invalid") {
-        setErrorMsg("Der Code ist ungültig. Bitte prüfen Sie die Eingabe.");
+        setErrorMsg(
+          "Der Code ist ungültig. Bitte geben Sie den neuesten Code ein oder senden Sie einen neuen Code an.",
+        );
       } else if (data?.error === "invalid_phone_e164") {
         setErrorMsg("Bitte geben Sie Ihre Handynummer im Format +49... an.");
       } else if (data?.error === "twilio_verify_misconfigured") {
@@ -426,6 +428,7 @@ export default function SignupPage() {
             <input
               type="text"
               inputMode="numeric"
+              autoComplete="one-time-code"
               maxLength={6}
               value={verificationCode}
               onChange={(e) => setVerificationCode(e.target.value.replace(/[^\d]/g, ""))}

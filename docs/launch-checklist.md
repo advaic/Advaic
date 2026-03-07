@@ -5,6 +5,7 @@ Ziel: kein „halb fertig“, sondern ein belastbarer Go/No-Go-Entscheid.
 
 Aktueller Bewertungsstand: [launch-readiness-status.md](/Users/kilianziemann/Downloads/advaic-dashboard/docs/launch-readiness-status.md)
 Env-Check vor Go-Live: [launch-env-checklist.md](/Users/kilianziemann/Downloads/advaic-dashboard/docs/launch-env-checklist.md)
+Live-Abnahmelauf: [live-e2e-runbook.md](/Users/kilianziemann/Downloads/advaic-dashboard/docs/live-e2e-runbook.md)
 
 Status-Logik:
 - `PASS` = erfüllt, belastbar geprüft
@@ -112,6 +113,8 @@ Go-Kriterium:
 
 ## 6) QA, Test und Abnahme
 
+- [ ] Live-E2E-Runbook vollständig durchgeführt und protokolliert  
+  Referenz: [live-e2e-runbook.md](/Users/kilianziemann/Downloads/advaic-dashboard/docs/live-e2e-runbook.md)
 - [ ] Typecheck grün (`npx tsc --noEmit`)
 - [ ] Kritischer End-to-End-Flow erfolgreich:
   - Eingang
