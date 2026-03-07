@@ -11,6 +11,19 @@ export type SequenceVariant = {
   reason: string;
 };
 
+type SegmentWinner = {
+  variant: string;
+  confidence: number;
+  sample_size: number;
+};
+
+type ActiveWinner = {
+  variant: string;
+  confidence: number;
+  sample_size: number;
+  segment_winners?: Record<string, SegmentWinner>;
+};
+
 const VARIANTS_BY_KIND: Record<SequenceMessageKind, string[]> = {
   first_touch: ["value_safe_start_v1", "pain_metric_v1"],
   follow_up_1: ["soft_reminder_v1", "guardrail_proof_v1"],
@@ -80,21 +93,41 @@ export function applySequenceVariantTone(args: {
 
 export async function loadActiveRolloutWinners(supabase: any, agentId: string) {
   const { data, error } = await (supabase.from("crm_sequence_rollouts") as any)
-    .select("message_kind, winner_variant, confidence, sample_size")
+    .select("message_kind, winner_variant, confidence, sample_size, stats")
     .eq("agent_id", agentId)
     .eq("is_active", true);
 
-  if (error) return new Map<SequenceMessageKind, { variant: string; confidence: number; sample_size: number }>();
+  if (error) return new Map<SequenceMessageKind, ActiveWinner>();
 
-  const map = new Map<SequenceMessageKind, { variant: string; confidence: number; sample_size: number }>();
+  const map = new Map<SequenceMessageKind, ActiveWinner>();
   for (const row of (data || []) as any[]) {
     const kind = normalizeKind(row?.message_kind);
     const variant = String(row?.winner_variant || "").trim();
     if (!kind || !variant) continue;
+    const stats =
+      row?.stats && typeof row.stats === "object"
+        ? (row.stats as Record<string, any>)
+        : {};
+    const rawSegmentWinners =
+      stats.segment_winners && typeof stats.segment_winners === "object"
+        ? (stats.segment_winners as Record<string, any>)
+        : {};
+    const segmentWinners: Record<string, SegmentWinner> = {};
+    for (const [segmentKey, value] of Object.entries(rawSegmentWinners)) {
+      if (!value || typeof value !== "object") continue;
+      const v = String((value as any).variant || "").trim();
+      if (!v) continue;
+      segmentWinners[segmentKey] = {
+        variant: v,
+        confidence: Number((value as any).confidence || 0),
+        sample_size: Number((value as any).sample_size || 0),
+      };
+    }
     map.set(kind, {
       variant,
       confidence: Number(row?.confidence || 0),
       sample_size: Number(row?.sample_size || 0),
+      segment_winners: segmentWinners,
     });
   }
   return map;
@@ -104,10 +137,27 @@ export function chooseSequenceVariant(args: {
   agentId: string;
   prospectId: string;
   kind: SequenceMessageKind;
-  activeWinners?: Map<SequenceMessageKind, { variant: string; confidence: number; sample_size: number }>;
+  segmentKey?: string | null;
+  activeWinners?: Map<SequenceMessageKind, ActiveWinner>;
 }) : SequenceVariant {
   const winner = args.activeWinners?.get(args.kind);
   const allowed = VARIANTS_BY_KIND[args.kind] || [];
+  const segmentKey = String(args.segmentKey || "").trim();
+  const segmentWinner =
+    segmentKey && winner?.segment_winners ? winner.segment_winners[segmentKey] : null;
+  if (
+    segmentWinner &&
+    allowed.includes(segmentWinner.variant) &&
+    segmentWinner.sample_size >= 6 &&
+    segmentWinner.confidence >= 0.55
+  ) {
+    return {
+      kind: args.kind,
+      variant: segmentWinner.variant,
+      source: "winner",
+      reason: `Segment-Winner aktiv (${segmentKey}, ${segmentWinner.sample_size} Samples, Confidence ${Math.round(segmentWinner.confidence * 100)}%).`,
+    };
+  }
   if (winner && allowed.includes(winner.variant) && winner.sample_size >= 8) {
     return {
       kind: args.kind,
@@ -139,7 +189,7 @@ export async function recomputeSequenceRolloutWinners(args: {
   const sinceIso = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
 
   const { data, error } = await (args.supabase.from("crm_acq_activity_log") as any)
-    .select("template_variant, action_type, outcome")
+    .select("template_variant, action_type, outcome, segment_key")
     .eq("agent_id", args.agentId)
     .gte("occurred_at", sinceIso)
     .not("template_variant", "is", null)
@@ -151,6 +201,8 @@ export async function recomputeSequenceRolloutWinners(args: {
 
   type Stat = { attempts: number; positives: number; negatives: number };
   const stats = new Map<string, Stat>();
+  const segmentStats = new Map<string, Stat>();
+  const segmentKeysByKind = new Map<SequenceMessageKind, Set<string>>();
 
   for (const row of (data || []) as any[]) {
     const templateVariant = String(row?.template_variant || "").trim();
@@ -164,14 +216,28 @@ export async function recomputeSequenceRolloutWinners(args: {
 
     const key = `${kind}__${variant}`;
     const entry = stats.get(key) || { attempts: 0, positives: 0, negatives: 0 };
+    const segmentKey = String(row?.segment_key || "").trim() || "unknown";
+    const segSet = segmentKeysByKind.get(kind) || new Set<string>();
+    segSet.add(segmentKey);
+    segmentKeysByKind.set(kind, segSet);
+    const segmentEntryKey = `${segmentKey}::${kind}__${variant}`;
+    const segmentEntry = segmentStats.get(segmentEntryKey) || {
+      attempts: 0,
+      positives: 0,
+      negatives: 0,
+    };
 
     const actionType = String(row?.action_type || "").toLowerCase();
     const outcome = String(row?.outcome || "").toLowerCase();
     if (OUTBOUND_ACTIONS.has(actionType)) entry.attempts += 1;
     if (POSITIVE_ACTIONS.has(actionType) || outcome === "positive") entry.positives += 1;
     if (NEGATIVE_ACTIONS.has(actionType) || outcome === "negative") entry.negatives += 1;
+    if (OUTBOUND_ACTIONS.has(actionType)) segmentEntry.attempts += 1;
+    if (POSITIVE_ACTIONS.has(actionType) || outcome === "positive") segmentEntry.positives += 1;
+    if (NEGATIVE_ACTIONS.has(actionType) || outcome === "negative") segmentEntry.negatives += 1;
 
     stats.set(key, entry);
+    segmentStats.set(segmentEntryKey, segmentEntry);
   }
 
   const rollouts: Array<{
@@ -201,6 +267,34 @@ export async function recomputeSequenceRolloutWinners(args: {
     if (!best) return;
 
     const confidence = Math.max(0.05, Math.min(0.98, best.score + 0.5));
+    const segmentWinners: Record<string, SegmentWinner> = {};
+    const minSegmentSamples = Math.max(4, Math.min(minSamples, Math.round(minSamples * 0.6)));
+    for (const segmentKey of segmentKeysByKind.get(kind) || []) {
+      let bestSegment: { variant: string; score: number; stat: Stat } | null = null;
+      for (const variant of VARIANTS_BY_KIND[kind]) {
+        const stat =
+          segmentStats.get(`${segmentKey}::${kind}__${variant}`) || {
+            attempts: 0,
+            positives: 0,
+            negatives: 0,
+          };
+        if (stat.attempts < minSegmentSamples) continue;
+        const positiveRate = safeRate(stat.positives, stat.attempts);
+        const negativeRate = safeRate(stat.negatives, stat.attempts);
+        const score = positiveRate - negativeRate * 0.6;
+        if (!bestSegment || score > bestSegment.score) {
+          bestSegment = { variant, score, stat };
+        }
+      }
+      if (!bestSegment) continue;
+      const confidence = Math.max(0.05, Math.min(0.98, bestSegment.score + 0.5));
+      segmentWinners[segmentKey] = {
+        variant: bestSegment.variant,
+        confidence: Math.round(confidence * 1000) / 1000,
+        sample_size: bestSegment.stat.attempts,
+      };
+    }
+
     rollouts.push({
       message_kind: kind,
       winner_variant: best.variant,
@@ -212,6 +306,8 @@ export async function recomputeSequenceRolloutWinners(args: {
         negatives: best.stat.negatives,
         positive_rate: Math.round(safeRate(best.stat.positives, best.stat.attempts) * 1000) / 1000,
         negative_rate: Math.round(safeRate(best.stat.negatives, best.stat.attempts) * 1000) / 1000,
+        segment_winners: segmentWinners,
+        min_segment_samples: minSegmentSamples,
         min_samples: minSamples,
         lookback_days: lookbackDays,
       },

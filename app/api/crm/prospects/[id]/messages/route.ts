@@ -6,6 +6,7 @@ import {
   deriveAbFields,
   evaluateFirstTouchGuardrails,
 } from "@/lib/crm/cadenceRules";
+import { inferSegmentAndPlaybook } from "@/lib/crm/acqIntelligence";
 
 export const runtime = "nodejs";
 
@@ -130,7 +131,7 @@ export async function POST(
 
   let prospectSignalsRes = await (supabase.from("crm_prospects") as any)
     .select(
-      "company_name, city, region, object_focus, target_group, process_hint, personalization_hook, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, personalization_evidence, source_checked_at",
+      "company_name, city, region, object_focus, target_group, process_hint, personalization_hook, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, personalization_evidence, source_checked_at, automation_readiness",
     )
     .eq("id", prospectId)
     .eq("agent_id", auth.user.id)
@@ -174,6 +175,19 @@ export async function POST(
     sourceCheckedAt: normalizeLine(prospectSignals.source_checked_at, 40) || null,
   });
   const triggerEvidenceCount = triggerEvidence.length;
+  const inferred = inferSegmentAndPlaybook({
+    object_focus: normalizeLine(prospectSignals.object_focus, 24) || null,
+    share_miete_percent: Number.isFinite(Number(prospectSignals.share_miete_percent))
+      ? Number(prospectSignals.share_miete_percent)
+      : null,
+    share_kauf_percent: Number.isFinite(Number(prospectSignals.share_kauf_percent))
+      ? Number(prospectSignals.share_kauf_percent)
+      : null,
+    active_listings_count: Number.isFinite(Number(prospectSignals.active_listings_count))
+      ? Number(prospectSignals.active_listings_count)
+      : null,
+    automation_readiness: normalizeLine(prospectSignals.automation_readiness, 24) || null,
+  });
 
   const cadenceStep =
     parseCadenceStep(metadataInput.cadence_step) ??
@@ -227,6 +241,8 @@ export async function POST(
     ab_trigger_variant: normalizeLine(metadataInput.ab_trigger_variant, 80) || ab.ab_trigger_variant,
     ab_cta_variant: normalizeLine(metadataInput.ab_cta_variant, 80) || ab.ab_cta_variant,
     ab_subject_variant: normalizeLine(metadataInput.ab_subject_variant, 80) || ab.ab_subject_variant,
+    segment_key: normalizeLine(metadataInput.segment_key, 80) || inferred.segment_key,
+    playbook_key: normalizeLine(metadataInput.playbook_key, 120) || inferred.playbook_key,
     trigger_evidence: triggerEvidence,
     trigger_evidence_count: triggerEvidenceCount,
     first_touch_guardrail: firstTouchGuardrail,

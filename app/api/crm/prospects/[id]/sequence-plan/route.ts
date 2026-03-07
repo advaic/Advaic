@@ -38,6 +38,22 @@ function normalizeText(value: unknown, max = 2600) {
   return String(value ?? "").replace(/\r/g, "").trim().slice(0, max);
 }
 
+function sanitizeTouch1Snippet(value: string | null | undefined, max = 220) {
+  let text = normalizeText(value || "", max)
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\bkontaktquelle\b\s*:?/gi, "")
+    .replace(/\bimpressum\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (!text) return "";
+  if (/\b\d{2,}\b/.test(text) || /%/.test(text)) {
+    return "";
+  }
+  const sentence = text.split(/[.!?]/)[0]?.trim() || "";
+  if (!sentence) return "";
+  return sentence;
+}
+
 function parseDate(value: unknown) {
   const raw = String(value || "").trim();
   if (!raw) return null;
@@ -79,7 +95,7 @@ function buildBody(args: {
     : `Hallo Team von ${args.companyName},`;
   const hook =
     args.hook ||
-    `mir ist bei ${args.companyName} der Fokus auf mehrere parallele Vermarktungen aufgefallen.`;
+    "Sie vermarkten mehrere Objekte parallel und setzen gleichzeitig auf persönliche Betreuung.";
   const pain =
     args.pain ||
     "Gerade dann wird es oft schwierig, jede Anfrage schnell und persönlich genug zu beantworten.";
@@ -87,10 +103,9 @@ function buildBody(args: {
   if (args.step.message_kind === "first_touch") {
     return `${salutation}
 
-ich bin Kilian von Advaic. ${hook}
+ich bin Kilian, Gründer von Advaic.
+Ich habe mir ${args.companyName} kurz angeschaut und hatte den Eindruck, dass ${hook}
 ${pain}
-
-Advaic beantwortet klare Fälle automatisch, schickt unklare Fälle in die Freigabe und führt vor jedem Versand Qualitätschecks auf Relevanz, Kontext und Ton aus.
 
 Ist das bei Ihnen aktuell ein relevantes Thema?`;
   }
@@ -296,8 +311,10 @@ export async function POST(
       step,
       companyName: normalizeLine(prospect.company_name, 160),
       contactName: normalizeLine(prospect.contact_name, 120) || null,
-      hook: normalizeText(prospect.personalization_hook, 260) || null,
-      pain: normalizeText(prospect.pain_point_hypothesis, 260) || null,
+      hook:
+        sanitizeTouch1Snippet(normalizeText(prospect.personalization_hook, 260), 220) || null,
+      pain:
+        sanitizeTouch1Snippet(normalizeText(prospect.pain_point_hypothesis, 260), 220) || null,
     });
 
     const firstTouchGuardrail =

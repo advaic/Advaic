@@ -7,6 +7,7 @@ import {
   loadActiveRolloutWinners,
   type SequenceMessageKind,
 } from "@/lib/crm/sequenceExperiments";
+import { inferSegmentAndPlaybook } from "@/lib/crm/acqIntelligence";
 import {
   collectTriggerEvidence,
   deriveAbFields,
@@ -37,6 +38,29 @@ function normalizeLine(value: unknown, max = 240) {
 
 function normalizeText(value: unknown, max = 2000) {
   return String(value ?? "").replace(/\r/g, "").trim().slice(0, max);
+}
+
+function toTs(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const ts = new Date(raw).getTime();
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function sanitizeTouch1Snippet(value: string | null | undefined, max = 220) {
+  let text = normalizeText(value || "", max)
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\bkontaktquelle\b\s*:?/gi, "")
+    .replace(/\bimpressum\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (!text) return "";
+  if (/\b\d{2,}\b/.test(text) || /%/.test(text)) {
+    return "";
+  }
+  const sentence = text.split(/[.!?]/)[0]?.trim() || "";
+  if (!sentence) return "";
+  return sentence;
 }
 
 function isSchemaMismatch(error: { message?: string; details?: string; hint?: string; code?: string } | null | undefined) {
@@ -82,11 +106,13 @@ function buildSequenceDraft(args: {
     : `Hallo Team von ${args.companyName},`;
 
   const hookLine = args.hook
-    ? `${args.hook}`
-    : `mir ist bei ${args.companyName} der Fokus auf mehrere parallele Vermarktungen aufgefallen.`;
+    ? sanitizeTouch1Snippet(`${args.hook}`.replace(/^mir ist bei .*? aufgefallen[:,]?\s*/i, "").trim(), 220) ||
+      "Sie vermarkten mehrere Objekte parallel und setzen gleichzeitig auf persönliche Betreuung."
+    : "Sie vermarkten mehrere Objekte parallel und setzen gleichzeitig auf persönliche Betreuung.";
 
   const painLine = args.painPoint
-    ? `${args.painPoint}`
+    ? sanitizeTouch1Snippet(`${args.painPoint}`, 220) ||
+      "Gerade dann wird es oft schwierig, jede Anfrage schnell und persönlich genug zu beantworten."
     : "Gerade dann wird es oft schwierig, jede Anfrage schnell und persönlich genug zu beantworten.";
 
   if (args.code === "send_first_touch") {
@@ -94,10 +120,9 @@ function buildSequenceDraft(args: {
       subject: cadenceSubjectFromCode(args.code),
       body: `${salutation}
 
-ich bin Kilian von Advaic. ${hookLine}
+ich bin Kilian, Gründer von Advaic.
+Ich habe mir ${args.companyName} kurz angeschaut und hatte den Eindruck, dass ${hookLine}
 ${painLine}
-
-Advaic beantwortet klare Fälle automatisch, schickt unklare Fälle zur Freigabe und führt vor jedem Versand Qualitätschecks auf Relevanz, Kontext und Ton aus.
 
 Ist das bei Ihnen aktuell ein relevantes Thema?`,
     };
@@ -178,7 +203,7 @@ export async function POST(req: NextRequest) {
   }
 
   let dueRes = await query;
-  if (dueRes.error && String((dueRes.error as any)?.code || "") === "42703") {
+  if (dueRes.error && isSchemaMismatch(dueRes.error as any)) {
     let fallbackQuery = (supabase.from("crm_next_actions") as any)
       .select(
         "prospect_id, company_name, contact_name, object_focus, preferred_channel, personalization_hook, pain_point_hypothesis, recommended_code, recommended_action, recommended_reason, recommended_at, priority, fit_score",
@@ -250,12 +275,126 @@ export async function POST(req: NextRequest) {
   const actions: any[] = [];
   const createdByVariant: Record<string, number> = {};
   const activeWinners = await loadActiveRolloutWinners(supabase, String(auth.user.id));
+  const dueProspectIds = [
+    ...new Set(rows.map((row) => String(row?.prospect_id || "").trim()).filter(Boolean)),
+  ];
+  const stopEventsByProspect = new Map<
+    string,
+    {
+      hardStop: boolean;
+      hardStopReason: string | null;
+      lastReplyAt: number | null;
+      lastHandledAt: number | null;
+      lastBounceAt: number | null;
+    }
+  >();
+  if (dueProspectIds.length > 0) {
+    const { data: stopEvents, error: stopEventsErr } = await (supabase.from("crm_outreach_events") as any)
+      .select("prospect_id, event_type, event_at, metadata")
+      .eq("agent_id", auth.user.id)
+      .in("prospect_id", dueProspectIds)
+      .in("event_type", [
+        "reply_received",
+        "call_booked",
+        "pilot_invited",
+        "pilot_started",
+        "pilot_completed",
+        "deal_won",
+        "deal_lost",
+        "unsubscribed",
+        "no_interest",
+        "message_failed",
+      ])
+      .order("event_at", { ascending: false })
+      .limit(4000);
+    if (!stopEventsErr) {
+      for (const row of (stopEvents || []) as any[]) {
+        const prospectId = String(row?.prospect_id || "").trim();
+        if (!prospectId) continue;
+        const entry = stopEventsByProspect.get(prospectId) || {
+          hardStop: false,
+          hardStopReason: null,
+          lastReplyAt: null as number | null,
+          lastHandledAt: null as number | null,
+          lastBounceAt: null as number | null,
+        };
+        const type = String(row?.event_type || "").toLowerCase();
+        const ts = toTs(row?.event_at);
+        if (!ts) continue;
+        const meta =
+          row?.metadata && typeof row.metadata === "object"
+            ? (row.metadata as Record<string, any>)
+            : {};
+        if (type === "unsubscribed") {
+          entry.hardStop = true;
+          entry.hardStopReason = "opt_out";
+        }
+        if (type === "no_interest" && !entry.hardStop) {
+          entry.hardStop = true;
+          entry.hardStopReason = "kein_interesse";
+        }
+        if (type === "reply_received" && (!entry.lastReplyAt || ts > entry.lastReplyAt)) {
+          entry.lastReplyAt = ts;
+        }
+        if (
+          ["call_booked", "pilot_invited", "pilot_started", "pilot_completed", "deal_won", "deal_lost"].includes(type) &&
+          (!entry.lastHandledAt || ts > entry.lastHandledAt)
+        ) {
+          entry.lastHandledAt = ts;
+        }
+        if (type === "message_failed" && Boolean(meta.bounce_detected)) {
+          if (!entry.lastBounceAt || ts > entry.lastBounceAt) entry.lastBounceAt = ts;
+        }
+        stopEventsByProspect.set(prospectId, entry);
+      }
+    }
+  }
 
   for (const row of rows) {
     const recommendedCode = normalizeLine(row?.recommended_code || "", 60);
     const messageKind = CODE_TO_KIND[recommendedCode];
     if (!messageKind) {
       skippedInvalid += 1;
+      continue;
+    }
+    const stopSignals = stopEventsByProspect.get(String(row.prospect_id)) || null;
+    if (stopSignals?.hardStop) {
+      skippedInvalid += 1;
+      actions.push({
+        prospect_id: row.prospect_id,
+        company_name: row.company_name,
+        recommended_code: recommendedCode,
+        result: "stop_rule_hard",
+        reason: stopSignals.hardStopReason,
+      });
+      continue;
+    }
+    if (
+      stopSignals?.lastReplyAt &&
+      (!stopSignals.lastHandledAt || stopSignals.lastReplyAt > stopSignals.lastHandledAt)
+    ) {
+      skippedInvalid += 1;
+      actions.push({
+        prospect_id: row.prospect_id,
+        company_name: row.company_name,
+        recommended_code: recommendedCode,
+        result: "stop_rule_open_reply",
+        reason: "reply_unbearbeitet",
+      });
+      continue;
+    }
+    if (
+      stopSignals?.lastBounceAt &&
+      Date.now() - stopSignals.lastBounceAt <= 14 * 24 * 60 * 60 * 1000
+    ) {
+      skippedInvalid += 1;
+      actions.push({
+        prospect_id: row.prospect_id,
+        company_name: row.company_name,
+        recommended_code: recommendedCode,
+        result: "stop_rule_recent_bounce",
+        reason: "bounce_letzte_14_tage",
+      });
       continue;
     }
 
@@ -321,6 +460,19 @@ export async function POST(req: NextRequest) {
       processHint: normalizeText(row.process_hint || "", 220) || null,
       personalizationHook: normalizeText(row.personalization_hook || "", 220) || null,
     });
+    const inferred = inferSegmentAndPlaybook({
+      object_focus: normalizeLine(row.object_focus || "", 24) || null,
+      share_miete_percent: Number.isFinite(Number(row.share_miete_percent))
+        ? Number(row.share_miete_percent)
+        : null,
+      share_kauf_percent: Number.isFinite(Number(row.share_kauf_percent))
+        ? Number(row.share_kauf_percent)
+        : null,
+      active_listings_count: Number.isFinite(Number(row.active_listings_count))
+        ? Number(row.active_listings_count)
+        : null,
+      automation_readiness: normalizeLine(row.automation_readiness || "", 24) || null,
+    });
 
     let selectedVariant:
       | { variant: string; source: "winner" | "hash"; reason: string }
@@ -335,6 +487,7 @@ export async function POST(req: NextRequest) {
         agentId: String(auth.user.id),
         prospectId: String(row.prospect_id),
         kind: messageKind as SequenceMessageKind,
+        segmentKey: inferred.segment_key,
         activeWinners,
       });
       templateVariant = `${messageKind}__${selectedVariant.variant}`;
@@ -411,6 +564,8 @@ export async function POST(req: NextRequest) {
         cadence_key: "cadence_v1_5touch_14d",
         cadence_step: cadenceStep,
         cadence_segment: "sequence_runtime",
+        segment_key: inferred.segment_key,
+        playbook_key: inferred.playbook_key,
         template_variant: templateVariant,
         experiment_kind: messageKind !== "custom" ? messageKind : null,
         experiment_variant: selectedVariant?.variant || null,

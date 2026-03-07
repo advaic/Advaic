@@ -12,6 +12,7 @@ type Prospect = {
   object_focus: "miete" | "kauf" | "neubau" | "gemischt";
   priority: "A" | "B" | "C";
   fit_score: number;
+  readiness_score?: number | null;
   stage: string;
   preferred_channel: string;
   next_action: string | null;
@@ -61,6 +62,20 @@ type NextBestAction = {
   recommended_code: string | null;
   recommended_primary_label: string | null;
   recommended_at: string | null;
+  recommended_score?: number;
+  readiness_score?: number;
+  score_breakdown?: Array<{
+    label: string;
+    impact: number;
+    detail: string;
+  }>;
+  guardrails?: {
+    hard_stop: boolean;
+    hard_stop_reason: string | null;
+    open_reply: boolean;
+    recent_bounce: boolean;
+    has_ready_draft: boolean;
+  };
 };
 
 type Overview = {
@@ -148,6 +163,20 @@ type PerformanceTemplateMetric = {
   won_rate_pct?: number;
 };
 
+type PerformanceVariantSegmentMetric = {
+  segment_key: string;
+  channel: string;
+  template_variant: string;
+  sent_messages: number;
+  touched_prospects: number;
+  reply_prospects: number;
+  reply_rate_pct: number;
+  pilot_prospects: number;
+  pilot_rate_pct: number;
+  won_prospects?: number;
+  won_rate_pct?: number;
+};
+
 type DeliverabilityCorrelationRow = {
   channel: string;
   sent_messages: number;
@@ -210,9 +239,72 @@ type PerformanceResponse = {
   updated_at: string;
   channel_metrics: PerformanceChannelMetric[];
   template_metrics: PerformanceTemplateMetric[];
+  variant_segment_metrics?: PerformanceVariantSegmentMetric[];
   deliverability_correlation?: DeliverabilityCorrelationRow[];
   revenue_attribution?: RevenueAttribution;
   sequence_rollouts?: SequenceRollout[];
+  error?: string;
+  details?: string;
+};
+
+type ReplyInboxItem = {
+  event_id: string;
+  event_at: string;
+  prospect_id: string;
+  company_name: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  city: string | null;
+  stage: string;
+  handled: boolean;
+  next_action: string | null;
+  next_action_at: string | null;
+  object_focus: string;
+  fit_score: number | null;
+  priority: string;
+  channel: string;
+  message_kind: string | null;
+  subject: string | null;
+  sent_at: string | null;
+  template_variant: string;
+  reply_intent: "interesse" | "objection" | "nicht_jetzt" | "opt_out" | "falscher_kontakt" | "neutral";
+  reply_intent_confidence: number | null;
+  reply_intent_reason: string | null;
+  recommendation: string | null;
+  response_time_hours: number | null;
+};
+
+type ReplyInboxResponse = {
+  ok: boolean;
+  updated_at: string;
+  summary: {
+    total: number;
+    pending: number;
+    by_intent: Record<string, number>;
+  };
+  items: ReplyInboxItem[];
+  error?: string;
+  details?: string;
+};
+
+type PublicChatLogItem = {
+  id: string;
+  created_at: string;
+  event: string;
+  path: string | null;
+  session_id: string | null;
+  visitor_id: string | null;
+  message_preview: string | null;
+  answer_preview: string | null;
+  message_chars: number | null;
+  answer_chars: number | null;
+};
+
+type PublicChatLogsResponse = {
+  ok: boolean;
+  total: number;
+  logs: PublicChatLogItem[];
+  note?: string;
   error?: string;
   details?: string;
 };
@@ -297,6 +389,15 @@ const EVENT_LABELS: Record<string, string> = {
   follow_up_due: "Follow-up fällig",
 };
 
+const REPLY_INTENT_LABELS: Record<string, string> = {
+  interesse: "Interesse",
+  objection: "Einwand",
+  nicht_jetzt: "Nicht jetzt",
+  opt_out: "Opt-out",
+  falscher_kontakt: "Falscher Kontakt",
+  neutral: "Neutral",
+};
+
 function formatDate(iso: string | null | undefined) {
   if (!iso) return "–";
   const d = new Date(iso);
@@ -305,6 +406,15 @@ function formatDate(iso: string | null | undefined) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(d);
+}
+
+function replyIntentBadgeClass(intent: string) {
+  if (intent === "interesse") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (intent === "objection") return "bg-amber-50 text-amber-800 ring-amber-200";
+  if (intent === "nicht_jetzt") return "bg-blue-50 text-blue-700 ring-blue-200";
+  if (intent === "opt_out" || intent === "falscher_kontakt")
+    return "bg-rose-50 text-rose-700 ring-rose-200";
+  return "bg-gray-50 text-gray-700 ring-gray-200";
 }
 
 function buildLinkedInSearchUrl(companyName: string, contactName: string, city: string) {
@@ -318,6 +428,13 @@ function stageBadgeClass(stage: string) {
   if (stage === "lost") return "bg-rose-50 text-rose-700 ring-rose-200";
   if (stage.startsWith("pilot")) return "bg-blue-50 text-blue-700 ring-blue-200";
   if (stage === "replied") return "bg-sky-50 text-sky-700 ring-sky-200";
+  return "bg-gray-50 text-gray-700 ring-gray-200";
+}
+
+function readinessBadgeClass(score: number) {
+  if (score >= 80) return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (score >= 65) return "bg-blue-50 text-blue-700 ring-blue-200";
+  if (score >= 50) return "bg-amber-50 text-amber-800 ring-amber-200";
   return "bg-gray-50 text-gray-700 ring-gray-200";
 }
 
@@ -376,7 +493,7 @@ export default function CrmControlCenter({
   const [pipelineQuery, setPipelineQuery] = useState("");
   const [pipelineStage, setPipelineStage] = useState("all");
   const [pipelineSort, setPipelineSort] = useState<
-    "fit_desc" | "priority_fit" | "next_action_asc" | "updated_desc" | "company_asc"
+    "fit_desc" | "readiness_desc" | "priority_fit" | "next_action_asc" | "updated_desc" | "company_asc"
   >("fit_desc");
 
   const [selectedProspectId, setSelectedProspectId] = useState<string | null>(
@@ -398,6 +515,12 @@ export default function CrmControlCenter({
   const [nextAction, setNextAction] = useState<NextBestAction | null>(null);
   const [performance, setPerformance] = useState<PerformanceResponse | null>(null);
   const [performanceLoading, setPerformanceLoading] = useState(false);
+  const [replyInbox, setReplyInbox] = useState<ReplyInboxResponse | null>(null);
+  const [replyInboxLoading, setReplyInboxLoading] = useState(false);
+  const [replyIntentFilter, setReplyIntentFilter] = useState("all");
+  const [replyPendingOnly, setReplyPendingOnly] = useState(true);
+  const [publicChatLogs, setPublicChatLogs] = useState<PublicChatLogsResponse | null>(null);
+  const [publicChatLogsLoading, setPublicChatLogsLoading] = useState(false);
   const [enrichingAll, setEnrichingAll] = useState(false);
   const [recomputingExperiments, setRecomputingExperiments] = useState(false);
 
@@ -430,6 +553,44 @@ export default function CrmControlCenter({
     }
   }, []);
 
+  const loadReplyInbox = useCallback(async () => {
+    setReplyInboxLoading(true);
+    try {
+      const q = new URLSearchParams();
+      q.set("limit", "60");
+      if (replyIntentFilter && replyIntentFilter !== "all") q.set("intent", replyIntentFilter);
+      if (replyPendingOnly) q.set("pending_only", "1");
+      const res = await fetch(`/api/crm/replies/inbox?${q.toString()}`, {
+        cache: "no-store",
+      });
+      const json = (await res.json().catch(() => ({}))) as ReplyInboxResponse;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Reply-Inbox konnte nicht geladen werden.");
+      }
+      setReplyInbox(json);
+    } catch {
+      setReplyInbox(null);
+    } finally {
+      setReplyInboxLoading(false);
+    }
+  }, [replyIntentFilter, replyPendingOnly]);
+
+  const loadPublicChatLogs = useCallback(async () => {
+    setPublicChatLogsLoading(true);
+    try {
+      const res = await fetch("/api/crm/public-chat/logs?limit=120", { cache: "no-store" });
+      const json = (await res.json().catch(() => ({}))) as PublicChatLogsResponse;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Public-Chat-Logs konnten nicht geladen werden.");
+      }
+      setPublicChatLogs(json);
+    } catch {
+      setPublicChatLogs(null);
+    } finally {
+      setPublicChatLogsLoading(false);
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -444,6 +605,8 @@ export default function CrmControlCenter({
       setData(json);
       await loadNextAction();
       await loadPerformance();
+      await loadReplyInbox();
+      await loadPublicChatLogs();
       if (!selectedProspectId && json.prospects?.[0]?.id) {
         setSelectedProspectId(json.prospects[0].id);
       }
@@ -452,7 +615,7 @@ export default function CrmControlCenter({
     } finally {
       setLoading(false);
     }
-  }, [loadNextAction, loadPerformance, selectedProspectId]);
+  }, [loadNextAction, loadPerformance, loadPublicChatLogs, loadReplyInbox, selectedProspectId]);
 
   const loadProspectDetail = useCallback(async (prospectId: string) => {
     setDetailLoading(true);
@@ -496,7 +659,9 @@ export default function CrmControlCenter({
   useEffect(() => {
     void loadNextAction();
     void loadPerformance();
-  }, [loadNextAction, loadPerformance]);
+    void loadReplyInbox();
+    void loadPublicChatLogs();
+  }, [loadNextAction, loadPerformance, loadPublicChatLogs, loadReplyInbox]);
 
   useEffect(() => {
     if (!selectedProspectId) {
@@ -535,10 +700,17 @@ export default function CrmControlCenter({
 
   const sortedProspects = useMemo(() => {
     const rankPriority = (p: "A" | "B" | "C") => (p === "A" ? 0 : p === "B" ? 1 : 2);
+    const readiness = (p: Prospect) =>
+      Number.isFinite(Number(p.readiness_score)) ? Number(p.readiness_score) : Number(p.fit_score || 0);
     return [...filteredProspects].sort((a, b) => {
       if (pipelineSort === "fit_desc") {
         if (b.fit_score !== a.fit_score) return b.fit_score - a.fit_score;
         return rankPriority(a.priority) - rankPriority(b.priority);
+      }
+      if (pipelineSort === "readiness_desc") {
+        const d = readiness(b) - readiness(a);
+        if (d !== 0) return d;
+        return b.fit_score - a.fit_score;
       }
       if (pipelineSort === "priority_fit") {
         const prio = rankPriority(a.priority) - rankPriority(b.priority);
@@ -560,6 +732,17 @@ export default function CrmControlCenter({
       return String(a.company_name || "").localeCompare(String(b.company_name || ""), "de");
     });
   }, [filteredProspects, pipelineSort]);
+
+  const readinessHotCount = useMemo(
+    () =>
+      (data.prospects || []).filter((p) => {
+        const score = Number.isFinite(Number(p.readiness_score))
+          ? Number(p.readiness_score)
+          : Number(p.fit_score || 0);
+        return score >= 75 && !["pilot_active", "pilot_finished", "won", "lost"].includes(p.stage);
+      }).length,
+    [data.prospects],
+  );
 
   const conversionRates = useMemo(() => {
     const s = data.summary;
@@ -979,8 +1162,15 @@ export default function CrmControlCenter({
           json?.details || json?.error || "Sequenzlauf fehlgeschlagen.",
         );
       }
+      const actionRows = Array.isArray(json?.actions) ? (json.actions as any[]) : [];
+      const hardStops = actionRows.filter((row) =>
+        String(row?.result || "").startsWith("stop_rule_"),
+      ).length;
+      const guardrailBlocks = actionRows.filter(
+        (row) => String(row?.result || "") === "guardrail_blocked",
+      ).length;
       setSuccess(
-        `Sequenzlauf fertig: ${Number(json?.created || 0)} Drafts erstellt, ${Number(json?.skipped_existing || 0)} bereits vorhanden.`,
+        `Sequenzlauf fertig: ${Number(json?.created || 0)} Drafts erstellt, ${Number(json?.skipped_existing || 0)} bereits vorhanden, ${hardStops} per Stop-Regel pausiert, ${guardrailBlocks} durch First-Touch-Guardrails blockiert.`,
       );
       await refresh();
       if (selectedProspectId) await loadProspectDetail(selectedProspectId);
@@ -1098,7 +1288,7 @@ export default function CrmControlCenter({
         ) : null}
       </section>
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-5">
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="text-xs font-medium text-gray-500">Prospects gesamt</div>
           <div className="mt-2 text-2xl font-semibold text-gray-900">{data.summary?.prospects_total || 0}</div>
@@ -1114,6 +1304,10 @@ export default function CrmControlCenter({
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="text-xs font-medium text-gray-500">Gewonnen</div>
           <div className="mt-2 text-2xl font-semibold text-gray-900">{data.summary?.won_total || 0}</div>
+        </div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+          <div className="text-xs font-medium text-emerald-700">Ready jetzt</div>
+          <div className="mt-2 text-2xl font-semibold text-emerald-900">{readinessHotCount}</div>
         </div>
       </section>
 
@@ -1169,7 +1363,7 @@ export default function CrmControlCenter({
                 </tbody>
               </table>
             </div>
-            <div className="grid gap-4 xl:grid-cols-2">
+            <div className="grid gap-4 xl:grid-cols-3">
               <div className="overflow-x-auto rounded-xl border border-gray-200">
                 <table className="min-w-full text-sm">
                   <thead>
@@ -1193,6 +1387,41 @@ export default function CrmControlCenter({
                         <td className="px-3 py-2 text-gray-700">{row.won_rate_pct ?? 0}%</td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-gray-200">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                      <th className="px-3 py-2">Segment</th>
+                      <th className="px-3 py-2">Variante</th>
+                      <th className="px-3 py-2">Sent</th>
+                      <th className="px-3 py-2">Reply %</th>
+                      <th className="px-3 py-2">Won %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(performance.variant_segment_metrics || []).slice(0, 12).map((row) => (
+                      <tr
+                        key={`${row.segment_key}-${row.channel}-${row.template_variant}`}
+                        className="border-t border-gray-100"
+                      >
+                        <td className="px-3 py-2 text-gray-700">{row.segment_key}</td>
+                        <td className="px-3 py-2 font-medium text-gray-900">{row.template_variant}</td>
+                        <td className="px-3 py-2 text-gray-700">{row.sent_messages}</td>
+                        <td className="px-3 py-2 text-gray-700">{row.reply_rate_pct}%</td>
+                        <td className="px-3 py-2 text-gray-700">{row.won_rate_pct ?? 0}%</td>
+                      </tr>
+                    ))}
+                    {(!performance.variant_segment_metrics ||
+                      performance.variant_segment_metrics.length === 0) ? (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-4 text-xs text-gray-500">
+                          Noch keine segmentierten Variantendaten verfügbar.
+                        </td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
               </div>
@@ -1313,16 +1542,316 @@ export default function CrmControlCenter({
                 Fällig: {formatDate(nextAction.recommended_at)}
               </div>
             </div>
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 md:col-span-4">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 md:col-span-4">
+              <div className="text-xs text-emerald-700">Priorisierung</div>
+              <div className="mt-1 text-sm font-semibold text-emerald-900">
+                Score {Number(nextAction.recommended_score || 0)} / 100
+              </div>
+              <div className="mt-1 text-xs text-emerald-800">
+                Readiness {Number(nextAction.readiness_score || 0)} / 100
+              </div>
+              {nextAction.guardrails ? (
+                <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                  {nextAction.guardrails.open_reply ? (
+                    <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700">
+                      Offene Reply
+                    </span>
+                  ) : null}
+                  {nextAction.guardrails.recent_bounce ? (
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800">
+                      Neuer Bounce
+                    </span>
+                  ) : null}
+                  {nextAction.guardrails.has_ready_draft ? (
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                      Draft bereit
+                    </span>
+                  ) : null}
+                  {nextAction.guardrails.hard_stop ? (
+                    <span className="rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">
+                      Stop-Regel
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 md:col-span-12">
               <div className="text-xs text-amber-700">Warum</div>
               <div className="mt-1 text-sm text-amber-900">
                 {nextAction.recommended_reason || "Kein zusätzlicher Grund verfügbar."}
               </div>
+              {Array.isArray(nextAction.score_breakdown) && nextAction.score_breakdown.length > 0 ? (
+                <ul className="mt-2 space-y-1 text-xs text-amber-900">
+                  {nextAction.score_breakdown.slice(0, 4).map((row, idx) => (
+                    <li key={`${row.label}_${idx}`}>
+                      {row.impact >= 0 ? "+" : ""}
+                      {row.impact} {row.label}: {row.detail}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           </div>
         ) : (
           <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-600">
             Aktuell keine offene Empfehlung. Sequenz und Tracking laufen stabil.
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Antwort-Inbox mit Intent</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Neue Replies werden hier mit Intent-Label priorisiert, damit du sofort die richtigen Fälle bearbeitest.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+              value={replyIntentFilter}
+              onChange={(e) => setReplyIntentFilter(e.target.value)}
+            >
+              <option value="all">Alle Intents</option>
+              <option value="interesse">Interesse</option>
+              <option value="objection">Einwand</option>
+              <option value="nicht_jetzt">Nicht jetzt</option>
+              <option value="opt_out">Opt-out</option>
+              <option value="falscher_kontakt">Falscher Kontakt</option>
+              <option value="neutral">Neutral</option>
+            </select>
+            <label className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300"
+                checked={replyPendingOnly}
+                onChange={(e) => setReplyPendingOnly(e.target.checked)}
+              />
+              Nur offen
+            </label>
+            <button
+              onClick={() => void loadReplyInbox()}
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
+              disabled={replyInboxLoading}
+            >
+              {replyInboxLoading ? "Lade…" : "Inbox aktualisieren"}
+            </button>
+          </div>
+        </div>
+        {!replyInbox ? (
+          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-600">
+            Noch keine Reply-Inbox-Daten verfügbar. Klicke auf „Antworten syncen“ und lade diese Ansicht neu.
+          </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                <div className="text-xs text-gray-500">Replies gesamt</div>
+                <div className="mt-1 text-xl font-semibold text-gray-900">
+                  {replyInbox.summary?.total || 0}
+                </div>
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                <div className="text-xs text-amber-700">Offen</div>
+                <div className="mt-1 text-xl font-semibold text-amber-900">
+                  {replyInbox.summary?.pending || 0}
+                </div>
+              </div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                <div className="text-xs text-emerald-700">Interesse</div>
+                <div className="mt-1 text-xl font-semibold text-emerald-900">
+                  {replyInbox.summary?.by_intent?.interesse || 0}
+                </div>
+              </div>
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2">
+                <div className="text-xs text-rose-700">Opt-out/Falscher Kontakt</div>
+                <div className="mt-1 text-xl font-semibold text-rose-900">
+                  {(replyInbox.summary?.by_intent?.opt_out || 0) +
+                    (replyInbox.summary?.by_intent?.falscher_kontakt || 0)}
+                </div>
+              </div>
+            </div>
+            <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                    <th className="px-3 py-2">Prospect</th>
+                    <th className="px-3 py-2">Intent</th>
+                    <th className="px-3 py-2">Empfehlung</th>
+                    <th className="px-3 py-2">Kontext</th>
+                    <th className="px-3 py-2">Aktion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {replyInbox.items.map((item) => (
+                    <tr key={item.event_id} className="border-t border-gray-100 align-top">
+                      <td className="px-3 py-2">
+                        <div className="font-medium text-gray-900">{item.company_name}</div>
+                        <div className="text-xs text-gray-500">
+                          {item.contact_name || "Kein Name"} · {item.contact_email || "keine E-Mail"} ·{" "}
+                          {item.city || "kein Ort"}
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500">
+                          Reply: {formatDate(item.event_at)} · Stage: {STAGE_LABELS[item.stage] || item.stage}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-1 text-xs ring-1 ${replyIntentBadgeClass(item.reply_intent)}`}
+                        >
+                          {REPLY_INTENT_LABELS[item.reply_intent] || item.reply_intent}
+                        </span>
+                        <div className="mt-1 text-xs text-gray-500">
+                          {(item.reply_intent_confidence ?? 0) > 0
+                            ? `Confidence ${Math.round((item.reply_intent_confidence || 0) * 100)}%`
+                            : "Confidence n/a"}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-gray-700">
+                        <div>{item.recommendation || "Keine Empfehlung vorhanden."}</div>
+                        {item.reply_intent_reason ? (
+                          <div className="mt-1 text-xs text-gray-500">{item.reply_intent_reason}</div>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-gray-600">
+                        <div>Kanal: {item.channel}</div>
+                        <div>Variante: {item.template_variant}</div>
+                        <div>
+                          Reaktionszeit:{" "}
+                          {item.response_time_hours === null ? "–" : `${item.response_time_hours}h`}
+                        </div>
+                        <div>Offen: {item.handled ? "Nein" : "Ja"}</div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-col gap-1.5">
+                          <button
+                            onClick={() => {
+                              setSelectedProspectId(item.prospect_id);
+                              setPipelineQuery(item.company_name);
+                              setSuccess(`Prospect ${item.company_name} im Fokus geöffnet.`);
+                            }}
+                            className="rounded-lg border border-gray-200 px-2 py-1 text-xs hover:bg-gray-50"
+                          >
+                            Öffnen
+                          </button>
+                          <button
+                            onClick={() => void updateStage(item.prospect_id, "replied")}
+                            className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100"
+                          >
+                            Als bearbeitet
+                          </button>
+                          {item.reply_intent === "interesse" ? (
+                            <button
+                              onClick={() => void logEvent(item.prospect_id, "pilot_invited", "Pilot eingeladen")}
+                              className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
+                            >
+                              Pilot einladen
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {replyInbox.items.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-6 text-sm text-gray-500">
+                        Keine Replies für diesen Filter. „Antworten syncen“ ausführen oder Filter erweitern.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Öffentlicher Chatbot-Verlauf</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Letzte Interaktionen aus dem Website-Widget (Analytics-Tracking mit Einwilligung).
+            </p>
+          </div>
+          <button
+            onClick={() => void loadPublicChatLogs()}
+            className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
+            disabled={publicChatLogsLoading}
+          >
+            {publicChatLogsLoading ? "Lade…" : "Chatbot-Logs aktualisieren"}
+          </button>
+        </div>
+        {!publicChatLogs ? (
+          <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-600">
+            Noch keine Chatbot-Logs geladen.
+          </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                <div className="text-xs text-gray-500">Events geladen</div>
+                <div className="mt-1 text-xl font-semibold text-gray-900">
+                  {publicChatLogs.total || 0}
+                </div>
+              </div>
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
+                <div className="text-xs text-blue-700">Nachrichten</div>
+                <div className="mt-1 text-xl font-semibold text-blue-900">
+                  {publicChatLogs.logs.filter((row) => row.event === "marketing_chat_message_send").length}
+                </div>
+              </div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                <div className="text-xs text-emerald-700">Antworten</div>
+                <div className="mt-1 text-xl font-semibold text-emerald-900">
+                  {publicChatLogs.logs.filter((row) => row.event === "marketing_chat_message_response").length}
+                </div>
+              </div>
+            </div>
+            <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                    <th className="px-3 py-2">Zeit</th>
+                    <th className="px-3 py-2">Event</th>
+                    <th className="px-3 py-2">Pfad</th>
+                    <th className="px-3 py-2">Session</th>
+                    <th className="px-3 py-2">Inhalt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {publicChatLogs.logs.slice(0, 60).map((row) => (
+                    <tr key={row.id} className="border-t border-gray-100 align-top">
+                      <td className="px-3 py-2 text-xs text-gray-600">{formatDate(row.created_at)}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700">{row.event}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700">{row.path || "–"}</td>
+                      <td className="px-3 py-2 text-xs text-gray-500">{row.session_id || row.visitor_id || "–"}</td>
+                      <td className="px-3 py-2 text-xs text-gray-700">
+                        {row.message_preview ? (
+                          <div>
+                            <span className="font-medium text-gray-900">User:</span> {row.message_preview}
+                          </div>
+                        ) : null}
+                        {row.answer_preview ? (
+                          <div className="mt-1">
+                            <span className="font-medium text-gray-900">Bot:</span> {row.answer_preview}
+                          </div>
+                        ) : null}
+                        {!row.message_preview && !row.answer_preview ? "Kein Vorschautext im Event." : null}
+                      </td>
+                    </tr>
+                  ))}
+                  {publicChatLogs.logs.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-6 text-sm text-gray-500">
+                        Noch keine Public-Chat-Events vorhanden.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </section>
@@ -1756,6 +2285,7 @@ export default function CrmControlCenter({
               onChange={(e) => setPipelineSort(e.target.value as any)}
             >
               <option value="fit_desc">Sortierung: Fit absteigend</option>
+              <option value="readiness_desc">Sortierung: Readiness absteigend</option>
               <option value="priority_fit">Sortierung: Priorität + Fit</option>
               <option value="next_action_asc">Sortierung: Nächste Aktion</option>
               <option value="updated_desc">Sortierung: Zuletzt aktualisiert</option>
@@ -1781,7 +2311,7 @@ export default function CrmControlCenter({
               <tr className="text-left text-xs text-gray-500">
                 <th className="py-2 pr-3">Firma</th>
                 <th className="py-2 pr-3">Hook</th>
-                <th className="py-2 pr-3">Fit</th>
+                <th className="py-2 pr-3">Fit/Readiness</th>
                 <th className="py-2 pr-3">Stage</th>
                 <th className="py-2 pr-3">Nächste Aktion</th>
                 <th className="py-2">Events</th>
@@ -1847,7 +2377,21 @@ export default function CrmControlCenter({
                     {p.personalization_hook || "–"}
                   </td>
                   <td className="py-3 pr-3 text-gray-700">
-                    {p.fit_score} · {p.priority}
+                    <div>
+                      {p.fit_score} · {p.priority}
+                    </div>
+                    <span
+                      className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs ring-1 ${readinessBadgeClass(
+                        Number.isFinite(Number(p.readiness_score))
+                          ? Number(p.readiness_score)
+                          : Number(p.fit_score || 0),
+                      )}`}
+                    >
+                      Ready{" "}
+                      {Number.isFinite(Number(p.readiness_score))
+                        ? Number(p.readiness_score)
+                        : Number(p.fit_score || 0)}
+                    </span>
                   </td>
                   <td className="py-3 pr-3">
                     <div className="flex items-center gap-2">

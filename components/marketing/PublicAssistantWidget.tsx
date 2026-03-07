@@ -174,6 +174,8 @@ export default function PublicAssistantWidget() {
       meta: {
         section: "public_assistant",
         path: pathname,
+        message_preview: userText.slice(0, 800),
+        message_chars: userText.length,
       },
     });
 
@@ -229,6 +231,8 @@ export default function PublicAssistantWidget() {
           section: "public_assistant",
           path: pathname,
           has_cta: Boolean(botMessage.ctaLabel && botMessage.ctaHref),
+          answer_preview: botMessage.text.slice(0, 800),
+          answer_chars: botMessage.text.length,
         },
       });
     } catch (err: any) {

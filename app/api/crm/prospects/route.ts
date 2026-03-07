@@ -4,6 +4,45 @@ import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
 
 export const runtime = "nodejs";
 
+function computeReadinessScore(input: {
+  fit_score?: number | null;
+  stage?: string | null;
+  next_action_at?: string | null;
+  updated_at?: string | null;
+  source_checked_at?: string | null;
+  preferred_channel?: string | null;
+  contact_email?: string | null;
+}) {
+  let score = Number.isFinite(Number(input.fit_score)) ? Number(input.fit_score) : 50;
+  const stage = String(input.stage || "").toLowerCase();
+  if (stage === "new" || stage === "researching" || stage === "contacted") score += 8;
+  if (stage === "replied" || stage === "nurture") score += 2;
+  if (stage.startsWith("pilot") || stage === "won" || stage === "lost") score -= 20;
+
+  const now = Date.now();
+  const nextActionTs = input.next_action_at ? new Date(input.next_action_at).getTime() : null;
+  if (nextActionTs && Number.isFinite(nextActionTs)) {
+    if (nextActionTs <= now) score += 7;
+    else if (nextActionTs <= now + 2 * 24 * 60 * 60 * 1000) score += 3;
+  }
+  const updatedTs = input.updated_at ? new Date(input.updated_at).getTime() : null;
+  if (updatedTs && Number.isFinite(updatedTs)) {
+    if (updatedTs >= now - 14 * 24 * 60 * 60 * 1000) score += 4;
+    else score -= 4;
+  }
+  const sourceTs = input.source_checked_at ? new Date(input.source_checked_at).getTime() : null;
+  if (sourceTs && Number.isFinite(sourceTs)) {
+    if (sourceTs >= now - 30 * 24 * 60 * 60 * 1000) score += 4;
+    else score -= 3;
+  }
+  const preferredChannel = String(input.preferred_channel || "").toLowerCase();
+  if (preferredChannel === "email") {
+    if (String(input.contact_email || "").trim()) score += 4;
+    else score -= 8;
+  }
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
 function normalizePriority(value: unknown): "A" | "B" | "C" {
   const v = String(value || "B").trim().toUpperCase();
   if (v === "A" || v === "C") return v;
@@ -140,7 +179,21 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({ ok: true, prospects: data || [] });
+  return NextResponse.json({
+    ok: true,
+    prospects: ((data || []) as any[]).map((row) => ({
+      ...row,
+      readiness_score: computeReadinessScore({
+        fit_score: Number(row?.fit_score || 0),
+        stage: row?.stage || null,
+        next_action_at: row?.next_action_at || null,
+        updated_at: row?.updated_at || null,
+        source_checked_at: row?.source_checked_at || null,
+        preferred_channel: row?.preferred_channel || null,
+        contact_email: row?.contact_email || null,
+      }),
+    })),
+  });
 }
 
 export async function POST(req: NextRequest) {

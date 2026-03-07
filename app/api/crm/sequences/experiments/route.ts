@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
     winner_variant: row.variant,
     confidence: row.confidence,
     sample_size: row.sample_size,
+    segment_winners: row.segment_winners || {},
   }));
 
   const { data: rawRows, error } = await (supabase.from("crm_sequence_rollouts") as any)

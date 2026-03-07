@@ -5,6 +5,10 @@ import {
   computeObjectiveQualityScore,
   inferSegmentAndPlaybook,
 } from "@/lib/crm/acqIntelligence";
+import {
+  collectTriggerEvidence,
+  evaluateFirstTouchGuardrails,
+} from "@/lib/crm/cadenceRules";
 
 export const runtime = "nodejs";
 
@@ -31,7 +35,7 @@ export async function PATCH(
 
   const supabase = createSupabaseAdminClient();
   const { data: message, error: messageErr } = await (supabase.from("crm_outreach_messages") as any)
-    .select("id, prospect_id, agent_id, channel, message_kind, metadata, personalization_score")
+    .select("id, prospect_id, agent_id, channel, message_kind, body, metadata, personalization_score")
     .eq("id", messageId)
     .eq("agent_id", auth.user.id)
     .maybeSingle();
@@ -44,6 +48,62 @@ export async function PATCH(
   }
   if (!message) {
     return NextResponse.json({ ok: false, error: "message_not_found" }, { status: 404 });
+  }
+  if (status === "sent" && String(message.message_kind || "").toLowerCase() === "first_touch") {
+    const { data: prospect } = await (supabase.from("crm_prospects") as any)
+      .select(
+        "company_name, city, region, object_focus, share_miete_percent, share_kauf_percent, active_listings_count, new_listings_30d, automation_readiness, target_group, process_hint, personalization_hook, personalization_evidence, source_checked_at",
+      )
+      .eq("id", String(message.prospect_id))
+      .eq("agent_id", auth.user.id)
+      .maybeSingle();
+    const triggerEvidence = collectTriggerEvidence({
+      companyName: String((prospect as any)?.company_name || "").trim(),
+      city: String((prospect as any)?.city || "").trim() || null,
+      region: String((prospect as any)?.region || "").trim() || null,
+      objectFocus: String((prospect as any)?.object_focus || "").trim() || null,
+      activeListingsCount: Number.isFinite(Number((prospect as any)?.active_listings_count))
+        ? Number((prospect as any)?.active_listings_count)
+        : null,
+      newListings30d: Number.isFinite(Number((prospect as any)?.new_listings_30d))
+        ? Number((prospect as any)?.new_listings_30d)
+        : null,
+      shareMietePercent: Number.isFinite(Number((prospect as any)?.share_miete_percent))
+        ? Number((prospect as any)?.share_miete_percent)
+        : null,
+      shareKaufPercent: Number.isFinite(Number((prospect as any)?.share_kauf_percent))
+        ? Number((prospect as any)?.share_kauf_percent)
+        : null,
+      targetGroup: String((prospect as any)?.target_group || "").trim() || null,
+      processHint: String((prospect as any)?.process_hint || "").trim() || null,
+      personalizationHook: String((prospect as any)?.personalization_hook || "").trim() || null,
+      personalizationEvidence:
+        String((prospect as any)?.personalization_evidence || "").trim() || null,
+      sourceCheckedAt: String((prospect as any)?.source_checked_at || "").trim() || null,
+    });
+    const meta =
+      message.metadata && typeof message.metadata === "object"
+        ? (message.metadata as Record<string, any>)
+        : {};
+    const guardrail = evaluateFirstTouchGuardrails({
+      body: String(message.body || ""),
+      triggerEvidenceCount: Math.max(
+        Number((meta as any)?.trigger_evidence_count || 0),
+        triggerEvidence.length,
+      ),
+    });
+    if (!guardrail.pass) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "first_touch_send_guardrail_failed",
+          details:
+            "Manuelles Senden blockiert: Erstkontakt wirkt nicht natürlich genug oder enthält zu viel Roh-/Pitch-Sprache.",
+          guardrail,
+        },
+        { status: 422 },
+      );
+    }
   }
 
   const updates: Record<string, any> = { status };

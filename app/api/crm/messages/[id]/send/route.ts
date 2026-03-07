@@ -10,6 +10,10 @@ import {
   computeObjectiveQualityScore,
   inferSegmentAndPlaybook,
 } from "@/lib/crm/acqIntelligence";
+import {
+  collectTriggerEvidence,
+  evaluateFirstTouchGuardrails,
+} from "@/lib/crm/cadenceRules";
 
 export const runtime = "nodejs";
 
@@ -420,7 +424,7 @@ export async function POST(
 
   const { data: prospect, error: prospectErr } = await (supabase.from("crm_prospects") as any)
     .select(
-      "id, company_name, contact_name, contact_email, preferred_channel, object_focus, share_miete_percent, share_kauf_percent, active_listings_count, automation_readiness",
+      "id, company_name, contact_name, contact_email, city, region, preferred_channel, object_focus, share_miete_percent, share_kauf_percent, active_listings_count, new_listings_30d, automation_readiness, target_group, process_hint, personalization_hook, personalization_evidence, source_checked_at",
     )
     .eq("id", String(message.prospect_id))
     .eq("agent_id", auth.user.id)
@@ -463,6 +467,61 @@ export async function POST(
   const messageBody = normalizeText(message.body, 6000);
   if (!messageBody) {
     return jsonError(400, "empty_message_body");
+  }
+  if (String(message.message_kind || "").toLowerCase() === "first_touch") {
+    const meta = oldMeta && typeof oldMeta === "object" ? oldMeta : {};
+    const triggerEvidence = collectTriggerEvidence({
+      companyName: normalizeLine(prospect.company_name, 160),
+      city: normalizeLine((prospect as any).city, 120) || null,
+      region: normalizeLine((prospect as any).region, 120) || null,
+      objectFocus: normalizeLine(prospect.object_focus, 24) || null,
+      activeListingsCount: Number.isFinite(Number(prospect.active_listings_count))
+        ? Number(prospect.active_listings_count)
+        : null,
+      newListings30d: Number.isFinite(Number((prospect as any).new_listings_30d))
+        ? Number((prospect as any).new_listings_30d)
+        : null,
+      shareMietePercent: Number.isFinite(Number(prospect.share_miete_percent))
+        ? Number(prospect.share_miete_percent)
+        : null,
+      shareKaufPercent: Number.isFinite(Number(prospect.share_kauf_percent))
+        ? Number(prospect.share_kauf_percent)
+        : null,
+      targetGroup: normalizeText((prospect as any).target_group, 220) || null,
+      processHint: normalizeText((prospect as any).process_hint, 220) || null,
+      personalizationHook: normalizeText((prospect as any).personalization_hook, 220) || null,
+      personalizationEvidence: normalizeText((prospect as any).personalization_evidence, 260) || null,
+      sourceCheckedAt: normalizeLine((prospect as any).source_checked_at, 40) || null,
+    });
+    const guardrail = evaluateFirstTouchGuardrails({
+      body: messageBody,
+      triggerEvidenceCount: Math.max(
+        Number((meta as any)?.trigger_evidence_count || 0),
+        triggerEvidence.length,
+      ),
+    });
+    if (!guardrail.pass) {
+      await (supabase.from("crm_outreach_messages") as any)
+        .update({
+          metadata: {
+            ...meta,
+            send_guardrail_blocked_at: new Date().toISOString(),
+            send_guardrail: guardrail,
+          },
+        })
+        .eq("id", messageId)
+        .eq("agent_id", auth.user.id);
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "first_touch_send_guardrail_failed",
+          details:
+            "Versand blockiert: Erstkontakt wirkt nicht natürlich genug oder enthält zu viel Roh-/Pitch-Sprache.",
+          guardrail,
+        },
+        { status: 422 },
+      );
+    }
   }
 
   const providerResolved = await resolveProvider({

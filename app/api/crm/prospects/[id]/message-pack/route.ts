@@ -65,17 +65,6 @@ function sanitizeOutreachSnippet(value: string | null | undefined, max = 260) {
   return compact.endsWith(".") ? compact : `${compact}.`;
 }
 
-function hasMessageSafetySignals(text: string) {
-  const lower = text.toLowerCase();
-  return (
-    (lower.includes("freigabe") || lower.includes("freigeben")) &&
-    (lower.includes("qualitätscheck") ||
-      lower.includes("qualitaetscheck") ||
-      lower.includes("qualitätskontroll") ||
-      lower.includes("qualitaetskontroll"))
-  );
-}
-
 function hasPersonalSignals(text: string, companyName: string, city: string | null, hook: string | null) {
   const lower = text.toLowerCase();
   const companyToken = normalizeLine(companyName, 80).toLowerCase();
@@ -134,15 +123,22 @@ function fallbackPack(args: {
     "Viele ähnliche Interessentenanfragen binden im Tagesgeschäft spürbar Zeit und verzögern Rückmeldungen.";
   const objection =
     args.objection ||
-    "Wichtig ist, dass jederzeit klar bleibt, wann automatisch gesendet wird und wann die Freigabe greift.";
+    "Wichtig ist, dass die Kommunikation im Alltag verlässlich und persönlich bleibt.";
   const objectionRoute = routeObjection(args.objection);
+  const focusLower = String(args.objectFocus || "").toLowerCase();
+  const triggerClause =
+    focusLower === "miete"
+      ? "bei Ihnen durch die vielen Mietobjekte ziemlich viele ähnliche Interessentenanfragen parallel reinkommen dürften"
+      : focusLower === "kauf"
+        ? "bei Ihnen durch die laufende Kaufvermarktung viele ähnliche Interessentenanfragen parallel reinkommen dürften"
+        : "bei Ihnen parallel viele ähnliche Interessentenanfragen reinkommen dürften";
   const listingHint =
     typeof args.activeListingsCount === "number"
-      ? `Öffentlich sichtbar sind aktuell rund ${args.activeListingsCount} aktive Inserate (${args.mix}).`
+      ? "Es wirkt so, als würden bei Ihnen mehrere Objekte parallel betreut."
       : "";
   const growthHint =
     typeof args.newListings30d === "number"
-      ? `${args.newListings30d} neue Inserate in 30 Tagen sprechen für laufenden Anfragefluss.`
+      ? "Der aktuelle Vermarktungsrhythmus deutet auf laufend neue Anfragen hin."
       : "";
   const evidenceHint = [args.evidence, args.researchInsights].filter(Boolean).join(" ");
   const signalLine =
@@ -150,22 +146,23 @@ function fallbackPack(args: {
 
   const emailBody = compactBody(`${salutation}
 
-ich bin Kilian von Advaic, weil mir bei ${args.companyName} besonders ${hook} aufgefallen ist.
-${pain} ${signalLine}
-Advaic beantwortet klare Fälle automatisch, schickt unklare Fälle in die Freigabe und führt vor jedem Versand Qualitätschecks auf Relevanz, Kontext und Ton aus.
-Ist das bei Ihnen aktuell ein relevantes Thema oder haben Sie es intern bereits sauber gelöst?`);
+ich bin Kilian, Gründer von Advaic.
+Ich bin auf ${args.companyName} gestoßen und hatte den Eindruck, dass ${triggerClause}.
+Genau in so einem Setup wird es schnell schwierig, überall zügig zu antworten, ohne dass unnötig Zeit in Standardfragen verloren geht oder Anfragen liegen bleiben.
+Ist das bei Ihnen aktuell ein Thema oder haben Sie das intern bereits gut im Griff?`);
 
   const linkedinBody = compactBody(`Hallo ${args.contactName || args.companyName},
-kurze Beobachtung zu ${args.companyName}: ${hook}
+ich bin Kilian von Advaic.
+Beim Blick auf ${args.companyName} hatte ich den Eindruck, dass ${hook.replace(/[.!?]+$/, "")}.
 ${pain}
-Klar = Auto, unklar = Freigabe, plus Qualitätschecks vor jedem Versand. Ist das für Sie gerade relevant?`);
+Ist das für Sie gerade ein Thema?`);
 
   const phoneBody = compactBody(`Telefonleitfaden:
 1) Bezug herstellen: "${hook}"
 2) Pain spiegeln: "${pain} ${signalLine}"
-3) Sicherheitslogik erklären: "Klar = Auto, unklar = Freigabe, vor Versand Qualitätschecks."
+3) Folgen konkret machen: "Wo verlieren Sie aktuell die meiste Zeit bei Anfragen?"
 4) Einwand aufnehmen: "${objection} ${objectionRoute.short_rebuttal}"
-5) Abschlussfrage: "Ist das aktuell relevant oder intern bereits sauber gelöst?"`);
+5) Abschlussfrage: "Ist das aktuell relevant oder intern bereits gut gelöst?"`);
 
   return {
     reason:
@@ -211,7 +208,7 @@ async function maybeGenerateWithAi(args: {
   if (!endpoint || !apiKey || !deployment) return null;
 
   const fallbackSystem =
-    "Du bist ein Top-Sales-Writer für natürliche B2B-Outreach-Nachrichten an deutsche Immobilienmakler. Schreibe professionell in Sie-Ansprache. Keine künstlichen Phrasen, kein Kaufdruck. Gib nur JSON zurück.";
+    "Du bist ein Top-Sales-Writer für natürliche Touch-1-Outreach-Nachrichten an deutsche Immobilienmakler. Schreibe professionell in Sie-Ansprache. Keine künstlichen Phrasen, kein Kaufdruck. Gib nur JSON zurück.";
   const fallbackUser = `Erzeuge ein Nachrichtenpaket mit 3 Varianten:
 - email
 - linkedin
@@ -219,8 +216,9 @@ async function maybeGenerateWithAi(args: {
 
 Alle Varianten müssen sich natürlich lesen und in der gesamten Nachricht konkret personalisiert sein.
 Pflicht in jeder Variante:
-- klar = Auto, unklar = Freigabe, vor Versand Qualitätschecks
-- genau ein druckfreier nächster Schritt
+- klarer Anlass, warum genau diese Firma
+- alltagsnahes Problem
+- genau eine kleine Relevanzfrage
 
 Kontext:
 - Firma: {{COMPANY_NAME}}
@@ -245,11 +243,12 @@ Kontext:
 Regeln:
 - Keine Aufzählungsüberschriften im Fließtext.
 - Kein Buzzword-Sprech.
-- E-Mail: 65 bis 95 Wörter, maximal 4 Sätze.
+- E-Mail: 60 bis 90 Wörter, maximal 5 Sätze.
 - LinkedIn: 35 bis 65 Wörter.
 - Telefon-Skript: 5 klare Schritte.
 - Kein Demo-/Termin-Ask in E-Mail oder LinkedIn.
 - Keine URLs im Fließtext.
+- Keine Produktmechanik im Erstkontakt (kein Auto/Freigabe/Qualitätschecks).
 
 Stilvorlage für E-Mail/LinkedIn (nicht wörtlich kopieren, nur Struktur):
 1) Mini-Intro (wer schreibt)
@@ -325,7 +324,7 @@ Gib nur JSON zurück:
   const linkedin = messages.find((x) => x.channel === "linkedin");
   const telefon = messages.find((x) => x.channel === "telefon");
   if (!email || !linkedin || !telefon) return null;
-  if (!hasMessageSafetySignals(email.body) || !hasPersonalSignals(email.body, args.vars.COMPANY_NAME || "", args.vars.CITY || null, args.vars.HOOK || null)) {
+  if (!hasPersonalSignals(email.body, args.vars.COMPANY_NAME || "", args.vars.CITY || null, args.vars.HOOK || null)) {
     return null;
   }
   const guardrail = evaluateFirstTouchGuardrails({

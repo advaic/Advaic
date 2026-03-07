@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/routeAuth";
 import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
+import { inferSegmentAndPlaybook } from "@/lib/crm/acqIntelligence";
 
 export const runtime = "nodejs";
 
@@ -63,7 +64,9 @@ export async function GET(req: NextRequest) {
 
   const [prospectsRes, messagesRes, eventsRes, rolloutsRes] = await Promise.all([
     (supabase.from("crm_prospects") as any)
-      .select("id, stage, company_name, object_focus, source_url")
+      .select(
+        "id, stage, company_name, object_focus, source_url, share_miete_percent, share_kauf_percent, active_listings_count, automation_readiness",
+      )
       .eq("agent_id", agentId)
       .limit(5000),
     (supabase.from("crm_outreach_messages") as any)
@@ -107,8 +110,27 @@ export async function GET(req: NextRequest) {
     company_name: string | null;
     object_focus: string | null;
     source_url: string | null;
+    share_miete_percent: number | null;
+    share_kauf_percent: number | null;
+    active_listings_count: number | null;
+    automation_readiness: string | null;
   }>;
   const prospectMap = new Map(prospects.map((p) => [String(p.id), p]));
+  const segmentByProspect = new Map(
+    prospects.map((p) => [
+      String(p.id),
+      inferSegmentAndPlaybook({
+        object_focus: p.object_focus,
+        share_miete_percent:
+          Number.isFinite(Number(p.share_miete_percent)) ? Number(p.share_miete_percent) : null,
+        share_kauf_percent:
+          Number.isFinite(Number(p.share_kauf_percent)) ? Number(p.share_kauf_percent) : null,
+        active_listings_count:
+          Number.isFinite(Number(p.active_listings_count)) ? Number(p.active_listings_count) : null,
+        automation_readiness: p.automation_readiness,
+      }).segment_key,
+    ]),
+  );
 
   const events = (eventsRes.data || []) as Array<{
     prospect_id: string;
@@ -228,6 +250,19 @@ export async function GET(req: NextRequest) {
       won: Set<string>;
     }
   >();
+  const variantSegmentStats = new Map<
+    string,
+    {
+      segment_key: string;
+      channel: string;
+      template_variant: string;
+      sent_messages: number;
+      touched: Set<string>;
+      reply: Set<string>;
+      pilot: Set<string>;
+      won: Set<string>;
+    }
+  >();
 
   const ensureChannel = (channel: string) => {
     const ch = channelStats.get(channel) || {
@@ -265,6 +300,27 @@ export async function GET(req: NextRequest) {
     templateEntry.sent_messages += 1;
     templateEntry.touched.add(msg.prospect_id);
     templateStats.set(templateKey, templateEntry);
+
+    const segmentKey = String(
+      (msg.metadata as any)?.segment_key ||
+        (msg.metadata as any)?.cadence_segment_key ||
+        segmentByProspect.get(msg.prospect_id) ||
+        "unknown",
+    );
+    const vsKey = `${segmentKey}::${msg.channel}::${variant}`;
+    const vsEntry = variantSegmentStats.get(vsKey) || {
+      segment_key: segmentKey,
+      channel: msg.channel,
+      template_variant: variant,
+      sent_messages: 0,
+      touched: new Set<string>(),
+      reply: new Set<string>(),
+      pilot: new Set<string>(),
+      won: new Set<string>(),
+    };
+    vsEntry.sent_messages += 1;
+    vsEntry.touched.add(msg.prospect_id);
+    variantSegmentStats.set(vsKey, vsEntry);
   }
 
   for (const failed of messagesRaw) {
@@ -307,6 +363,15 @@ export async function GET(req: NextRequest) {
     const templateKey = `${attributed.channel}::${getTemplateVariant(attributed)}`;
     const t = templateStats.get(templateKey);
     if (t) t.reply.add(prospectId);
+    const segmentKey = String(
+      (attributed.metadata as any)?.segment_key ||
+        (attributed.metadata as any)?.cadence_segment_key ||
+        segmentByProspect.get(prospectId) ||
+        "unknown",
+    );
+    const vsKey = `${segmentKey}::${attributed.channel}::${getTemplateVariant(attributed)}`;
+    const vs = variantSegmentStats.get(vsKey);
+    if (vs) vs.reply.add(prospectId);
   }
 
   for (const prospectId of pilotProspectSet.values()) {
@@ -319,6 +384,15 @@ export async function GET(req: NextRequest) {
     const templateKey = `${attributed.channel}::${getTemplateVariant(attributed)}`;
     const t = templateStats.get(templateKey);
     if (t) t.pilot.add(prospectId);
+    const segmentKey = String(
+      (attributed.metadata as any)?.segment_key ||
+        (attributed.metadata as any)?.cadence_segment_key ||
+        segmentByProspect.get(prospectId) ||
+        "unknown",
+    );
+    const vsKey = `${segmentKey}::${attributed.channel}::${getTemplateVariant(attributed)}`;
+    const vs = variantSegmentStats.get(vsKey);
+    if (vs) vs.pilot.add(prospectId);
   }
 
   for (const prospectId of firstWonByProspect.keys()) {
@@ -331,6 +405,15 @@ export async function GET(req: NextRequest) {
     const templateKey = `${attributed.channel}::${getTemplateVariant(attributed)}`;
     const t = templateStats.get(templateKey);
     if (t) t.won.add(prospectId);
+    const segmentKey = String(
+      (attributed.metadata as any)?.segment_key ||
+        (attributed.metadata as any)?.cadence_segment_key ||
+        segmentByProspect.get(prospectId) ||
+        "unknown",
+    );
+    const vsKey = `${segmentKey}::${attributed.channel}::${getTemplateVariant(attributed)}`;
+    const vs = variantSegmentStats.get(vsKey);
+    if (vs) vs.won.add(prospectId);
   }
 
   for (const ev of optOutEvents) {
@@ -416,6 +499,32 @@ export async function GET(req: NextRequest) {
     })
     .sort((a, b) => b.sent_messages - a.sent_messages)
     .slice(0, 24);
+
+  const variant_segment_metrics = [...variantSegmentStats.values()]
+    .map((stat) => {
+      const touched = stat.touched.size;
+      const reply = stat.reply.size;
+      const pilot = stat.pilot.size;
+      const won = stat.won.size;
+      return {
+        segment_key: stat.segment_key,
+        channel: stat.channel,
+        template_variant: stat.template_variant,
+        sent_messages: stat.sent_messages,
+        touched_prospects: touched,
+        reply_prospects: reply,
+        reply_rate_pct: safeRate(reply, touched),
+        pilot_prospects: pilot,
+        pilot_rate_pct: safeRate(pilot, touched),
+        won_prospects: won,
+        won_rate_pct: safeRate(won, touched),
+      };
+    })
+    .sort((a, b) => {
+      if (b.won_rate_pct !== a.won_rate_pct) return b.won_rate_pct - a.won_rate_pct;
+      return b.sent_messages - a.sent_messages;
+    })
+    .slice(0, 36);
 
   const attributionByChannel = new Map<string, { won: number; pilot: number; replied: number; total: number }>();
   const attributionByTemplate = new Map<string, { won: number; pilot: number; replied: number; total: number }>();
@@ -528,6 +637,7 @@ export async function GET(req: NextRequest) {
     updated_at: new Date().toISOString(),
     channel_metrics,
     template_metrics,
+    variant_segment_metrics,
     deliverability_correlation,
     revenue_attribution,
     sequence_rollouts,

@@ -4,6 +4,45 @@ import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
 
 export const runtime = "nodejs";
 
+function computeReadinessScore(input: {
+  fit_score?: number | null;
+  stage?: string | null;
+  next_action_at?: string | null;
+  updated_at?: string | null;
+  source_checked_at?: string | null;
+  preferred_channel?: string | null;
+  contact_email?: string | null;
+}) {
+  let score = Number.isFinite(Number(input.fit_score)) ? Number(input.fit_score) : 50;
+  const stage = String(input.stage || "").toLowerCase();
+  if (stage === "new" || stage === "researching" || stage === "contacted") score += 8;
+  if (stage === "replied" || stage === "nurture") score += 2;
+  if (stage.startsWith("pilot") || stage === "won" || stage === "lost") score -= 20;
+
+  const now = Date.now();
+  const nextActionTs = input.next_action_at ? new Date(input.next_action_at).getTime() : null;
+  if (nextActionTs && Number.isFinite(nextActionTs)) {
+    if (nextActionTs <= now) score += 7;
+    else if (nextActionTs <= now + 2 * 24 * 60 * 60 * 1000) score += 3;
+  }
+  const updatedTs = input.updated_at ? new Date(input.updated_at).getTime() : null;
+  if (updatedTs && Number.isFinite(updatedTs)) {
+    if (updatedTs >= now - 14 * 24 * 60 * 60 * 1000) score += 4;
+    else score -= 4;
+  }
+  const sourceTs = input.source_checked_at ? new Date(input.source_checked_at).getTime() : null;
+  if (sourceTs && Number.isFinite(sourceTs)) {
+    if (sourceTs >= now - 30 * 24 * 60 * 60 * 1000) score += 4;
+    else score -= 3;
+  }
+  const preferredChannel = String(input.preferred_channel || "").toLowerCase();
+  if (preferredChannel === "email") {
+    if (String(input.contact_email || "").trim()) score += 4;
+    else score -= 8;
+  }
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
 function isSchemaMismatch(error: { message?: string; details?: string; hint?: string; code?: string } | null | undefined) {
   const text = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
   const code = String(error?.code || "").toLowerCase();
@@ -52,7 +91,7 @@ export async function GET(req: NextRequest) {
   ]);
 
   let dueRes: { data: any[] | null; error: any } = dueResRaw as any;
-  if (dueRes.error && String((dueRes.error as any)?.code || "") === "42703") {
+  if (dueRes.error && isSchemaMismatch(dueRes.error as any)) {
     const fallback = await (supabase.from("crm_followup_due") as any)
       .select(
         "prospect_id, company_name, contact_name, priority, fit_score, recommended_action, recommended_reason, recommended_code, recommended_primary_label, recommended_at",
@@ -110,7 +149,18 @@ export async function GET(req: NextRequest) {
       lost_total: 0,
     },
     followup_due: dueRes.data || [],
-    prospects: prospectsRes.data || [],
+    prospects: ((prospectsRes.data || []) as any[]).map((row) => ({
+      ...row,
+      readiness_score: computeReadinessScore({
+        fit_score: Number(row?.fit_score || 0),
+        stage: row?.stage || null,
+        next_action_at: row?.next_action_at || null,
+        updated_at: row?.updated_at || null,
+        source_checked_at: row?.source_checked_at || null,
+        preferred_channel: row?.preferred_channel || null,
+        contact_email: row?.contact_email || null,
+      }),
+    })),
     open_feedback: {
       total: Number(feedbackRes.count || 0),
       by_severity: openFeedbackBySeverity,

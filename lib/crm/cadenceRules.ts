@@ -160,13 +160,20 @@ export function evaluateFirstTouchGuardrails(args: {
   const reasons: string[] = [];
 
   if (!body) reasons.push("Nachrichtentext fehlt.");
-  if (words > 95) reasons.push("Erstkontakt ist zu lang (maximal 95 Wörter).");
+  if (words > 90) reasons.push("Erstkontakt ist zu lang (maximal 90 Wörter).");
   if (words < 18) reasons.push("Erstkontakt ist zu kurz und wirkt unklar.");
+  if (sentences < 3) reasons.push("Erstkontakt ist zu kurz aufgebaut (mindestens 3 Sätze).");
   if (sentences > 5) reasons.push("Erstkontakt hat zu viele Sätze (maximal 5).");
   if (!lower.includes("?")) reasons.push("Erstkontakt endet nicht mit einer kleinen Frage.");
-  if (args.triggerEvidenceCount < 2) reasons.push("Zu wenig Trigger-Evidenz (mindestens 2 konkrete Signale).");
+  if (args.triggerEvidenceCount < 1) reasons.push("Es fehlt ein klarer Anlass für genau diese Firma.");
   if (/https?:\/\/\S+/i.test(body)) {
     reasons.push("Erstkontakt enthält rohe URLs.");
+  }
+  if (/\b\d{2,}\b/.test(body) || /%/.test(body)) {
+    reasons.push("Erstkontakt enthält rohe Kennzahlen statt natürlicher Formulierung.");
+  }
+  if (/ich bin kilian[^.!?\n]{0,120}\bweil\b/i.test(body)) {
+    reasons.push("Erster Satz wirkt unnatürlich verkettet.");
   }
 
   const bannedPitchPatterns = [
@@ -177,6 +184,12 @@ export function evaluateFirstTouchGuardrails(args: {
     /\btermin\b/i,
     /\bkontaktquelle\b/i,
     /\bimpressum\b/i,
+    /\bbesonders folgendes aufgefallen\b/i,
+    /\brepetitive erstfragen\b/i,
+    /\bzentraler zeitfresser\b/i,
+    /\bklare f(ä|ae)lle automatisch\b/i,
+    /\bunklare f(ä|ae)lle\b/i,
+    /\bqualit(ä|ae)tschecks auf relevanz, kontext und ton\b/i,
     /\bangebot\b/i,
     /\bpreis\b/i,
     /\bvertrag\b/i,
@@ -188,15 +201,13 @@ export function evaluateFirstTouchGuardrails(args: {
   if (bannedPitchPatterns.some((r) => r.test(body))) {
     reasons.push("Erstkontakt enthält zu harten oder werblichen Pitch.");
   }
-
-  const hasSafetySignal =
-    lower.includes("freigabe") &&
-    (lower.includes("qualitätscheck") ||
-      lower.includes("qualitaetscheck") ||
-      lower.includes("qualitätskontroll") ||
-      lower.includes("qualitaetskontroll"));
-  if (!hasSafetySignal) {
-    reasons.push("Sicherheitslogik (Freigabe + Qualitätschecks) ist nicht klar genug enthalten.");
+  if (
+    lower.includes("automatisch") ||
+    lower.includes("freigabe") ||
+    lower.includes("qualitätscheck") ||
+    lower.includes("qualitaetscheck")
+  ) {
+    reasons.push("Erstkontakt enthält zu viele Produktdetails für Touch 1.");
   }
 
   return {

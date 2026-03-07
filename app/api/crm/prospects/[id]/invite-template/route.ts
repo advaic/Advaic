@@ -156,14 +156,28 @@ function deriveHookFromSignals(args: {
   shareKaufPercent: number | null;
   targetGroup: string | null;
 }) {
-  if (typeof args.activeListingsCount === "number") {
-    const miete = typeof args.shareMietePercent === "number" ? args.shareMietePercent : "?";
-    const kauf = typeof args.shareKaufPercent === "number" ? args.shareKaufPercent : "?";
-    return `${args.companyName} hat aktuell ca. ${args.activeListingsCount} aktive Inserate (Miete ${miete}% / Kauf ${kauf}%).`;
+  if (
+    typeof args.activeListingsCount === "number" &&
+    typeof args.shareMietePercent === "number" &&
+    args.activeListingsCount >= 20 &&
+    args.shareMietePercent >= 65
+  ) {
+    return "bei Ihnen viele Mietobjekte parallel vermarktet werden.";
   }
-  if (args.targetGroup) return `Ihre Positionierung wirkt klar auf ${args.targetGroup} ausgerichtet.`;
-  if (args.city) return `Ihre Präsenz in ${args.city} fällt durch einen klaren Fokus auf.`;
-  return `Ihre Positionierung bei ${args.companyName} wirkt klar und fokussiert.`;
+  if (
+    typeof args.activeListingsCount === "number" &&
+    typeof args.shareKaufPercent === "number" &&
+    args.activeListingsCount >= 20 &&
+    args.shareKaufPercent >= 65
+  ) {
+    return "bei Ihnen mehrere Kaufobjekte parallel in der Vermarktung sind.";
+  }
+  if (typeof args.activeListingsCount === "number" && args.activeListingsCount >= 15) {
+    return "Sie mehrere Objekte parallel vermarkten und dabei viel Kommunikation gleichzeitig läuft.";
+  }
+  if (args.targetGroup) return `Ihr Auftritt klar auf ${args.targetGroup} ausgerichtet ist.`;
+  if (args.city) return `Sie in ${args.city} sichtbar viele Anfragen parallel betreuen.`;
+  return `${args.companyName} auf persönliche Betreuung setzt und parallel viele Anfragen steuern muss.`;
 }
 
 function hasStrongInviteOutput(args: {
@@ -180,13 +194,9 @@ function hasStrongInviteOutput(args: {
     (companyToken.length > 2 && body.includes(companyToken)) ||
     (cityToken.length > 2 && body.includes(cityToken)) ||
     (hookToken.length > 10 && body.includes(hookToken.slice(0, 18)));
-  const hasSafetySignal =
-    (body.includes("freigabe") || body.includes("freigeben")) &&
-    (body.includes("qualitätscheck") ||
-      body.includes("qualitaetscheck") ||
-      body.includes("qualitätskontroll") ||
-      body.includes("qualitaetskontroll"));
-  return hasPersonalSignal && hasSafetySignal;
+  const hasQuestion = body.includes("?");
+  const hasRawNoise = /https?:\/\/\S+|\bkontaktquelle\b|\bimpressum\b/i.test(args.body);
+  return hasPersonalSignal && hasQuestion && !hasRawNoise;
 }
 
 function valueNarrativeForSegment(segmentKey: string, objectFocus: string) {
@@ -241,7 +251,7 @@ async function maybeGenerateInviteWithAi(args: {
   if (!endpoint || !apiKey || !deployment) return null;
 
   const fallbackSystemPrompt =
-    "Du bist ein Top-Sales-Writer für B2B-Outreach im Immobilienbereich. Schreibe natürlich, glaubwürdig und konkret in professioneller Sie-Ansprache. Gib nur JSON zurück.";
+    "Du optimierst Touch-1-Cold-Outreach für Advaic. Schreibe wie ein echter Gründer an einen Makler: ruhig, klar, natürlich, kurz, nicht salesy. Gib nur JSON zurück.";
   const fallbackUserPrompt = `Erzeuge eine personalisierte Tester-Einladung.
 Kontext:
 - Firma: {{COMPANY_NAME}}
@@ -278,23 +288,25 @@ Kontext:
 - Objection-Rückfrage: {{OBJECTION_NEXT_QUESTION}}
 
 Ziel:
-- Die Nachricht muss sich wie von einem echten Menschen geschrieben lesen, nicht wie ein Template.
-- Verwende mindestens 2 konkrete Kontexthinweise aus den Daten.
-- Erkläre die Produktlogik verständlich in 1 Satz:
-  "klar = Auto, unklar = Freigabe, vor Versand Qualitätschecks".
-- Kein Buzzword-Sprech, keine Floskeln wie "revolutionär", "next level", "ich hoffe, es geht Ihnen gut".
-- Keine Aufzählungen und keine Abschnittsüberschriften im E-Mail-Text.
-- Maximal 95 Wörter und maximal 4 Sätze.
-- Genau ein druckfreier CTA-Satz am Ende.
+- Die Nachricht muss sich wie ein echter, kurzer Founder-Text lesen.
+- Touch 1 soll nur leisten:
+  1) wer schreibt,
+  2) warum genau diese Firma,
+  3) welches plausible Alltagsproblem,
+  4) eine kleine, leicht beantwortbare Frage.
+- Keine Produktdetails in Touch 1 (kein Auto/Freigabe/Qualitätschecks).
+- Keine Rohdaten, keine URLs, keine Report-Sprache.
+- Maximal 90 Wörter, 3 bis 5 kurze Sätze.
 - Kein Demo- oder Termin-Ask im Erstkontakt.
+- Keine Buzzwords oder Marketingfloskeln.
 - Schreibe ausschließlich in Sie-Ansprache.
 
 Nutze als Stilvorlage diese Struktur:
 "Hallo [Name],
 ich bin Kilian, Gründer von Advaic.
-Ich bin auf euch gestoßen, weil mir aufgefallen ist, dass ihr mehrere Objekte parallel aktiv vermarktet und gleichzeitig stark auf persönliche Betreuung setzt.
-Genau in so einem Setup wird es oft schwierig, eingehende Anfragen schnell genug zu beantworten, ohne dass die Kommunikation generisch wirkt oder jemand liegen bleibt.
-Ist das für euch gerade überhaupt ein relevantes Thema?"
+Ich bin auf [Firma] gestoßen und hatte den Eindruck, dass bei Ihnen durch die vielen [Objekte] ziemlich viele ähnliche Interessentenanfragen parallel reinkommen dürften.
+Genau in so einem Setup wird es schnell schwierig, überall zügig zu antworten, ohne dass unnötig Zeit in Standardfragen verloren geht oder Anfragen liegen bleiben.
+Ist das bei Ihnen gerade ein relevantes Thema?"
 
 Wichtig:
 - Schreibe diese Vorlage nicht wörtlich ab.
@@ -307,14 +319,20 @@ Ausgabe als JSON:
   "body": "string (max 1800)"
 }`;
 
-  const systemPrompt = normalizeMultiline(
-    args.prompt?.system_prompt || fallbackSystemPrompt,
-    5000,
-  );
-  const userPrompt = normalizeMultiline(
-    applyVars(args.prompt?.user_prompt || fallbackUserPrompt, args.context),
-    8000,
-  );
+  const systemPrompt = normalizeMultiline(args.prompt?.system_prompt || fallbackSystemPrompt, 5000);
+  const baseUserPrompt = applyVars(args.prompt?.user_prompt || fallbackUserPrompt, args.context);
+  const hardTouch1Rules = `
+
+HARTE TOUCH-1-REGELN (verbindlich, ohne Ausnahme):
+- Der erste Satz muss natürlich sein: "ich bin Kilian, Gründer von Advaic." und darf NICHT mit "weil" verkettet werden.
+- Keine Rohdaten, keine Prozente, keine URL, keine Kontaktquelle- oder Impressum-Referenz.
+- Trigger immer in menschliche Sprache übersetzen.
+- Keine Produktmechanik im Erstkontakt (kein automatisch/Freigabe/Qualitätschecks).
+- Genau 3 bis 5 kurze Sätze, maximal 90 Wörter.
+- Abschluss mit einer kleinen, reibungsarmen Frage.
+- Ton: ruhig, klar, intelligent, menschlich, direkt, nicht salesy.
+`;
+  const userPrompt = normalizeMultiline(`${baseUserPrompt}${hardTouch1Rules}`, 8000);
 
   const url = `${endpoint.replace(/\/+$/, "")}/openai/deployments/${encodeURIComponent(
     deployment,
@@ -407,9 +425,11 @@ function buildTesterInvite(args: {
   objectionResponse: string;
   objectionProof: string;
   objectionNextQuestion: string;
+  triggerEvidenceCount: number;
 }) {
   const salutation = args.contactName ? `Hallo ${args.contactName},` : `Hallo ${args.companyName}-Team,`;
-  const defaultHook = deriveHookFromSignals({
+  const intro = "ich bin Kilian, Gründer von Advaic.";
+  const defaultTrigger = deriveHookFromSignals({
     companyName: args.companyName,
     city: args.city,
     activeListingsCount: args.activeListingsCount,
@@ -417,70 +437,98 @@ function buildTesterInvite(args: {
     shareKaufPercent: args.shareKaufPercent,
     targetGroup: args.targetGroup,
   });
-  const hook = normalizeMultiline(args.hook || defaultHook, 280);
-  const pain = normalizeMultiline(
-    args.painPoint ||
-      "im Tagesgeschäft gehen bei vielen wiederkehrenden Interessentenanfragen schnell wertvolle Minuten im Postfach verloren.",
-    280,
-  );
-  const mixLine =
-    typeof args.activeListingsCount === "number"
-      ? `Öffentlich sichtbar sind derzeit rund ${args.activeListingsCount} aktive Inserate${
-          typeof args.shareMietePercent === "number" || typeof args.shareKaufPercent === "number"
-            ? ` (Miete ${args.shareMietePercent ?? "?"}% / Kauf ${args.shareKaufPercent ?? "?"}%).`
-            : "."
-        }`
-      : "";
-  const newListingsLine =
-    typeof args.newListings30d === "number" ? `${args.newListings30d} neue Inserate in 30 Tagen deuten auf laufenden Anfragefluss hin.` : "";
-  const evidenceLine = joinNonEmpty([args.evidence, args.researchInsights], " ");
-  const signalLine =
-    mixLine ||
-    newListingsLine ||
-    evidenceLine ||
-    `Ihre Präsenz in ${args.city || args.region || "Ihrer Region"} wirkt klar sichtbar.`;
-  const objectionLine = args.primaryObjection
-    ? `Wenn der Punkt "${args.primaryObjection}" relevant ist: ${args.objectionResponse || "das lässt sich über klare Freigaberegeln sauber steuern."}`
-    : "";
-
-  const body = compactBody(`${salutation}
-
-ich bin Kilian von Advaic, weil mir bei ${args.companyName} besonders Folgendes aufgefallen ist: ${hook}
-${pain} ${signalLine}
-Advaic beantwortet klare Fälle automatisch, schickt unklare Fälle in die Freigabe und führt vor jedem Versand Qualitätschecks auf Relevanz, Kontext und Ton aus.
-${objectionLine ? `${objectionLine} ` : ""}Ist das bei Ihnen aktuell ein relevantes Thema oder haben Sie es intern bereits gut gelöst?`);
-
-  const subject =
-    args.channel === "email"
-      ? "Anfragen"
-      : "Relevanzcheck";
-
-  return { subject, body };
-}
-
-function buildStrictFallbackInvite(args: {
-  companyName: string;
-  contactName: string | null;
-  hook: string | null;
-  painPoint: string | null;
-}) {
-  const salutation = args.contactName ? `Hallo ${args.contactName},` : `Hallo ${args.companyName}-Team,`;
-  const hook =
+  const triggerCore =
     sanitizeOutreachSnippet(args.hook, 220) ||
-    `${args.companyName} vermarktet mehrere Objekte parallel und setzt gleichzeitig auf persönliche Betreuung.`;
-  const pain =
+    sanitizeOutreachSnippet(defaultTrigger, 220) ||
+    `${args.companyName} mehrere Objekte parallel vermarktet und gleichzeitig auf persönliche Betreuung setzt.`;
+  const triggerNatural = triggerCore
+    .replace(/^(sie|ihr|ihre)\s+/i, "")
+    .replace(/[.!?]+$/, "")
+    .trim();
+
+  const triggerClause = (() => {
+    const focus = String(args.objectFocus || "").toLowerCase();
+    const mieteHeavy = typeof args.shareMietePercent === "number" && args.shareMietePercent >= 60;
+    const kaufHeavy = typeof args.shareKaufPercent === "number" && args.shareKaufPercent >= 60;
+    if (focus === "miete" || mieteHeavy) {
+      return "bei Ihnen durch die vielen Mietobjekte ziemlich viele ähnliche Interessentenanfragen parallel reinkommen dürften";
+    }
+    if (focus === "kauf" || kaufHeavy) {
+      return "bei Ihnen durch die laufende Kaufvermarktung viele ähnliche Interessentenanfragen parallel reinkommen dürften";
+    }
+    return triggerNatural || "bei Ihnen parallel viele ähnliche Interessentenanfragen reinkommen dürften";
+  })();
+
+  const painCore =
     sanitizeOutreachSnippet(args.painPoint, 220) ||
-    "In so einem Setup wird es schnell schwierig, Anfragen gleichzeitig zügig und individuell zu beantworten.";
+    "in so einem Setup wird es schnell schwierig, eingehende Anfragen überall zügig zu beantworten, ohne dass etwas liegen bleibt.";
 
-  return {
-    subject: "Anfragen",
-    body: compactBody(`${salutation}
+  const mk = (sentence2: string, sentence3: string, sentence4: string) =>
+    compactBody(`${salutation}
 
-ich bin Kilian, Gründer von Advaic, weil mir bei ${args.companyName} besonders Folgendes aufgefallen ist: ${hook}
-${pain}
-Advaic beantwortet klare Fälle automatisch, schickt unklare Fälle in die Freigabe und führt vor jedem Versand Qualitätschecks auf Relevanz, Kontext und Ton aus.
-Ist das bei Ihnen aktuell ein relevantes Thema oder haben Sie es intern bereits gut gelöst?`),
+${intro}
+
+${sentence2}
+
+${sentence3}
+
+${sentence4}`);
+
+  const scoreTouch1 = (body: string) => {
+    const guard = evaluateFirstTouchGuardrails({
+      body,
+      triggerEvidenceCount: args.triggerEvidenceCount,
+    });
+    let score = guard.pass ? 100 : 60;
+    score -= guard.reasons.length * 8;
+    if (/crm|template|workflow|pipeline/i.test(body)) score -= 12;
+    if (/https?:\/\//i.test(body)) score -= 25;
+    if (/\b\d{2,}\b|%/.test(body)) score -= 14;
+    if (/qualitätscheck|qualitaetscheck|freigabe|automatisch/i.test(body)) score -= 16;
+    if (/ich bin kilian[^.!?\n]{0,120}\bweil\b/i.test(body)) score -= 18;
+    return { score, guard };
   };
+
+  const variants = [
+    {
+      key: "A",
+      label: "am natürlichsten",
+      subject: args.channel === "email" ? "Anfragen" : "",
+      body: mk(
+        `Ich bin auf ${args.companyName} gestoßen und hatte den Eindruck, dass ${triggerClause}.`,
+        "Genau in so einem Setup wird es schnell schwierig, überall zügig zu antworten, ohne dass unnötig Zeit in Standardfragen verloren geht oder Anfragen liegen bleiben.",
+        "Ist das bei Ihnen gerade ein relevantes Thema?",
+      ),
+    },
+    {
+      key: "B",
+      label: "etwas direkter",
+      subject: args.channel === "email" ? "Reaktionszeit" : "",
+      body: mk(
+        `Beim Blick auf ${args.companyName} hatte ich den Eindruck, dass ${triggerNatural}.`,
+        "Dann wird es im Alltag oft eng, schnell genug zu antworten und trotzdem persönlich zu bleiben.",
+        "Ist das bei Ihnen aktuell ein Thema oder haben Sie das bereits gut im Griff?",
+      ),
+    },
+    {
+      key: "C",
+      label: "etwas schärfer",
+      subject: args.channel === "email" ? "Betreuung" : "",
+      body: mk(
+        `Bei ${args.companyName} wirkt es so, dass ${triggerNatural}.`,
+        "Operativ führt das häufig zu Verzögerungen bei Standardanfragen, obwohl eigentlich alles sauber laufen soll.",
+        "Ist das bei Ihnen im Tagesgeschäft eher ein Engpass oder gerade kein Thema?",
+      ),
+    },
+  ] as const;
+
+  const scored = variants.map((variant) => {
+    const rated = scoreTouch1(variant.body);
+    return { ...variant, score: rated.score, guard_reasons: rated.guard.reasons };
+  });
+
+  const final = scored.sort((a, b) => b.score - a.score)[0];
+  return { final, variants: scored };
 }
 
 export async function GET(
@@ -637,21 +685,15 @@ export async function GET(
     sourceCheckedAt: inviteContext.sourceCheckedAt,
   }).length;
 
-  let tpl = buildTesterInvite(inviteContext);
-  if (inviteContext.channel === "email") {
-    const fallbackGuardrail = evaluateFirstTouchGuardrails({
-      body: tpl.body,
-      triggerEvidenceCount,
-    });
-    if (!fallbackGuardrail.pass) {
-      tpl = buildStrictFallbackInvite({
-        companyName: inviteContext.companyName,
-        contactName: inviteContext.contactName,
-        hook: inviteContext.hook,
-        painPoint: inviteContext.painPoint,
-      });
-    }
-  }
+  const invitePack = buildTesterInvite({
+    ...inviteContext,
+    triggerEvidenceCount,
+  });
+  let tpl = {
+    subject: invitePack.final.subject || "Anfragen",
+    body: invitePack.final.body,
+  };
+  let aiCandidate: { subject: string; body: string } | null = null;
 
   try {
     const activePrompt = await maybeLoadPrompt(supabase);
@@ -661,8 +703,8 @@ export async function GET(
       triggerEvidenceCount,
     });
     if (aiTemplate?.body) {
-      tpl = {
-        subject: aiTemplate.subject || tpl.subject,
+      aiCandidate = {
+        subject: aiTemplate.subject || "Anfragen",
         body: aiTemplate.body,
       };
     }
@@ -670,5 +712,19 @@ export async function GET(
     // deterministic fallback above stays active
   }
 
-  return NextResponse.json({ ok: true, template: tpl });
+  return NextResponse.json({
+    ok: true,
+    generated_with: "fallback",
+    template: tpl,
+    final_variant: invitePack.final.key,
+    variants: invitePack.variants.map((variant) => ({
+      key: variant.key,
+      label: variant.label,
+      subject: variant.subject || "",
+      body: variant.body,
+      score: variant.score,
+      guard_reasons: variant.guard_reasons,
+    })),
+    ai_candidate: aiCandidate,
+  });
 }
