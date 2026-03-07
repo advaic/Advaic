@@ -24,6 +24,38 @@ function safeDecodeURIComponent(value: string) {
   }
 }
 
+function classifyConnectFailure(error: unknown): string {
+  const raw = String((error as any)?.message || error || "").toLowerCase();
+  if (!raw) return "connect_failed";
+  if (raw.includes("missing env var: advaic_secret_encryption_key")) return "missing_encryption_key";
+  if (raw.includes("missing env var: next_public_site_url")) return "missing_site_url";
+  if (raw.includes("missing env var: google_client_id")) return "missing_google_client_id";
+  if (raw.includes("missing env var: google_client_secret")) return "missing_google_client_secret";
+  if (raw.includes("token exchange failed") && raw.includes("redirect_uri_mismatch")) {
+    return "redirect_uri_mismatch";
+  }
+  if (raw.includes("token exchange failed") && raw.includes("invalid_grant")) {
+    return "invalid_grant";
+  }
+  if (raw.includes("missing refresh_token")) return "missing_refresh_token";
+  if (raw.includes("failed to fetch google userinfo")) return "userinfo_failed";
+  if (raw.includes("db upsert failed")) return "db_upsert_failed";
+  if (raw.includes("not_authenticated")) return "not_authenticated";
+  if (raw.includes("gmail watch failed")) return "watch_setup_failed";
+  if (raw.includes("failed to persist watch state")) return "watch_state_persist_failed";
+  return "connect_failed";
+}
+
+function mapGoogleOauthError(raw: string | null): string {
+  const key = String(raw || "").trim().toLowerCase();
+  if (!key) return "oauth_error";
+  if (key === "access_denied") return "access_denied";
+  if (key === "invalid_request") return "invalid_request";
+  if (key === "unauthorized_client") return "unauthorized_client";
+  if (key === "temporarily_unavailable") return "temporarily_unavailable";
+  return "oauth_error";
+}
+
 async function updateEmailConnectionSafe(
   supabaseAdmin: any,
   id: string | number,
@@ -45,6 +77,30 @@ async function updateEmailConnectionSafe(
       .eq("id", id);
   }
 
+  return res;
+}
+
+async function upsertAgentSettingsEmailConnected(
+  supabaseAdmin: any,
+  agentId: string,
+) {
+  const nowIso = new Date().toISOString();
+  const enriched = {
+    agent_id: agentId,
+    email_connected: true,
+    updated_at: nowIso,
+  };
+  let res = await (supabaseAdmin.from("agent_settings") as any).upsert(enriched, {
+    onConflict: "agent_id",
+  });
+
+  const msg = String(res?.error?.message || "").toLowerCase();
+  if (msg.includes("column") && msg.includes("updated_at")) {
+    res = await (supabaseAdmin.from("agent_settings") as any).upsert(
+      { agent_id: agentId, email_connected: true },
+      { onConflict: "agent_id" },
+    );
+  }
   return res;
 }
 
@@ -105,6 +161,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
 
   const code = url.searchParams.get("code");
+  const oauthError = url.searchParams.get("error");
   const rawState = url.searchParams.get("state") || "";
   const decodedState = safeDecodeURIComponent(rawState);
 
@@ -138,6 +195,13 @@ export async function GET(req: NextRequest) {
   const normalizedState = normalizeReturnPath(decodedState);
 
   const nextPath = normalizedState || "/app/konto/verknuepfungen";
+
+  if (oauthError) {
+    const redirectUrl = new URL(nextPath, siteUrl);
+    redirectUrl.searchParams.set("gmail", "error");
+    redirectUrl.searchParams.set("reason", mapGoogleOauthError(oauthError));
+    return NextResponse.redirect(redirectUrl);
+  }
 
   if (!code) {
     const redirectUrl = new URL(nextPath, siteUrl);
@@ -233,12 +297,24 @@ export async function GET(req: NextRequest) {
       throw new Error(`DB upsert failed: ${upsertErr.message}`);
     }
 
-    // --- Start Gmail watch immediately on connect (so push works without manual steps) ---
+    const settingsRes = await upsertAgentSettingsEmailConnected(supabaseAdmin, user.id);
+    if (settingsRes.error) {
+      // non-blocking for OAuth success
+      console.warn("[gmail/callback] failed to mark agent_settings.email_connected", {
+        agent_id: user.id,
+        error: settingsRes.error.message,
+      });
+    }
+
+    // --- Start Gmail watch immediately on connect (non-blocking). ---
+    const projectNumberOrId =
+      process.env.GCP_PROJECT_NUMBER || process.env.GCP_PROJECT_ID || "";
+    const topicId = process.env.GMAIL_PUBSUB_TOPIC_ID || "";
     const topicName =
       process.env.GMAIL_PUBSUB_TOPIC_NAME ||
-      `projects/${mustEnv("GCP_PROJECT_NUMBER")}/topics/${mustEnv(
-        "GMAIL_PUBSUB_TOPIC_ID"
-      )}`;
+      (projectNumberOrId && topicId
+        ? `projects/${projectNumberOrId}/topics/${topicId}`
+        : "");
 
     // Fetch the persisted connection to get its id + final refresh_token
     const connRes = await supabaseAdmin
@@ -261,79 +337,91 @@ export async function GET(req: NextRequest) {
     const finalRefreshToken = persistedRefreshToken || refreshToken;
 
     if (!finalRefreshToken) {
-      // Without a refresh token we cannot reliably renew watch or access Gmail long-term.
-      // This usually means Google did not return it because the user previously consented.
-      // Fix: ensure the initial connect flow uses prompt=consent.
       throw new Error(
         "Missing refresh_token. Please disconnect/reconnect Gmail with consent (prompt=consent)."
       );
     }
 
-    const oauth2 = new google.auth.OAuth2(
-      mustEnv("GOOGLE_CLIENT_ID"),
-      mustEnv("GOOGLE_CLIENT_SECRET"),
-      new URL("/api/auth/gmail/callback", siteUrl).toString()
-    );
-
-    oauth2.setCredentials({
-      refresh_token: finalRefreshToken,
-      access_token: tokens.access_token,
-    });
-
-    const gmail = google.gmail({ version: "v1", auth: oauth2 });
-
-    let watchRes;
-    try {
-      watchRes = await gmail.users.watch({
-        userId: "me",
-        requestBody: {
-          topicName,
-          labelIds: ["INBOX"],
-        },
-      });
-    } catch (e: any) {
-      console.error("[gmail/callback] users.watch failed:", e?.message || e);
-      throw new Error(`Gmail watch failed: ${e?.message || String(e)}`);
-    }
-
-    const newHistoryId = watchRes.data.historyId;
-    const expiration = watchRes.data.expiration; // string ms timestamp
-
-    // Gmail returns expiration as epoch milliseconds (string). Our DB column is timestamptz.
-    const expirationIso = expiration
-      ? new Date(Number(expiration)).toISOString()
-      : null;
-
-    const watchUpdatePayload: Record<string, any> = {
-      last_history_id: newHistoryId ? String(newHistoryId) : null,
-      watch_expiration: expirationIso,
-      watch_active: true,
+    const watchDegradedPayload: Record<string, any> = {
+      status: "connected",
+      watch_active: false,
       last_error: null,
-      status: "active",
-      // ensure refresh_token is persisted even if Google omitted it this time
       refresh_token: encryptSecretForStorage(finalRefreshToken),
-      // optional: persist the Pub/Sub topic if your table has the column
-      watch_topic: topicName,
     };
 
-    const watchUpdRes = await updateEmailConnectionSafe(
-      supabaseAdmin,
-      persistedConn.id,
-      watchUpdatePayload
-    );
+    // If watch topic is not configured, keep connection successful and rely on later renewal/setup.
+    if (!topicName) {
+      watchDegradedPayload.last_error = "missing_gmail_topic_name";
+      await updateEmailConnectionSafe(supabaseAdmin, persistedConn.id, watchDegradedPayload);
+      console.warn("[gmail/callback] watch skipped: missing topic config", {
+        agent_id: user.id,
+      });
+    } else {
+      try {
+        const oauth2 = new google.auth.OAuth2(
+          mustEnv("GOOGLE_CLIENT_ID"),
+          mustEnv("GOOGLE_CLIENT_SECRET"),
+          new URL("/api/auth/gmail/callback", siteUrl).toString()
+        );
 
-    if (watchUpdRes.error) {
-      throw new Error(
-        `Failed to persist watch state: ${watchUpdRes.error.message}`
-      );
+        oauth2.setCredentials({
+          refresh_token: finalRefreshToken,
+          access_token: tokens.access_token,
+        });
+
+        const gmail = google.gmail({ version: "v1", auth: oauth2 });
+        const watchRes = await gmail.users.watch({
+          userId: "me",
+          requestBody: {
+            topicName,
+            labelIds: ["INBOX"],
+          },
+        });
+
+        const newHistoryId = watchRes.data.historyId;
+        const expiration = watchRes.data.expiration; // string ms timestamp
+        const expirationIso = expiration
+          ? new Date(Number(expiration)).toISOString()
+          : null;
+
+        const watchUpdatePayload: Record<string, any> = {
+          last_history_id: newHistoryId ? String(newHistoryId) : null,
+          watch_expiration: expirationIso,
+          watch_active: true,
+          last_error: null,
+          status: "active",
+          refresh_token: encryptSecretForStorage(finalRefreshToken),
+          watch_topic: topicName,
+        };
+
+        const watchUpdRes = await updateEmailConnectionSafe(
+          supabaseAdmin,
+          persistedConn.id,
+          watchUpdatePayload
+        );
+
+        if (watchUpdRes.error) {
+          throw new Error(`Failed to persist watch state: ${watchUpdRes.error.message}`);
+        }
+
+        console.log("[gmail/callback] watch active", {
+          agent_id: user.id,
+          provider: "gmail",
+          historyId: newHistoryId ? String(newHistoryId) : null,
+          watch_expiration: expirationIso,
+        });
+      } catch (watchErr: any) {
+        const msg = String(watchErr?.message || watchErr || "watch_setup_failed").slice(0, 240);
+        await updateEmailConnectionSafe(supabaseAdmin, persistedConn.id, {
+          ...watchDegradedPayload,
+          last_error: `watch_setup_failed:${msg}`,
+        });
+        console.warn("[gmail/callback] watch setup degraded", {
+          agent_id: user.id,
+          error: msg,
+        });
+      }
     }
-
-    console.log("[gmail/callback] watch active", {
-      agent_id: user.id,
-      provider: "gmail",
-      historyId: newHistoryId ? String(newHistoryId) : null,
-      watch_expiration: expirationIso,
-    });
 
     // Notify Make (optional)
     if (process.env.MAKE_GMAIL_CONNECTED_WEBHOOK_URL) {
@@ -363,7 +451,7 @@ export async function GET(req: NextRequest) {
     // Keep it user-friendly + stable, and log details server-side only.
     const errUrl = new URL(nextPath, siteUrl);
     errUrl.searchParams.set("gmail", "error");
-    errUrl.searchParams.set("reason", "connect_failed");
+    errUrl.searchParams.set("reason", classifyConnectFailure(e));
 
     return NextResponse.redirect(errUrl);
   }

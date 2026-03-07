@@ -88,6 +88,33 @@ function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
+function oauthReasonLabel(reason: string | null | undefined) {
+  const code = String(reason || "").trim().toLowerCase();
+  if (!code) return "Verbindung konnte nicht abgeschlossen werden.";
+  if (code === "access_denied") return "Der Zugriff wurde in Google abgelehnt.";
+  if (code === "redirect_uri_mismatch")
+    return "Google-Redirect-URI stimmt nicht mit der App-Konfiguration überein.";
+  if (code === "invalid_grant")
+    return "Der OAuth-Code war ungültig oder ist abgelaufen. Bitte erneut verbinden.";
+  if (code === "missing_encryption_key")
+    return "Server-Konfiguration unvollständig (ADVAIC_SECRET_ENCRYPTION_KEY fehlt).";
+  if (code === "missing_site_url")
+    return "Server-Konfiguration unvollständig (NEXT_PUBLIC_SITE_URL fehlt).";
+  if (code === "missing_google_client_id" || code === "missing_google_client_secret")
+    return "Google OAuth ist serverseitig nicht vollständig konfiguriert.";
+  if (code === "missing_refresh_token")
+    return "Google hat kein Refresh-Token geliefert. Bitte Gmail trennen und erneut verbinden.";
+  if (code === "db_upsert_failed")
+    return "Verbindungsdaten konnten nicht gespeichert werden.";
+  if (code === "watch_setup_failed" || code === "watch_state_persist_failed")
+    return "Postfach ist verbunden, aber Push-Sync konnte nicht vollständig aktiviert werden.";
+  if (code === "not_authenticated")
+    return "Session nicht gefunden. Bitte erneut einloggen und verbinden.";
+  if (code === "temporarily_unavailable")
+    return "Google OAuth ist vorübergehend nicht verfügbar.";
+  return `Verbindung fehlgeschlagen (${code}).`;
+}
+
 function Pill({ children }: { children: React.ReactNode }) {
   return (
     <span
@@ -549,9 +576,9 @@ export default function Step2Client() {
                 color: "rgba(220,38,38,0.90)",
               }}
             >
-              Verbindung fehlgeschlagen: {oauthError}
+              Verbindung fehlgeschlagen: {oauthReasonLabel(oauthError)}
               <div className="mt-1" style={{ opacity: 0.85 }}>
-                Bitte versuche es erneut. Wenn das wieder passiert: Support kontaktieren.
+                Fehlercode: {oauthError}. Bitte versuche es erneut. Wenn das wieder passiert: Support kontaktieren.
               </div>
             </div>
           )}
