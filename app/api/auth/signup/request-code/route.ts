@@ -286,6 +286,10 @@ async function sendVerificationSms(args: {
 }
 
 export async function POST(req: NextRequest) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return jsonError(500, "signup_server_misconfigured");
+  }
+
   const body = (await req.json().catch(() => null)) as Body | null;
   if (!body) return jsonError(400, "missing_body");
 

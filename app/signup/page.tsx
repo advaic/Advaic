@@ -127,6 +127,8 @@ export default function SignupPage() {
         setErrorMsg("Bitte geben Sie Ihre Handynummer im Format +49... an.");
       } else if (data?.error === "twilio_verify_misconfigured") {
         setErrorMsg("Die SMS-Verifizierung ist aktuell nicht korrekt eingerichtet. Bitte kontaktieren Sie den Support.");
+      } else if (data?.error === "signup_server_misconfigured") {
+        setErrorMsg("Die Registrierung ist serverseitig noch nicht vollständig konfiguriert. Bitte kontaktieren Sie den Support.");
       } else {
         setErrorMsg("Verifizierungscode konnte nicht gesendet werden. Bitte prüfen Sie Ihre Angaben.");
       }
@@ -181,6 +183,7 @@ export default function SignupPage() {
     const data = (await response.json().catch(() => ({}))) as {
       ok?: boolean;
       error?: string;
+      details?: string;
     };
 
     if (!response.ok || !data?.ok) {
@@ -194,10 +197,23 @@ export default function SignupPage() {
         setErrorMsg("Bitte geben Sie Ihre Handynummer im Format +49... an.");
       } else if (data?.error === "twilio_verify_misconfigured") {
         setErrorMsg("Die SMS-Verifizierung ist aktuell nicht korrekt eingerichtet. Bitte kontaktieren Sie den Support.");
+      } else if (data?.error === "verification_locked") {
+        setErrorMsg("Zu viele falsche Versuche. Bitte fordern Sie einen neuen Code an.");
+      } else if (data?.error === "verification_provider_failed") {
+        setErrorMsg("Die Verifizierung konnte gerade nicht geprüft werden. Bitte senden Sie einen neuen Code an.");
+      } else if (data?.error === "signup_server_misconfigured") {
+        setErrorMsg("Die Registrierung ist serverseitig noch nicht vollständig konfiguriert. Bitte kontaktieren Sie den Support.");
+      } else if (data?.error === "signup_create_failed" || data?.error === "agent_upsert_failed") {
+        setErrorMsg("Der Account konnte serverseitig nicht angelegt werden. Bitte versuchen Sie es erneut.");
       } else if (data?.error === "email_already_registered") {
         setErrorMsg("Für diese E-Mail existiert bereits ein Konto. Bitte nutzen Sie den Login.");
       } else {
-        setErrorMsg("Konto konnte nicht erstellt werden. Bitte versuchen Sie es erneut.");
+        const code = String(data?.error || "").trim();
+        setErrorMsg(
+          code
+            ? `Konto konnte nicht erstellt werden. Fehlercode: ${code}.`
+            : "Konto konnte nicht erstellt werden. Bitte versuchen Sie es erneut.",
+        );
       }
       setLoading(false);
       return;
