@@ -186,6 +186,8 @@ export default function SignupPage() {
       details?: string;
       created?: boolean;
       existing?: boolean;
+      profileSeeded?: boolean;
+      warning?: string;
     };
 
     if (!response.ok || !data?.ok) {
@@ -234,11 +236,19 @@ export default function SignupPage() {
     }
 
     setStage("done");
-    setSuccessMsg(
-      data?.existing
-        ? "Konto war bereits vorhanden und wurde vervollständigt. Sie können sich jetzt einloggen."
-        : "Konto erfolgreich erstellt und verifiziert. Sie können sich jetzt einloggen.",
-    );
+    if (data?.profileSeeded === false || data?.warning === "agent_profile_seed_failed") {
+      setSuccessMsg(
+        data?.existing
+          ? "Konto war bereits vorhanden und wurde verifiziert. Login ist möglich; Profil wird beim ersten App-Start vervollständigt."
+          : "Konto wurde erstellt und verifiziert. Login ist möglich; Profil wird beim ersten App-Start vervollständigt.",
+      );
+    } else {
+      setSuccessMsg(
+        data?.existing
+          ? "Konto war bereits vorhanden und wurde vervollständigt. Sie können sich jetzt einloggen."
+          : "Konto erfolgreich erstellt und verifiziert. Sie können sich jetzt einloggen.",
+      );
+    }
     setLoading(false);
   };
 

@@ -414,12 +414,27 @@ export async function POST(req: NextRequest) {
         signupEntry,
       });
       const upsertErr = await upsertAgentWithFallback(supabase, enrichedAgent, basicAgent);
-      if (upsertErr) return jsonError(409, "email_already_registered");
+      if (upsertErr) {
+        console.error("[signup/verify-create] existing_user_agent_seed_failed", {
+          email,
+          userId: existingUserId,
+          message: String(upsertErr.message || ""),
+        });
+        return NextResponse.json({
+          ok: true,
+          created: false,
+          existing: true,
+          profileSeeded: false,
+          warning: "agent_profile_seed_failed",
+          email,
+        });
+      }
 
       return NextResponse.json({
         ok: true,
         created: false,
         existing: true,
+        profileSeeded: true,
         email,
       });
     }
@@ -441,20 +456,25 @@ export async function POST(req: NextRequest) {
   });
   const agentUpsertErr = await upsertAgentWithFallback(supabase, enrichedAgent, basicAgent);
   if (agentUpsertErr) {
-    const { error: cleanupErr } = await supabase.auth.admin.deleteUser(userId, false);
-    if (cleanupErr) {
-      return jsonError(
-        500,
-        "agent_upsert_failed_user_cleanup_failed",
-        `${String(agentUpsertErr.message || "")}; cleanup=${String(cleanupErr.message || "")}`,
-      );
-    }
-    return jsonError(500, "agent_upsert_failed_rolled_back", String(agentUpsertErr.message || ""));
+    console.error("[signup/verify-create] agent_seed_failed_after_user_create", {
+      email,
+      userId,
+      message: String(agentUpsertErr.message || ""),
+    });
+    return NextResponse.json({
+      ok: true,
+      created: true,
+      existing: false,
+      profileSeeded: false,
+      warning: "agent_profile_seed_failed",
+      email,
+    });
   }
 
   return NextResponse.json({
     ok: true,
     created: true,
+    profileSeeded: true,
     email,
   });
 }
