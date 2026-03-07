@@ -184,6 +184,8 @@ export default function SignupPage() {
       ok?: boolean;
       error?: string;
       details?: string;
+      created?: boolean;
+      existing?: boolean;
     };
 
     if (!response.ok || !data?.ok) {
@@ -205,8 +207,20 @@ export default function SignupPage() {
         setErrorMsg("Die Registrierung ist serverseitig noch nicht vollständig konfiguriert. Bitte kontaktieren Sie den Support.");
       } else if (data?.error === "signup_create_failed" || data?.error === "agent_upsert_failed") {
         setErrorMsg("Der Account konnte serverseitig nicht angelegt werden. Bitte versuchen Sie es erneut.");
+      } else if (data?.error === "agent_upsert_failed_rolled_back") {
+        setErrorMsg(
+          "Die Kontoanlage wurde aus Sicherheitsgründen zurückgerollt. Bitte senden Sie einen neuen Code an und versuchen Sie es erneut.",
+        );
+      } else if (data?.error === "agent_upsert_failed_user_cleanup_failed") {
+        setErrorMsg(
+          "Die Kontoanlage ist in einen inkonsistenten Zustand gelaufen. Bitte kontaktieren Sie den Support, damit wir den Account bereinigen.",
+        );
+      } else if (data?.error === "auth_user_lookup_failed") {
+        setErrorMsg("Der bestehende Account konnte nicht geladen werden. Bitte versuchen Sie es in wenigen Minuten erneut.");
       } else if (data?.error === "email_already_registered") {
-        setErrorMsg("Für diese E-Mail existiert bereits ein Konto. Bitte nutzen Sie den Login.");
+        setErrorMsg(
+          "Für diese E-Mail existiert bereits ein Konto. Wenn ein früherer Signup fehlgeschlagen ist, nutzen Sie bitte den Login mit demselben Passwort.",
+        );
       } else {
         const code = String(data?.error || "").trim();
         setErrorMsg(
@@ -221,7 +235,9 @@ export default function SignupPage() {
 
     setStage("done");
     setSuccessMsg(
-      "Konto erfolgreich erstellt und verifiziert. Sie können sich jetzt einloggen.",
+      data?.existing
+        ? "Konto war bereits vorhanden und wurde vervollständigt. Sie können sich jetzt einloggen."
+        : "Konto erfolgreich erstellt und verifiziert. Sie können sich jetzt einloggen.",
     );
     setLoading(false);
   };

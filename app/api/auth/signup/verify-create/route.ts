@@ -28,6 +28,17 @@ type TwilioVerifyConfig = {
   serviceSid: string;
 };
 
+type AgentRecordInput = {
+  userId: string;
+  email: string;
+  fullName: string;
+  company: string;
+  phone: string;
+  nowIso: string;
+  allowNewsletter: boolean;
+  signupEntry: string;
+};
+
 function mustEnv(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing env var: ${name}`);
@@ -149,6 +160,74 @@ async function checkTwilioVerifyCode(args: {
   }
 
   return { ok: false as const, error: "verification_provider_failed", details };
+}
+
+function buildAgentRecords(input: AgentRecordInput) {
+  const source = input.signupEntry ? `website:${input.signupEntry}` : "website:signup";
+  const enrichedAgent = {
+    id: input.userId,
+    email: input.email,
+    name: input.fullName || null,
+    company: input.company || null,
+    phone: input.phone || null,
+    terms_accepted_at: input.nowIso,
+    terms_version: CONSENT_VERSION,
+    privacy_accepted_at: input.nowIso,
+    privacy_version: CONSENT_VERSION,
+    marketing_email_opt_in: input.allowNewsletter,
+    marketing_email_opt_in_at: input.allowNewsletter ? input.nowIso : null,
+    marketing_email_opt_out_at: input.allowNewsletter ? null : input.nowIso,
+    signup_source: source,
+    updated_at: input.nowIso,
+  };
+
+  const basicAgent = {
+    id: input.userId,
+    email: input.email,
+    name: input.fullName || null,
+    company: input.company || null,
+    updated_at: input.nowIso,
+  };
+
+  return { enrichedAgent, basicAgent };
+}
+
+async function upsertAgentWithFallback(
+  supabase: ReturnType<typeof supabaseAdmin>,
+  enrichedAgent: Record<string, unknown>,
+  basicAgent: Record<string, unknown>,
+) {
+  let { error: agentUpsertErr } = await (supabase.from("agents") as any).upsert(enrichedAgent, {
+    onConflict: "id",
+  });
+
+  if (agentUpsertErr && /column .* does not exist/i.test(String(agentUpsertErr.message || ""))) {
+    const fallback = await (supabase.from("agents") as any).upsert(basicAgent, { onConflict: "id" });
+    agentUpsertErr = fallback.error ?? null;
+  }
+
+  return agentUpsertErr ?? null;
+}
+
+async function findAuthUserByEmail(
+  supabase: ReturnType<typeof supabaseAdmin>,
+  email: string,
+) {
+  const target = String(email || "").trim().toLowerCase();
+  if (!target) return { user: null as any, error: null as any };
+
+  let page = 1;
+  const perPage = 200;
+  for (let i = 0; i < 10; i += 1) {
+    const { data, error } = await (supabase.auth.admin as any).listUsers({ page, perPage });
+    if (error) return { user: null as any, error };
+    const users = Array.isArray((data as any)?.users) ? (data as any).users : [];
+    const found = users.find((u: any) => String(u?.email || "").trim().toLowerCase() === target) || null;
+    if (found) return { user: found, error: null as any };
+    if (users.length < perPage) break;
+    page += 1;
+  }
+  return { user: null as any, error: null as any };
 }
 
 export async function POST(req: NextRequest) {
@@ -314,7 +393,35 @@ export async function POST(req: NextRequest) {
   if (createErr) {
     const msg = String(createErr.message || "").toLowerCase();
     if (msg.includes("already") || msg.includes("registered")) {
-      return jsonError(409, "email_already_registered");
+      const { user: existingAuthUser, error: existingLookupErr } = await findAuthUserByEmail(
+        supabase,
+        email,
+      );
+      if (existingLookupErr) {
+        return jsonError(500, "auth_user_lookup_failed", String(existingLookupErr.message || ""));
+      }
+      const existingUserId = String(existingAuthUser?.id || "").trim();
+      if (!existingUserId) return jsonError(409, "email_already_registered");
+
+      const { enrichedAgent, basicAgent } = buildAgentRecords({
+        userId: existingUserId,
+        email,
+        fullName,
+        company,
+        phone,
+        nowIso,
+        allowNewsletter,
+        signupEntry,
+      });
+      const upsertErr = await upsertAgentWithFallback(supabase, enrichedAgent, basicAgent);
+      if (upsertErr) return jsonError(409, "email_already_registered");
+
+      return NextResponse.json({
+        ok: true,
+        created: false,
+        existing: true,
+        email,
+      });
     }
     return jsonError(500, "signup_create_failed", createErr.message);
   }
@@ -322,40 +429,28 @@ export async function POST(req: NextRequest) {
   const userId = String(created?.user?.id || "");
   if (!userId) return jsonError(500, "signup_create_failed");
 
-  const enrichedAgent = {
-    id: userId,
+  const { enrichedAgent, basicAgent } = buildAgentRecords({
+    userId,
     email,
-    name: fullName || null,
-    company: company || null,
-    phone: phone || null,
-    terms_accepted_at: nowIso,
-    terms_version: CONSENT_VERSION,
-    privacy_accepted_at: nowIso,
-    privacy_version: CONSENT_VERSION,
-    marketing_email_opt_in: allowNewsletter,
-    marketing_email_opt_in_at: allowNewsletter ? nowIso : null,
-    marketing_email_opt_out_at: allowNewsletter ? null : nowIso,
-    signup_source: signupEntry ? `website:${signupEntry}` : "website:signup",
-    updated_at: nowIso,
-  };
-
-  const basicAgent = {
-    id: userId,
-    email,
-    name: fullName || null,
-    company: company || null,
-    updated_at: nowIso,
-  };
-
-  let { error: agentUpsertErr } = await (supabase.from("agents") as any).upsert(enrichedAgent, {
-    onConflict: "id",
+    fullName,
+    company,
+    phone,
+    nowIso,
+    allowNewsletter,
+    signupEntry,
   });
-
-  if (agentUpsertErr && /column .* does not exist/i.test(String(agentUpsertErr.message || ""))) {
-    const fallback = await (supabase.from("agents") as any).upsert(basicAgent, { onConflict: "id" });
-    agentUpsertErr = fallback.error ?? null;
+  const agentUpsertErr = await upsertAgentWithFallback(supabase, enrichedAgent, basicAgent);
+  if (agentUpsertErr) {
+    const { error: cleanupErr } = await supabase.auth.admin.deleteUser(userId, false);
+    if (cleanupErr) {
+      return jsonError(
+        500,
+        "agent_upsert_failed_user_cleanup_failed",
+        `${String(agentUpsertErr.message || "")}; cleanup=${String(cleanupErr.message || "")}`,
+      );
+    }
+    return jsonError(500, "agent_upsert_failed_rolled_back", String(agentUpsertErr.message || ""));
   }
-  if (agentUpsertErr) return jsonError(500, "agent_upsert_failed", agentUpsertErr.message);
 
   return NextResponse.json({
     ok: true,
