@@ -54,18 +54,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const body = (await req.json().catch(() => null)) as
+    | { id?: string; message_id?: string }
+    | null;
+  const onlyMessageId = String(body?.message_id || body?.id || "").trim();
+
   const supabase = supabaseAdmin();
 
   // Pull a small batch of inbound messages that are ready for intent.
   // We process newest first so fresh inbound emails are not blocked by stale rows.
-  const { data: msgs, error } = await (supabase.from("messages") as any)
+  let msgQuery = (supabase.from("messages") as any)
     .select("id, agent_id, lead_id, text, sender, status, timestamp")
     .eq("sender", "user")
     .in("status", [...INBOUND_STATUSES])
     // extra safety: never touch messages that are already in later pipeline stages
-    .not("status", "in", `(${TERMINAL_OR_LATER_STATUSES.map((s) => `"${s}"`).join(",")})`)
+    .not("status", "in", `(${TERMINAL_OR_LATER_STATUSES.map((s) => `"${s}"`).join(",")})`);
+
+  if (onlyMessageId) {
+    msgQuery = msgQuery.eq("id", onlyMessageId);
+  }
+
+  const { data: msgs, error } = await msgQuery
     .order("timestamp", { ascending: false })
-    .limit(25);
+    .limit(onlyMessageId ? 1 : 25);
 
   if (error) {
     return NextResponse.json(

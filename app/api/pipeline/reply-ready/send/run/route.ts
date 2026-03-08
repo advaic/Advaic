@@ -81,6 +81,7 @@ const UPSTREAM_REPLY_READY_STAGES = [
 async function runUpstreamReplyReadyStages(args: {
   siteUrl: string;
   secret: string;
+  onlyMessageId?: string | null;
 }) {
   const stageRuns: Array<{
     stage: string;
@@ -98,7 +99,9 @@ async function runUpstreamReplyReadyStages(args: {
           "Content-Type": "application/json",
           "x-advaic-internal-secret": args.secret,
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify(
+          args.onlyMessageId ? { message_id: args.onlyMessageId } : {}
+        ),
       });
 
       const payload = await res.json().catch(() => ({} as any));
@@ -156,7 +159,11 @@ export async function POST(req: NextRequest) {
   const control = await readRuntimeControl(supabase);
   if (isPipelinePaused(control, "reply_ready_send")) {
     if (internal) {
-      stageRuns = await runUpstreamReplyReadyStages({ siteUrl, secret });
+      stageRuns = await runUpstreamReplyReadyStages({
+        siteUrl,
+        secret,
+        onlyMessageId: onlyMessageId || null,
+      });
     }
     await logPipelineRun(supabase, {
       pipeline,
@@ -184,7 +191,11 @@ export async function POST(req: NextRequest) {
   // intent -> route resolve -> draft -> qa -> rewrite -> qa-recheck -> send.
   // This keeps existing cron setups functional even if only `/send/run` is scheduled.
   if (internal) {
-    stageRuns = await runUpstreamReplyReadyStages({ siteUrl, secret });
+    stageRuns = await runUpstreamReplyReadyStages({
+      siteUrl,
+      secret,
+      onlyMessageId: onlyMessageId || null,
+    });
   }
 
   // 1) Pull ready_to_send drafts

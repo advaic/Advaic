@@ -128,6 +128,69 @@ function mapRouteToTemplateCategory(route: string) {
   }
 }
 
+function buildDeterministicFallbackDraft(args: {
+  route: string;
+  leadName: string;
+  activeProperty: any | null;
+  suggestedProperties: any[];
+}) {
+  const salutationName = args.leadName ? ` ${args.leadName}` : "";
+  const activeTitle = args.activeProperty?.title
+    ? String(args.activeProperty.title)
+    : null;
+  const activeStreet = args.activeProperty?.street_address
+    ? String(args.activeProperty.street_address)
+    : null;
+  const activeCity = args.activeProperty?.city
+    ? String(args.activeProperty.city)
+    : null;
+
+  if (args.route === "PROPERTY_SPECIFIC" || args.route === "VIEWING_REQUEST") {
+    const objectRef = [activeTitle, activeStreet, activeCity]
+      .filter(Boolean)
+      .join(", ");
+    return [
+      `Guten Tag${salutationName},`,
+      "",
+      objectRef
+        ? `vielen Dank für Ihre Nachricht zur Immobilie (${objectRef}).`
+        : "vielen Dank für Ihre Nachricht zur Immobilie.",
+      "Die Wohnung ist aktuell in Prüfung. Ich bestätige Ihnen Verfügbarkeit, passende Besichtigungstermine und die benötigten Unterlagen.",
+      "Wenn Sie möchten, sende ich Ihnen direkt zwei konkrete Terminvorschläge.",
+      "",
+      "Freundliche Grüße",
+    ].join("\n");
+  }
+
+  if (args.route === "PROPERTY_SEARCH" && Array.isArray(args.suggestedProperties) && args.suggestedProperties.length > 0) {
+    const top = args.suggestedProperties[0];
+    const topRef = [top?.title, top?.street_address, top?.city]
+      .filter(Boolean)
+      .join(", ");
+    return [
+      `Guten Tag${salutationName},`,
+      "",
+      "vielen Dank für Ihre Anfrage.",
+      topRef
+        ? `Ich habe eine passende Option für Sie vorbereitet: ${topRef}.`
+        : "Ich habe passende Optionen für Sie vorbereitet.",
+      "Wenn Sie möchten, sende ich Ihnen direkt die wichtigsten Eckdaten und mögliche Besichtigungstermine.",
+      "",
+      "Freundliche Grüße",
+    ].join("\n");
+  }
+
+  return [
+    `Guten Tag${salutationName},`,
+    "",
+    "vielen Dank für Ihre Nachricht.",
+    "Ich habe Ihr Anliegen erhalten und prüfe die passenden nächsten Schritte für Sie.",
+    "Sie erhalten im nächsten Schritt eine konkrete Rückmeldung mit den relevanten Informationen.",
+    "",
+    "Freundliche Grüße",
+  ].join("\n");
+}
+
 /**
  * Writer Call mit Timeout + Retry
  */
@@ -290,6 +353,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const body = (await req.json().catch(() => null)) as
+    | { id?: string; message_id?: string }
+    | null;
+  const onlyMessageId = String(body?.message_id || body?.id || "").trim();
+
   const supabase = supabaseAdmin();
 
   const PROMPT_KEY = "reply_writer_v1";
@@ -307,22 +375,17 @@ export async function POST(req: Request) {
     .limit(1)
     .maybeSingle();
 
-  if (promptErr || !promptRow) {
-    return NextResponse.json(
-      { error: `Active ${PROMPT_KEY} prompt not found in ai_prompts` },
-      { status: 500 }
-    );
-  }
+  const promptFallback = !!promptErr || !promptRow;
 
   let systemPromptFromDb =
-    typeof promptRow.system_prompt === "string" ? promptRow.system_prompt : "";
+    typeof promptRow?.system_prompt === "string" ? promptRow.system_prompt : "";
   let userPromptTemplateFromDb =
-    typeof promptRow.user_prompt === "string" ? promptRow.user_prompt : "";
+    typeof promptRow?.user_prompt === "string" ? promptRow.user_prompt : "";
 
-  let temperature = Number(promptRow.temperature ?? 0.2);
-  let maxTokens = Number(promptRow.max_tokens ?? 420);
+  let temperature = Number(promptRow?.temperature ?? 0.2);
+  let maxTokens = Number(promptRow?.max_tokens ?? 420);
 
-  if ((!systemPromptFromDb || !userPromptTemplateFromDb) && promptRow.prompt) {
+  if ((!systemPromptFromDb || !userPromptTemplateFromDb) && promptRow?.prompt) {
     try {
       const parsed =
         typeof promptRow.prompt === "string"
@@ -349,14 +412,23 @@ export async function POST(req: Request) {
     }
   }
 
-  if (!systemPromptFromDb || !userPromptTemplateFromDb) {
-    return NextResponse.json(
-      {
-        error: `Active ${PROMPT_KEY} prompt is missing system_prompt/user_prompt`,
-        hint: "Either add system_prompt + user_prompt columns, or store JSON in ai_prompts.prompt with {system_prompt,user_prompt,temperature,max_tokens}.",
-      },
-      { status: 500 }
-    );
+  if (promptFallback || !systemPromptFromDb || !userPromptTemplateFromDb) {
+    // Fail-open for draft creation: keep pipeline alive and generate a manual-review draft even
+    // when ai_prompts is temporarily missing/misconfigured.
+    systemPromptFromDb =
+      "Sie schreiben kurze, klare Antworten für deutsche Immobilienanfragen. Keine Halluzinationen, keine Rechtsberatung.";
+    userPromptTemplateFromDb = [
+      "ROUTE: {{ROUTE}}",
+      "INBOUND_MESSAGE:",
+      "{{INBOUND_MESSAGE}}",
+      "ACTIVE_PROPERTY:",
+      "{{ACTIVE_PROPERTY}}",
+      "SUGGESTED_PROPERTIES:",
+      "{{SUGGESTED_PROPERTIES}}",
+      "Schreibe eine höfliche, sichere Antwort in Sie-Ansprache. Wenn etwas unklar ist, bitte um kurze Präzisierung.",
+    ].join("\n\n");
+    temperature = 0.1;
+    maxTokens = 280;
   }
 
   if (!Number.isFinite(temperature)) temperature = 0.2;
@@ -365,16 +437,20 @@ export async function POST(req: Request) {
   /**
    * 1) Pull a batch of message_routes (we will stage-gate by loading the inbound message)
    */
-  const { data: routes, error: routesErr } = await (
-    supabase.from("message_routes") as any
-  )
+  let routesQuery = (supabase.from("message_routes") as any)
     .select(
       "id, agent_id, lead_id, message_id, route, confidence, reason, payload, prompt_version, created_at"
     )
-    .eq("prompt_version", "v1")
+    .eq("prompt_version", "v1");
+
+  if (onlyMessageId) {
+    routesQuery = routesQuery.eq("message_id", onlyMessageId);
+  }
+
+  const { data: routes, error: routesErr } = await routesQuery
     // Process newest first so fresh route artifacts are drafted immediately.
     .order("created_at", { ascending: false })
-    .limit(25);
+    .limit(onlyMessageId ? 5 : 25);
 
   if (routesErr) {
     return NextResponse.json(
@@ -410,7 +486,8 @@ export async function POST(req: Request) {
       .eq("inbound_message_id", inboundMessageId)
       .maybeSingle();
 
-    if (existingDraft?.id) {
+    let lockRowId = "";
+    if (existingDraft?.id && existingDraft.draft_message_id) {
       processed.push({
         inboundMessageId,
         route,
@@ -420,47 +497,71 @@ export async function POST(req: Request) {
       continue;
     }
 
+    if (existingDraft?.id && !existingDraft.draft_message_id) {
+      // Reuse stale lock row from prior failed attempts (do not block forever).
+      lockRowId = String(existingDraft.id);
+    }
+
     /**
      * 1.1) Acquire idempotency lock via message_drafts insert
      */
-    const { data: lockRow, error: lockErr } = await (
-      supabase.from("message_drafts") as any
-    )
-      .insert(
-        {
-          agent_id: agentId,
-          lead_id: leadId,
-          inbound_message_id: inboundMessageId,
-          draft_message_id: null,
-          prompt_key: PROMPT_KEY,
-          prompt_version: "v1",
-        },
-        { defaultToNull: true }
+    if (!lockRowId) {
+      const { data: lockRow, error: lockErr } = await (
+        supabase.from("message_drafts") as any
       )
-      .select("id")
-      .maybeSingle();
+        .insert(
+          {
+            agent_id: agentId,
+            lead_id: leadId,
+            inbound_message_id: inboundMessageId,
+            draft_message_id: null,
+            prompt_key: PROMPT_KEY,
+            prompt_version: "v1",
+          },
+          { defaultToNull: true }
+        )
+        .select("id")
+        .maybeSingle();
 
-    if (lockErr) {
-      const code = (lockErr as any).code;
-      if (String(code) === "23505") {
-        processed.push({
-          inboundMessageId,
-          route,
-          draftStatus: "already_locked",
-        });
-        continue;
+      if (lockErr) {
+        const code = (lockErr as any).code;
+        if (String(code) === "23505") {
+          // Another runner likely inserted the lock. Re-read and continue only if no draft exists yet.
+          const { data: racedDraft } = await (
+            supabase.from("message_drafts") as any
+          )
+            .select("id, draft_message_id")
+            .eq("inbound_message_id", inboundMessageId)
+            .maybeSingle();
+
+          if (racedDraft?.id && racedDraft.draft_message_id) {
+            processed.push({
+              inboundMessageId,
+              route,
+              draftStatus: "already_locked",
+              draftMessageId: racedDraft.draft_message_id,
+            });
+            continue;
+          }
+
+          if (racedDraft?.id) {
+            lockRowId = String(racedDraft.id);
+          }
+        } else {
+          processed.push({
+            inboundMessageId,
+            route,
+            draftStatus: "lock_failed",
+            error: lockErr.message,
+          });
+          continue;
+        }
+      } else if (lockRow?.id) {
+        lockRowId = String(lockRow.id);
       }
-
-      processed.push({
-        inboundMessageId,
-        route,
-        draftStatus: "lock_failed",
-        error: lockErr.message,
-      });
-      continue;
     }
 
-    if (!lockRow?.id) {
+    if (!lockRowId) {
       processed.push({
         inboundMessageId,
         route,
@@ -615,6 +716,7 @@ export async function POST(req: Request) {
       : [];
 
     let activePropertyBlock = "";
+    let activePropertyData: any | null = null;
     if (activePropertyId) {
       const { data: p } = await (supabase.from("properties") as any)
         .select(
@@ -623,10 +725,14 @@ export async function POST(req: Request) {
         .eq("agent_id", agentId)
         .eq("id", activePropertyId)
         .maybeSingle();
-      if (p) activePropertyBlock = formatProperty(p);
+      if (p) {
+        activePropertyData = p;
+        activePropertyBlock = formatProperty(p);
+      }
     }
 
     let suggestedPropertiesBlock = "";
+    let suggestedPropertiesData: any[] = [];
     if (suggestedPropertyIds.length > 0) {
       const { data: ps } = await (supabase.from("properties") as any)
         .select(
@@ -637,6 +743,7 @@ export async function POST(req: Request) {
         .limit(5);
 
       if (Array.isArray(ps) && ps.length > 0) {
+        suggestedPropertiesData = ps;
         suggestedPropertiesBlock = ps.map(formatProperty).join("\n\n---\n\n");
       }
     }
@@ -695,34 +802,36 @@ export async function POST(req: Request) {
       retries: 2,
     });
 
-    const rawDraft = writer.ok ? writer.text.trim() : "{escalate}";
-    const cleanedDraft = rawDraft.replace(/^"|"$/g, "").trim();
+    const rawDraft = writer.ok ? writer.text.trim() : "";
+    let cleanedDraft = rawDraft.replace(/^"|"$/g, "").trim();
+    let usedFallbackDraft = false;
+    const writerFailed = !writer.ok;
     const isEscalate = cleanedDraft === "{escalate}";
+
+    if (!cleanedDraft || isEscalate || writerFailed) {
+      cleanedDraft = buildDeterministicFallbackDraft({
+        route,
+        leadName: clientName,
+        activeProperty: activePropertyData,
+        suggestedProperties: suggestedPropertiesData,
+      });
+      usedFallbackDraft = true;
+    }
 
     /**
      * 11) Persist results
      */
-    if (isEscalate) {
-      // Mark inbound for manual attention
+    if (!cleanedDraft) {
       await (supabase.from("messages") as any)
         .update({ status: "needs_human", visible_to_agent: true })
         .eq("id", inboundMessageId);
-
-      // Keep lock row and prevent reprocessing
-      await (supabase.from("message_drafts") as any)
-        .update({ draft_message_id: null })
-        .eq("inbound_message_id", inboundMessageId);
-
       processed.push({
         inboundMessageId,
         route,
         autosendEnabled,
-        draftStatus: "escalate",
+        draftStatus: "empty_draft_after_fallback",
         writerReason: writer.reason,
-        writerDeployment: writer.deployment || null,
-        writerVariant: writer.variant,
       });
-
       continue;
     }
 
@@ -737,9 +846,10 @@ export async function POST(req: Request) {
         text: cleanedDraft,
         timestamp: nowIso,
         visible_to_agent: true,
-        // Always run QA first; approval/auto-send happens after QA passes.
+        // Fallback drafts go straight to approval so agents always see a draft
+        // even if writer/QA infra is temporarily unavailable.
         approval_required: true,
-        status: "qa_pending",
+        status: usedFallbackDraft ? "needs_approval" : "qa_pending",
         send_status: "pending",
       })
       .select("id")
@@ -787,11 +897,12 @@ export async function POST(req: Request) {
       route,
       autosendEnabled,
       draftMessageId,
-      draftStatus: "qa_pending",
+      draftStatus: usedFallbackDraft ? "needs_approval_fallback" : "qa_pending",
       confidence: baseConfidence,
       reason: baseReason,
       writerDeployment: writer.deployment || null,
       writerVariant: writer.variant,
+      writerReason: writer.reason,
     });
 
   }

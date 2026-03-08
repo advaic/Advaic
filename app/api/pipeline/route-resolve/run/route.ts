@@ -283,17 +283,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const body = (await req.json().catch(() => null)) as
+    | { id?: string; message_id?: string }
+    | null;
+  const onlyMessageId = String(body?.message_id || body?.id || "").trim();
+
   const supabase = supabaseAdmin();
 
   // 1) Pull inbound user messages that need routing.
   // Process newest first to avoid old rows starving current inbound traffic.
-  const { data: msgs, error } = await (supabase.from("messages") as any)
+  let msgQuery = (supabase.from("messages") as any)
     .select("id, agent_id, lead_id, text, sender, status, timestamp")
     .eq("sender", "user")
     // Stage-gated: route-resolve runs after intent is written.
-    .in("status", ["intent_done"])
+    .in("status", ["intent_done"]);
+
+  if (onlyMessageId) {
+    msgQuery = msgQuery.eq("id", onlyMessageId);
+  }
+
+  const { data: msgs, error } = await msgQuery
     .order("timestamp", { ascending: false })
-    .limit(25);
+    .limit(onlyMessageId ? 1 : 25);
 
   if (error) {
     return NextResponse.json(
