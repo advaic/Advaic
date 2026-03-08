@@ -127,6 +127,54 @@ async function runUpstreamReplyReadyStages(args: {
   return stageRuns;
 }
 
+async function loadMessageDiagnostics(supabase: any, messageId: string) {
+  const mid = String(messageId || "").trim();
+  if (!mid) return null;
+
+  const [msgRes, intentRes, routeRes, draftLinkRes] = await Promise.all([
+    (supabase.from("messages") as any)
+      .select("id, agent_id, lead_id, sender, status, approval_required, send_status, send_error, timestamp")
+      .eq("id", mid)
+      .maybeSingle(),
+    (supabase.from("message_intents") as any)
+      .select("id, message_id, intent, confidence, reason, created_at")
+      .eq("message_id", mid)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    (supabase.from("message_routes") as any)
+      .select("id, message_id, route, confidence, reason, created_at")
+      .eq("message_id", mid)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    (supabase.from("message_drafts") as any)
+      .select("id, inbound_message_id, draft_message_id, created_at")
+      .eq("inbound_message_id", mid)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const draftId = String((draftLinkRes?.data as any)?.draft_message_id || "").trim();
+  let draftMessage: any = null;
+  if (draftId) {
+    const draftRes = await (supabase.from("messages") as any)
+      .select("id, sender, status, approval_required, send_status, send_error, timestamp")
+      .eq("id", draftId)
+      .maybeSingle();
+    draftMessage = draftRes?.data || null;
+  }
+
+  return {
+    message: msgRes?.data || null,
+    intent: intentRes?.data || null,
+    route: routeRes?.data || null,
+    draft_link: draftLinkRes?.data || null,
+    draft_message: draftMessage,
+  };
+}
+
 export async function POST(req: NextRequest) {
   const startedAtMs = Date.now();
   const pipeline = "reply_ready_send";
@@ -139,6 +187,7 @@ export async function POST(req: NextRequest) {
   const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL");
   const secret = mustEnv("ADVAIC_INTERNAL_PIPELINE_SECRET");
   let stageRuns: Awaited<ReturnType<typeof runUpstreamReplyReadyStages>> = [];
+  let diagnostics: any = null;
   let scopedAgentId: string | null = null;
 
   if (!internal) {
@@ -197,6 +246,7 @@ export async function POST(req: NextRequest) {
         resolved_message_id: onlyMessageId || null,
       },
     });
+    if (onlyMessageId) diagnostics = await loadMessageDiagnostics(supabase, onlyMessageId);
     return NextResponse.json(
       {
         ok: true,
@@ -205,6 +255,7 @@ export async function POST(req: NextRequest) {
         stage_runs: stageRuns,
         lead_id: onlyLeadId || null,
         resolved_message_id: onlyMessageId || null,
+        diagnostics,
       },
       { status: 200 },
     );
@@ -275,6 +326,7 @@ export async function POST(req: NextRequest) {
         resolved_message_id: onlyMessageId || null,
       },
     });
+    if (onlyMessageId) diagnostics = await loadMessageDiagnostics(supabase, onlyMessageId);
     return NextResponse.json({
       ok: true,
       processed: 0,
@@ -282,6 +334,7 @@ export async function POST(req: NextRequest) {
       stage_runs: stageRuns,
       lead_id: onlyLeadId || null,
       resolved_message_id: onlyMessageId || null,
+      diagnostics,
     });
   }
 
@@ -573,6 +626,8 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  if (onlyMessageId) diagnostics = await loadMessageDiagnostics(supabase, onlyMessageId);
+
   return NextResponse.json({
     ok: true,
     processed: results.length,
@@ -580,5 +635,6 @@ export async function POST(req: NextRequest) {
     stage_runs: stageRuns,
     lead_id: onlyLeadId || null,
     resolved_message_id: onlyMessageId || null,
+    diagnostics,
   });
 }
