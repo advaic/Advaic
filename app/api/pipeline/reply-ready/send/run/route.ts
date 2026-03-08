@@ -155,7 +155,7 @@ export async function POST(req: NextRequest) {
   const supabase = supabaseAdmin();
   const control = await readRuntimeControl(supabase);
   if (isPipelinePaused(control, "reply_ready_send")) {
-    if (internal && !onlyMessageId) {
+    if (internal) {
       stageRuns = await runUpstreamReplyReadyStages({ siteUrl, secret });
     }
     await logPipelineRun(supabase, {
@@ -183,7 +183,7 @@ export async function POST(req: NextRequest) {
   // Background runner self-heals the full chain:
   // intent -> route resolve -> draft -> qa -> rewrite -> qa-recheck -> send.
   // This keeps existing cron setups functional even if only `/send/run` is scheduled.
-  if (internal && !onlyMessageId) {
+  if (internal) {
     stageRuns = await runUpstreamReplyReadyStages({ siteUrl, secret });
   }
 

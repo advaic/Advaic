@@ -56,15 +56,15 @@ export async function POST(req: Request) {
 
   const supabase = supabaseAdmin();
 
-  // Pull a small batch of inbound messages that are ready for intent
-  // Adjust the status filter to your real inbound status(es).
+  // Pull a small batch of inbound messages that are ready for intent.
+  // We process newest first so fresh inbound emails are not blocked by stale rows.
   const { data: msgs, error } = await (supabase.from("messages") as any)
     .select("id, agent_id, lead_id, text, sender, status, timestamp")
     .eq("sender", "user")
     .in("status", [...INBOUND_STATUSES])
     // extra safety: never touch messages that are already in later pipeline stages
     .not("status", "in", `(${TERMINAL_OR_LATER_STATUSES.map((s) => `"${s}"`).join(",")})`)
-    .order("timestamp", { ascending: true })
+    .order("timestamp", { ascending: false })
     .limit(25);
 
   if (error) {
@@ -79,6 +79,11 @@ export async function POST(req: Request) {
   for (const m of msgs || []) {
     const messageId = String(m.id);
     if (!m.agent_id || !m.lead_id) {
+      // Quarantine malformed rows so they stop blocking queue progress.
+      await (supabase.from("messages") as any)
+        .update({ status: "needs_human", visible_to_agent: true })
+        .eq("id", messageId)
+        .in("status", [...INBOUND_STATUSES]);
       results.push({ messageId, error: "missing_agent_or_lead" });
       continue;
     }
@@ -90,7 +95,15 @@ export async function POST(req: Request) {
         .eq("prompt_version", "v1")
         .maybeSingle();
 
-      if (existing) continue;
+      if (existing) {
+        // Backfill status if intent artifact exists already.
+        await (supabase.from("messages") as any)
+          .update({ status: NEXT_STATUS_AFTER_INTENT })
+          .eq("id", messageId)
+          .in("status", [...INBOUND_STATUSES]);
+        results.push({ messageId, intent: "already_classified", confidence: null });
+        continue;
+      }
 
       // Context improves intent accuracy (e.g. SPECIFIC vs SEARCH).
       // Pull last 10 messages for the lead (most recent first).

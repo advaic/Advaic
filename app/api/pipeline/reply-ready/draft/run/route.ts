@@ -372,7 +372,8 @@ export async function POST(req: Request) {
       "id, agent_id, lead_id, message_id, route, confidence, reason, payload, prompt_version, created_at"
     )
     .eq("prompt_version", "v1")
-    .order("created_at", { ascending: true })
+    // Process newest first so fresh route artifacts are drafted immediately.
+    .order("created_at", { ascending: false })
     .limit(25);
 
   if (routesErr) {

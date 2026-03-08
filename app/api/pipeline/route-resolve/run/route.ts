@@ -286,12 +286,13 @@ export async function POST(req: Request) {
   const supabase = supabaseAdmin();
 
   // 1) Pull inbound user messages that need routing.
+  // Process newest first to avoid old rows starving current inbound traffic.
   const { data: msgs, error } = await (supabase.from("messages") as any)
     .select("id, agent_id, lead_id, text, sender, status, timestamp")
     .eq("sender", "user")
     // Stage-gated: route-resolve runs after intent is written.
     .in("status", ["intent_done"])
-    .order("timestamp", { ascending: true })
+    .order("timestamp", { ascending: false })
     .limit(25);
 
   if (error) {
@@ -311,6 +312,10 @@ export async function POST(req: Request) {
       const inboundText = String(m.text || "");
 
       if (!agentId || !leadId) {
+        await (supabase.from("messages") as any)
+          .update({ status: "needs_human", visible_to_agent: true })
+          .eq("id", messageId)
+          .eq("status", "intent_done");
         results.push({
           messageId,
           skipped: true,
@@ -321,6 +326,12 @@ export async function POST(req: Request) {
 
       // Skip if already routed (v1)
       if (await hasRouteArtifact(supabase, messageId)) {
+        // Keep stage progress consistent if artifact exists already.
+        await (supabase.from("messages") as any)
+          .update({ status: "route_resolved" })
+          .eq("id", messageId)
+          .eq("status", "intent_done");
+        results.push({ messageId, route: "already_routed", reason: "artifact_exists" });
         continue;
       }
 
@@ -524,10 +535,30 @@ export async function POST(req: Request) {
         else if (intent.intent === "STATUS_FOLLOWUP") route = "FOLLOWUP_STATUS";
         else route = "QNA";
 
-        // Do not overwrite active property context here (keep it)
-        activePropertyId = stateRow?.active_property_id
+        // For QNA/Viewing/Application flows we still try to anchor to a concrete property
+        // if the inbound message contains a URL/address/street reference.
+        const anchoredPropertyId =
+          (await resolvePropertyByUrlOrAddress(supabase, agentId, intent.entities)) ||
+          (await resolvePropertyByInboundText(supabase, agentId, inboundText));
+
+        activePropertyId = anchoredPropertyId
+          ? String(anchoredPropertyId)
+          : stateRow?.active_property_id
           ? String(stateRow.active_property_id)
           : null;
+
+        if (activePropertyId) {
+          await upsertLeadPropertyState(supabase, {
+            lead_id: leadId,
+            agent_id: agentId,
+            active_property_id: activePropertyId,
+            last_recommended_property_ids:
+              activePropertyId && suggestedPropertyIds.length === 0
+                ? [activePropertyId]
+                : suggestedPropertyIds,
+            updated_at: new Date().toISOString(),
+          });
+        }
         reason = "non_property_flow";
       }
 
