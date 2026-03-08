@@ -930,7 +930,7 @@ async function backfillRecentMessages(args: {
       // Phase B: full fetch for inbound user messages.
       // We persist full body for better review UX and store text body in messages.text
       // so intent/property routing can use more context than a Gmail snippet.
-      if (decision !== "ignore" && sender !== "agent" && leadId) {
+      if (sender !== "agent" && leadId) {
         try {
           const fullRes = await gmail.users.messages.get({
             userId: "me",
@@ -1597,7 +1597,7 @@ export async function POST(req: Request) {
 
         // --- Phase B: For inbound user messages, fetch full body + attachments ---
         // This prevents snippet-only ingestion and improves downstream intent/route quality.
-        if (decision !== "ignore" && sender !== "agent" && leadId) {
+        if (sender !== "agent" && leadId) {
           try {
             const fullRes = await gmail.users.messages.get({
               userId: "me",
