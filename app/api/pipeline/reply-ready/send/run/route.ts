@@ -132,9 +132,10 @@ export async function POST(req: NextRequest) {
   const pipeline = "reply_ready_send";
   const internal = isInternal(req);
   const body = (await req.json().catch(() => null)) as
-    | { id?: string; message_id?: string }
+    | { id?: string; message_id?: string; lead_id?: string }
     | null;
-  const onlyMessageId = String(body?.message_id || body?.id || "").trim();
+  let onlyMessageId = String(body?.message_id || body?.id || "").trim();
+  const onlyLeadId = String(body?.lead_id || "").trim();
   const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL");
   const secret = mustEnv("ADVAIC_INTERNAL_PIPELINE_SECRET");
   let stageRuns: Awaited<ReturnType<typeof runUpstreamReplyReadyStages>> = [];
@@ -156,6 +157,24 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = supabaseAdmin();
+
+  // Convenience input: allow callers to pass lead_id instead of message_id.
+  // We resolve the latest inbound user message for that lead and reprocess it.
+  if (!onlyMessageId && onlyLeadId) {
+    let leadQuery = (supabase.from("messages") as any)
+      .select("id")
+      .eq("lead_id", onlyLeadId)
+      .eq("sender", "user")
+      .order("timestamp", { ascending: false })
+      .limit(1);
+    if (scopedAgentId) {
+      leadQuery = leadQuery.eq("agent_id", scopedAgentId);
+    }
+    const { data: inboundByLead } = await leadQuery.maybeSingle();
+    if (inboundByLead?.id) {
+      onlyMessageId = String(inboundByLead.id);
+    }
+  }
   const control = await readRuntimeControl(supabase);
   if (isPipelinePaused(control, "reply_ready_send")) {
     if (internal) {
@@ -174,6 +193,8 @@ export async function POST(req: NextRequest) {
         control_source: control.source,
         internal,
         stage_runs: stageRuns,
+        lead_id: onlyLeadId || null,
+        resolved_message_id: onlyMessageId || null,
       },
     });
     return NextResponse.json(
@@ -182,6 +203,8 @@ export async function POST(req: NextRequest) {
         paused: true,
         reason: control.reason || "pipeline_paused",
         stage_runs: stageRuns,
+        lead_id: onlyLeadId || null,
+        resolved_message_id: onlyMessageId || null,
       },
       { status: 200 },
     );
@@ -248,9 +271,18 @@ export async function POST(req: NextRequest) {
       meta: {
         reason: "no_drafts",
         stage_runs: stageRuns,
+        lead_id: onlyLeadId || null,
+        resolved_message_id: onlyMessageId || null,
       },
     });
-    return NextResponse.json({ ok: true, processed: 0, results: [], stage_runs: stageRuns });
+    return NextResponse.json({
+      ok: true,
+      processed: 0,
+      results: [],
+      stage_runs: stageRuns,
+      lead_id: onlyLeadId || null,
+      resolved_message_id: onlyMessageId || null,
+    });
   }
 
   // 2) Preload agent_settings for autosend gate
@@ -536,9 +568,17 @@ export async function POST(req: NextRequest) {
       internal,
       scoped_agent: scopedAgentId,
       only_message_id: onlyMessageId || null,
+      lead_id: onlyLeadId || null,
       stage_runs: stageRuns,
     },
   });
 
-  return NextResponse.json({ ok: true, processed: results.length, results, stage_runs: stageRuns });
+  return NextResponse.json({
+    ok: true,
+    processed: results.length,
+    results,
+    stage_runs: stageRuns,
+    lead_id: onlyLeadId || null,
+    resolved_message_id: onlyMessageId || null,
+  });
 }

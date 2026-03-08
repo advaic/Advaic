@@ -628,7 +628,7 @@ async function markConnError(
   }
 }
 
-async function triggerReplyReadyPipeline() {
+async function triggerReplyReadyPipeline(messageId?: string | null) {
   const siteUrl = String(process.env.NEXT_PUBLIC_SITE_URL || "").trim();
   const secret = String(process.env.ADVAIC_INTERNAL_PIPELINE_SECRET || "").trim();
   if (!siteUrl || !secret) {
@@ -647,7 +647,9 @@ async function triggerReplyReadyPipeline() {
           "Content-Type": "application/json",
           "x-advaic-internal-secret": secret,
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify(
+          messageId ? { message_id: String(messageId) } : {}
+        ),
       }
     );
     const payload = await res.json().catch(() => ({} as any));
@@ -1307,6 +1309,7 @@ export async function POST(req: Request) {
     // - messages.gmail_message_id (unique) + messages.gmail_thread_id
 
     const insertedMessageIds: string[] = [];
+    const insertedMessageRowIds: string[] = [];
 
     for (const h of history) {
       const msgs = h.messages || [];
@@ -1716,42 +1719,47 @@ export async function POST(req: Request) {
         }
 
         // 6b) Upsert message (dedupe via gmail_message_id)
-        const { error: msgUpsertErr } = await supabase.from("messages").upsert(
-          {
-            lead_id: leadId,
-            agent_id: connection.agent_id,
-            // Determine sender: agent if message is from the connected Gmail account, else user
-            sender,
-            text: inboundMessageText,
-            timestamp: timestampIso,
+        const { data: msgUpserted, error: msgUpsertErr } = await (
+          supabase.from("messages") as any
+        )
+          .upsert(
+            {
+              lead_id: leadId,
+              agent_id: connection.agent_id,
+              // Determine sender: agent if message is from the connected Gmail account, else user
+              sender,
+              text: inboundMessageText,
+              timestamp: timestampIso,
 
-            gpt_score: null,
-            was_followup: false,
-            visible_to_agent: true,
+              gpt_score: null,
+              was_followup: false,
+              visible_to_agent: true,
 
-            // IMPORTANT: Gmail Push is ingestion ONLY.
-            // Inbound emails must NEVER become sendable drafts.
-            // Drafts are created later by the pipeline (compose -> QA -> rewrite -> QA).
-            approval_required: false,
+              // IMPORTANT: Gmail Push is ingestion ONLY.
+              // Inbound emails must NEVER become sendable drafts.
+              // Drafts are created later by the pipeline (compose -> QA -> rewrite -> QA).
+              approval_required: false,
 
-            // Pipeline alignment:
-            // - Gmail push only ingests.
-            // - Inbound user emails should start at `intent_pending` so the intent runner can process them.
-            // - Outgoing agent emails are stored as `sent`.
-            status: sender === "agent" ? "sent" : "intent_pending",
+              // Pipeline alignment:
+              // - Gmail push only ingests.
+              // - Inbound user emails should start at `intent_pending` so the intent runner can process them.
+              // - Outgoing agent emails are stored as `sent`.
+              status: sender === "agent" ? "sent" : "intent_pending",
 
-            snippet,
-            history_id: String(h.id || historyId),
-            email_address: emailAddress,
+              snippet,
+              history_id: String(h.id || historyId),
+              email_address: emailAddress,
 
-            email_type,
-            classification_confidence: confidence,
+              email_type,
+              classification_confidence: confidence,
 
-            gmail_message_id: gmailMessageId,
-            gmail_thread_id: threadId,
-          } as any,
-          { onConflict: "gmail_message_id" }
-        );
+              gmail_message_id: gmailMessageId,
+              gmail_thread_id: threadId,
+            } as any,
+            { onConflict: "gmail_message_id" }
+          )
+          .select("id, sender")
+          .single();
 
         if (msgUpsertErr) {
           console.error(
@@ -1762,12 +1770,21 @@ export async function POST(req: Request) {
         }
 
         insertedMessageIds.push(gmailMessageId);
+        const rowId = String((msgUpserted as any)?.id || "").trim();
+        const rowSender = String((msgUpserted as any)?.sender || sender)
+          .toLowerCase()
+          .trim();
+        if (rowId && rowSender !== "agent") {
+          insertedMessageRowIds.push(rowId);
+        }
       }
     }
 
     logPushDebug("gmail_push_messages_upserted", {
       count: insertedMessageIds.length,
       sample: insertedMessageIds.slice(0, 20),
+      row_count: insertedMessageRowIds.length,
+      row_sample: insertedMessageRowIds.slice(0, 20),
     });
 
     // --- 7) Update connection last_history_id so next push uses correct startHistoryId ---
@@ -1789,8 +1806,33 @@ export async function POST(req: Request) {
     }
 
     // Best-effort: trigger full reply-ready chain right after ingestion.
-    // This makes inbound processing work even when separate cron jobs are delayed/missing.
-    if (insertedMessageIds.length > 0) {
+    // Prefer targeted per-message runs to avoid queue starvation.
+    if (insertedMessageRowIds.length > 0) {
+      const maxPerWebhook = Math.min(insertedMessageRowIds.length, 8);
+      for (const messageId of insertedMessageRowIds.slice(0, maxPerWebhook)) {
+        const trigger = await triggerReplyReadyPipeline(messageId);
+        if (!trigger.ok) {
+          console.warn("⚠️ Gmail Push: failed triggering targeted pipeline", {
+            reason: trigger.reason,
+            message_id: messageId,
+          });
+        } else {
+          logPushDebug("gmail_push_pipeline_triggered_targeted", {
+            message_id: messageId,
+          });
+        }
+      }
+      if (insertedMessageRowIds.length > maxPerWebhook) {
+        const triggerRest = await triggerReplyReadyPipeline();
+        if (!triggerRest.ok) {
+          console.warn("⚠️ Gmail Push: failed triggering backlog pipeline", {
+            reason: triggerRest.reason,
+            skipped_targeted: insertedMessageRowIds.length - maxPerWebhook,
+          });
+        }
+      }
+    } else if (insertedMessageIds.length > 0) {
+      // Fallback behavior (e.g. if row IDs could not be resolved).
       const trigger = await triggerReplyReadyPipeline();
       if (!trigger.ok) {
         console.warn("⚠️ Gmail Push: failed triggering reply-ready pipeline", {
