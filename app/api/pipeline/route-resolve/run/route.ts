@@ -126,6 +126,79 @@ function askedForAlternatives(text: string): boolean {
   return keywords.some((kw) => lower.includes(kw));
 }
 
+function normalizeTextForMatch(input: string) {
+  return String(input || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function streetBase(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\d+[a-zA-Z]?/g, " ")
+    .replace(/[^\p{L}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function streetNumber(value: string) {
+  const m = String(value || "").match(/\b(\d+[a-zA-Z]?)\b/);
+  return m ? m[1].toLowerCase() : "";
+}
+
+async function resolvePropertyByInboundText(
+  supabase: any,
+  agentId: string,
+  inboundText: string
+) {
+  const text = normalizeTextForMatch(inboundText);
+  if (!text) return null;
+
+  const { data: rows } = await (supabase.from("properties") as any)
+    .select("id, title, street_address, neighborhood, city, status")
+    .eq("agent_id", agentId)
+    .neq("status", "draft")
+    .limit(200);
+
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+
+  let bestId: string | null = null;
+  let bestScore = 0;
+
+  for (const row of rows) {
+    const id = String(row?.id || "");
+    if (!id) continue;
+
+    const title = normalizeTextForMatch(String(row?.title || ""));
+    const street = normalizeTextForMatch(String(row?.street_address || ""));
+    const neighborhood = normalizeTextForMatch(String(row?.neighborhood || ""));
+    const city = normalizeTextForMatch(String(row?.city || ""));
+
+    let score = 0;
+
+    if (street && text.includes(street)) score += 8;
+
+    const base = streetBase(street);
+    const nr = streetNumber(street);
+    if (base && text.includes(base)) score += 3;
+    if (nr && text.includes(nr)) score += 2;
+
+    if (title && text.includes(title)) score += 2;
+    if (neighborhood && text.includes(neighborhood)) score += 1;
+    if (city && text.includes(city)) score += 1;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestId = id;
+    }
+  }
+
+  // Fail-closed: require a meaningful signal to avoid wrong auto-links.
+  return bestScore >= 4 ? bestId : null;
+}
+
 async function resolvePropertyByUrlOrAddress(
   supabase: any,
   agentId: string,
@@ -324,6 +397,7 @@ export async function POST(req: Request) {
             agentId,
             intent.entities
           )) ||
+          (await resolvePropertyByInboundText(supabase, agentId, inboundText)) ||
           (stateRow?.active_property_id
             ? String(stateRow.active_property_id)
             : null);
@@ -414,7 +488,25 @@ export async function POST(req: Request) {
           activePropertyId = newActive ?? stateRow?.active_property_id ?? null;
           reason = "matched_properties";
         } else {
-          reason = "no_property_match";
+          const textMatchedId = await resolvePropertyByInboundText(
+            supabase,
+            agentId,
+            inboundText
+          );
+          if (textMatchedId) {
+            suggestedPropertyIds = [textMatchedId];
+            activePropertyId = textMatchedId;
+            await upsertLeadPropertyState(supabase, {
+              lead_id: leadId,
+              agent_id: agentId,
+              active_property_id: textMatchedId,
+              last_recommended_property_ids: [textMatchedId],
+              updated_at: new Date().toISOString(),
+            });
+            reason = "fallback_text_match";
+          } else {
+            reason = "no_property_match";
+          }
         }
       }
 

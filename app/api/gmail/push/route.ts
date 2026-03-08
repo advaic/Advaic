@@ -155,6 +155,17 @@ function extractPrimaryEmail(headerValue: string) {
   return addr.toLowerCase();
 }
 
+function extractDisplayName(headerValue: string) {
+  const s = String(headerValue || "").trim();
+  if (!s) return "";
+  const m = s.match(/^(.*)<[^>]+>$/);
+  let name = (m ? m[1] : "").trim();
+  if (!name) return "";
+  name = name.replace(/^["']+|["']+$/g, "").trim();
+  if (!name || name.includes("@")) return "";
+  return name.slice(0, 160);
+}
+
 function isProbablyNoReplyAddress(addr: string) {
   const a = String(addr || "").toLowerCase();
   return (
@@ -617,6 +628,44 @@ async function markConnError(
   }
 }
 
+async function triggerReplyReadyPipeline() {
+  const siteUrl = String(process.env.NEXT_PUBLIC_SITE_URL || "").trim();
+  const secret = String(process.env.ADVAIC_INTERNAL_PIPELINE_SECRET || "").trim();
+  if (!siteUrl || !secret) {
+    return {
+      ok: false,
+      reason: !siteUrl ? "missing_site_url" : "missing_pipeline_secret",
+    };
+  }
+
+  try {
+    const res = await fetch(
+      new URL("/api/pipeline/reply-ready/send/run", siteUrl).toString(),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-advaic-internal-secret": secret,
+        },
+        body: JSON.stringify({}),
+      }
+    );
+    const payload = await res.json().catch(() => ({} as any));
+    if (!res.ok) {
+      return {
+        ok: false,
+        reason: String(payload?.error || `http_${res.status}`),
+      };
+    }
+    return { ok: true, payload };
+  } catch (e: any) {
+    return {
+      ok: false,
+      reason: String(e?.message || "pipeline_trigger_failed"),
+    };
+  }
+}
+
 async function backfillRecentMessages(args: {
   gmail: any;
   supabase: any;
@@ -682,6 +731,7 @@ async function backfillRecentMessages(args: {
       const toHeader = extractHeader(headers, "To");
       const replyTo = extractHeader(headers, "Reply-To");
       const snippet = msgRes.data.snippet || "";
+      let inboundMessageText = snippet;
 
       const signalListUnsub = hasListUnsubscribe(headers);
       const signalBulk = isBulkMail(headers);
@@ -735,6 +785,8 @@ async function backfillRecentMessages(args: {
               emailType: email_type,
             })
           : "";
+      const leadDisplayName =
+        sender !== "agent" ? extractDisplayName(from) : "";
 
       // Audit classification (best-effort)
       try {
@@ -773,20 +825,22 @@ async function backfillRecentMessages(args: {
       // Find or create lead by thread
       let leadId: string | null = null;
 
-      const { data: existingLead } = await supabase
-        .from("leads")
-        .select("id,email,followups_enabled,followup_paused_until")
-        .eq("agent_id", connection.agent_id)
-        .eq("gmail_thread_id", threadId)
-        .maybeSingle();
+        const { data: existingLead } = await supabase
+          .from("leads")
+          .select("id,email,name,followups_enabled,followup_paused_until")
+          .eq("agent_id", connection.agent_id)
+          .eq("gmail_thread_id", threadId)
+          .maybeSingle();
 
       if (existingLead && (existingLead as any).id) {
         leadId = (existingLead as any).id as string;
         // Best-effort update: update last_message_at and leads.email if needed
         const existingLeadEmail = String((existingLead as any)?.email || "").toLowerCase();
+        const existingLeadName = String((existingLead as any)?.name || "").trim();
         const shouldUpdateEmail =
           leadContactEmail &&
           (!existingLeadEmail || isProbablyNoReplyAddress(existingLeadEmail));
+        const shouldUpdateName = !!leadDisplayName && !existingLeadName;
 
         const followupsEnabled = Boolean(
           (existingLead as any)?.followups_enabled ??
@@ -803,6 +857,7 @@ async function backfillRecentMessages(args: {
         };
 
         if (shouldUpdateEmail) leadUpdatePayload.email = leadContactEmail;
+        if (shouldUpdateName) leadUpdatePayload.name = leadDisplayName;
 
         // If the user replied, reset the follow-up pipeline (stage back to 0) and reschedule based on settings.
         if (sender === "user") {
@@ -863,6 +918,7 @@ async function backfillRecentMessages(args: {
             followup_paused_until: plan.followup_paused_until,
 
             ...(leadContactEmail ? { email: leadContactEmail } : {}),
+            ...(leadDisplayName ? { name: leadDisplayName } : {}),
           } as any)
           .select("id")
           .single();
@@ -871,8 +927,10 @@ async function backfillRecentMessages(args: {
         if (!leadId) continue;
       }
 
-      // Phase B: full fetch for needs_approval (same as push)
-      if (decision === "needs_approval" && sender !== "agent" && leadId) {
+      // Phase B: full fetch for inbound user messages.
+      // We persist full body for better review UX and store text body in messages.text
+      // so intent/property routing can use more context than a Gmail snippet.
+      if (decision !== "ignore" && sender !== "agent" && leadId) {
         try {
           const fullRes = await gmail.users.messages.get({
             userId: "me",
@@ -882,6 +940,9 @@ async function backfillRecentMessages(args: {
 
           const fullPayload = (fullRes.data.payload || null) as any;
           const bodies = extractBodiesFromPayload(fullPayload);
+          if (typeof bodies.body_text === "string" && bodies.body_text.trim()) {
+            inboundMessageText = bodies.body_text.trim().slice(0, 12000);
+          }
 
           const bodyRow: EmailMessageBodyRow = {
             agent_id: connection.agent_id,
@@ -965,7 +1026,7 @@ async function backfillRecentMessages(args: {
           lead_id: leadId,
           agent_id: connection.agent_id,
           sender,
-          text: snippet,
+          text: inboundMessageText,
           timestamp: timestampIso,
           gpt_score: null,
           was_followup: false,
@@ -1293,6 +1354,7 @@ export async function POST(req: Request) {
         const replyTo = extractHeader(headers, "Reply-To");
 
         const snippet = msgRes.data.snippet || "";
+        let inboundMessageText = snippet;
 
         const signalListUnsub = hasListUnsubscribe(headers);
         const signalBulk = isBulkMail(headers);
@@ -1351,6 +1413,8 @@ export async function POST(req: Request) {
                 emailType: email_type,
               })
             : "";
+        const leadDisplayName =
+          sender !== "agent" ? extractDisplayName(from) : "";
 
         // Audit record (service role). This does NOT trigger any sending.
         // If you haven't created this table yet, create `email_classifications` per our earlier SQL.
@@ -1401,7 +1465,7 @@ export async function POST(req: Request) {
 
         const { data: existingLead, error: leadSelErr } = await supabase
           .from("leads")
-          .select("id,email,followups_enabled,followup_paused_until")
+          .select("id,email,name,followups_enabled,followup_paused_until")
           .eq("agent_id", connection.agent_id)
           .eq("gmail_thread_id", threadId)
           .maybeSingle();
@@ -1419,9 +1483,11 @@ export async function POST(req: Request) {
 
           // Best-effort update: update last_message_at and leads.email if needed
           const existingLeadEmail = String((existingLead as any)?.email || "").toLowerCase();
+          const existingLeadName = String((existingLead as any)?.name || "").trim();
           const shouldUpdateEmail =
             leadContactEmail &&
             (!existingLeadEmail || isProbablyNoReplyAddress(existingLeadEmail));
+          const shouldUpdateName = !!leadDisplayName && !existingLeadName;
 
           const followupsEnabled = Boolean(
             (existingLead as any)?.followups_enabled ??
@@ -1438,6 +1504,7 @@ export async function POST(req: Request) {
           };
 
           if (shouldUpdateEmail) leadUpdatePayload.email = leadContactEmail;
+          if (shouldUpdateName) leadUpdatePayload.name = leadDisplayName;
 
           // If the user replied, reset the follow-up pipeline (stage back to 0) and reschedule based on settings.
           if (sender === "user") {
@@ -1508,6 +1575,7 @@ export async function POST(req: Request) {
               followup_paused_until: plan.followup_paused_until,
 
               ...(leadContactEmail ? { email: leadContactEmail } : {}),
+              ...(leadDisplayName ? { name: leadDisplayName } : {}),
             } as any)
             .select("id")
             .single();
@@ -1527,8 +1595,9 @@ export async function POST(req: Request) {
           }
         }
 
-        // --- Phase B: For needs_approval, fetch full body + attachments and persist for review ---
-        if (decision === "needs_approval" && sender !== "agent" && leadId) {
+        // --- Phase B: For inbound user messages, fetch full body + attachments ---
+        // This prevents snippet-only ingestion and improves downstream intent/route quality.
+        if (decision !== "ignore" && sender !== "agent" && leadId) {
           try {
             const fullRes = await gmail.users.messages.get({
               userId: "me",
@@ -1538,6 +1607,9 @@ export async function POST(req: Request) {
 
             const fullPayload = (fullRes.data.payload || null) as any;
             const bodies = extractBodiesFromPayload(fullPayload);
+            if (typeof bodies.body_text === "string" && bodies.body_text.trim()) {
+              inboundMessageText = bodies.body_text.trim().slice(0, 12000);
+            }
 
             const bodyRow: EmailMessageBodyRow = {
               agent_id: connection.agent_id,
@@ -1650,7 +1722,7 @@ export async function POST(req: Request) {
             agent_id: connection.agent_id,
             // Determine sender: agent if message is from the connected Gmail account, else user
             sender,
-            text: snippet,
+            text: inboundMessageText,
             timestamp: timestampIso,
 
             gpt_score: null,
@@ -1714,6 +1786,22 @@ export async function POST(req: Request) {
         "⚠️ Gmail Push: failed updating email_connections",
         updErr.message
       );
+    }
+
+    // Best-effort: trigger full reply-ready chain right after ingestion.
+    // This makes inbound processing work even when separate cron jobs are delayed/missing.
+    if (insertedMessageIds.length > 0) {
+      const trigger = await triggerReplyReadyPipeline();
+      if (!trigger.ok) {
+        console.warn("⚠️ Gmail Push: failed triggering reply-ready pipeline", {
+          reason: trigger.reason,
+          inserted: insertedMessageIds.length,
+        });
+      } else {
+        logPushDebug("gmail_push_pipeline_triggered", {
+          inserted: insertedMessageIds.length,
+        });
+      }
     }
 
     logPushDebug("gmail_push_done", {
