@@ -69,10 +69,72 @@ function buildSubject(lead: any) {
   return `Re: ${String(s).slice(0, 140)}`;
 }
 
+const UPSTREAM_REPLY_READY_STAGES = [
+  "/api/pipeline/reply-ready/intent/run",
+  "/api/pipeline/route-resolve/run",
+  "/api/pipeline/reply-ready/draft/run",
+  "/api/pipeline/reply-ready/qa/run",
+  "/api/pipeline/reply-ready/rewrite/run",
+  "/api/pipeline/reply-ready/qa-recheck/run",
+] as const;
+
+async function runUpstreamReplyReadyStages(args: {
+  siteUrl: string;
+  secret: string;
+}) {
+  const stageRuns: Array<{
+    stage: string;
+    ok: boolean;
+    status: number;
+    error?: string;
+    processed?: number;
+  }> = [];
+
+  for (const stage of UPSTREAM_REPLY_READY_STAGES) {
+    try {
+      const res = await fetch(new URL(stage, args.siteUrl).toString(), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-advaic-internal-secret": args.secret,
+        },
+        body: JSON.stringify({}),
+      });
+
+      const payload = await res.json().catch(() => ({} as any));
+      stageRuns.push({
+        stage,
+        ok: res.ok,
+        status: res.status,
+        error: res.ok ? undefined : String(payload?.error || "stage_failed"),
+        processed: Number.isFinite(Number(payload?.processed))
+          ? Number(payload.processed)
+          : undefined,
+      });
+    } catch (e: any) {
+      stageRuns.push({
+        stage,
+        ok: false,
+        status: 0,
+        error: String(e?.message || "stage_fetch_failed"),
+      });
+    }
+  }
+
+  return stageRuns;
+}
+
 export async function POST(req: NextRequest) {
   const startedAtMs = Date.now();
   const pipeline = "reply_ready_send";
   const internal = isInternal(req);
+  const body = (await req.json().catch(() => null)) as
+    | { id?: string; message_id?: string }
+    | null;
+  const onlyMessageId = String(body?.message_id || body?.id || "").trim();
+  const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL");
+  const secret = mustEnv("ADVAIC_INTERNAL_PIPELINE_SECRET");
+  let stageRuns: Awaited<ReturnType<typeof runUpstreamReplyReadyStages>> = [];
   let scopedAgentId: string | null = null;
 
   if (!internal) {
@@ -93,6 +155,9 @@ export async function POST(req: NextRequest) {
   const supabase = supabaseAdmin();
   const control = await readRuntimeControl(supabase);
   if (isPipelinePaused(control, "reply_ready_send")) {
+    if (internal && !onlyMessageId) {
+      stageRuns = await runUpstreamReplyReadyStages({ siteUrl, secret });
+    }
     await logPipelineRun(supabase, {
       pipeline,
       status: "paused",
@@ -101,6 +166,7 @@ export async function POST(req: NextRequest) {
         reason: control.reason,
         control_source: control.source,
         internal,
+        stage_runs: stageRuns,
       },
     });
     return NextResponse.json(
@@ -108,17 +174,18 @@ export async function POST(req: NextRequest) {
         ok: true,
         paused: true,
         reason: control.reason || "pipeline_paused",
+        stage_runs: stageRuns,
       },
       { status: 200 },
     );
   }
 
-  const siteUrl = mustEnv("NEXT_PUBLIC_SITE_URL");
-  const secret = mustEnv("ADVAIC_INTERNAL_PIPELINE_SECRET");
-  const body = (await req.json().catch(() => null)) as
-    | { id?: string; message_id?: string }
-    | null;
-  const onlyMessageId = String(body?.message_id || body?.id || "").trim();
+  // Background runner self-heals the full chain:
+  // intent -> route resolve -> draft -> qa -> rewrite -> qa-recheck -> send.
+  // This keeps existing cron setups functional even if only `/send/run` is scheduled.
+  if (internal && !onlyMessageId) {
+    stageRuns = await runUpstreamReplyReadyStages({ siteUrl, secret });
+  }
 
   // 1) Pull ready_to_send drafts
   let draftsQ = (supabase.from("messages") as any)
@@ -167,9 +234,12 @@ export async function POST(req: NextRequest) {
       status: "ok",
       startedAtMs,
       processed: 0,
-      meta: { reason: "no_drafts" },
+      meta: {
+        reason: "no_drafts",
+        stage_runs: stageRuns,
+      },
     });
-    return NextResponse.json({ ok: true, processed: 0, results: [] });
+    return NextResponse.json({ ok: true, processed: 0, results: [], stage_runs: stageRuns });
   }
 
   // 2) Preload agent_settings for autosend gate
@@ -455,8 +525,9 @@ export async function POST(req: NextRequest) {
       internal,
       scoped_agent: scopedAgentId,
       only_message_id: onlyMessageId || null,
+      stage_runs: stageRuns,
     },
   });
 
-  return NextResponse.json({ ok: true, processed: results.length, results });
+  return NextResponse.json({ ok: true, processed: results.length, results, stage_runs: stageRuns });
 }

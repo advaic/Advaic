@@ -6,10 +6,17 @@ export const runtime = "nodejs";
 
 const NEXT_STATUS_AFTER_INTENT = "intent_done";
 
-// Treat these as inbound-ish states. If your Gmail push currently writes inbound mail to
-// `needs_approval`, we still want to classify intent — but we will move it forward to `intent_done`
-// so downstream routing can proceed deterministically.
-const INBOUND_STATUSES = ["needs_approval", "ready", "inbound", "pending"] as const;
+// Treat these as inbound-ish states.
+// Important: Gmail push uses `intent_pending` and Outlook fetch uses `inbox_new`.
+// If we miss these values here, messages will never enter the intent pipeline.
+const INBOUND_STATUSES = [
+  "intent_pending",
+  "inbox_new",
+  "needs_approval",
+  "ready",
+  "inbound",
+  "pending",
+] as const;
 
 // Hard guard: if a message is already beyond intent, do not touch it.
 const TERMINAL_OR_LATER_STATUSES = [
