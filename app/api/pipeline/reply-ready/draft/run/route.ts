@@ -479,102 +479,31 @@ export async function POST(req: Request) {
      * 1.0) Quick pre-check: if message_drafts already exists for inbound, skip fast.
      * This prevents loops even if your insert unique isn't perfect.
      */
-    const { data: existingDraft } = await (
+    const { data: existingDraft, error: existingDraftErr } = await (
       supabase.from("message_drafts") as any
     )
-      .select("id, inbound_message_id, draft_message_id")
+      .select("id, inbound_message_id, draft_message_id, created_at")
       .eq("inbound_message_id", inboundMessageId)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
-    let lockRowId = "";
+    if (existingDraftErr) {
+      processed.push({
+        inboundMessageId,
+        route,
+        draftStatus: "existing_draft_lookup_failed",
+        error: existingDraftErr.message,
+      });
+      continue;
+    }
+
     if (existingDraft?.id && existingDraft.draft_message_id) {
       processed.push({
         inboundMessageId,
         route,
         draftStatus: "already_locked",
         draftMessageId: existingDraft.draft_message_id ?? null,
-      });
-      continue;
-    }
-
-    if (existingDraft?.id && !existingDraft.draft_message_id) {
-      // Reuse stale lock row from prior failed attempts (do not block forever).
-      lockRowId = String(existingDraft.id);
-    }
-
-    /**
-     * 1.1) Acquire idempotency lock via message_drafts insert
-     */
-    if (!lockRowId) {
-      const insertDraftLock = async (promptVersion: any) =>
-        await (supabase.from("message_drafts") as any)
-          .insert(
-            {
-              agent_id: agentId,
-              lead_id: leadId,
-              inbound_message_id: inboundMessageId,
-              draft_message_id: null,
-              prompt_key: PROMPT_KEY,
-              prompt_version: promptVersion,
-            },
-            { defaultToNull: true }
-          )
-          .select("id")
-          .maybeSingle();
-
-      let { data: lockRow, error: lockErr } = await insertDraftLock("v1");
-
-      // Backward compatibility: some DBs still have message_drafts.prompt_version as integer.
-      if (
-        lockErr &&
-        /invalid input syntax for type integer/i.test(String(lockErr.message || ""))
-      ) {
-        ({ data: lockRow, error: lockErr } = await insertDraftLock(1));
-      }
-
-      if (lockErr) {
-        const code = (lockErr as any).code;
-        if (String(code) === "23505") {
-          // Another runner likely inserted the lock. Re-read and continue only if no draft exists yet.
-          const { data: racedDraft } = await (
-            supabase.from("message_drafts") as any
-          )
-            .select("id, draft_message_id")
-            .eq("inbound_message_id", inboundMessageId)
-            .maybeSingle();
-
-          if (racedDraft?.id && racedDraft.draft_message_id) {
-            processed.push({
-              inboundMessageId,
-              route,
-              draftStatus: "already_locked",
-              draftMessageId: racedDraft.draft_message_id,
-            });
-            continue;
-          }
-
-          if (racedDraft?.id) {
-            lockRowId = String(racedDraft.id);
-          }
-        } else {
-          processed.push({
-            inboundMessageId,
-            route,
-            draftStatus: "lock_failed",
-            error: lockErr.message,
-          });
-          continue;
-        }
-      } else if (lockRow?.id) {
-        lockRowId = String(lockRow.id);
-      }
-    }
-
-    if (!lockRowId) {
-      processed.push({
-        inboundMessageId,
-        route,
-        draftStatus: "lock_missing_row",
       });
       continue;
     }
@@ -883,10 +812,90 @@ export async function POST(req: Request) {
 
     const draftMessageId = String(outMsg.id);
 
-    // Link inbound -> draft
-    await (supabase.from("message_drafts") as any)
-      .update({ draft_message_id: draftMessageId })
-      .eq("inbound_message_id", inboundMessageId);
+    // Link inbound -> draft (schema-compatible: some DBs use integer prompt_version, and
+    // some enforce NOT NULL on draft_message_id so null-locks are impossible).
+    const insertDraftLink = async (promptVersion: any) =>
+      await (supabase.from("message_drafts") as any)
+        .insert(
+          {
+            agent_id: agentId,
+            lead_id: leadId,
+            inbound_message_id: inboundMessageId,
+            draft_message_id: draftMessageId,
+            prompt_key: PROMPT_KEY,
+            prompt_version: promptVersion,
+          },
+          { defaultToNull: true }
+        )
+        .select("id, draft_message_id")
+        .maybeSingle();
+
+    let { data: linkRow, error: linkErr } = await insertDraftLink("v1");
+    if (
+      linkErr &&
+      /invalid input syntax for type integer/i.test(String(linkErr.message || ""))
+    ) {
+      ({ data: linkRow, error: linkErr } = await insertDraftLink(1));
+    }
+
+    if (linkErr) {
+      // Race-safe fallback: if another runner already linked this inbound, keep canonical draft and drop duplicate.
+      if (String((linkErr as any)?.code || "") === "23505") {
+        const { data: racedLink } = await (supabase.from("message_drafts") as any)
+          .select("id, draft_message_id")
+          .eq("inbound_message_id", inboundMessageId)
+          .maybeSingle();
+
+        if (racedLink?.draft_message_id) {
+          await (supabase.from("messages") as any).delete().eq("id", draftMessageId);
+          processed.push({
+            inboundMessageId,
+            route,
+            autosendEnabled,
+            draftStatus: "already_locked",
+            draftMessageId: String(racedLink.draft_message_id),
+          });
+          continue;
+        }
+      }
+
+      // Last fallback: update existing row if present (legacy/manual data drift).
+      const { data: existingLink } = await (supabase.from("message_drafts") as any)
+        .select("id, draft_message_id")
+        .eq("inbound_message_id", inboundMessageId)
+        .maybeSingle();
+
+      if (existingLink?.id) {
+        const { error: updErr } = await (supabase.from("message_drafts") as any)
+          .update({
+            draft_message_id: draftMessageId,
+            prompt_key: PROMPT_KEY,
+          })
+          .eq("id", existingLink.id);
+
+        if (updErr) {
+          await (supabase.from("messages") as any).delete().eq("id", draftMessageId);
+          processed.push({
+            inboundMessageId,
+            route,
+            autosendEnabled,
+            draftStatus: "link_failed",
+            error: updErr.message,
+          });
+          continue;
+        }
+      } else {
+        await (supabase.from("messages") as any).delete().eq("id", draftMessageId);
+        processed.push({
+          inboundMessageId,
+          route,
+          autosendEnabled,
+          draftStatus: "link_failed",
+          error: linkErr.message,
+        });
+        continue;
+      }
+    }
 
     // Advance inbound message status
     await (supabase.from("messages") as any)
