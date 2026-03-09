@@ -579,7 +579,19 @@ export async function POST(req: Request) {
       .eq("id", leadId)
       .maybeSingle();
 
-    if (!lead || String(lead.agent_id) !== agentId) {
+    const leadAgentId = String(lead?.agent_id || "").trim();
+
+    // Self-heal legacy/partial leads where agent_id was not persisted.
+    if (lead?.id && !leadAgentId) {
+      await safeUpdate(
+        supabase,
+        "leads",
+        { agent_id: agentId },
+        { id: leadId },
+      );
+    }
+
+    if (!lead || (leadAgentId && leadAgentId !== agentId)) {
       // Fail closed: needs human
       await (supabase.from("messages") as any)
         .update({ status: "needs_human", visible_to_agent: true })
@@ -594,7 +606,7 @@ export async function POST(req: Request) {
           routeLeadId,
           messageAgentId: String(inbound.agent_id || ""),
           messageLeadId: String(inbound.lead_id || ""),
-          leadAgentId: String(lead?.agent_id || ""),
+          leadAgentId,
         },
       });
       continue;
