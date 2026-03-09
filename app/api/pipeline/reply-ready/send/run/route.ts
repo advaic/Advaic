@@ -89,6 +89,9 @@ async function runUpstreamReplyReadyStages(args: {
     status: number;
     error?: string;
     processed?: number;
+    target_hit?: boolean;
+    target_result?: Record<string, any> | null;
+    results_sample?: Array<Record<string, any>>;
   }> = [];
 
   for (const stage of UPSTREAM_REPLY_READY_STAGES) {
@@ -105,6 +108,29 @@ async function runUpstreamReplyReadyStages(args: {
       });
 
       const payload = await res.json().catch(() => ({} as any));
+      const resultRows = Array.isArray((payload as any)?.results)
+        ? ((payload as any).results as Array<Record<string, any>>)
+        : [];
+      const targetId = String(args.onlyMessageId || "").trim();
+      const targetResultById =
+        targetId && resultRows.length > 0
+          ? resultRows.find((row) => {
+              const candidate = String(
+                row?.messageId ||
+                  row?.message_id ||
+                  row?.inboundMessageId ||
+                  row?.inbound_message_id ||
+                  row?.id ||
+                  "",
+              ).trim();
+              return candidate === targetId;
+            }) || null
+          : null;
+      // Some stages return one result without a stable id key.
+      // In targeted mode we still want to expose that single row for debugging.
+      const targetResult =
+        targetResultById || (targetId && resultRows.length === 1 ? resultRows[0] : null);
+
       stageRuns.push({
         stage,
         ok: res.ok,
@@ -113,6 +139,9 @@ async function runUpstreamReplyReadyStages(args: {
         processed: Number.isFinite(Number(payload?.processed))
           ? Number(payload.processed)
           : undefined,
+        target_hit: Boolean(targetResult),
+        target_result: targetResult,
+        results_sample: resultRows.slice(0, 3),
       });
     } catch (e: any) {
       stageRuns.push({
