@@ -464,8 +464,10 @@ export async function POST(req: Request) {
 
   for (const r of routes || []) {
     const routeRowId = String(r.id);
-    const agentId = String(r.agent_id);
-    const leadId = String(r.lead_id);
+    const routeAgentId = String(r.agent_id || "");
+    const routeLeadId = String(r.lead_id || "");
+    let agentId = routeAgentId;
+    let leadId = routeLeadId;
     const inboundMessageId = String(r.message_id);
     const route = String(r.route || "OTHER");
     const baseConfidence = clamp01(r.confidence);
@@ -527,16 +529,46 @@ export async function POST(req: Request) {
       continue;
     }
 
-    if (
-      String(inbound.sender) !== "user" ||
-      String(inbound.status || "") !== "route_resolved"
-    ) {
+    const inboundStatus = String(inbound.status || "");
+    const inboundReady =
+      inboundStatus === "route_resolved" ||
+      // Targeted rerun recovery: previously failed rows may be parked in needs_human.
+      (Boolean(onlyMessageId) && inboundStatus === "needs_human");
+
+    if (String(inbound.sender) !== "user" || !inboundReady) {
       processed.push({
         inboundMessageId,
         route,
         draftStatus: "inbound_not_ready",
+        status: inboundStatus,
       });
       continue;
+    }
+
+    // Source of truth: message row. Route artifacts can be stale after lead merges/relinks.
+    agentId = String(inbound.agent_id || routeAgentId || "");
+    leadId = String(inbound.lead_id || routeLeadId || "");
+    if (!agentId || !leadId) {
+      await (supabase.from("messages") as any)
+        .update({ status: "needs_human", visible_to_agent: true })
+        .eq("id", inboundMessageId);
+
+      processed.push({
+        inboundMessageId,
+        route,
+        draftStatus: "missing_agent_or_lead",
+      });
+      continue;
+    }
+
+    // Keep route artifact consistent with canonical message ownership.
+    if (routeAgentId !== agentId || routeLeadId !== leadId) {
+      await safeUpdate(
+        supabase,
+        "message_routes",
+        { agent_id: agentId, lead_id: leadId },
+        { id: routeRowId },
+      );
     }
 
     /**
@@ -553,7 +585,18 @@ export async function POST(req: Request) {
         .update({ status: "needs_human", visible_to_agent: true })
         .eq("id", inboundMessageId);
 
-      processed.push({ inboundMessageId, route, draftStatus: "lead_mismatch" });
+      processed.push({
+        inboundMessageId,
+        route,
+        draftStatus: "lead_mismatch",
+        details: {
+          routeAgentId,
+          routeLeadId,
+          messageAgentId: String(inbound.agent_id || ""),
+          messageLeadId: String(inbound.lead_id || ""),
+          leadAgentId: String(lead?.agent_id || ""),
+        },
+      });
       continue;
     }
 
