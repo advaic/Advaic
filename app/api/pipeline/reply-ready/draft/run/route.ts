@@ -516,7 +516,9 @@ export async function POST(req: Request) {
     const { data: inbound, error: inboundErr } = await (
       supabase.from("messages") as any
     )
-      .select("id, agent_id, lead_id, sender, status, text, snippet, timestamp")
+      .select(
+        "id, agent_id, lead_id, sender, status, text, snippet, timestamp, email_address"
+      )
       .eq("id", inboundMessageId)
       .maybeSingle();
 
@@ -574,10 +576,45 @@ export async function POST(req: Request) {
     /**
      * 3) Load lead (ensure agent ownership)
      */
-    const { data: lead } = await (supabase.from("leads") as any)
+    let { data: lead } = await (supabase.from("leads") as any)
       .select("id, agent_id, name, email, gmail_thread_id, meta")
       .eq("id", leadId)
       .maybeSingle();
+
+    // Self-heal legacy data drift: recreate missing lead row from inbound message context.
+    if (!lead) {
+      const fallbackEmail = safeStr((inbound as any)?.email_address);
+      const fallbackName = fallbackEmail
+        ? fallbackEmail
+            .split("@")[0]
+            .replace(/[._-]+/g, " ")
+            .trim()
+        : null;
+
+      await (supabase.from("leads") as any).upsert(
+        {
+          id: leadId,
+          agent_id: agentId,
+          name: fallbackName || null,
+          email: fallbackEmail || null,
+          status: "open",
+          escalated: false,
+          message_count: 1,
+          last_message_at: String((inbound as any)?.timestamp || nowIso),
+          last_message: String((inbound as any)?.text || (inbound as any)?.snippet || "").slice(
+            0,
+            240
+          ),
+        },
+        { onConflict: "id" }
+      );
+
+      const reread = await (supabase.from("leads") as any)
+        .select("id, agent_id, name, email, gmail_thread_id, meta")
+        .eq("id", leadId)
+        .maybeSingle();
+      lead = reread?.data || null;
+    }
 
     const leadAgentId = String(lead?.agent_id || "").trim();
 
