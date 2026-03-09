@@ -506,22 +506,31 @@ export async function POST(req: Request) {
      * 1.1) Acquire idempotency lock via message_drafts insert
      */
     if (!lockRowId) {
-      const { data: lockRow, error: lockErr } = await (
-        supabase.from("message_drafts") as any
-      )
-        .insert(
-          {
-            agent_id: agentId,
-            lead_id: leadId,
-            inbound_message_id: inboundMessageId,
-            draft_message_id: null,
-            prompt_key: PROMPT_KEY,
-            prompt_version: "v1",
-          },
-          { defaultToNull: true }
-        )
-        .select("id")
-        .maybeSingle();
+      const insertDraftLock = async (promptVersion: any) =>
+        await (supabase.from("message_drafts") as any)
+          .insert(
+            {
+              agent_id: agentId,
+              lead_id: leadId,
+              inbound_message_id: inboundMessageId,
+              draft_message_id: null,
+              prompt_key: PROMPT_KEY,
+              prompt_version: promptVersion,
+            },
+            { defaultToNull: true }
+          )
+          .select("id")
+          .maybeSingle();
+
+      let { data: lockRow, error: lockErr } = await insertDraftLock("v1");
+
+      // Backward compatibility: some DBs still have message_drafts.prompt_version as integer.
+      if (
+        lockErr &&
+        /invalid input syntax for type integer/i.test(String(lockErr.message || ""))
+      ) {
+        ({ data: lockRow, error: lockErr } = await insertDraftLock(1));
+      }
 
       if (lockErr) {
         const code = (lockErr as any).code;
