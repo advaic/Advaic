@@ -591,7 +591,7 @@ export async function POST(req: Request) {
             .trim()
         : null;
 
-      await (supabase.from("leads") as any).upsert(
+      const { error: healInsertErr } = await (supabase.from("leads") as any).upsert(
         {
           id: leadId,
           agent_id: agentId,
@@ -609,11 +609,13 @@ export async function POST(req: Request) {
         { onConflict: "id" }
       );
 
-      const reread = await (supabase.from("leads") as any)
-        .select("id, agent_id, name, email, gmail_thread_id, meta")
-        .eq("id", leadId)
-        .maybeSingle();
-      lead = reread?.data || null;
+      if (!healInsertErr) {
+        const reread = await (supabase.from("leads") as any)
+          .select("id, agent_id, name, email, gmail_thread_id, meta")
+          .eq("id", leadId)
+          .maybeSingle();
+        lead = reread?.data || null;
+      }
     }
 
     const leadAgentId = String(lead?.agent_id || "").trim();
@@ -628,7 +630,9 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!lead || (leadAgentId && leadAgentId !== agentId)) {
+    // Hard block only on true cross-agent conflicts.
+    // Missing/partially broken lead rows should not prevent draft creation.
+    if (lead && leadAgentId && leadAgentId !== agentId) {
       // Fail closed: needs human
       await (supabase.from("messages") as any)
         .update({ status: "needs_human", visible_to_agent: true })
@@ -647,6 +651,17 @@ export async function POST(req: Request) {
         },
       });
       continue;
+    }
+
+    if (!lead) {
+      lead = {
+        id: leadId,
+        agent_id: agentId,
+        name: null,
+        email: safeStr((inbound as any)?.email_address) || null,
+        gmail_thread_id: null,
+        meta: null,
+      } as any;
     }
 
     /**
