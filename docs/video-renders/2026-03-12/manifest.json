@@ -1,0 +1,36 @@
+{
+  "generatedAt": "2026-03-12T15:16:06.082Z",
+  "baseURL": "http://127.0.0.1:4010",
+  "videos": [
+    {
+      "id": "tagesgeschaeft",
+      "title": "Wie Advaic im Tagesgeschäft arbeitet",
+      "runtimeMs": 142000,
+      "page": "/demo?view=videos&id=tagesgeschaeft&clean=1&autoplay=1",
+      "webm": "tagesgeschaeft.webm",
+      "audio": "tagesgeschaeft.m4a",
+      "captions": "tagesgeschaeft.vtt",
+      "poster": "tagesgeschaeft.png"
+    },
+    {
+      "id": "auto-vs-freigabe",
+      "title": "Wann automatisch gesendet wird und wann nicht",
+      "runtimeMs": 140000,
+      "page": "/demo?view=videos&id=auto-vs-freigabe&clean=1&autoplay=1",
+      "webm": "auto-vs-freigabe.webm",
+      "audio": "auto-vs-freigabe.m4a",
+      "captions": "auto-vs-freigabe.vtt",
+      "poster": "auto-vs-freigabe.png"
+    },
+    {
+      "id": "qualitaetschecks-followups",
+      "title": "Qualitätschecks und Follow-ups im Live-Betrieb",
+      "runtimeMs": 129000,
+      "page": "/demo?view=videos&id=qualitaetschecks-followups&clean=1&autoplay=1",
+      "webm": "qualitaetschecks-followups.webm",
+      "audio": "qualitaetschecks-followups.m4a",
+      "captions": "qualitaetschecks-followups.vtt",
+      "poster": "qualitaetschecks-followups.png"
+    }
+  ]
+}

@@ -3,15 +3,17 @@ import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
+import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const selectionCriteria = [
   {
-    title: "1) Prozess-Fit statt Funktionsliste",
+    title: "1) Prozess-Fit vor Funktionsliste",
     text: "Prüfen Sie zuerst den Ablauf: Eingang, Entscheidung, Versand, Verlauf, Follow-up. Ein Tool ist nur dann sinnvoll, wenn es genau die Engpässe in diesem Fluss reduziert.",
   },
   {
     title: "2) Sicherheitslogik im Live-Betrieb",
-    text: "Für Makler entscheidend: klare Guardrails, Freigabe für unklare Fälle, nachvollziehbare Gründe pro Entscheidung und Qualitätskontrollen vor Versand.",
+    text: "Für Makler entscheidend: klare Guardrails, Freigabe bei fehlenden Angaben oder Risiko, nachvollziehbare Gründe pro Entscheidung und Qualitätskontrollen vor Versand.",
   },
   {
     title: "3) Nachvollziehbarkeit pro Nachricht",
@@ -52,9 +54,9 @@ const toolLandscape = [
 
 const bestFit = [
   "Sie bearbeiten regelmäßig ähnliche Interessenten-Anfragen per E-Mail.",
-  "Sie möchten klare Standardfälle automatisch senden, ohne Kontrolle aufzugeben.",
+  "Sie möchten Anfragen mit sauberem Objektbezug und vollständigen Angaben automatisch senden, ohne Kontrolle aufzugeben.",
   "Ihr Team braucht nachvollziehbare Gründe, warum etwas automatisch gesendet oder gestoppt wurde.",
-  "Sie wollen Follow-ups regelbasiert fahren, statt sie manuell zu verwalten.",
+  "Sie wollen Follow-ups regelbasiert steuern und nicht einzeln manuell verwalten.",
 ];
 
 const notFit = [
@@ -96,27 +98,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildMarketingMetadata({
   title: "Best AI Tools für Immobilienmakler (Deutschland)",
+  ogTitle: "Best AI Tools für Immobilienmakler | Advaic",
   description:
-    "Vergleichsrahmen für AI-Tools im Makleralltag: wann CRM, Inbox-Tools oder spezialisierte Antwortautomatisierung wie Advaic sinnvoll ist.",
-  alternates: {
-    canonical: "/best-ai-tools-immobilienmakler",
-  },
-  openGraph: {
-    title: "Best AI Tools für Immobilienmakler | Advaic",
-    description:
-      "Vergleichsrahmen für AI-Tools im Makleralltag: wann CRM, Inbox-Tools oder spezialisierte Antwortautomatisierung wie Advaic sinnvoll ist.",
-    url: "/best-ai-tools-immobilienmakler",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Best AI Tools für Immobilienmakler | Advaic",
-    description:
-      "Vergleichsrahmen für AI-Tools im Makleralltag: wann CRM, Inbox-Tools oder spezialisierte Antwortautomatisierung wie Advaic sinnvoll ist.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Vergleich für Makler: Wann CRM, Inbox-Tools, Schreibtools oder spezialisierte Antwortautomatisierung sinnvoll sind und welcher Engpass damit jeweils gelöst wird.",
+  path: "/best-ai-tools-immobilienmakler",
+  template: "compare",
+  eyebrow: "Vergleich",
+  proof: "Die stärkste Lösung verbindet Prozess-Fit, Sicherheitslogik und saubere Einführung.",
+});
 
 export default function BestAiToolsImmobilienmaklerPage() {
   const siteUrl = getSiteUrl();
@@ -156,22 +147,22 @@ export default function BestAiToolsImmobilienmaklerPage() {
       ]}
       schema={schema}
       kicker="Vergleich"
-      title="Best AI Tools für Immobilienmakler: so wählen Sie belastbar aus"
-      description="Nicht das Tool mit den meisten Features gewinnt, sondern das Tool mit dem klarsten Prozess-Fit. Diese Seite zeigt, wie Sie AI-Lösungen für Makleranfragen sauber vergleichen."
+      title="Best AI Tools für Immobilienmakler: Welche Tools welche Aufgabe lösen"
+      description="Vergleichen Sie CRM, Inbox-Tools, Schreibtools und spezialisierte Antwortautomatisierung nach Prozess-Fit, Sicherheitslogik und Einführbarkeit."
       actions={
         <>
           <Link href="/produkt" className="btn-secondary">
-            Produkt ansehen
+            Produkt prüfen
           </Link>
           <Link href="/signup?entry=best-ai-tools" className="btn-primary">
-            Advaic testen
+            {MARKETING_PRIMARY_CTA_LABEL}
           </Link>
         </>
       }
       stage="bewertung"
       stageContext="best-ai-tools-immobilienmakler"
       primaryHref="/signup?entry=best-ai-tools-stage"
-      primaryLabel="Mit Safe-Start testen"
+      primaryLabel="Mit echten Anfragen testen"
       secondaryHref="/advaic-vs-crm-tools"
       secondaryLabel="CRM-Vergleich öffnen"
       sources={sources}
@@ -180,10 +171,10 @@ export default function BestAiToolsImmobilienmaklerPage() {
       <section className="marketing-section-clear py-20 md:py-28">
         <Container>
           <div className="max-w-[74ch]">
-            <h2 className="h2">Vier Kriterien für eine wirklich gute Entscheidung</h2>
+            <h2 className="h2">Vier Kriterien, mit denen Sie Tools für Makleranfragen sauber vergleichen</h2>
             <p className="body mt-4 text-[var(--muted)]">
-              Viele Vergleiche bleiben zu allgemein. Für Maklerteams zählt vor allem, ob Standardanfragen schneller
-              und sicherer beantwortet werden, ohne dass Sonderfälle im Autopilot landen.
+              Viele Vergleiche bleiben zu allgemein. Für Maklerteams zählt, ob wiederkehrende Anfragen schneller
+              bearbeitet werden, ohne dass Nachrichten mit Lücken oder Risiko automatisch rausgehen.
             </p>
           </div>
           <div className="mt-8 grid gap-4 md:grid-cols-2">
@@ -199,10 +190,10 @@ export default function BestAiToolsImmobilienmaklerPage() {
 
       <section className="marketing-soft-cool py-20 md:py-28">
         <Container>
-          <h2 className="h2">Tool-Landschaft im Maklerkontext</h2>
+          <h2 className="h2">Welche Tool-Kategorie welchen Engpass löst</h2>
           <p className="body mt-4 max-w-[74ch] text-[var(--muted)]">
-            Die Frage ist selten „welches Tool ist generell das beste“, sondern „welches Tool löst den Engpass im
-            Anfragefluss am zuverlässigsten“.
+            Die bessere Frage lautet nicht „welches Tool ist generell das beste“, sondern „welches Tool löst den
+            Engpass im Anfragefluss am zuverlässigsten“.
           </p>
           <div className="mt-8 space-y-4">
             {toolLandscape.map((item) => (
@@ -232,7 +223,7 @@ export default function BestAiToolsImmobilienmaklerPage() {
         <Container>
           <div className="grid gap-4 md:grid-cols-2">
             <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Wann Advaic typischerweise die beste Wahl ist</h2>
+              <h2 className="h3">Wann spezialisierte Antwortautomatisierung stark ist</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
                 {bestFit.map((item) => (
                   <li key={item} className="flex items-start gap-2">
@@ -243,7 +234,7 @@ export default function BestAiToolsImmobilienmaklerPage() {
               </ul>
             </article>
             <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Wann Sie anders priorisieren sollten</h2>
+              <h2 className="h3">Wann Sie zuerst etwas anderes lösen sollten</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
                 {notFit.map((item) => (
                   <li key={item} className="flex items-start gap-2">
@@ -256,7 +247,7 @@ export default function BestAiToolsImmobilienmaklerPage() {
           </div>
 
           <article className="card-base mt-4 p-6 md:p-8">
-            <h2 className="h3">Weiterführend</h2>
+            <h2 className="h3">Diese Vergleiche vertiefen die Entscheidung</h2>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link href="/best-software-immobilienanfragen" className="btn-secondary">
                 Best Software Immobilienanfragen

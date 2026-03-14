@@ -23,7 +23,7 @@ export default function SecurityPrivacy() {
             <ul className="mt-3 space-y-2 text-sm text-[var(--muted)]">
               <li>Postfach-Anbindung über OAuth (kein manuelles Passwort-Sharing).</li>
               <li>Agentenbezogene Trennung von Regeln, Entwürfen und Status.</li>
-              <li>Fail-Safe-Logik: Bei Unsicherheit keine Auto-Antwort.</li>
+              <li>Fail-Safe-Logik: Bei fehlenden Angaben, Warnsignalen oder unsicherem Rückkanal keine Auto-Antwort.</li>
             </ul>
           </article>
 
@@ -51,17 +51,17 @@ export default function SecurityPrivacy() {
             <h3 className="h3">Auto (klar)</h3>
             <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
               <li>Eindeutige Interessenten-Anfrage</li>
-              <li>Standard-Situation</li>
+              <li>Sauberer Objektbezug und prüfbarer Empfänger</li>
               <li>Keine kritischen Informationen fehlen</li>
             </ul>
           </article>
 
           <article className="card-hover rounded-[var(--radius)] bg-white p-6 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
-            <h3 className="h3">Freigabe (unklar)</h3>
+            <h3 className="h3">Freigabe (Warnsignal)</h3>
             <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-              <li>Sonderfälle oder ungewöhnliche Anliegen</li>
-              <li>Beschwerden / Konflikte / heikle Themen</li>
-              <li>Objektbezug unklar oder wichtige Infos fehlen</li>
+              <li>Ungewöhnliche Anliegen oder fehlende Kerndaten</li>
+              <li>Beschwerden, Konflikte oder sensible Aussagen</li>
+              <li>Widersprüchlicher Objektbezug oder wichtige Infos fehlen</li>
               <li>no-reply ohne sicheren Reply-To</li>
             </ul>
           </article>
@@ -108,8 +108,8 @@ export default function SecurityPrivacy() {
           <Link href="/cookie-und-storage" className="link-subtle underline underline-offset-4">
             Cookie & Storage
           </Link>
-          <Link href="/app/konto/loeschen" className="link-subtle underline underline-offset-4">
-            Konto/Löschung
+          <Link href="/datenschutz" className="link-subtle underline underline-offset-4">
+            Betroffenenrechte & Löschung
           </Link>
         </div>
       </Container>

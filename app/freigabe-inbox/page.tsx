@@ -6,11 +6,12 @@ import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
 import FinalCTA from "@/components/marketing/FinalCTA";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const flow = [
   {
     step: "1. Eingang",
-    detail: "Ein Fall wird als unklar, heikel oder unvollständig erkannt.",
+    detail: "Eine Nachricht hat fehlende Angaben, Konfliktpotenzial oder eine Qualitätswarnung.",
   },
   {
     step: "2. Sichtung",
@@ -84,27 +85,15 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildMarketingMetadata({
   title: "Freigabe-Inbox | Advaic",
   description:
-    "So funktioniert die Freigabe-Inbox: unklare Fälle sichten, Entwürfe bearbeiten, manuell freigeben oder ablehnen und alles nachvollziehbar dokumentieren.",
-  alternates: {
-    canonical: "/freigabe-inbox",
-  },
-  openGraph: {
-    title: "Freigabe-Inbox | Advaic",
-    description:
-      "So funktioniert die Freigabe-Inbox: unklare Fälle sichten, Entwürfe bearbeiten, manuell freigeben oder ablehnen und alles nachvollziehbar dokumentieren.",
-    url: "/freigabe-inbox",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Freigabe-Inbox | Advaic",
-    description:
-      "So funktioniert die Freigabe-Inbox: unklare Fälle sichten, Entwürfe bearbeiten, manuell freigeben oder ablehnen und alles nachvollziehbar dokumentieren.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "So funktioniert die Freigabe-Inbox: Nachrichten mit fehlenden Angaben oder Risikosignalen sichten, Entwürfe bearbeiten, freigeben oder ablehnen und alles nachvollziehbar dokumentieren.",
+  path: "/freigabe-inbox",
+  template: "guide",
+  eyebrow: "Freigabe",
+  proof: "Nachrichten mit Freigabebedarf sichtbar priorisieren, prüfen und bewusst entscheiden.",
+});
 
 export default function FreigabeInboxPage() {
   const siteUrl = getSiteUrl();
@@ -114,7 +103,7 @@ export default function FreigabeInboxPage() {
     headline: "Freigabe-Inbox in der Praxis",
     inLanguage: "de-DE",
     mainEntityOfPage: `${siteUrl}/freigabe-inbox`,
-    about: ["Freigabe", "Sonderfälle", "manuelle Entscheidung", "Verlauf"],
+    about: ["Freigabe", "manuelle Entscheidung", "Qualitätswarnung", "Verlauf"],
   };
 
   return (
@@ -125,8 +114,8 @@ export default function FreigabeInboxPage() {
       />
       <PageIntro
         kicker="Manuelle Kontrolle"
-        title="So funktioniert die Freigabe-Inbox in der Praxis"
-        description="Die Freigabe-Inbox ist Ihr Sicherheitsnetz für alle Fälle, die bewusst nicht automatisch versendet werden sollen."
+        title="Freigabe-Inbox: prüfen, entscheiden, dokumentieren"
+        description="Hier landen Nachrichten mit fehlenden Angaben, Konfliktpotenzial oder Qualitätswarnung, damit Sie bewusst prüfen, entscheiden und den Verlauf nachvollziehbar halten."
         actions={
           <>
             <Link href="/produkt#freigabe" className="btn-secondary">
@@ -143,10 +132,10 @@ export default function FreigabeInboxPage() {
         <Container>
           <div className="grid gap-6 lg:grid-cols-12">
             <article className="card-base p-6 lg:col-span-8 md:p-8">
-              <h2 className="h3">Warum die Freigabe-Inbox kein Bremsklotz ist</h2>
+              <h2 className="h3">Warum die Freigabe-Inbox operativ wichtig ist</h2>
               <p className="body mt-4 text-[var(--muted)]">
-                Ohne strukturiertes Freigabesystem wird Sonderfallarbeit chaotisch: kritische Fälle bleiben liegen,
-                harmlose Fälle blockieren Aufmerksamkeit und Entscheidungen sind später kaum nachvollziehbar.
+                Ohne strukturiertes Freigabesystem wird Arbeit mit Freigabebedarf chaotisch: kritische Fälle bleiben
+                liegen, harmlose Fälle blockieren Aufmerksamkeit und Entscheidungen sind später kaum nachvollziehbar.
               </p>
               <p className="body mt-4 text-[var(--muted)]">
                 Die Freigabe-Inbox ist daher ein bewusstes Kontrollmodul: klare Priorisierung, klare Entscheidungspfade
@@ -208,9 +197,9 @@ export default function FreigabeInboxPage() {
                   <div>
                     <h3 className="h3">Wann landet etwas in der Freigabe?</h3>
                     <ul className="mt-3 space-y-2 text-sm text-[var(--muted)]">
-                      <li>Unklarer Objektbezug oder fehlende Pflichtinformationen</li>
-                      <li>Beschwerden, Konflikte oder sonstige heikle Sonderfälle</li>
-                      <li>Niedrige Sicherheit im Qualitäts- oder Risiko-Check</li>
+                      <li>Fehlender oder widersprüchlicher Objektbezug sowie fehlende Pflichtinformationen</li>
+                      <li>Beschwerden, Konflikte oder rechtlich sensible Aussagen</li>
+                      <li>Warnungen aus Qualitäts-, Risiko- oder Versandcheck</li>
                     </ul>
                   </div>
                 </div>
@@ -245,8 +234,9 @@ export default function FreigabeInboxPage() {
           <article className="card-base mt-8 p-6">
             <h3 className="h3">Warum das wichtig ist</h3>
             <p className="body mt-3 text-[var(--muted)]">
-              Die Freigabe-Inbox reduziert Risiko ohne die Geschwindigkeit im Standardfall zu verlieren. Klare Fälle
-              laufen automatisch, sensible Fälle bleiben in Ihrer Hand.
+              Die Freigabe-Inbox reduziert Risiko, ohne die Geschwindigkeit bei wiederkehrenden Erstantworten zu
+              verlieren. Klar zuordenbare Antworten laufen automatisch, Nachrichten mit Konfliktpotenzial bleiben in
+              Ihrer Hand.
             </p>
           </article>
 

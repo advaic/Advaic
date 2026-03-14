@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const processSteps = [
   {
@@ -24,10 +25,16 @@ const processSteps = [
 ];
 
 const startRules = [
-  "Autopilot nur für klare Standardfragen aktivieren (Verfügbarkeit, Unterlagen, Besichtigung)",
-  "Freigabepflicht für unklare Objektbezüge, Konfliktthemen und fehlende Pflichtinfos",
+  "Autopilot nur für wiederkehrende Erstantworten aktivieren (Verfügbarkeit, Unterlagen, Besichtigung)",
+  "Freigabepflicht für fehlenden Objektbezug, Konfliktthemen und fehlende Pflichtinfos",
   "Follow-ups erst aktivieren, wenn Erstantwortprozess stabil läuft",
   "Jede Woche KPI prüfen und Regeln iterativ nachschärfen",
+];
+
+const quickTake = [
+  "Immobilienanfragen zu automatisieren lohnt sich dort, wo viele ähnliche E-Mails schnell beantwortet werden müssen.",
+  "Der Engpass ist meist nicht Textgenerierung, sondern die saubere Entscheidung zwischen Auto, Freigabe und Ignorieren.",
+  "Ein guter Start setzt auf wenige Antworttypen, klare Freigabegründe und sichtbare Qualitätschecks vor dem Versand.",
 ];
 
 const sources = [
@@ -53,27 +60,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Immobilienanfragen automatisieren",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Wie Makler Immobilienanfragen sinnvoll automatisieren",
+  ogTitle: "Immobilienanfragen automatisieren | Advaic",
   description:
-    "So automatisieren Makler Immobilienanfragen sicher: klare Regeln, Freigabe bei Unsicherheit, Qualitätschecks vor Versand und vollständiger Verlauf.",
-  alternates: {
-    canonical: "/immobilienanfragen-automatisieren",
-  },
-  openGraph: {
-    title: "Immobilienanfragen automatisieren | Advaic",
-    description:
-      "So automatisieren Makler Immobilienanfragen sicher: klare Regeln, Freigabe bei Unsicherheit, Qualitätschecks vor Versand und vollständiger Verlauf.",
-    url: "/immobilienanfragen-automatisieren",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Immobilienanfragen automatisieren | Advaic",
-    description:
-      "So automatisieren Makler Immobilienanfragen sicher: klare Regeln, Freigabe bei Unsicherheit, Qualitätschecks vor Versand und vollständiger Verlauf.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Praxisleitfaden für Makler: Wie Immobilienanfragen sinnvoll automatisiert werden, welche Antworttypen sich eignen und welche Guardrails vor dem Versand stehen müssen.",
+  path: "/immobilienanfragen-automatisieren",
+  template: "guide",
+  eyebrow: "Praxisleitfaden",
+  proof: "Auto, Freigabe und Ignorieren sauber trennen und den Rollout über klare Qualitätsgrenzen steuern.",
+});
 
 export default function ImmobilienanfragenAutomatisierenPage() {
   const siteUrl = getSiteUrl();
@@ -95,7 +91,7 @@ export default function ImmobilienanfragenAutomatisierenPage() {
       schema={schema}
       kicker="Praxisleitfaden"
       title="Immobilienanfragen automatisieren: sicher, nachvollziehbar, skalierbar"
-      description="Der wichtigste Punkt ist nicht maximale Automatisierung, sondern richtige Automatisierung: klare Auto-Fälle, Guardrails und Freigabe bei Unsicherheit."
+      description="Der wichtigste Punkt ist nicht maximale Automatisierung, sondern die richtige Automatisierung: klare Auto-Fälle, Guardrails und Freigabe bei fehlenden Angaben oder Konflikten."
       actions={
         <>
           <Link href="/produkt#ablauf" className="btn-secondary">
@@ -114,6 +110,22 @@ export default function ImmobilienanfragenAutomatisierenPage() {
       secondaryLabel="Freigabe-Workflow"
       sources={sources}
     >
+      <section id="kurzfassung" className="py-8 md:py-10">
+        <Container>
+          <article className="card-base p-6">
+            <h2 className="h3">Kurzantwort in 60 Sekunden</h2>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              {quickTake.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </Container>
+      </section>
+
       <section className="marketing-section-clear py-20 md:py-28">
         <Container>
           <div className="max-w-[74ch]">

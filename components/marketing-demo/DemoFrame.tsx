@@ -22,7 +22,10 @@ export default function DemoFrame({ stageRef, scale, clean, sidebar, children }:
           transform: `scale(${safeScale})`,
         }}
       >
-        <section className="mx-auto w-[1680px] rounded-[20px] border border-[var(--border)] bg-white shadow-[0_16px_45px_rgba(11,15,23,0.1)]">
+        <section
+          className="mx-auto w-[1680px] rounded-[20px] border border-[var(--border)] bg-white shadow-[0_16px_45px_rgba(11,15,23,0.1)]"
+          data-tour="marketing-demo-shell"
+        >
           <header className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" aria-hidden="true" />
@@ -48,7 +51,7 @@ export default function DemoFrame({ stageRef, scale, clean, sidebar, children }:
 
           <div className="flex min-h-[940px] bg-[var(--surface)]">
             {sidebar}
-            <div ref={stageRef} className="relative flex-1 overflow-hidden p-6">
+            <div ref={stageRef} className="relative flex-1 overflow-hidden p-6" data-tour="marketing-demo-stage">
               {children}
             </div>
           </div>

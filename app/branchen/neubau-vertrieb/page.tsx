@@ -6,11 +6,18 @@ import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
 import StageCTA from "@/components/marketing/StageCTA";
 import FinalCTA from "@/components/marketing/FinalCTA";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const recurringTopics = [
   "Projektverfügbarkeit und Bauabschnitte",
   "Unterlagen, Exposés und nächste Schritte",
   "Terminabstimmung für Beratung oder Besichtigung",
+];
+
+const quickTake = [
+  "Im Neubau-Vertrieb lohnt sich Automatisierung vor allem bei wiederkehrenden Projektfragen mit eindeutigem Projekt- und Bauabschnittsbezug.",
+  "Sonderwünsche, Preis- oder Vertragsfragen und Nachrichten ohne klaren Projektkontext sollten bewusst manuell bleiben.",
+  "Der wichtigste Hebel ist nicht maximale Geschwindigkeit, sondern präzise Erstkommunikation ohne Fehlversprechen.",
 ];
 
 const nonAutoTopics = [
@@ -37,8 +44,15 @@ const complexityRisks = [
 const rolloutPlan = [
   "Woche 1: Projektreferenzen und Antwortbausteine je Bauabschnitt definieren.",
   "Woche 2: Auto nur auf klar identifizierte Standardfragen je Projekt aktivieren.",
-  "Woche 3: Follow-ups für offene Standardfälle in Stufe 1 starten.",
+  "Woche 3: Follow-ups für offene, wiederkehrende Projektfragen in Stufe 1 starten.",
   "Woche 4: Qualitäts- und Freigabeverlauf auswerten, Regeln pro Projekt nachschärfen.",
+];
+
+const manualBoundaries = [
+  "Preis- und Vertragskonflikte",
+  "Nachrichten ohne klaren Projekt- oder Bauabschnittsbezug",
+  "Sonderwünsche mit hohem Abstimmungsbedarf",
+  "Fälle, in denen Exposé- oder Verfügbarkeitsdaten nicht sauber referenziert sind",
 ];
 
 const sources = [
@@ -56,27 +70,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Neubau-Vertrieb | Branchenprofil Advaic",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Wie Neubau-Teams Projektanfragen sauber steuern",
+  ogTitle: "Neubau-Vertrieb | Branchenprofil Advaic",
   description:
-    "Branchenprofil für Neubau-Vertrieb: strukturierte Erstantworten, klare Freigabepfade bei Sonderfällen und nachvollziehbare Statuslogik für Projektanfragen.",
-  alternates: {
-    canonical: "/branchen/neubau-vertrieb",
-  },
-  openGraph: {
-    title: "Neubau-Vertrieb | Branchenprofil Advaic",
-    description:
-      "Branchenprofil für Neubau-Vertrieb: strukturierte Erstantworten, klare Freigabepfade bei Sonderfällen und nachvollziehbare Statuslogik für Projektanfragen.",
-    url: "/branchen/neubau-vertrieb",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Neubau-Vertrieb | Branchenprofil Advaic",
-    description:
-      "Branchenprofil für Neubau-Vertrieb: strukturierte Erstantworten, klare Freigabepfade bei Sonderfällen und nachvollziehbare Statuslogik für Projektanfragen.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Leitfaden für Neubau-Vertrieb: Welche Projektanfragen sich automatisieren lassen, welche bewusst manuell bleiben sollten und wie ein sicherer Rollout über Bauabschnitte aussieht.",
+  path: "/branchen/neubau-vertrieb",
+  template: "usecase",
+  eyebrow: "Branchenprofil",
+  proof: "Projektbezug, Bauabschnitt und Datenstand sauber prüfen, bevor automatisch geantwortet wird.",
+});
 
 export default function BranchenNeubauVertriebPage() {
   const siteUrl = getSiteUrl();
@@ -97,8 +100,8 @@ export default function BranchenNeubauVertriebPage() {
       />
       <PageIntro
         kicker="Branchenprofil"
-        title="Neubau-Vertrieb"
-        description="Im Neubau-Vertrieb treffen viele ähnliche Projektanfragen ein. Advaic sorgt für konsistente Erstreaktionen und hält komplexe Fälle in Ihrer Freigabe."
+        title="Wie Neubau-Teams Projektanfragen sauber steuern"
+        description="Im Neubau-Vertrieb zählt Geschwindigkeit nur zusammen mit präzisem Projektkontext. Entscheidend ist, welche Antworten sich je Projekt und Bauabschnitt wirklich sicher automatisieren lassen."
         actions={
           <>
             <Link href="/branchen" className="btn-secondary">
@@ -111,9 +114,25 @@ export default function BranchenNeubauVertriebPage() {
         }
       />
 
+      <section id="kurzfassung" className="py-8 md:py-10">
+        <Container>
+          <article className="card-base p-6">
+            <h2 className="h3">Kurzantwort in 60 Sekunden</h2>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              {quickTake.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </Container>
+      </section>
+
       <StageCTA
         stage="bewertung"
-        primaryHref="/produkt#safe-start-konfiguration"
+        primaryHref="/produkt#setup"
         primaryLabel="Safe-Start berechnen"
         secondaryHref="/qualitaetschecks"
         secondaryLabel="Checks im Detail"
@@ -175,8 +194,20 @@ export default function BranchenNeubauVertriebPage() {
             <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
               <li>Projektreferenzen im Prompt klar strukturieren, damit der Objektbezug stabil bleibt.</li>
               <li>Auto zunächst auf wiederkehrende Erstinformationen begrenzen.</li>
-              <li>Follow-ups nur bei eindeutigen, offenen Standardfällen aktivieren.</li>
+              <li>Follow-ups nur bei eindeutigen, offenen Projektfragen aktivieren.</li>
               <li>Sonderwünsche und Konfliktthemen konsequent in die Freigabe leiten.</li>
+            </ul>
+          </article>
+
+          <article className="card-base mt-4 p-6">
+            <h2 className="h3">Diese Themen sollten bewusst manuell bleiben</h2>
+            <ul className="mt-4 grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2">
+              {manualBoundaries.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
             </ul>
           </article>
 

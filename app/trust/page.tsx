@@ -1,47 +1,71 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 import Container from "@/components/marketing/Container";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
+import PublicTrustArtifacts from "@/components/marketing/PublicTrustArtifacts";
 
-const principles = [
-  "Keine Blackbox-Automatisierung: Auto-Versand nur bei klaren Standardfällen.",
-  "Fail-Safe zuerst: Unsichere Fälle gehen in die Freigabe statt an Interessenten.",
-  "Vollständige Nachvollziehbarkeit: Eingang, Entscheidung und Versand mit Status.",
-  "Konservative Inbetriebnahme: erst Freigabe-lastig starten, danach kontrolliert ausbauen.",
+const trustSections = [
+  {
+    title: "Sicherheitsseite",
+    text: "Der tiefe Prüfpfad für Auto-Grenzen, Freigabegründe, Nachweise und Guardrails vor dem Versand.",
+    href: "/sicherheit",
+    cta: "Prüfpfad öffnen",
+  },
+  {
+    title: "Datenschutz",
+    text: "Das eigentliche Dokument für Rollenmodell, Datenkategorien, Zwecke, Speicherfristen und Grenzen automatisierter Verarbeitung.",
+    href: "/datenschutz",
+    cta: "Dokument öffnen",
+  },
+  {
+    title: "Unterauftragsverarbeiter",
+    text: "Die öffentliche Anbieterübersicht mit Zwecken, Datenkategorien und Transferhinweisen.",
+    href: "/unterauftragsverarbeiter",
+    cta: "Anbieterliste öffnen",
+  },
+  {
+    title: "Freigabe-Workflow",
+    text: "Der operative Prüfpfad für sensible Fälle, menschliche Entscheidung und sichtbare Nachvollziehbarkeit.",
+    href: "/makler-freigabe-workflow",
+    cta: "Workflow öffnen",
+  },
 ];
 
-const dataFlow = [
+const architectureRoles = [
+  "Startseite: kurze Vertrauensprüfung in wenigen Minuten.",
+  "/trust: Hub, der Sie in die richtige Prüftiefe führt.",
+  "/sicherheit: fachlicher Prüfpfad für Auto, Freigabe und Nachweise.",
+  "/datenschutz: formales Dokument für Rollen, Zwecke und Speicherfristen.",
+];
+
+const quickChecks = [
   {
-    title: "1) Eingang",
-    text: "E-Mails werden aus dem verbundenen Postfach übernommen und als relevante Anfrage oder Nicht-Anfrage eingeordnet.",
+    title: "Autopilot-Regeln",
+    text: "Prüfen Sie die Kriterien für Auto, Freigabe und Ignorieren.",
+    href: "/autopilot-regeln",
   },
   {
-    title: "2) Entscheidung",
-    text: "Die Policy-Logik bewertet Auto, Freigabe oder Ignorieren nach Relevanz, Kontext, Vollständigkeit und Risiko.",
+    title: "Qualitätschecks",
+    text: "Sehen Sie, welche Prüfungen vor dem Versand laufen.",
+    href: "/qualitaetschecks",
   },
   {
-    title: "3) Qualität",
-    text: "Vor Auto-Versand laufen Qualitätschecks für Ton, Lesbarkeit, Kontext und Fail-Safe-Risiko.",
+    title: "DSGVO im Betrieb",
+    text: "Einordnung für automatisierte E-Mail-Prozesse im Makleralltag.",
+    href: "/dsgvo-email-autopilot",
   },
   {
-    title: "4) Verlauf",
-    text: "Jede Entscheidung bleibt im Dashboard nachvollziehbar: Status, Zeitstempel und Versandpfad.",
+    title: "Integrationen",
+    text: "Gmail und Outlook mit sicherem Setup und nachvollziehbarem Versandpfad.",
+    href: "/integrationen",
   },
 ];
 
-const docs = [
-  "AVV-Prozess im Onboarding (inklusive Rollenklärung Verantwortlicher/Auftragsverarbeiter).",
-  "Öffentliche Unterauftragsverarbeiter-Übersicht mit Stand und Update-Logik.",
-  "TOM-Übersicht und organisatorische Maßnahmen auf Anfrage.",
-  "Exportierbare Verlaufsdaten für interne Prüfungen und Supportfälle.",
-  "Dokumentierte Zuständigkeiten für Incident-Meldung und schnelle Einordnung.",
-];
-
-const boundaries = [
-  "Advaic ersetzt keine Rechtsberatung und keine individuelle juristische Prüfung.",
-  "Die fachliche Richtigkeit objektbezogener Daten bleibt abhängig von Ihren Quellsystemen.",
-  "Für Sonderfälle und Konfliktthemen bleibt die Freigabe durch Menschen der Standardpfad.",
+const trustPrinciples = [
+  "Auto-Versand nur mit klarem Objektbezug, ausreichenden Angaben und bestandenen Qualitätschecks.",
+  "Fehlende Informationen, sensible Aussagen oder unklare Versandlage gehen in die Freigabe statt direkt an Interessenten.",
+  "Entscheidungen, Stopps und Versandstatus bleiben im Verlauf nachvollziehbar.",
 ];
 
 const sources = [
@@ -51,52 +75,35 @@ const sources = [
     note: "Primärquelle für datenschutzrechtliche Anforderungen.",
   },
   {
-    label: "EDPB Guidelines",
-    href: "https://www.edpb.europa.eu/our-work-tools/our-documents/guidelines_en",
-    note: "Praxisnahe Leitlinien zur europäischen Datenschutzanwendung.",
-  },
-  {
-    label: "BfDI – DSGVO-Informationen",
+    label: "BfDI – Informationen zur DSGVO",
     href: "https://www.bfdi.bund.de/DE/Buerger/Inhalte/Datenschutz/Allgemein/DatenschutzGrundverordnung.html",
-    note: "Nationale Orientierung für den Betrieb in Deutschland.",
+    note: "Nationale Orientierung für Datenschutz im deutschen Betrieb.",
   },
   {
     label: "NIST – AI Risk Management Framework",
     href: "https://www.nist.gov/itl/ai-risk-management-framework",
-    note: "Rahmen für kontrollierte KI-Risiko-Governance.",
+    note: "Rahmen für kontrollierte KI-Entscheidungen mit klaren Schutzgrenzen.",
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Trust Center | Advaic",
+export const metadata = buildMarketingMetadata({
+  title: "Trust-Hub | Advaic",
+  ogTitle: "Trust-Hub | Advaic",
   description:
-    "Trust Center für Advaic: DSGVO-Rahmen, Guardrails, Datenfluss, AVV/TOM-Prozess, Incident-Logik und operative Grenzen.",
-  alternates: {
-    canonical: "/trust",
-  },
-  openGraph: {
-    title: "Trust Center | Advaic",
-    description:
-      "Trust Center für Advaic: DSGVO-Rahmen, Guardrails, Datenfluss, AVV/TOM-Prozess, Incident-Logik und operative Grenzen.",
-    url: "/trust",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Trust Center | Advaic",
-    description:
-      "Trust Center für Advaic: DSGVO-Rahmen, Guardrails, Datenfluss, AVV/TOM-Prozess, Incident-Logik und operative Grenzen.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Der zentrale Trust-Hub für Advaic: Wohin Sie für Sicherheitslogik, Datenschutz, Unterauftragsverarbeiter und Freigabe-Workflow gehen sollten.",
+  path: "/trust",
+  template: "trust",
+  eyebrow: "Trust-Hub",
+  proof: "Klare Rollenverteilung zwischen Homepage, Hub, Sicherheitsseite und Datenschutz-Dokument.",
+});
 
 export default function TrustPage() {
   const siteUrl = getSiteUrl();
   const schema = {
     "@context": "https://schema.org",
-    "@type": "Article",
-    headline: "Trust Center für Advaic",
+    "@type": "CollectionPage",
+    name: "Trust-Hub",
     inLanguage: "de-DE",
-    about: ["DSGVO", "Trust", "AVV", "TOM", "Incident-Management", "Freigabe"],
     mainEntityOfPage: `${siteUrl}/trust`,
   };
 
@@ -104,39 +111,44 @@ export default function TrustPage() {
     <AiDiscoveryPageTemplate
       breadcrumbItems={[
         { name: "Startseite", path: "/" },
-        { name: "Trust Center", path: "/trust" },
+        { name: "Trust-Hub", path: "/trust" },
       ]}
       schema={schema}
-      kicker="Trust Center"
-      title="Sicherheit, DSGVO und operative Kontrolle"
-      description="Diese Seite bündelt den Trust-Rahmen von Advaic: wie Auto-Versand abgesichert ist, welche Datenflüsse bestehen und welche Grenzen klar definiert sind."
+      kicker="Trust-Hub"
+      title="Wohin Sie für welche Trust-Frage gehen sollten"
+      description="Diese Seite ist kein weiteres Sicherheitsdokument, sondern der Hub für die richtige Prüftiefe: Sicherheitslogik, Datenschutz, Anbieterübersicht und Freigabe-Workflow."
       actions={
         <>
           <Link href="/sicherheit" className="btn-secondary">
             Sicherheitsseite
           </Link>
-          <Link href="/signup" className="btn-primary">
-            14 Tage testen
+          <Link href="/datenschutz" className="btn-primary">
+            Datenschutz öffnen
           </Link>
         </>
       }
       stage="bewertung"
-      stageContext="trust-center"
+      stageContext="trust-hub"
       stageSectionId="trust-stage"
-      proofContext="trust"
-      primaryHref="/signup"
-      primaryLabel="Mit Trust-Setup testen"
-      secondaryHref="/dsgvo-email-autopilot"
-      secondaryLabel="DSGVO-Details"
+      withStageCta={false}
+      withProofLayer={false}
+      withMarketingRails={false}
+      primaryHref="/datenschutz"
+      primaryLabel="Datenschutz prüfen"
+      secondaryHref="/sicherheit"
+      secondaryLabel="Sicherheitslogik"
       sources={sources}
-      sourcesDescription="Diese Quellen stützen die datenschutz- und governancebezogene Einordnung. Sie ersetzen keine individuelle Rechtsberatung."
+      sourcesDescription="Die Quellen stützen Datenschutz- und Governance-Einordnung. Für Ihren Einzelfall ersetzen sie keine individuelle Rechtsberatung."
     >
-      <section className="marketing-section-clear py-20 md:py-28">
+      <section className="marketing-section-clear py-14 md:py-18">
         <Container>
-          <article className="card-base p-6 md:p-8">
-            <h2 className="h3">Trust-Grundsätze</h2>
+          <article className="card-base p-6 md:p-8" data-tour="trust-architecture-map">
+            <h2 className="h3">Rollen in der Trust-Architektur</h2>
+            <p className="helper mt-3 max-w-[72ch]">
+              Der Hub soll keine Inhalte doppelt erklären. Er ordnet nur, welche Seite für welche Frage zuständig ist.
+            </p>
             <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-              {principles.map((item) => (
+              {architectureRoles.map((item) => (
                 <li key={item} className="flex items-start gap-2">
                   <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
                   <span>{item}</span>
@@ -144,86 +156,51 @@ export default function TrustPage() {
               ))}
             </ul>
           </article>
+        </Container>
+      </section>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {dataFlow.map((item) => (
-              <article key={item.title} className="card-base p-6">
-                <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
+      <section className="marketing-section-clear py-6 md:py-8">
+        <Container>
+          <PublicTrustArtifacts
+            title="Diese sieben öffentlichen Prüfobjekte ersetzen keine Logo-Wand, aber sie machen die Prüfung belastbar"
+            description="Wenn noch keine öffentlichen Fallstudien vorliegen, müssen Produktzustand, Regeln, Unterlagen, Integrationen und Preis umso klarer öffentlich prüfbar sein."
+            dataTour="trust-public-artifacts"
+          />
+        </Container>
+      </section>
+
+      <section className="marketing-section-clear py-20 md:py-28">
+        <Container>
+          <div className="grid gap-4 md:grid-cols-2" data-tour="trust-hub-sections">
+            {trustSections.map((item) => (
+              <article key={item.href} className="card-base card-hover p-6 md:p-8">
+                <h2 className="h3">{item.title}</h2>
                 <p className="helper mt-3">{item.text}</p>
+                <Link href={item.href} className="btn-secondary mt-5">
+                  {item.cta}
+                </Link>
               </article>
             ))}
           </div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <article className="card-base p-6">
-              <h2 className="h3">DSGVO, AVV und TOM</h2>
-              <p className="helper mt-3">
-                Die Verarbeitung ist auf Anfragebearbeitung und Prozessqualität begrenzt. Dokumentation für AVV, TOM
-                und Rollenklärung erhalten Sie im Onboarding und auf Anfrage für Ihre interne Prüfung.
-              </p>
-              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {docs.map((item) => (
-                  <li key={item} className="flex items-start gap-2">
-                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Link href="/unterauftragsverarbeiter" className="btn-secondary">
-                  Unterauftragsverarbeiter
-                </Link>
-                <Link href="/datenschutz" className="btn-secondary">
-                  Datenschutzhinweise
-                </Link>
-              </div>
-            </article>
-
-            <article className="card-base p-6">
-              <h2 className="h3">Incident- und Supportlogik</h2>
-              <p className="helper mt-3">
-                Für operative Auffälligkeiten gilt ein klarer Ablauf: Fall identifizieren, Versandpfad prüfen,
-                Statushistorie exportieren, Regelanpassung vornehmen und Ergebnis kontrolliert erneut testen.
-              </p>
-              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                <li>Support über nachvollziehbare Verlaufseinträge statt über lose E-Mail-Threads.</li>
-                <li>Relevante Fälle können priorisiert und reproduzierbar analysiert werden.</li>
-                <li>Autopilot ist pausierbar, bis ein Fall sauber geklärt ist.</li>
-              </ul>
-            </article>
-          </div>
-
-          <article className="card-base mt-4 p-6">
-            <h2 className="h3">Klare Grenzen</h2>
-            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-              {boundaries.map((item) => (
-                <li key={item} className="flex items-start gap-2">
-                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </article>
-
-          <article className="card-base mt-4 p-6">
-            <h2 className="h3">Weitere Prüfseiten für Entscheidung und Risiko</h2>
-            <p className="helper mt-3">
-              Wenn Sie die Trust-Aspekte mit Produktfit und Tool-Vergleich kombinieren möchten, nutzen Sie diese
-              ergänzenden Seiten.
+          <article className="card-base mt-6 p-6 md:p-8" data-tour="trust-hub-quick-checks">
+            <h2 className="h3">Typische Anschlussfragen nach dem Hub</h2>
+            <p className="helper mt-3 max-w-[70ch]">
+              Erst wenn die Hauptrolle der Seiten klar ist, lohnen diese vertiefenden Einzelthemen.
             </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link href="/best-ai-tools-immobilienmakler" className="btn-secondary">
-                Best AI Tools Makler
-              </Link>
-              <Link href="/best-software-immobilienanfragen" className="btn-secondary">
-                Best Software Anfragen
-              </Link>
-              <Link href="/advaic-vs-crm-tools" className="btn-secondary">
-                Advaic vs. CRM-Tools
-              </Link>
-              <Link href="/manuell-vs-advaic" className="btn-secondary">
-                Manuell vs. Advaic
-              </Link>
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {quickChecks.map((item) => (
+                <article
+                  key={item.href}
+                  className="rounded-2xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]"
+                >
+                  <p className="text-sm font-semibold text-[var(--text)]">{item.title}</p>
+                  <p className="mt-2 text-sm text-[var(--muted)]">{item.text}</p>
+                  <Link href={item.href} className="btn-secondary mt-4">
+                    Öffnen
+                  </Link>
+                </article>
+              ))}
             </div>
           </article>
         </Container>

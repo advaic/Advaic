@@ -11,6 +11,7 @@ type LoopVideoProps = {
   placeholderLabel?: string;
   isActive?: boolean;
   priority?: boolean;
+  showControls?: boolean;
 };
 
 export default function LoopVideo({
@@ -22,6 +23,7 @@ export default function LoopVideo({
   placeholderLabel = "Video-Vorschau",
   isActive = true,
   priority = false,
+  showControls = false,
 }: LoopVideoProps) {
   const [isInView, setIsInView] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -97,7 +99,7 @@ export default function LoopVideo({
       autoPlay={!prefersReducedMotion}
       muted
       loop
-      controls
+      controls={showControls}
       playsInline
       preload={isInView && isActive ? "metadata" : "none"}
       poster={poster}

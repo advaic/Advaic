@@ -22,9 +22,9 @@ const focusPaths: Record<
     label: "Sicherheit",
     prompt: "Sie möchten vor allem falsche Antworten vermeiden.",
     summary:
-      "Dann ist entscheidend, dass unklare Fälle nicht automatisch gesendet werden und vor Auto-Versand Qualitätschecks greifen.",
+      "Dann ist entscheidend, dass Nachrichten mit fehlenden Angaben, Konfliktpotenzial oder Risikosignalen nicht automatisch gesendet werden und vor Auto-Versand Qualitätschecks greifen.",
     firstSteps: [
-      "Autopilot-Regeln prüfen und Auto-Fälle klar begrenzen.",
+      "Autopilot-Regeln prüfen und den Auto-Korridor über Objektbezug, Empfänger und Versandfreigabe klar begrenzen.",
       "Mit konservativer Freigabequote starten.",
       "Qualitätschecks und Verlauf im Dashboard regelmäßig prüfen.",
     ],
@@ -38,11 +38,11 @@ const focusPaths: Record<
     label: "Tempo",
     prompt: "Sie möchten deutlich schneller reagieren.",
     summary:
-      "Dann sollten klare Standardfälle automatisiert laufen und Follow-ups regelbasiert greifen, damit Erstreaktion und Nachfassen stabil bleiben.",
+      "Dann sollten wiederkehrende Erstantworten mit sauberem Objektbezug automatisiert laufen und Follow-ups nach festen Wartezeiten greifen, damit Erstreaktion und Nachfassen zuverlässig werden.",
     firstSteps: [
-      "Standardfälle definieren und Auto-Anteil konservativ aktivieren.",
-      "Follow-up Stufe 1 mit 24-48 Stunden starten.",
-      "Antwortzeiten und Freigabe-Quote wöchentlich nachschärfen.",
+      "Erstantworten mit klarem Objektbezug, vollständigen Kerndaten und freigegebenem Versandkorridor definieren.",
+      "Follow-up Stufe 1 mit 24-48 Stunden starten und Stop-Gründe festlegen.",
+      "Antwortzeiten, Freigabequote und häufige Rückfragen wöchentlich nachschärfen.",
     ],
     links: [
       { label: "So funktioniert's", href: "/so-funktionierts" },
@@ -58,11 +58,11 @@ const focusPaths: Record<
     firstSteps: [
       "Safe-Start-Konfiguration nutzen und konservativen Modus wählen.",
       "Freigabe-Inbox täglich prüfen und Muster dokumentieren.",
-      "Autopilot nur in klaren Blöcken schrittweise ausweiten.",
+      "Autopilot nur für eng definierte Nachrichtengruppen schrittweise ausweiten.",
     ],
     links: [
       { label: "Freigabe-Inbox", href: "/freigabe-inbox" },
-      { label: "Produktseite", href: "/produkt#safe-start-konfiguration" },
+      { label: "Produktseite", href: "/produkt#setup" },
       { label: "Anwendungsfälle", href: "/use-cases" },
     ],
   },
@@ -111,18 +111,23 @@ export default function FAQDecisionTree() {
   };
 
   return (
-    <section id="faq-tree" className="marketing-section-clear py-20 md:py-28">
+    <section
+      id="faq-tree"
+      className="marketing-section-clear py-16 md:py-20"
+      data-tour="marketing-faq-tree"
+    >
       <Container>
         <div className="max-w-[74ch]">
-          <h2 className="h2">FAQ mit Entscheidungsbaum</h2>
+          <p className="section-kicker">Wenn danach noch etwas offen ist</p>
+          <h2 className="h2 mt-2">Der sinnvollste Vertiefungspfad nach den Kernantworten</h2>
           <p className="body mt-4 text-[var(--muted)]">
-            Was ist Ihnen aktuell am wichtigsten? Wählen Sie Ihren Fokus und erhalten Sie den passenden Antwortpfad.
+            Wenn nach den wichtigsten Antworten noch ein Thema offen ist, finden Sie hier den sinnvollsten Vertiefungspfad statt einer langen Linkliste.
           </p>
         </div>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-12">
           <article className="card-base p-6 lg:col-span-4 md:p-7">
-            <h3 className="h3">Wählen Sie Ihren Fokus</h3>
+            <h3 className="h3">Wählen Sie Ihr offenes Thema</h3>
             <div className="mt-4 grid gap-2">
               {(Object.keys(focusPaths) as Focus[]).map((key) => (
                 <button
@@ -142,11 +147,11 @@ export default function FAQDecisionTree() {
           </article>
 
           <article className="card-base p-6 lg:col-span-8 md:p-7">
-            <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Ihr Pfad: {selected.label}</p>
+            <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Nächster Pfad: {selected.label}</p>
             <p className="mt-2 text-lg font-semibold text-[var(--text)]">{selected.prompt}</p>
             <p className="helper mt-3">{selected.summary}</p>
 
-            <h3 className="mt-5 text-sm font-semibold text-[var(--text)]">Empfohlene erste Schritte</h3>
+            <h3 className="mt-5 text-sm font-semibold text-[var(--text)]">Am sinnvollsten als Nächstes</h3>
             <ul className="mt-2 space-y-2 text-sm text-[var(--muted)]">
               {selected.firstSteps.map((step) => (
                 <li key={step} className="flex items-start gap-2">

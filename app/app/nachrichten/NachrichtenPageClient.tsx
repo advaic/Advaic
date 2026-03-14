@@ -1,9 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import InboxView from "./components/InboxView";
 import Link from "next/link";
 import type { Lead } from "@/types/lead";
+import type { Database } from "@/types/supabase";
+import {
+  appButtonClass,
+  EmptyState,
+  FilterBar,
+  PageHeader,
+  SectionCard,
+  StatusBadge,
+} from "@/components/app-ui";
+import { trackUiMetricEvent, useUiRouteMetric } from "@/lib/funnel/ui-metrics";
 import { Mail, RotateCcw, Search, ShieldAlert, SlidersHorizontal, X } from "lucide-react";
 
 type Props = {
@@ -12,28 +23,150 @@ type Props = {
 };
 
 export default function NachrichtenPageClient({ leads, userId }: Props) {
+  const supabase = useSupabaseClient<Database>();
   const [search, setSearch] = useState("");
+  const [quickFilter, setQuickFilter] = useState<"approval" | "escalation" | "high" | null>(
+    null,
+  );
   const [kategorie, setKategorie] = useState("Alle");
   const [priorität, setPriorität] = useState("Alle");
-  const [escalatedOnly, setEscalatedOnly] = useState(false);
   const [sortierung, setSortierung] = useState("Neueste");
+  const [showUtilityMenu, setShowUtilityMenu] = useState(false);
+  const [approvalLeadIds, setApprovalLeadIds] = useState<Set<string>>(new Set());
+  const trackedPrimaryFiltersRef = useRef<Set<string>>(new Set());
+  const { markFirstAction: markMessagesFirstAction } = useUiRouteMetric({
+    routeKey: "messages_inbox",
+    source: "messages_inbox",
+    path: "/app/nachrichten",
+    viewMeta: { initial_lead_count: leads.length },
+  });
+
+  const trackPrimaryFilterUse = (
+    filterKey: "search" | "approval" | "escalation" | "high",
+    meta?: Record<string, unknown>,
+  ) => {
+    const trackingKey = `primary:${filterKey}`;
+    if (trackedPrimaryFiltersRef.current.has(trackingKey)) return;
+    trackedPrimaryFiltersRef.current.add(trackingKey);
+    markMessagesFirstAction(`messages_filter_${filterKey}`, {
+      filter_key: filterKey,
+      ...(meta || {}),
+    });
+    trackUiMetricEvent({
+      event: "inbox_primary_filter_used",
+      source: "messages_inbox",
+      path: "/app/nachrichten",
+      routeKey: "messages_inbox",
+      meta: {
+        filter_key: filterKey,
+        ...(meta || {}),
+      },
+    });
+  };
+
+  const toggleQuickFilter = (filterKey: "approval" | "escalation" | "high") => {
+    setQuickFilter((current) => {
+      const next = current === filterKey ? null : filterKey;
+      if (next === filterKey) {
+        trackPrimaryFilterUse(filterKey, {
+          result_count:
+            filterKey === "approval"
+              ? quickFilterCounts.approval
+              : filterKey === "escalation"
+                ? quickFilterCounts.escalation
+                : quickFilterCounts.high,
+        });
+      }
+      return next;
+    });
+  };
+
+  const handleLeadOpen = (
+    lead: Lead,
+    opts?: { focusApproval?: boolean },
+  ) => {
+    const action = opts?.focusApproval
+      ? "messages_open_approval_conversation"
+      : "messages_open_conversation";
+    markMessagesFirstAction(action, {
+      lead_id: lead.id,
+      focus_approval: Boolean(opts?.focusApproval),
+    });
+    trackUiMetricEvent({
+      event: "inbox_message_opened",
+      source: "messages_inbox",
+      path: "/app/nachrichten",
+      routeKey: "messages_inbox",
+      meta: {
+        lead_id: lead.id,
+        focus_approval: Boolean(opts?.focusApproval),
+      },
+    });
+  };
 
   const hasActiveFilters =
     search.trim().length > 0 ||
+    quickFilter !== null ||
     kategorie !== "Alle" ||
     priorität !== "Alle" ||
-    escalatedOnly ||
     sortierung !== "Neueste";
+
+  const hasAdvancedSelections =
+    kategorie !== "Alle" || priorität !== "Alle" || sortierung !== "Neueste";
+  const utilityPanelOpen = showUtilityMenu || hasAdvancedSelections;
 
   const resetFilters = () => {
     setSearch("");
+    setQuickFilter(null);
     setKategorie("Alle");
     setPriorität("Alle");
-    setEscalatedOnly(false);
     setSortierung("Neueste");
+    setShowUtilityMenu(false);
   };
 
   const norm = (v: unknown) => String(v ?? "").trim().toLowerCase();
+  const isHighPriority = (v: unknown) => norm(v) === "hoch";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadApprovalLeads() {
+      try {
+        const { data, error } = await (supabase.from("messages") as any)
+          .select("lead_id, status, approval_required")
+          .eq("approval_required", true)
+          .in("status", ["needs_approval", "needs_human", "ready_to_send"])
+          .order("timestamp", { ascending: false })
+          .limit(2000);
+
+        if (cancelled) return;
+        if (error) throw error;
+
+        const next = new Set<string>();
+        for (const row of (data || []) as any[]) {
+          const leadId = String(row?.lead_id || "").trim();
+          if (leadId) next.add(leadId);
+        }
+        setApprovalLeadIds(next);
+      } catch (error) {
+        console.error("Freigabe-Filter konnte nicht geladen werden:", error);
+        if (!cancelled) setApprovalLeadIds(new Set());
+      }
+    }
+
+    void loadApprovalLeads();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, userId]);
+
+  useEffect(() => {
+    const trimmedSearch = search.trim();
+    if (!trimmedSearch) return;
+    trackPrimaryFilterUse("search", {
+      query_length: trimmedSearch.length,
+    });
+  }, [search]);
 
   const priorityRank = (p: unknown): number => {
     const s = norm(p);
@@ -78,9 +211,15 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
       const priorityMatch =
         priorität === "Alle" || norm((lead as any).priority) === norm(priorität);
 
-      const escalatedMatch = !escalatedOnly || lead.escalated === true;
+      const quickFilterMatch =
+        quickFilter === null ||
+        (quickFilter === "approval"
+          ? approvalLeadIds.has(lead.id)
+          : quickFilter === "escalation"
+            ? lead.escalated === true
+            : isHighPriority((lead as any).priority));
 
-      return searchMatch && categoryMatch && priorityMatch && escalatedMatch;
+      return searchMatch && categoryMatch && priorityMatch && quickFilterMatch;
     });
 
     return result.sort((a, b) => {
@@ -105,7 +244,15 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
 
       return 0;
     });
-  }, [leads, search, kategorie, priorität, escalatedOnly, sortierung]);
+  }, [approvalLeadIds, kategorie, leads, priorität, quickFilter, search, sortierung]);
+
+  const quickFilterCounts = useMemo(() => {
+    return {
+      approval: leads.filter((lead) => approvalLeadIds.has(lead.id)).length,
+      escalation: leads.filter((lead) => lead.escalated === true).length,
+      high: leads.filter((lead) => isHighPriority((lead as any).priority)).length,
+    };
+  }, [approvalLeadIds, leads]);
 
   const counts = useMemo(() => {
     const total = leads?.length ?? 0;
@@ -115,248 +262,315 @@ export default function NachrichtenPageClient({ leads, userId }: Props) {
   }, [leads, filteredLeads]);
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900" data-tour="messages-page">
+    <div className="min-h-[calc(100vh-80px)] app-shell text-gray-900" data-tour="messages-page">
       <div className="max-w-6xl mx-auto px-4 md:px-6">
-        {/* Sticky header */}
-        <div className="sticky top-16 md:top-0 z-30 pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200" data-tour="messages-header">
-          <div className="flex flex-col gap-4 pb-4">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-xl md:text-2xl font-semibold">Nachrichten</h1>
-                <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
-                  Advaic
+        <PageHeader
+          dataTour="messages-header"
+          title={<h1 className="app-text-page-title">Nachrichten</h1>}
+          meta={<StatusBadge tone="brand">Advaic</StatusBadge>}
+          description={
+            <>
+              <span>
+                Suche und Schnellfilter bleiben oben. Kategorie,
+                Prioritäts-Feinfilter, Sortierung und Utilities liegen bewusst im
+                Mehr-Bereich.
+              </span>
+              <div
+                className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500"
+                data-tour="messages-counts"
+              >
+                <span>
+                  Angezeigt{" "}
+                  <span className="font-medium text-gray-700">{counts.shown}</span>
                 </span>
-                <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800">
-                  Angezeigt: {counts.shown}
+                <span className="text-gray-300" aria-hidden="true">
+                  ·
                 </span>
-                <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700">
-                  Gesamt: {counts.total}
+                <span>
+                  Gesamt{" "}
+                  <span className="font-medium text-gray-700">{counts.total}</span>
+                </span>
+                <span className="text-gray-300" aria-hidden="true">
+                  ·
                 </span>
                 {counts.escalated > 0 ? (
                   <Link
                     href="/app/eskalationen"
-                    className="text-xs font-medium px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 inline-flex items-center gap-1"
+                    className="inline-flex items-center gap-1 text-gray-600 underline underline-offset-4 hover:text-gray-900"
                     title="Eskalationen öffnen"
                   >
                     <ShieldAlert className="h-3.5 w-3.5" />
-                    Eskaliert: {counts.escalated}
+                    Eskaliert{" "}
+                    <span className="font-medium text-gray-900">
+                      {counts.escalated}
+                    </span>
                   </Link>
                 ) : (
-                  <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700">
-                    Eskaliert: {counts.escalated}
+                  <span>
+                    Eskaliert{" "}
+                    <span className="font-medium text-gray-700">
+                      {counts.escalated}
+                    </span>
                   </span>
                 )}
               </div>
-              <div className="mt-1 text-sm text-gray-600 max-w-3xl">
-                Hier siehst du alle Nachrichten deiner Interessenten – filtere nach Kategorie, Priorität oder Eskalation.
-              </div>
-            </div>
+            </>
+          }
+          footer={
+            <div className="space-y-3" data-tour="messages-filters">
+              <div className="hidden md:block">
+                <FilterBar className="items-stretch">
+                  <div
+                    className="relative w-full md:w-80 md:min-w-[20rem]"
+                    data-tour="messages-search"
+                  >
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Suche… (Name, E-Mail, Nachricht)"
+                      className="w-full pl-9 pr-9 py-2 text-sm rounded-lg border app-field"
+                      data-tour="messages-search-input"
+                    />
+                    {search.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => setSearch("")}
+                        className="app-focusable absolute right-2 top-1.5 rounded-md p-1 text-gray-400 hover:text-gray-700 focus-visible:outline-none"
+                        title="Suche löschen"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
 
-            <div className="flex flex-wrap items-center gap-2 justify-start" data-tour="messages-filters">
-              {/* Desktop search */}
-              <div
-                className="relative hidden md:block w-full md:w-72 md:min-w-[18rem]"
-                data-tour="messages-search"
-              >
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Suche… (Name, E-Mail, Nachricht)"
-                  className="w-full pl-9 pr-9 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                  data-tour="messages-search-input"
-                />
-                {search.trim() && (
                   <button
                     type="button"
-                    onClick={() => setSearch("")}
-                    className="absolute right-2 top-2 text-gray-400 hover:text-gray-700"
-                    title="Suche löschen"
+                    onClick={() => setShowUtilityMenu((current) => !current)}
+                    className={appButtonClass({
+                      variant: utilityPanelOpen ? "tertiary" : "utility",
+                      size: "sm",
+                    })}
+                    title="Mehr Filter und Aktionen"
+                    data-tour="messages-overflow-toggle"
+                    aria-expanded={utilityPanelOpen}
                   >
-                    <X className="h-4 w-4" />
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Mehr
                   </button>
-                )}
+                </FilterBar>
               </div>
 
-              {/* Filters */}
-              <select
-                value={kategorie}
-                onChange={(e) => setKategorie(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
-                title="Kategorie"
-                data-tour="messages-filter-category"
-              >
-                <option value="Alle">Alle Kategorien</option>
-                <option value="Kaufen">Kaufen</option>
-                <option value="Mieten">Mieten</option>
-                <option value="FAQ">FAQ</option>
-              </select>
+              <div className="md:hidden w-full space-y-2">
+                <div className="relative" data-tour="messages-search-mobile">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Suche… (Name, E-Mail, Nachricht)"
+                    className="w-full pl-9 pr-9 py-2 text-sm rounded-lg border app-field"
+                  />
+                  {search.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => setSearch("")}
+                      className="app-focusable absolute right-2 top-2 rounded-md p-1 text-gray-400 hover:text-gray-700 focus-visible:outline-none"
+                      title="Suche löschen"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
 
-              <select
-                value={priorität}
-                onChange={(e) => setPriorität(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
-                title="Priorität"
-                data-tour="messages-filter-priority"
-              >
-                <option value="Alle">Alle Prioritäten</option>
-                <option value="Hoch">Hoch</option>
-                <option value="Mittel">Mittel</option>
-                <option value="Niedrig">Niedrig</option>
-              </select>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowUtilityMenu((current) => !current)}
+                    className={appButtonClass({
+                      variant: utilityPanelOpen ? "tertiary" : "utility",
+                      size: "sm",
+                    })}
+                    title="Mehr Filter und Aktionen"
+                    data-tour="messages-overflow-toggle-mobile"
+                    aria-expanded={utilityPanelOpen}
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Mehr
+                  </button>
+                </div>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => setEscalatedOnly((v) => !v)}
-                className={`px-3 py-2 text-sm rounded-lg border transition-colors inline-flex items-center gap-2 ${
-                  escalatedOnly
-                    ? "bg-amber-50 border-amber-200 text-amber-900"
-                    : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                }`}
-                title="Nur eskalierte Interessenten"
-                data-tour="messages-filter-escalated"
-              >
-                <ShieldAlert className="h-4 w-4" />
-                Nur eskalierte
-              </button>
+              <div data-tour="messages-quickfilters">
+                <FilterBar className="items-stretch">
+                  <button
+                    type="button"
+                    onClick={() => toggleQuickFilter("approval")}
+                    className={appButtonClass({
+                      variant: quickFilter === "approval" ? "tertiary" : "secondary",
+                      size: "chip",
+                      className: "whitespace-nowrap",
+                    })}
+                    data-tour="messages-chip-approval"
+                  >
+                    Freigabe
+                    <span className="font-semibold">{quickFilterCounts.approval}</span>
+                  </button>
 
-              <button
-                type="button"
-                onClick={copyShownEmails}
-                disabled={filteredLeads.length === 0}
-                className={`px-3 py-2 text-sm rounded-lg border transition-colors inline-flex items-center gap-2 ${
-                  filteredLeads.length > 0
-                    ? "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                    : "bg-white border-gray-200 text-gray-400 opacity-60 cursor-not-allowed"
-                }`}
-                title="E-Mails der angezeigten Interessenten kopieren"
-                data-tour="messages-copy-emails"
-              >
-                <Mail className="h-4 w-4" />
-                E-Mails
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleQuickFilter("escalation")}
+                    className={appButtonClass({
+                      variant: quickFilter === "escalation" ? "tertiary" : "secondary",
+                      size: "chip",
+                      className: "whitespace-nowrap",
+                    })}
+                    data-tour="messages-chip-escalation"
+                  >
+                    Eskalation
+                    <span className="font-semibold">{quickFilterCounts.escalation}</span>
+                  </button>
 
-              <button
-                type="button"
-                onClick={resetFilters}
-                disabled={!hasActiveFilters}
-                className={`px-3 py-2 text-sm rounded-lg border transition-colors inline-flex items-center gap-2 ${
-                  hasActiveFilters
-                    ? "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                    : "bg-white border-gray-200 text-gray-400 opacity-60 cursor-not-allowed"
-                }`}
-                title="Filter zurücksetzen"
-                data-tour="messages-reset-filters"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Zurücksetzen
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleQuickFilter("high")}
+                    className={appButtonClass({
+                      variant: quickFilter === "high" ? "tertiary" : "secondary",
+                      size: "chip",
+                      className: "whitespace-nowrap",
+                    })}
+                    data-tour="messages-chip-high"
+                  >
+                    Hoch
+                    <span className="font-semibold">{quickFilterCounts.high}</span>
+                  </button>
+                </FilterBar>
+              </div>
 
-              <div className="hidden sm:flex items-center gap-2" data-tour="messages-sort">
-                <SlidersHorizontal className="h-4 w-4 text-gray-500" />
-                <select
-                  value={sortierung}
-                  onChange={(e) => setSortierung(e.target.value)}
-                  className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
-                  title="Sortierung"
+              {utilityPanelOpen ? (
+                <div
+                  className="rounded-2xl border app-surface-card app-panel-padding-compact"
+                  data-tour="messages-overflow-panel"
                 >
-                  <option value="Neueste">Neueste zuerst</option>
-                  <option value="Älteste">Älteste zuerst</option>
-                  <option value="NameAZ">Name A–Z</option>
-                  <option value="PrioHigh">Priorität: Hoch → Niedrig</option>
-                  <option value="PrioLow">Priorität: Niedrig → Hoch</option>
-                </select>
-              </div>
-            </div>
-          </div>
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <FilterBar className="w-full">
+                      <select
+                        value={kategorie}
+                        onChange={(e) => setKategorie(e.target.value)}
+                        className="px-3 py-2 text-sm rounded-lg border app-field hover:bg-gray-50"
+                        title="Kategorie"
+                        data-tour="messages-filter-category"
+                      >
+                        <option value="Alle">Alle Kategorien</option>
+                        <option value="Kaufen">Kaufen</option>
+                        <option value="Mieten">Mieten</option>
+                        <option value="FAQ">FAQ</option>
+                      </select>
 
-          {/* Mobile search */}
-          <div className="md:hidden pb-4 w-full">
-            <div className="relative" data-tour="messages-search-mobile">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Suche… (Name, E-Mail, Nachricht)"
-                className="w-full pl-9 pr-9 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-              />
-              {search.trim() && (
-                <button
-                  type="button"
-                  onClick={() => setSearch("")}
-                  className="absolute right-2 top-2 text-gray-400 hover:text-gray-700"
-                  title="Suche löschen"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
+                      <select
+                        value={priorität}
+                        onChange={(e) => setPriorität(e.target.value)}
+                        className="px-3 py-2 text-sm rounded-lg border app-field hover:bg-gray-50"
+                        title="Priorität"
+                        data-tour="messages-filter-priority"
+                      >
+                        <option value="Alle">Alle Prioritäten</option>
+                        <option value="Hoch">Hoch</option>
+                        <option value="Mittel">Mittel</option>
+                        <option value="Niedrig">Niedrig</option>
+                      </select>
 
-            <div className="mt-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setEscalatedOnly((v) => !v)}
-                className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors inline-flex items-center justify-center gap-2 ${
-                  escalatedOnly
-                    ? "bg-amber-50 border-amber-200 text-amber-900"
-                    : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                }`}
-                title="Nur eskalierte Interessenten"
-              >
-                <ShieldAlert className="h-4 w-4" />
-                Nur eskalierte
-              </button>
+                      <div className="flex items-center gap-2" data-tour="messages-sort">
+                        <SlidersHorizontal className="h-4 w-4 text-gray-500" />
+                        <select
+                          value={sortierung}
+                          onChange={(e) => setSortierung(e.target.value)}
+                          className="px-3 py-2 text-sm rounded-lg border app-field hover:bg-gray-50"
+                          title="Sortierung"
+                        >
+                          <option value="Neueste">Neueste zuerst</option>
+                          <option value="Älteste">Älteste zuerst</option>
+                          <option value="NameAZ">Name A–Z</option>
+                          <option value="PrioHigh">Priorität: Hoch → Niedrig</option>
+                          <option value="PrioLow">Priorität: Niedrig → Hoch</option>
+                        </select>
+                      </div>
+                    </FilterBar>
 
-              <button
-                type="button"
-                onClick={resetFilters}
-                disabled={!hasActiveFilters}
-                className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors inline-flex items-center justify-center gap-2 ${
-                  hasActiveFilters
-                    ? "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                    : "bg-white border-gray-200 text-gray-400 opacity-60 cursor-not-allowed"
-                }`}
-                title="Filter zurücksetzen"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Zurücksetzen
-              </button>
-            </div>
-          </div>
-        </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={copyShownEmails}
+                        disabled={filteredLeads.length === 0}
+                        className={appButtonClass({
+                          variant: "secondary",
+                          size: "sm",
+                        })}
+                        title="E-Mails der angezeigten Interessenten kopieren"
+                        data-tour="messages-copy-emails"
+                      >
+                        <Mail className="h-4 w-4" />
+                        E-Mails
+                      </button>
 
-        {/* Content */}
-        <div className="py-6">
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden" data-tour="messages-inbox">
-            <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between gap-3">
-              <div className="text-sm text-gray-600">
-                Tipp: Öffne eine Konversation und antworte direkt.
-              </div>
-              <div className="text-xs text-gray-500 hidden sm:block">
-                Enter/Shift+Enter Steuerung findest du im Chat.
-              </div>
-            </div>
-
-            <div className="p-4 md:p-6" data-tour="messages-list">
-              {filteredLeads.length === 0 ? (
-                <div className="w-full rounded-2xl border border-gray-200 bg-[#fbfbfc] p-6 text-center" data-tour="messages-empty">
-                  <div className="text-gray-900 font-medium">Keine passenden Nachrichten</div>
-                  <div className="text-sm text-gray-600 mt-2">
-                    {search.trim()
-                      ? "Keine Treffer für deine Suche."
-                      : hasActiveFilters
-                      ? "Keine Treffer mit diesen Filtern. Tipp: Filter zurücksetzen."
-                      : "Aktuell gibt es keine Nachrichten in dieser Ansicht."}
+                      <button
+                        type="button"
+                        onClick={resetFilters}
+                        disabled={!hasActiveFilters}
+                        className={appButtonClass({
+                          variant: "secondary",
+                          size: "sm",
+                        })}
+                        title="Filter zurücksetzen"
+                        data-tour="messages-reset-filters"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        Zurücksetzen
+                      </button>
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <div className="md:h-[calc(100vh-260px)] md:overflow-y-auto md:pr-2" data-tour="messages-scroll">
-                  <InboxView leads={filteredLeads} userId={userId} />
-                </div>
-              )}
+              ) : null}
             </div>
+          }
+        />
+
+        {/* Content */}
+        <div className="app-page-section">
+          <div data-tour="messages-inbox">
+            <SectionCard
+              className="overflow-visible"
+              bodyClassName="app-panel-padding"
+              title={<span className="app-text-helper text-gray-700">Tipp: Öffne eine Konversation und antworte direkt.</span>}
+              meta={<span className="app-text-meta-label hidden sm:block">Enter/Shift+Enter Steuerung findest du im Chat.</span>}
+            >
+              <div data-tour="messages-list">
+                {filteredLeads.length === 0 ? (
+                  <div data-tour="messages-empty">
+                    <EmptyState
+                      title="Keine passenden Nachrichten"
+                      description={
+                        search.trim()
+                          ? "Keine Treffer für deine Suche."
+                          : hasActiveFilters
+                            ? "Keine Treffer mit diesen Filtern. Tipp: Filter zurücksetzen."
+                            : "Aktuell gibt es keine Nachrichten in dieser Ansicht."
+                      }
+                      className=""
+                    />
+                  </div>
+                ) : (
+                  <div data-tour="messages-scroll">
+                    <InboxView
+                      leads={filteredLeads}
+                      userId={userId}
+                      onLeadOpen={handleLeadOpen}
+                    />
+                  </div>
+                )}
+              </div>
+            </SectionCard>
           </div>
         </div>
       </div>

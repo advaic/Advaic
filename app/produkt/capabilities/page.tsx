@@ -4,6 +4,7 @@ import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
 import FinalCTA from "@/components/marketing/FinalCTA";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const capabilityRows = [
   {
@@ -30,7 +31,7 @@ const capabilityRows = [
     does:
       "Zeigt Entwürfe vor dem Versand. Agent kann freigeben, bearbeiten oder ablehnen.",
     guardrail:
-      "Ohne Freigabe kein Versand in Fällen mit Unsicherheit.",
+      "Ohne Freigabe kein Versand bei fehlenden Angaben, Konflikten oder Ausnahmen.",
     publicHref: "/freigabe-inbox",
   },
   {
@@ -48,7 +49,7 @@ const capabilityRows = [
     does:
       "Verwaltet Objektdaten als Grundlage für korrekte Antworten, Matching und qualifizierte Rückfragen.",
     guardrail:
-      "Unvollständige Objektdaten erhöhen Freigabequote; das System soll bei Unsicherheit bremsen.",
+      "Unvollständige Objektdaten erhöhen die Freigabequote; das System soll bei fehlenden Grundlagen bremsen.",
     publicHref: "/produkt#was",
   },
   {
@@ -93,7 +94,7 @@ const capabilityRows = [
     does:
       "Globaler Schalter zum Aktivieren oder Pausieren von Auto-Senden im operativen Alltag.",
     guardrail:
-      "Auch bei aktivem Auto-Senden gilt: Unsicherheit führt zur Freigabe, nicht zum Blindversand.",
+      "Auch bei aktivem Auto-Senden gilt: fehlende Angaben, Konflikte oder Risikosignale führen zur Freigabe, nicht zum Blindversand.",
     publicHref: "/autopilot-regeln",
   },
 ];
@@ -135,19 +136,24 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Capability Matrix | Advaic",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Capability Matrix für Maklerteams",
+  ogTitle: "Capability Matrix | Advaic",
   description:
     "Detaillierte Übersicht der Dashboard-Funktionen: was Advaic operativ kann, welche Guardrails greifen und welche Grenzen bewusst gesetzt sind.",
-};
+  path: "/produkt/capabilities",
+  template: "product",
+  eyebrow: "Capability Matrix",
+  proof: "Welche Dashboard-Bereiche wirklich steuern, welche Guardrails greifen und wo Grenzen bewusst gesetzt sind.",
+});
 
 export default function ProductCapabilitiesPage() {
   return (
     <PageShell>
       <PageIntro
         kicker="Produkt-Transparenz"
-        title="Capability Matrix: Was das Dashboard tatsächlich kann"
-        description="Diese Seite zeigt den realen Funktionsumfang des operativen Dashboards für Maklerteams: Bereich für Bereich, inklusive Guardrails und bewusster Grenzen."
+        title="Welche Bereiche Sie im Dashboard wirklich steuern"
+        description="Diese Matrix ist als Orientierung für Käufer und Betreiber gedacht. Sie zeigt pro Bereich, was im Dashboard gesteuert wird, welche Schutzlogik dort gilt und welche Grenzen bewusst gesetzt sind."
         actions={
           <>
             <Link href="/produkt" className="btn-secondary">
@@ -162,10 +168,10 @@ export default function ProductCapabilitiesPage() {
 
       <section id="matrix" className="marketing-section-clear py-20 md:py-28">
         <Container>
-          <h2 className="h2">Funktionsumfang nach Dashboard-Bereich</h2>
+          <h2 className="h2">Capability Matrix nach Arbeitsbereich</h2>
           <p className="body mt-4 max-w-[74ch] text-[var(--muted)]">
-            Die Matrix ist als operative Landkarte gedacht. Sie zeigt, was in welchem Bereich gesteuert wird,
-            welche Sicherheitslogik dort greift und wo Sie tiefer einsteigen können.
+            Die Matrix ist als operative Landkarte gedacht. Sie zeigt, was Sie in welchem Bereich steuern, welche
+            Schutzlogik dort greift und wo Sie fachlich tiefer einsteigen können.
           </p>
 
           <div className="mt-8 space-y-4">

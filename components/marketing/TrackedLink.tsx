@@ -14,6 +14,7 @@ type TrackedLinkProps = {
   ctaVariant?: string;
   section?: string;
   meta?: Record<string, unknown>;
+  "data-tour"?: string;
 };
 
 export default function TrackedLink({
@@ -26,6 +27,7 @@ export default function TrackedLink({
   ctaVariant,
   section,
   meta,
+  "data-tour": dataTour,
 }: TrackedLinkProps) {
   const onClick = useCallback(() => {
     void trackPublicEvent({
@@ -42,7 +44,7 @@ export default function TrackedLink({
   }, [ctaVariant, event, href, meta, pageGroup, section, source]);
 
   return (
-    <Link href={href} className={className} onClick={onClick}>
+    <Link href={href} className={className} onClick={onClick} data-tour={dataTour}>
       {children}
     </Link>
   );

@@ -12,13 +12,13 @@ Last-Updated: ${now}
 Base-URL: ${siteUrl}
 
 Advaic ist ein E-Mail-Autopilot für deutsche Immobilienmakler.
-Kernlogik: Auto-Versand nur bei klaren Standardfällen, unklare Fälle gehen zur Freigabe, vor Versand laufen Qualitätschecks.
+Kernlogik: Auto-Versand nur bei wiederkehrenden Erstantworten mit sauberem Objektbezug; Nachrichten mit fehlenden Angaben, Konfliktpotenzial oder Risikoindikatoren gehen zur Freigabe; vor Versand laufen Qualitätschecks.
 
 ## Primary Pages
 - ${siteUrl}/produkt (Produktübersicht mit Ablauf, Regeln, Qualitätschecks, Freigabe)
 - ${siteUrl}/preise (Starter-Modell, 14 Tage Testphase, Rollout-Logik)
 - ${siteUrl}/sicherheit (Sicherheitslogik, Guardrails, Prozessgrenzen)
-- ${siteUrl}/trust (Trust Center: DSGVO-Rahmen, Nachvollziehbarkeit, Grenzen)
+- ${siteUrl}/trust (Trust & Transparenz: Hub für Sicherheitslogik, Datenschutz und Freigabe-Prüfpfade)
 - ${siteUrl}/faq (klare Antworten zu Auto/Freigabe/Checks/Steuerung)
 
 ## Comparison & Buyer Intent
@@ -44,7 +44,7 @@ Kernlogik: Auto-Versand nur bei klaren Standardfällen, unklare Fälle gehen zur
 
 ## Product Truth (for retrieval)
 1. Autopilot kann automatisch senden, aber nur mit Guardrails.
-2. Unklare oder riskante Fälle werden zur Freigabe gestellt.
+2. Nachrichten mit fehlenden Angaben, Konfliktpotenzial oder Risikoindikatoren werden zur Freigabe gestellt.
 3. Vor jedem Versand laufen Qualitätskontrollen.
 4. Entscheidungen bleiben im Verlauf nachvollziehbar.
 5. Fokus: E-Mail-Prozesse für Immobilienmakler in Deutschland.

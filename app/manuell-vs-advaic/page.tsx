@@ -8,6 +8,8 @@ import ManualVsAdvaicComparison from "@/components/marketing/ManualVsAdvaicCompa
 import ProcessFlowComparison from "@/components/marketing/ProcessFlowComparison";
 import SafeStartConfigurator from "@/components/marketing/SafeStartConfigurator";
 import FinalCTA from "@/components/marketing/FinalCTA";
+import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const briefPoints = [
   {
@@ -15,8 +17,8 @@ const briefPoints = [
     text: "Die operative Last entsteht kumulativ: Eingang lesen, Relevanz prüfen, Antwort schreiben, nachfassen, Verlauf dokumentieren. Advaic entlastet genau entlang dieser Kette.",
   },
   {
-    title: "Sicherheitsrisiko entsteht bei Unsicherheit unter Zeitdruck",
-    text: "Wenn viele Anfragen parallel kommen, steigt das Risiko unvollständiger oder unpassender Antworten. Advaic verlagert unsichere Fälle automatisch in die Freigabe.",
+    title: "Sicherheitsrisiko entsteht bei fehlenden Angaben und Zeitdruck",
+    text: "Wenn viele Anfragen parallel kommen, steigt das Risiko unvollständiger oder unpassender Antworten. Advaic verlagert Nachrichten mit fehlenden Angaben oder Qualitätswarnung automatisch in die Freigabe.",
   },
   {
     title: "Transparenz entscheidet über Steuerbarkeit",
@@ -30,8 +32,8 @@ const rolloutPlan = [
     text: "Starten Sie mit hoher Freigabequote. Prüfen Sie täglich, welche Fälle sauber automatisierbar sind und welche bewusst manuell bleiben sollten.",
   },
   {
-    title: "Woche 2: Standardfälle sauber definieren",
-    text: "Stellen Sie klare Auto-Fälle ein: Verfügbarkeit, Unterlagen, Terminvorschlag und nächste Prozessschritte. Konflikt- und Sonderfälle bleiben in der Freigabe.",
+    title: "Woche 2: Auto-Fälle sauber eingrenzen",
+    text: "Definieren Sie Auto-Fälle wie Verfügbarkeit, Unterlagen, Terminvorschlag und nächste Prozessschritte. Konflikte, Beschwerden und Nachrichten mit fehlenden Kerndaten bleiben in der Freigabe.",
   },
   {
     title: "Woche 3: Follow-ups vorsichtig aktivieren",
@@ -71,26 +73,31 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Manuell vs. Advaic | Prozessvergleich für Makler",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Manuell vs. Advaic für Makler",
+  ogTitle: "Manuell vs. Advaic | Prozessvergleich für Makler",
   description:
-    "Direkter Vergleich pro Prozessschritt: Zeit, Risiko und Transparenz bei manueller Bearbeitung versus Advaic mit Guardrails und Freigabelogik.",
-};
+    "Vergleich pro Prozessschritt: lesen, einordnen, antworten, nachfassen und dokumentieren. So sehen Sie, wo manuelle Bearbeitung Zeit kostet und wo Advaic entlastet.",
+  path: "/manuell-vs-advaic",
+  template: "compare",
+  eyebrow: "Vergleich",
+  proof: "Zeit, Risiko und Transparenz pro Prozessschritt mit echter Entscheidungssubstanz.",
+});
 
 export default function ManualVsAdvaicPage() {
   return (
     <PageShell>
       <PageIntro
         kicker="Vergleich"
-        title="Manuelle Bearbeitung vs. Advaic"
-        description="Diese Seite zeigt transparent, wo im manuellen Ablauf Zeit und Qualität verloren gehen und wie Advaic mit klaren Regeln, Freigabe und Qualitätschecks entlastet."
+        title="Wo manuelle Anfragebearbeitung Zeit kostet und wo Advaic entlastet"
+        description="Verglichen wird nicht eine Featureliste, sondern der echte Ablauf: lesen, einordnen, antworten, nachfassen und dokumentieren. Genau dort entscheidet sich, ob ein Team spürbar entlastet wird."
         actions={
           <>
             <Link href="/produkt" className="btn-secondary">
-              Produktdetails
+              Produkt prüfen
             </Link>
             <Link href="/signup" className="btn-primary">
-              14 Tage testen
+              {MARKETING_PRIMARY_CTA_LABEL}
             </Link>
           </>
         }
@@ -100,24 +107,24 @@ export default function ManualVsAdvaicPage() {
         <Container>
           <div className="grid gap-6 lg:grid-cols-12">
             <article className="card-base p-6 lg:col-span-8 md:p-8">
-              <h2 className="h3">Sales Brief: Warum diese Vergleichsseite kaufentscheidend ist</h2>
+              <h2 className="h3">Worauf Sie in diesem Vergleich wirklich achten sollten</h2>
               <p className="body mt-4 text-[var(--muted)]">
-                Viele Makler prüfen Software nur über Funktionen. Entscheidend ist die operative Wirkung im
-                Tagesfluss: Wie viel Zeit pro Anfrage bleibt manuell? Wie stark sinkt das Risiko falscher
-                Antworten? Wie klar bleibt die Nachvollziehbarkeit für Team und Support?
+                Viele Makler vergleichen Tools über Funktionen. Entscheidend ist aber die Wirkung im Tagesgeschäft:
+                Wie viel Zeit bleibt pro Anfrage manuell? Wie stark sinkt das Risiko falscher Antworten? Wie gut
+                bleibt der Verlauf für Team und Support nachvollziehbar?
               </p>
               <p className="body mt-4 text-[var(--muted)]">
-                Genau dafür ist dieser Vergleich aufgebaut: erst Problemkosten sichtbar machen, dann Guardrails prüfen,
-                anschließend mit Safe-Start-Konfiguration kontrolliert testen. So wird aus einer Feature-Demo eine
-                belastbare Betriebsentscheidung.
+                Genau dafür ist dieser Vergleich gebaut: erst Engpässe sichtbar machen, dann Guardrails prüfen und
+                anschließend mit Safe-Start kontrolliert testen. So wird aus einer Demo eine belastbare
+                Betriebsentscheidung.
               </p>
             </article>
             <article className="card-base p-6 lg:col-span-4">
-              <h2 className="h3">Für wen dieser Vergleich gedacht ist</h2>
+              <h2 className="h3">Für wen dieser Vergleich relevant ist</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
                 <li>Makler mit regelmäßigem Anfrageaufkommen und Zeitdruck im Postfach</li>
                 <li>Teams, die Automatisierung wollen, aber Sicherheitsgrenzen klar definieren müssen</li>
-                <li>Entscheider, die Einführung nach KPI statt Bauchgefühl steuern möchten</li>
+                <li>Entscheider, die die Einführung über KPI und nicht über Bauchgefühl steuern möchten</li>
               </ul>
             </article>
           </div>
@@ -151,7 +158,7 @@ export default function ManualVsAdvaicPage() {
             <h2 className="h2">Wo manuelle Prozesse in der Praxis kippen</h2>
             <p className="body mt-4 text-[var(--muted)]">
               In der Realität ist selten ein einzelner Fehler das Problem. Meistens kippt der Prozess, wenn Volumen,
-              Geschwindigkeit und Unsicherheit gleichzeitig steigen. Dann entstehen Antwortverzug, inkonsistente Texte
+              Geschwindigkeit und fehlende Klarheit gleichzeitig steigen. Dann entstehen Antwortverzug, inkonsistente Texte
               und fehlende Übersicht im Verlauf.
             </p>
           </div>
@@ -160,8 +167,8 @@ export default function ManualVsAdvaicPage() {
             <article className="card-base p-6">
               <h3 className="h3">Zeitrisiko</h3>
               <p className="helper mt-3">
-                Jede manuelle Standardantwort blockiert Zeit für Beratung und Abschlussarbeit. Der Engpass entsteht bei
-                wiederkehrenden Fällen, nicht bei Sonderfällen.
+                Jede manuelle wiederkehrende Erstantwort blockiert Zeit für Beratung und Abschlussarbeit. Der Engpass
+                entsteht bei häufigen Routineanfragen, nicht bei wenigen Spezialfällen.
               </p>
             </article>
             <article className="card-base p-6">
@@ -174,7 +181,7 @@ export default function ManualVsAdvaicPage() {
             <article className="card-base p-6">
               <h3 className="h3">Steuerungsrisiko</h3>
               <p className="helper mt-3">
-                Wenn Entscheidungen nicht strukturiert geloggt sind, wird Support reaktiv statt steuernd. Genau hier
+                Wenn Entscheidungen nicht strukturiert geloggt sind, wird Support reaktiv und kaum noch steuernd. Genau hier
                 braucht es klare Status- und Guardrail-Logik.
               </p>
             </article>
@@ -188,7 +195,7 @@ export default function ManualVsAdvaicPage() {
         <Container>
           <div className="grid gap-6 lg:grid-cols-12">
             <article className="card-base p-6 lg:col-span-7 md:p-8">
-              <h2 className="h3">30-Tage-Einführungsfahrplan statt Big-Bang-Rollout</h2>
+              <h2 className="h3">Einführungsplan für die ersten 30 Tage</h2>
               <p className="helper mt-3">
                 Die höchste Erfolgswahrscheinlichkeit entsteht über stufenweisen Betrieb: erst Beobachtung, dann
                 Kalibrierung, danach gezielte Ausweitung.

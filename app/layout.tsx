@@ -2,50 +2,57 @@ import "../styles/globals.css";
 import SupabaseProvider from "./supabase-provider";
 import ClientRootLayout from "@/app/ClientRootLayout";
 import GlobalStructuredData from "@/components/seo/GlobalStructuredData";
+import { buildOgImageUrl, DEFAULT_MARKETING_SHARE_IMAGE_ALT } from "@/lib/seo/marketing-metadata";
 import { getSiteUrl } from "@/lib/seo/site-url";
-import { Inter, Manrope } from "next/font/google";
 import type { Metadata } from "next";
 
 const siteUrl = getSiteUrl();
+const googleSiteVerification = String(
+  process.env.GOOGLE_SITE_VERIFICATION || "",
+).trim();
+const bingSiteVerification = String(
+  process.env.BING_SITE_VERIFICATION || "",
+).trim();
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
-const manrope = Manrope({
-  subsets: ["latin"],
-  variable: "--font-display",
-  display: "swap",
+const defaultShareImage = buildOgImageUrl({
+  template: "brand",
+  eyebrow: "Advaic",
+  title: "E-Mail-Autopilot für Immobilienmakler",
+  proof: "Guardrails, Freigabe-Logik und Qualitätschecks vor dem Versand.",
 });
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   applicationName: "Advaic",
   title: "Advaic",
-  description: "KI-gestützter Maklerassistent für sichere und nachvollziehbare E-Mail-Automatisierung",
+  description: "E-Mail-Autopilot für Immobilienmakler mit Guardrails, Freigabe-Logik und Qualitätschecks vor dem Versand.",
   openGraph: {
     type: "website",
     locale: "de_DE",
     url: siteUrl,
     siteName: "Advaic",
-    title: "Advaic",
-    description: "KI-gestützter Maklerassistent für sichere und nachvollziehbare E-Mail-Automatisierung",
+    title: "Advaic | E-Mail-Autopilot für Immobilienmakler",
+    description: "E-Mail-Autopilot für Immobilienmakler mit Guardrails, Freigabe-Logik und Qualitätschecks vor dem Versand.",
     images: [
       {
-        url: "/brand/advaic-icon.png",
-        width: 1024,
-        height: 1024,
-        alt: "Advaic",
+        url: defaultShareImage,
+        alt: DEFAULT_MARKETING_SHARE_IMAGE_ALT,
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Advaic",
-    description: "KI-gestützter Maklerassistent für sichere und nachvollziehbare E-Mail-Automatisierung",
-    images: ["/brand/advaic-icon.png"],
+    title: "Advaic | E-Mail-Autopilot für Immobilienmakler",
+    description: "E-Mail-Autopilot für Immobilienmakler mit Guardrails, Freigabe-Logik und Qualitätschecks vor dem Versand.",
+    images: [defaultShareImage],
+  },
+  verification: {
+    google: googleSiteVerification || undefined,
+    other: bingSiteVerification
+      ? {
+          "msvalidate.01": bingSiteVerification,
+        }
+      : undefined,
   },
   robots: {
     index: true,
@@ -61,7 +68,7 @@ export const metadata: Metadata = {
     apple: [{ url: "/brand/advaic-icon-180.png", sizes: "180x180", type: "image/png" }],
     shortcut: ["/favicon.ico"],
   },
-  manifest: "/site.webmanifest",
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({
@@ -71,7 +78,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="de">
-      <body className={`${inter.variable} ${manrope.variable}`}>
+      <body>
         <GlobalStructuredData />
         <SupabaseProvider initialSession={null}>
           <ClientRootLayout session={null}>{children}</ClientRootLayout>

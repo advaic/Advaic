@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const objections = [
   {
@@ -39,7 +40,7 @@ const decisionPath = [
   },
   {
     title: "2) Nachweis im Produkt prüfen",
-    text: "Prüfen Sie nicht nur Copy, sondern den Mechanismus im Ablauf: Entscheidungspfad, Freigabelogik, Qualitätschecks und Verlauf.",
+    text: "Prüfen Sie den Mechanismus im Ablauf: Entscheidungspfad, Freigabelogik, Qualitätschecks und Verlauf statt nur Marketingaussagen.",
   },
   {
     title: "3) Pilot-KPI vorab festlegen",
@@ -51,18 +52,24 @@ const decisionPath = [
   },
 ];
 
+const quickTake = [
+  "Die wichtigsten Einwände gegen Anfrage-Automatisierung sind meist berechtigt und sollten über Mechanik statt über Vertrauen beantwortet werden.",
+  "Prüfen Sie jeden Punkt über drei Ebenen: konkretes Risiko, sichtbare Schutzlogik und messbare Pilot-KPI.",
+  "Wenn ein Anbieter diese drei Ebenen nicht sauber zeigen kann, ist der Einwand wahrscheinlich noch nicht gelöst.",
+];
+
 const objectionMatrix = [
   {
     objection: "DSGVO",
     risk: "Unklare Verantwortlichkeiten und fehlende Prozessdokumentation.",
-    proof: "Freigabe bei Unsicherheit, Verlauf mit Entscheidungsnachweis, klare Systemgrenzen.",
+    proof: "Freigabe bei sensiblen Inhalten, Verlauf mit Entscheidungsnachweis und klare Systemgrenzen.",
     metric: "Dokumentationsvollständigkeit, Freigabequote bei sensiblen Fällen.",
     href: "/einwaende/dsgvo",
   },
   {
     objection: "Kontrolle",
     risk: "Angst vor unkontrolliertem Auto-Versand.",
-    proof: "Auto nur bei klaren Standardfällen, Pause jederzeit, Fail-Safe zur Freigabe.",
+    proof: "Auto nur bei prüfbarem Objektbezug und vollständigen Angaben, Pause jederzeit, Fail-Safe zur Freigabe.",
     metric: "Auto-zu-Freigabe-Verhältnis, manuelle Korrekturrate nach Versand.",
     href: "/einwaende/kontrolle",
   },
@@ -82,7 +89,7 @@ const objectionMatrix = [
   },
   {
     objection: "Kosten",
-    risk: "Unsicherheit, ob der Nutzen den Preis trägt.",
+    risk: "Unklar, ob der Nutzen den Preis trägt.",
     proof: "Konservative Vorher-Nachher-Bewertung mit echten Prozess-KPI.",
     metric: "Reaktionszeit, gesparte Stunden, Freigabe-zu-Versand-Rate.",
     href: "/einwaende/kosten",
@@ -112,27 +119,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Einwände gegen E-Mail-Autopilot klar beantwortet",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Wie Makler Einwände gegen Anfrage-Automatisierung prüfen",
+  ogTitle: "Einwände gegen E-Mail-Autopilot | Advaic",
   description:
-    "Detaillierte Antworten auf die wichtigsten Einwände von Maklern: DSGVO, Kontrolle, Qualität, Aufwand und Kosten.",
-  alternates: {
-    canonical: "/einwaende",
-  },
-  openGraph: {
-    title: "Einwände | Advaic",
-    description:
-      "Detaillierte Antworten auf die wichtigsten Einwände von Maklern: DSGVO, Kontrolle, Qualität, Aufwand und Kosten.",
-    url: "/einwaende",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Einwände | Advaic",
-    description:
-      "Detaillierte Antworten auf die wichtigsten Einwände von Maklern: DSGVO, Kontrolle, Qualität, Aufwand und Kosten.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Value-first Leitfaden für Makler: So prüfen Sie DSGVO, Kontrolle, Qualität, Aufwand und Kosten über echte Mechanik, klare Schutzlogik und messbare Pilot-KPI.",
+  path: "/einwaende",
+  template: "guide",
+  eyebrow: "Einwände",
+  proof: "Risiko, Schutzlogik und KPI pro Einwand statt reiner Vertriebsantworten.",
+});
 
 export default function ObjectionsHubPage() {
   const siteUrl = getSiteUrl();
@@ -167,8 +163,8 @@ export default function ObjectionsHubPage() {
       ]}
       schema={schema}
       kicker="Einwände"
-      title="Kritische Fragen, präzise beantwortet"
-      description="Diese Seite ist ein Entscheidungsbrief für skeptische Maklerteams. Sie sehen pro Einwand den Risikopunkt, den Nachweis im Produkt und die passende Pilot-Kennzahl."
+      title="Wie Makler kritische Einwände sauber prüfen"
+      description="Diese Seite soll keine Bedenken wegreden, sondern prüfbar machen. Für jeden Einwand sehen Sie das operative Risiko, die nötige Schutzlogik und die passende Pilot-KPI."
       actions={
         <>
           <Link href="/produkt" className="btn-secondary">
@@ -188,6 +184,22 @@ export default function ObjectionsHubPage() {
       sources={sources}
       sourcesDescription="Die Quellen dienen als Orientierungsrahmen für Governance, Datenschutz und Prozesswirkung. Sie ersetzen keine individuelle Rechts- oder Unternehmensberatung."
     >
+      <section id="kurzfassung" className="py-8 md:py-10">
+        <Container>
+          <article className="card-base p-6">
+            <h2 className="h3">Kurzantwort in 60 Sekunden</h2>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              {quickTake.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </Container>
+      </section>
+
       <section className="marketing-section-clear py-20 md:py-24">
         <Container>
           <div className="max-w-[76ch]">

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Container from "./Container";
 import TrackedLink from "./TrackedLink";
+import { MARKETING_PRIMARY_CTA_LABEL } from "./cta-copy";
 
 type DetailCard = {
   title: string;
@@ -70,7 +71,7 @@ export default function ObjectionArticle({
                   section={`objection-${context}`}
                   meta={{ objection: context }}
                 >
-                  14 Tage kontrolliert testen
+                  {MARKETING_PRIMARY_CTA_LABEL}
                 </TrackedLink>
                 <Link href="/produkt#setup" className="btn-secondary">
                   Safe-Start-Konfiguration

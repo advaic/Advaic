@@ -1,4 +1,10 @@
 import { getSiteUrl } from "@/lib/seo/site-url";
+import {
+  STARTER_PUBLIC_BILLING_CYCLE_LABEL,
+  STARTER_PUBLIC_PLAN_NAME,
+  STARTER_PUBLIC_PRICE_EUR,
+  STARTER_PUBLIC_TRIAL_LABEL,
+} from "@/lib/billing/public-pricing";
 
 const NAV_ITEMS = [
   { name: "Produkt", path: "/produkt" },
@@ -9,7 +15,7 @@ const NAV_ITEMS = [
   { name: "Sicherheit", path: "/sicherheit" },
   { name: "Preise", path: "/preise" },
   { name: "FAQ", path: "/faq" },
-  { name: "Trust Center", path: "/trust" },
+  { name: "Trust-Hub", path: "/trust" },
   { name: "Manuell vs. Advaic", path: "/manuell-vs-advaic" },
   { name: "Best AI Tools Immobilienmakler", path: "/best-ai-tools-immobilienmakler" },
   { name: "Best Software Immobilienanfragen", path: "/best-software-immobilienanfragen" },
@@ -69,7 +75,7 @@ export default function GlobalStructuredData() {
           audienceType: "Immobilienmakler und kleine Maklerteams in Deutschland",
         },
         description:
-          "Advaic beantwortet Interessenten-Anfragen im Maklerstil, sendet nur bei klaren Standardfällen automatisch und leitet unklare Fälle in die Freigabe weiter.",
+          "Advaic beantwortet Interessenten-Anfragen im Maklerstil, sendet nur bei klarem Objektbezug automatisch und leitet Fälle mit fehlenden Angaben oder Risikosignalen in die Freigabe weiter.",
         featureList: [
           "Autopilot mit Guardrails",
           "Freigabe-Inbox für unklare Fälle",
@@ -83,11 +89,12 @@ export default function GlobalStructuredData() {
         "@type": "Offer",
         "@id": offerId,
         url: `${siteUrl}/preise`,
-        price: "0",
+        name: STARTER_PUBLIC_PLAN_NAME,
+        price: String(STARTER_PUBLIC_PRICE_EUR),
         priceCurrency: "EUR",
         category: "SaaS",
         availability: "https://schema.org/InStock",
-        description: "14 Tage Testphase für den Advaic Starter-Tarif.",
+        description: `${STARTER_PUBLIC_TRIAL_LABEL}, danach ${STARTER_PUBLIC_PRICE_EUR} € ${STARTER_PUBLIC_BILLING_CYCLE_LABEL}.`,
       },
       ...NAV_ITEMS.map((item) => ({
         "@type": "SiteNavigationElement",

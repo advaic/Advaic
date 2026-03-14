@@ -1,5 +1,6 @@
 import TrackedLink from "./TrackedLink";
 import Container from "./Container";
+import { MARKETING_FAQ_CTA_LABEL, MARKETING_PRIMARY_CTA_LABEL } from "./cta-copy";
 
 type Stage = "orientierung" | "bewertung" | "entscheidung";
 
@@ -36,7 +37,7 @@ const stageConfig: Record<
     label: "Nächster Prüfpunkt",
     goal: "Prüfen Sie jetzt, ob die Logik zu Ihrem Makleralltag und Ihrem Anfragevolumen passt.",
     primaryHref: "/signup",
-    primaryLabel: "14 Tage testen",
+    primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
     secondaryHref: "/autopilot-regeln",
     secondaryLabel: "Regeln prüfen",
   },
@@ -44,9 +45,9 @@ const stageConfig: Record<
     label: "Nächste Entscheidung",
     goal: "Starten Sie kontrolliert mit Safe-Start und messen Sie die ersten Effekte im echten Betrieb.",
     primaryHref: "/signup",
-    primaryLabel: "Jetzt starten",
+    primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
     secondaryHref: "/faq",
-    secondaryLabel: "Offene Fragen klären",
+    secondaryLabel: MARKETING_FAQ_CTA_LABEL,
   },
 };
 

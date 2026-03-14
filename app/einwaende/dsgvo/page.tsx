@@ -13,7 +13,7 @@ const mechanics = [
   },
   {
     title: "Klare Zugriffspfade",
-    text: "Unsichere Fälle landen in der Freigabe-Inbox statt im Auto-Versand. Dadurch bleibt die menschliche Entscheidung dort verpflichtend, wo Risiko oder Unklarheit besteht.",
+    text: "Nachrichten mit fehlenden Angaben, Qualitätswarnung oder Konfliktpotenzial landen in der Freigabe-Inbox statt im Auto-Versand. Dadurch bleibt die menschliche Entscheidung dort verpflichtend, wo Risiko besteht.",
   },
   {
     title: "Dokumentierter Verlauf",
@@ -27,7 +27,7 @@ const mechanics = [
 
 const implementation = [
   "Verarbeitungszwecke und Rollen im Team schriftlich festhalten.",
-  "Freigaberegeln für unklare und sensible Fälle verpflichtend aktiv lassen.",
+  "Freigaberegeln für fehlende Angaben, sensible Aussagen und Konfliktfälle verpflichtend aktiv lassen.",
   "Monatlich den Nachrichtenverlauf stichprobenartig prüfen und dokumentieren.",
   "Rechtlich sensible Einzelfälle mit fachlicher Rechtsberatung klären.",
 ];
@@ -110,7 +110,7 @@ export default function ObjectionDSGVOPage() {
       <ObjectionArticle
         context="dsgvo"
         concern="„Wir dürfen kein Risiko eingehen, wenn automatisiert E-Mails rausgehen.“"
-        concernSummary="Genau deshalb trennt Advaic strikt zwischen klaren Standardfällen und unsicheren Fällen. Unsicherheit führt zur Freigabe, nicht zum Auto-Versand."
+        concernSummary="Genau deshalb trennt Advaic strikt zwischen wiederkehrenden Erstantworten mit sauberem Objektbezug und Fällen mit fehlenden Angaben, Konfliktpotenzial oder Risikoindikatoren. Diese Nachrichten gehen zur Freigabe, nicht in den Auto-Versand."
         mechanicsTitle="Was Advaic in der DSGVO-Praxis konkret beiträgt"
         mechanics={mechanics}
         implementation={implementation}

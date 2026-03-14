@@ -6,6 +6,7 @@ import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
 import StageCTA from "@/components/marketing/StageCTA";
 import FinalCTA from "@/components/marketing/FinalCTA";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const painPoints = [
   "Postfacharbeit konkurriert mit Besichtigungen, Telefonaten und Exposés.",
@@ -13,9 +14,15 @@ const painPoints = [
   "Sonderfälle kosten überproportional viel Zeit und bremsen den Standardprozess.",
 ];
 
+const quickTake = [
+  "Kleine Teams profitieren vor allem dann, wenn wiederkehrende Erstantworten vom Tageschaos entkoppelt werden.",
+  "Automatisierung sollte kleine Teams nicht mit Komplexität überladen, sondern den Freigabe- und Antwortprozess stabiler machen.",
+  "Der richtige Start ist konservativ: wenige Antworttypen, feste Freigabe-Slots und klare Teamzuständigkeiten.",
+];
+
 const gains = [
-  "Wiederkehrende Standardantworten laufen zuverlässig im gewünschten Ton.",
-  "Unklare Fälle landen strukturiert in der Freigabe statt verteilt im Postfach.",
+  "Wiederkehrende Erstantworten laufen zuverlässig im gewünschten Ton.",
+  "Nachrichten mit fehlenden Angaben oder Sonderwünschen landen strukturiert in der Freigabe statt verteilt im Postfach.",
   "Der Verlauf macht Übergaben im Team einfacher (Status + Zeitstempel).",
 ];
 
@@ -25,8 +32,8 @@ const operatingModel = [
     text: "Relevante Interessenten-E-Mails werden von Newslettern, Systemmails und Spam getrennt.",
   },
   {
-    title: "Unsicherheit sauber auffangen",
-    text: "Sonderfälle, Konflikte und unklare Kontexte gehen nicht in den Autopilot, sondern in die Freigabe.",
+    title: "Freigabegründe sauber auffangen",
+    text: "Sonderfälle, Konflikte und fehlende Informationen gehen nicht in den Autopilot, sondern in die Freigabe.",
   },
   {
     title: "Kontrolliert ausweiten",
@@ -39,6 +46,13 @@ const kpis = [
   "Freigabequote im Verhältnis zu Auto-Antworten",
   "Anteil überfälliger Freigaben im Team",
   "Quote kritischer Korrekturen nach Versand",
+];
+
+const manualBoundaries = [
+  "Preis- und Verhandlungssituationen",
+  "Beschwerden oder konfliktnahe Kommunikation",
+  "Nachrichten ohne klaren Objektbezug",
+  "Fälle mit fehlenden Angaben, bei denen eine falsche Antwort riskant wäre",
 ];
 
 const sources = [
@@ -56,27 +70,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Anwendungsfall Kleines Team | Advaic",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Use Case Kleines Team: Wo Entlastung wirklich entsteht",
+  ogTitle: "Anwendungsfall Kleines Team | Advaic",
   description:
-    "Wie kleine Maklerteams mit Advaic Standardkommunikation entlasten, ohne sensible Fälle aus der Hand zu geben.",
-  alternates: {
-    canonical: "/use-cases/kleines-team",
-  },
-  openGraph: {
-    title: "Anwendungsfall Kleines Team | Advaic",
-    description:
-      "Wie kleine Maklerteams mit Advaic Standardkommunikation entlasten, ohne sensible Fälle aus der Hand zu geben.",
-    url: "/use-cases/kleines-team",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Anwendungsfall Kleines Team | Advaic",
-    description:
-      "Wie kleine Maklerteams mit Advaic Standardkommunikation entlasten, ohne sensible Fälle aus der Hand zu geben.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Praxisleitfaden für kleine Maklerteams: Welche Kommunikation sich automatisieren lässt, welche Themen manuell bleiben sollten und wie der Teamprozess stabiler wird.",
+  path: "/use-cases/kleines-team",
+  template: "usecase",
+  eyebrow: "Anwendungsfall",
+  proof: "Wiederkehrende Erstantworten entlasten, Freigabe strukturieren und Teamübergaben sauber halten.",
+});
 
 export default function UseCaseKleinesTeamPage() {
   const siteUrl = getSiteUrl();
@@ -98,7 +101,7 @@ export default function UseCaseKleinesTeamPage() {
       <PageIntro
         kicker="Anwendungsfall"
         title="Kleine Teams mit knapper Zeit"
-        description="Wenn wenige Personen viele Aufgaben tragen, braucht es einen sauberen Kommunikationsprozess. Advaic entlastet beim Standard und schützt bei Sonderfällen."
+        description="Wenn wenige Personen viele Aufgaben tragen, braucht es einen sauberen Kommunikationsprozess. Der größte Hebel liegt bei wiederkehrenden Erstantworten, nicht bei der Vollautomatisierung jedes Falls."
         actions={
           <>
             <Link href="/use-cases" className="btn-secondary">
@@ -110,6 +113,22 @@ export default function UseCaseKleinesTeamPage() {
           </>
         }
       />
+
+      <section id="kurzfassung" className="py-8 md:py-10">
+        <Container>
+          <article className="card-base p-6">
+            <h2 className="h3">Kurzantwort in 60 Sekunden</h2>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              {quickTake.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </Container>
+      </section>
       <StageCTA
         stage="bewertung"
         primaryHref="/signup"
@@ -125,7 +144,7 @@ export default function UseCaseKleinesTeamPage() {
             <h2 className="h3">Kurzfassung für kleine Teams</h2>
             <p className="helper mt-3 max-w-[72ch]">
               Für kleine Maklerteams ist nicht maximale Automatisierung das Ziel, sondern ein robuster Ablauf: klare
-              Standardfälle automatisch, heikle Fälle konsequent zur Freigabe und eine Teamlogik, die auch bei
+              wiederkehrende Erstantworten automatisch, Konflikte und Ausnahmen konsequent zur Freigabe und eine Teamlogik, die auch bei
               hoher Last stabil bleibt.
             </p>
           </article>
@@ -168,10 +187,22 @@ export default function UseCaseKleinesTeamPage() {
           <article className="card-base mt-4 p-6">
             <h2 className="h3">Empfohlene Team-Konfiguration</h2>
             <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-              <li>Autopilot zunächst auf klarste Standardfälle begrenzen.</li>
+              <li>Autopilot zunächst auf klarste wiederkehrende Erstantworten begrenzen.</li>
               <li>Freigabe-Inbox täglich in einem festen Slot bearbeiten.</li>
               <li>Tonregeln einmal definieren und danach nur gezielt nachschärfen.</li>
               <li>Follow-ups erst aktivieren, wenn der Erstantwort-Prozess stabil läuft.</li>
+            </ul>
+          </article>
+
+          <article className="card-base mt-4 p-6">
+            <h2 className="h3">Diese Themen sollten im Team manuell bleiben</h2>
+            <ul className="mt-4 grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2">
+              {manualBoundaries.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
             </ul>
           </article>
 

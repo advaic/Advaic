@@ -1,6 +1,6 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 import Container from "@/components/marketing/Container";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 
@@ -77,14 +77,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
+export const metadata = buildMarketingMetadata({
   title: "Makler Freigabe Workflow | Advaic",
+  ogTitle: "Makler Freigabe Workflow | Advaic",
   description:
     "So funktioniert ein professioneller Freigabe-Workflow für Immobilienmakler: Fälle erkennen, strukturiert entscheiden und revisionssicher dokumentieren.",
-  alternates: {
-    canonical: "/makler-freigabe-workflow",
-  },
-};
+  path: "/makler-freigabe-workflow",
+  template: "guide",
+  eyebrow: "Makler-Freigabe",
+  proof: "Freigabegründe, Priorität und Dokumentation im Workflow klar sichtbar.",
+});
 
 export default function MaklerFreigabeWorkflowPage() {
   const siteUrl = getSiteUrl();

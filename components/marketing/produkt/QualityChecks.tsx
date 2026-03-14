@@ -60,31 +60,16 @@ export default function QualityChecks() {
     <section id="qualitaet" className="py-20 md:py-28">
       <Container>
         <div className="max-w-[70ch]">
-          <h2 className="h2">Qualitätskontrollen vor jedem automatischen Versand</h2>
+          <p className="section-kicker">Schritt 4 von 5</p>
+          <h2 className="h2 mt-2">Welche Prüfungen vor jedem automatischen Versand greifen</h2>
           <p className="body mt-4 text-[var(--muted)]">
-            Damit Sie Autopilot nutzen können, ohne blind zu vertrauen.
-          </p>
-          <p className="body mt-5 text-[var(--muted)]">
-            Bevor Advaic sendet, laufen automatische Prüfungen. Sie verhindern genau die Fehler, vor denen Makler zu
-            Recht Angst haben: unpassender Ton, fehlende Infos oder falscher Kontext.
+            Erst wenn Relevanz, Kontext, Vollständigkeit, Ton, Risiko und Lesbarkeit sauber genug sind, wird Versand überhaupt erlaubt.
           </p>
           <div className="mt-4">
             <Link href="/qualitaetschecks" className="btn-secondary">
               Alle Checks mit Beispielen
             </Link>
           </div>
-        </div>
-
-        <div className="mt-8 grid gap-3 md:grid-cols-3">
-          {checkPhases.map((phase) => (
-            <div
-              key={`summary-${phase.phase}`}
-              className="rounded-xl bg-[var(--surface-2)] px-4 py-3 ring-1 ring-[var(--border)]"
-            >
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">{phase.phase}</p>
-              <p className="mt-1 text-sm font-medium text-[var(--text)]">{phase.title}</p>
-            </div>
-          ))}
         </div>
 
         <div className="mt-10 space-y-5">
@@ -125,10 +110,6 @@ export default function QualityChecks() {
             </section>
           ))}
         </div>
-
-        <p className="body mt-8 font-semibold">
-          Wenn Advaic nicht sicher ist, landet die Nachricht bei Ihnen — nicht beim Interessenten.
-        </p>
       </Container>
     </section>
   );

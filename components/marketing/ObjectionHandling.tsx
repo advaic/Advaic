@@ -5,7 +5,7 @@ const objections = [
   {
     question: "„Was, wenn Advaic etwas Falsches sendet?“",
     answer:
-      "Advaic sendet nur automatisch, wenn der Fall klar ist und alle Checks bestanden sind. Bei Unsicherheit geht der Fall zur Freigabe.",
+      "Advaic sendet nur automatisch, wenn Objektbezug, Empfänger, Inhalt und Qualitätschecks sauber passen. Bei fehlenden Angaben, Konfliktpotenzial oder Qualitätswarnung geht der Fall zur Freigabe.",
     href: "/einwaende/qualitaet",
     label: "Einwand Qualität",
   },
@@ -17,9 +17,9 @@ const objections = [
     label: "Einwand Kontrolle",
   },
   {
-    question: "„Wie behalte ich die Kontrolle über Sonderfälle?“",
+    question: "„Wie behalte ich die Kontrolle über Nachrichten mit Freigabebedarf?“",
     answer:
-      "Heikle, unklare oder konfliktbehaftete Nachrichten landen in der Freigabe-Inbox. Dort entscheiden Sie final.",
+      "Beschwerden, rechtlich sensible Aussagen oder Nachrichten mit fehlenden Kerndaten landen in der Freigabe-Inbox. Dort entscheiden Sie final.",
     href: "/einwaende/kontrolle",
     label: "Freigabelogik im Detail",
   },
@@ -33,7 +33,7 @@ const objections = [
   {
     question: "„Wie hoch ist der Einführungsaufwand wirklich?“",
     answer:
-      "Advaic ist auf einen stufenweisen Start ausgelegt. Sie aktivieren nicht alles auf einmal, sondern beginnen mit den wichtigsten Standardfällen.",
+      "Advaic ist auf einen stufenweisen Start ausgelegt. Sie aktivieren nicht alles auf einmal, sondern beginnen mit den wichtigsten wiederkehrenden Erstantworten.",
     href: "/einwaende/aufwand",
     label: "Einwand Aufwand",
   },

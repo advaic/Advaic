@@ -1,6 +1,8 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import Container from "@/components/marketing/Container";
+import { STARTER_PUBLIC_PRICE_LABEL } from "@/lib/billing/public-pricing";
+import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
+import PublicTrustArtifacts from "@/components/marketing/PublicTrustArtifacts";
 
 const setupSteps = [
   {
@@ -8,16 +10,12 @@ const setupSteps = [
     detail: "Gmail oder Outlook verbinden. Advaic arbeitet direkt in Ihrem bestehenden E-Mail-Prozess.",
   },
   {
-    title: "Ton wählen",
-    detail: "Sie legen fest, wie Antworten klingen sollen: kurz, freundlich oder sehr professionell.",
+    title: "Ton und Regeln festlegen",
+    detail: "Sie definieren Stil, Freigabegrenzen und den ersten sicheren Versandkorridor.",
   },
   {
-    title: "Regeln aktivieren (Auto/Freigabe/Ignorieren)",
-    detail: "Sie definieren, welche Fälle automatisch laufen und welche bewusst in die Freigabe gehen.",
-  },
-  {
-    title: "Autopilot starten oder zuerst vorsichtig nutzen",
-    detail: "Sie können konservativ starten und den Automatisierungsgrad stufenweise erhöhen.",
+    title: "Safe-Start aktivieren",
+    detail: "Sie starten erst mit hoher Freigabequote und erweitern den Autopilot später Schritt für Schritt.",
   },
 ];
 
@@ -25,65 +23,74 @@ export default function Setup() {
   return (
     <section id="setup" className="py-20 md:py-28">
       <Container>
-        <div className="max-w-[68ch]">
-          <h2 className="h2">In wenigen Minuten startklar</h2>
-          <p className="body mt-4 text-[var(--muted)]">
-            Der Einstieg folgt einem klaren Ablauf. Sie starten konservativ und erhöhen die Automatisierung erst,
-            wenn Regeln, Ton und Freigabelogik zu Ihrem Alltag passen.
-          </p>
-        </div>
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+          <div>
+            <div className="max-w-[68ch]">
+              <p className="section-kicker">Schritt 5 von 5</p>
+              <h2 className="h2 mt-2">So gehen Sie mit Safe-Start live</h2>
+              <p className="body mt-4 text-[var(--muted)]">
+                Am Ende der Tour bleibt genau die Go-live-Frage: Wie starten Sie sicher? Die Antwort bleibt bewusst konservativ.
+              </p>
+            </div>
 
-        <div className="mt-10 rounded-[var(--radius)] bg-white p-5 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)] md:p-7">
-          <div className="relative hidden xl:block">
-            <div className="absolute left-[8%] right-[8%] top-[14px] h-px bg-[var(--border)]" />
+            <div className="mt-8 space-y-4">
+              {setupSteps.map((step, index) => (
+                <article
+                  key={step.title}
+                  className="rounded-[var(--radius)] bg-white p-5 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]"
+                >
+                  <div className="flex items-start gap-4">
+                    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)] text-sm font-semibold text-[var(--text)] ring-1 ring-[var(--gold-soft)]">
+                      {index + 1}
+                    </span>
+                    <div>
+                      <h3 className="text-[1.15rem] font-semibold leading-[1.3] tracking-[-0.01em] text-[var(--text)]">
+                        {step.title}
+                      </h3>
+                      <p className="helper mt-2">{step.detail}</p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link href="/signup" className="btn-primary">
+                {MARKETING_PRIMARY_CTA_LABEL}
+              </Link>
+              <Link href="/sicherheit" className="btn-secondary">
+                Sicherheitsseite lesen
+              </Link>
+            </div>
+            <p className="helper mt-3">
+              Danach läuft Starter für {STARTER_PUBLIC_PRICE_LABEL} weiter. Sie können jederzeit kündigen.
+            </p>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {setupSteps.map((step, index) => (
-              <article
-                key={step.title}
-                className="card-hover relative rounded-xl bg-[var(--surface-2)] p-5 ring-1 ring-[var(--border)]"
-              >
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-xs font-semibold text-[var(--text)] ring-1 ring-[var(--gold-soft)]">
-                  {index + 1}
-                </span>
-                <h3 className="mt-4 text-[1.2rem] font-semibold leading-[1.25] tracking-[-0.01em] text-[var(--text)]">
-                  {step.title}
-                </h3>
-                <p className="helper mt-3">{step.detail}</p>
-                {index < setupSteps.length - 1 ? (
-                  <ArrowRight className="absolute -right-2 top-1/2 hidden h-4 w-4 -translate-y-1/2 text-[var(--gold)] xl:block" />
-                ) : null}
-              </article>
-            ))}
-          </div>
-        </div>
+          <aside
+            className="rounded-[var(--radius)] bg-white p-5 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)] md:p-6"
+            data-tour="produkt-trust-block"
+          >
+            <PublicTrustArtifacts
+              compact
+              framed={false}
+              title="Vor dem Start öffentlich prüfen"
+              description="Vor dem Go-live sollten Produktfluss, Sicherheitslogik, Unterlagen und Preis öffentlich prüfbar sein."
+              dataTour="produkt-trust-artifacts"
+            />
+            <div className="mt-4 rounded-2xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+              <p className="text-sm font-semibold text-[var(--text)]">Safe-Start</p>
+              <p className="helper mt-2">
+                Erst mit hoher Freigabequote starten, erste echte Antworten prüfen, danach den Autopilot nur dort
+                erweitern, wo Versandqualität und Datenlage stabil bleiben.
+              </p>
+            </div>
 
-        <p className="helper mt-6">
-          Sie können Advaic zunächst vorsichtig nutzen: mehr Freigaben, weniger Autopilot.
-        </p>
-        <p className="helper mt-2">
-          Dasselbe gilt für Follow-ups: zuerst konservativ starten, dann schrittweise erweitern.
-        </p>
-
-        <div className="mt-6 rounded-[var(--radius)] bg-white p-5 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
-          <p className="text-sm font-semibold text-[var(--text)]">Safe-Start Zielbild</p>
-          <ul className="mt-3 space-y-2 text-sm text-[var(--muted)]">
-            <li>1) Erste echte Anfrage über Freigabe sauber beantworten.</li>
-            <li>2) Ton und Objektdaten nachjustieren, bis Antworten stabil passen.</li>
-            <li>3) Erst danach Autopilot oder Follow-up-Stufen schrittweise erhöhen.</li>
-          </ul>
+            <a href="#faq" className="btn-secondary mt-4 w-full justify-center">
+              Häufige Fragen
+            </a>
+          </aside>
         </div>
-
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <Link href="/signup" className="btn-primary">
-            14 Tage kostenlos testen
-          </Link>
-          <a href="#faq" className="btn-secondary">
-            Fragen stellen
-          </a>
-        </div>
-        <p className="helper mt-3">Danach läuft Starter monatlich weiter. Sie können jederzeit kündigen.</p>
       </Container>
     </section>
   );

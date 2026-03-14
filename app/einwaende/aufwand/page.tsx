@@ -5,6 +5,7 @@ import PageIntro from "@/components/marketing/PageIntro";
 import StageCTA from "@/components/marketing/StageCTA";
 import FinalCTA from "@/components/marketing/FinalCTA";
 import ObjectionArticle from "@/components/marketing/ObjectionArticle";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const mechanics = [
   {
@@ -13,7 +14,7 @@ const mechanics = [
   },
   {
     title: "Schneller Nutzen vor Vollausbau",
-    text: "Sie müssen nicht sofort alle Sonderfälle modellieren. Erste Entlastung entsteht bereits über klare Standardfälle und saubere Freigabewege.",
+    text: "Sie müssen nicht sofort alle Sonderfälle modellieren. Erste Entlastung entsteht bereits über wiederkehrende Erstantworten und saubere Freigabewege.",
   },
   {
     title: "Iteratives Nachschärfen",
@@ -27,9 +28,15 @@ const mechanics = [
 
 const implementation = [
   "Tag 1: Postfach verbinden und Safe-Start aktivieren.",
-  "Tag 2-3: Top-Standardfälle und Antwortstil freigeben.",
+  "Tag 2-3: Top-Antwortpfade und Antwortstil freigeben.",
   "Woche 1: Freigabe-Inbox täglich prüfen, Regeln präzisieren.",
-  "Woche 2: nur stabile Standardfälle in den Auto-Pfad überführen.",
+  "Woche 2: nur stabile wiederkehrende Erstantworten in den Auto-Pfad überführen.",
+];
+
+const quickTake = [
+  "Der Einführungsaufwand ist beherrschbar, wenn Sie mit wenigen Antworttypen und klaren Freigabegrenzen starten.",
+  "Der eigentliche Aufwand steckt nicht im Tool, sondern in der einmaligen Klärung von Stil, Regeln und Verantwortlichkeiten.",
+  "Ein guter Pilot erzeugt nach wenigen Tagen sichtbaren Nutzen, bevor der Vollausbau überhaupt Thema wird.",
 ];
 
 const kpis = [
@@ -57,27 +64,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Einwand Aufwand | Advaic",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Wie hoch der echte Einführungsaufwand wirklich ist",
+  ogTitle: "Einwand Aufwand | Advaic",
   description:
-    "Wie hoch ist der echte Einführungsaufwand? Mit stufenweisem Setup, Safe-Start und klarer Rollout-Logik bleibt die Einführung beherrschbar.",
-  alternates: {
-    canonical: "/einwaende/aufwand",
-  },
-  openGraph: {
-    title: "Einwand Aufwand | Advaic",
-    description:
-      "Wie hoch ist der echte Einführungsaufwand? Mit stufenweisem Setup, Safe-Start und klarer Rollout-Logik bleibt die Einführung beherrschbar.",
-    url: "/einwaende/aufwand",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Einwand Aufwand | Advaic",
-    description:
-      "Wie hoch ist der echte Einführungsaufwand? Mit stufenweisem Setup, Safe-Start und klarer Rollout-Logik bleibt die Einführung beherrschbar.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Leitfaden zum Einwand Aufwand: Welche Arbeit vor dem Start wirklich anfällt, wie ein schlanker Pilot aussieht und woran Sie die Einführung wirtschaftlich bewerten.",
+  path: "/einwaende/aufwand",
+  template: "guide",
+  eyebrow: "Einwand Aufwand",
+  proof: "Kein Big-Bang, sondern kurzer Safe-Start mit klaren Verantwortlichkeiten und messbarem Nutzen.",
+});
 
 export default function ObjectionAufwandPage() {
   return (
@@ -85,7 +81,7 @@ export default function ObjectionAufwandPage() {
       <PageIntro
         kicker="Einwand: Aufwand"
         title="„Das klingt nach viel Einführungsaufwand.“"
-        description="Der Aufwand bleibt beherrschbar, wenn die Einführung nicht als Großprojekt gestartet wird. Advaic ist auf schnelle, kontrollierte Teilgewinne ausgelegt."
+        description="Der Aufwand bleibt beherrschbar, wenn die Einführung nicht als Großprojekt gestartet wird. Entscheidend ist, was wirklich einmalig geklärt werden muss und was bewusst erst später kommt."
         actions={
           <>
             <Link href="/produkt#setup" className="btn-secondary">
@@ -97,6 +93,22 @@ export default function ObjectionAufwandPage() {
           </>
         }
       />
+
+      <section id="kurzfassung" className="py-8 md:py-10">
+        <div className="mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8">
+          <article className="card-base p-6">
+            <h2 className="h3">Kurzantwort in 60 Sekunden</h2>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              {quickTake.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </div>
+      </section>
 
       <StageCTA
         stage="bewertung"
@@ -110,7 +122,7 @@ export default function ObjectionAufwandPage() {
       <ObjectionArticle
         context="aufwand"
         concern="„Wir haben im Tagesgeschäft keine Zeit für ein komplexes Tool-Projekt.“"
-        concernSummary="Deshalb ist der Start auf wenige Kernschritte reduziert. Sie aktivieren zuerst nur den Teil, der direkt Zeit spart und betrieblich sicher bleibt."
+        concernSummary="Deshalb ist der Start auf wenige Kernschritte reduziert. Sie aktivieren zuerst nur den Teil, der direkt Zeit spart und gleichzeitig betrieblich sauber abgesichert ist."
         mechanicsTitle="So bleibt die Einführung operativ schlank"
         mechanics={mechanics}
         implementation={implementation}

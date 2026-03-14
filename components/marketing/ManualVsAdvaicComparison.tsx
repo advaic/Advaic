@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import Container from "./Container";
 import { trackPublicEvent } from "@/lib/funnel/public-track";
+import { MARKETING_PRIMARY_CTA_LABEL } from "./cta-copy";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -132,7 +133,7 @@ export default function ManualVsAdvaicComparison({ id = "vergleich" }: ManualVsA
 
               <label className="block">
                 <span className="text-sm font-semibold text-[var(--text)]">
-                  Anteil Standardfälle: {standardShare} %
+                  Anteil wiederkehrender Erstantworten: {standardShare} %
                 </span>
                 <input
                   type="range"
@@ -238,9 +239,9 @@ export default function ManualVsAdvaicComparison({ id = "vergleich" }: ManualVsA
 
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <Link href="/signup?entry=vergleich" className="btn-primary" onClick={() => void onPrimaryClick()}>
-                14 Tage mit Safe-Start testen
+                {MARKETING_PRIMARY_CTA_LABEL}
               </Link>
-              <Link href="/produkt#safe-start-konfiguration" className="btn-secondary">
+              <Link href="/produkt#setup" className="btn-secondary">
                 Startkonfiguration berechnen
               </Link>
             </div>
@@ -250,4 +251,3 @@ export default function ManualVsAdvaicComparison({ id = "vergleich" }: ManualVsA
     </section>
   );
 }
-

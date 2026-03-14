@@ -5,10 +5,10 @@ import { toast } from "sonner";
 
 import { Pin, PinOff, Tag, Trash2, Sparkles } from "lucide-react";
 
+import { PageHeader, SectionCard, StatCard, StatusBadge } from "@/components/app-ui";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
 import { ToneStyleSelector } from "@/components/settings/ToneStyleSelector";
 import TonePreviewSummary from "@/components/settings/TonePreviewSummary";
 
@@ -142,6 +142,31 @@ function previewFromPatch(patch: SuggestionPatch): string[] {
   return lines;
 }
 
+function splitRuleLines(value: string): string[] {
+  return String(value || "")
+    .split(/\n+/)
+    .map((line) => line.replace(/^-+\s*/, "").trim())
+    .filter(Boolean);
+}
+
+function buildCoreFingerprint(input: {
+  selectedStyle: string;
+  customTone: string;
+  formality: string;
+  lengthPref: string;
+  emojiLevel: string;
+  signOff: string;
+}) {
+  return JSON.stringify({
+    selectedStyle: String(input.selectedStyle || "").trim(),
+    customTone: String(input.customTone || "").trim(),
+    formality: String(input.formality || "").trim(),
+    lengthPref: String(input.lengthPref || "").trim(),
+    emojiLevel: String(input.emojiLevel || "").trim(),
+    signOff: String(input.signOff || "").trim(),
+  });
+}
+
 export default function ToneSettingsPage() {
   // Core style
   const [selectedStyle, setSelectedStyle] = useState("freundlich");
@@ -169,6 +194,16 @@ export default function ToneSettingsPage() {
   const [suggestionMetrics, setSuggestionMetrics] = useState<SuggestionMetrics | null>(null);
   const [suggestionAiMeta, setSuggestionAiMeta] = useState<SuggestionAiMeta | null>(null);
   const [applyingSuggestionId, setApplyingSuggestionId] = useState<string | null>(null);
+  const [lastSavedCoreFingerprint, setLastSavedCoreFingerprint] = useState<string>(
+    buildCoreFingerprint({
+      selectedStyle: "freundlich",
+      customTone: "",
+      formality: DEFAULT_FORMALITY,
+      lengthPref: DEFAULT_LENGTH,
+      emojiLevel: DEFAULT_EMOJI,
+      signOff: "",
+    }),
+  );
 
   const formulationStrings = useMemo(() => {
     // Only feed "positive" examples into the denormalized list used for previews/exports.
@@ -183,6 +218,51 @@ export default function ToneSettingsPage() {
       })
       .map((f) => f.text);
   }, [formulations]);
+
+  const groupedFormulations = useMemo(() => {
+    const pinnedExamples = formulations
+      .filter((row) => row.is_pinned && row.kind !== "no_go")
+      .map((row) => row.text);
+    const scenarioExamples = formulations
+      .filter((row) => row.kind === "scenario")
+      .map((row) => row.text);
+    const noGoExamples = formulations
+      .filter((row) => row.kind === "no_go")
+      .map((row) => row.text);
+
+    return {
+      pinnedExamples,
+      scenarioExamples,
+      noGoExamples,
+    };
+  }, [formulations]);
+
+  const styleStats = useMemo(
+    () => ({
+      total: formulations.length,
+      pinned: groupedFormulations.pinnedExamples.length,
+      noGos: groupedFormulations.noGoExamples.length,
+      activeRules: splitRuleLines(customTone).length,
+      openSuggestions: suggestions.filter((suggestion) => !suggestion.already_applied)
+        .length,
+    }),
+    [customTone, formulations.length, groupedFormulations, suggestions],
+  );
+
+  const coreFingerprint = useMemo(
+    () =>
+      buildCoreFingerprint({
+        selectedStyle,
+        customTone,
+        formality,
+        lengthPref,
+        emojiLevel,
+        signOff,
+      }),
+    [customTone, emojiLevel, formality, lengthPref, selectedStyle, signOff],
+  );
+
+  const isDirty = coreFingerprint !== lastSavedCoreFingerprint;
 
   async function getUserId(): Promise<string | null> {
     const {
@@ -216,14 +296,29 @@ export default function ToneSettingsPage() {
         // Don’t block UI; user may not have row yet
       }
 
-      if (style) {
-        setSelectedStyle(style.tone || "freundlich");
-        setFormality(style.formality || DEFAULT_FORMALITY);
-        setLengthPref(style.length_pref || DEFAULT_LENGTH);
-        setEmojiLevel(style.emoji_level || DEFAULT_EMOJI);
-        setCustomTone(style.dont_rules || "");
-        setSignOff(style.sign_off || "");
-      }
+      const nextSelectedStyle = style?.tone || "freundlich";
+      const nextFormality = style?.formality || DEFAULT_FORMALITY;
+      const nextLengthPref = style?.length_pref || DEFAULT_LENGTH;
+      const nextEmojiLevel = style?.emoji_level || DEFAULT_EMOJI;
+      const nextCustomTone = style?.dont_rules || "";
+      const nextSignOff = style?.sign_off || "";
+
+      setSelectedStyle(nextSelectedStyle);
+      setFormality(nextFormality);
+      setLengthPref(nextLengthPref);
+      setEmojiLevel(nextEmojiLevel);
+      setCustomTone(nextCustomTone);
+      setSignOff(nextSignOff);
+      setLastSavedCoreFingerprint(
+        buildCoreFingerprint({
+          selectedStyle: nextSelectedStyle,
+          customTone: nextCustomTone,
+          formality: nextFormality,
+          lengthPref: nextLengthPref,
+          emojiLevel: nextEmojiLevel,
+          signOff: nextSignOff,
+        }),
+      );
 
       const { data: ex, error: exErr } = await supabase
         .from("agent_style_examples")
@@ -470,6 +565,7 @@ export default function ToneSettingsPage() {
     setSaving(true);
     try {
       await upsertStyle();
+      setLastSavedCoreFingerprint(coreFingerprint);
       toast.success("Ton & Stil gespeichert.");
     } finally {
       setSaving(false);
@@ -520,32 +616,30 @@ export default function ToneSettingsPage() {
 
   return (
     <main
-      className="flex-1 p-4 md:p-6 overflow-y-auto bg-[#f7f7f8]"
+      className="min-h-[calc(100vh-80px)] app-shell text-gray-900"
       data-tour="tone-style-page"
     >
-      <div
-        className="mx-auto w-full max-w-6xl flex flex-col lg:flex-row gap-10"
-        data-tour="tone-style-layout"
-      >
-        {/* LEFT: Main Form */}
-        <div className="flex-1" data-tour="tone-style-left">
-          <div
-            className="flex items-start justify-between gap-4"
-            data-tour="tone-style-header"
-          >
+      <div className="mx-auto w-full max-w-6xl px-4 md:px-6 app-page-section">
+        <PageHeader
+          sticky={false}
+          dataTour="tone-style-header"
+          title={
             <div data-tour="tone-style-intro">
-              <h1
-                className="text-2xl max-[375px]:text-xl font-bold mb-2"
-                data-tour="tone-style-title"
-              >
+              <h1 className="app-text-page-title" data-tour="tone-style-title">
                 Ton & Stil anpassen
               </h1>
-              <p className="text-muted-foreground mb-6">
-                Diese Einstellungen beeinflussen den Stil aller KI-Antworten,
-                Vorschläge im Antwortvorlagen-Tool sowie Follow-Ups.
-              </p>
             </div>
-
+          }
+          meta={
+            <>
+              <StatusBadge tone={isDirty ? "warning" : "success"}>
+                {isDirty ? "Änderungen offen" : "Gespeichert"}
+              </StatusBadge>
+              <StatusBadge tone="brand">{styleStats.pinned} Stilanker</StatusBadge>
+            </>
+          }
+          description="Lege fest, wie Advaic in neuen Antworten, Vorschlägen und Follow-ups klingt. Änderungen wirken sicher nur auf neue Entwürfe."
+          actions={
             <div
               className="w-full lg:w-auto flex flex-wrap items-center gap-2"
               data-tour="tone-style-actions"
@@ -568,495 +662,562 @@ export default function ToneSettingsPage() {
                 {saving ? "Speichern…" : "Einstellungen speichern"}
               </Button>
             </div>
-          </div>
+          }
+        />
 
-          <div className="mb-6 rounded-2xl border bg-white p-5 shadow-sm">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div>
-                <div className="inline-flex items-center gap-2 text-sm font-semibold text-gray-900">
-                  <Sparkles className="h-4 w-4" />
-                  Automatische Stil-Verbesserungen aus deinen Freigaben
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Wir analysieren deine manuellen Änderungen und schlagen konkrete Regeln für Ton & Stil vor.
-                </p>
-              </div>
-              <Button
-                variant="secondary"
-                onClick={() => void loadAll()}
-                disabled={loading || saving || suggestionsLoading}
+        <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-5">
+          <StatCard
+            title="Status"
+            value={isDirty ? "Entwurf offen" : "Stabil gespeichert"}
+            hint={
+              isDirty
+                ? "Neue Regeln sind sichtbar, aber noch nicht auf neue Entwürfe übernommen."
+                : "Neue Entwürfe folgen bereits deinem gespeicherten Stil."
+            }
+            icon={<Sparkles className="h-4 w-4" />}
+          />
+          <StatCard
+            title="Stilanker"
+            value={styleStats.pinned}
+            hint="Gepinnte Beispiele werden bevorzugt als Stilanker genutzt."
+            icon={<Pin className="h-4 w-4" />}
+          />
+          <StatCard
+            title="No-Go-Regeln"
+            value={styleStats.noGos}
+            hint="Diese Formulierungen sollen bewusst vermieden werden."
+            icon={<PinOff className="h-4 w-4" />}
+          />
+          <StatCard
+            title="Aktive Guardrails"
+            value={styleStats.activeRules}
+            hint="Freie Regeln und Einschränkungen aus deinem Guardrail-Text."
+            icon={<Tag className="h-4 w-4" />}
+          />
+          <StatCard
+            title="Offene Lernhinweise"
+            value={styleStats.openSuggestions}
+            hint="Advaic erkennt wiederkehrende Änderungen aus deinen Freigaben."
+            icon={<Sparkles className="h-4 w-4" />}
+          />
+        </div>
+
+        <div
+          className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]"
+          data-tour="tone-style-layout"
+        >
+          <div className="min-w-0 space-y-6" data-tour="tone-style-left">
+            <div data-tour="tone-style-card">
+              <SectionCard
+                className="shadow-sm"
+                title={
+                  <div data-tour="tone-style-tone-title">
+                    1. Grundstil festlegen
+                  </div>
+                }
+                description="Wähle zuerst die Grundrichtung. Danach schärfst du Anrede, Länge, Emoji-Niveau und Signatur nach."
               >
-                Aktualisieren
-              </Button>
-            </div>
+                <div data-tour="tone-style-selector">
+                  <ToneStyleSelector
+                    selectedStyle={selectedStyle}
+                    setSelectedStyle={setSelectedStyle}
+                  />
+                </div>
 
-            <div className="mt-3 grid grid-cols-2 max-[375px]:grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
-              <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
-                <div className="text-muted-foreground">Geprüfte Freigaben</div>
-                <div className="mt-1 font-semibold text-gray-900">
-                  {suggestionMetrics?.total_reviews ?? 0}
-                </div>
-              </div>
-              <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
-                <div className="text-muted-foreground">Mit Änderung</div>
-                <div className="mt-1 font-semibold text-gray-900">
-                  {suggestionMetrics?.edited_reviews ?? 0}
-                </div>
-              </div>
-              <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
-                <div className="text-muted-foreground">Änderungsquote</div>
-                <div className="mt-1 font-semibold text-gray-900">
-                  {toPct(suggestionMetrics?.edited_rate ?? 0)}
-                </div>
-              </div>
-              <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
-                <div className="text-muted-foreground">Ø Diff-Zeichen</div>
-                <div className="mt-1 font-semibold text-gray-900">
-                  {suggestionMetrics?.avg_diff_chars ?? 0}
-                </div>
-              </div>
-              <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
-                <div className="text-muted-foreground">Negatives Feedback</div>
-                <div className="mt-1 font-semibold text-gray-900">
-                  {suggestionMetrics?.feedback_negative_total ?? 0}
-                </div>
-              </div>
-              <div className="rounded-lg border bg-[#fbfbfc] px-3 py-2">
-                <div className="text-muted-foreground">Top-Feedbacktreiber</div>
-                <div className="mt-1 font-semibold text-gray-900">
-                  {feedbackReasonLabel(suggestionMetrics?.feedback_top_reason)}
-                </div>
-                <div className="mt-0.5 text-[11px] text-gray-500">
-                  Anteil: {toPct(suggestionMetrics?.feedback_top_reason_share ?? 0)}
-                </div>
-              </div>
-            </div>
-
-            {suggestionAiMeta && (
-              <div className="mt-2 text-xs text-gray-600">
-                {suggestionAiMeta.enabled
-                  ? suggestionAiMeta.used
-                    ? "KI-gestützte Vorschläge aktiv."
-                    : "KI aktiv, aktuell ohne zusätzliche Vorschläge."
-                  : "Nur Regel-Engine aktiv (KI nicht konfiguriert)."}
-              </div>
-            )}
-            {suggestionAiMeta?.error ? (
-              <div className="mt-2 text-xs text-amber-700">
-                KI-Hinweis: {suggestionAiMeta.error}
-              </div>
-            ) : null}
-
-            {suggestionsLoading ? (
-              <div className="mt-4 text-sm text-muted-foreground">Vorschläge werden geladen…</div>
-            ) : suggestionsError ? (
-              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                Vorschläge konnten nicht geladen werden: {suggestionsError}
-              </div>
-            ) : suggestions.length === 0 ? (
-              <div className="mt-4 text-sm text-muted-foreground">
-                Aktuell liegen keine konkreten Vorschläge vor.
-              </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                {suggestions.map((s) => {
-                  const preview = previewFromPatch(s.patch);
-                  const applying = applyingSuggestionId === s.id;
-                  return (
-                    <div key={s.id} className="rounded-xl border bg-white p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-semibold text-gray-900">
-                            {s.title}
-                          </div>
-                          <div className="mt-1 text-xs text-gray-600">{s.reason}</div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`text-[11px] px-2 py-1 rounded-full border ${
-                              s.source === "ai"
-                                ? "border-violet-200 bg-violet-50 text-violet-800"
-                                : "border-gray-200 bg-[#fbfbfc] text-gray-700"
-                            }`}
-                          >
-                            {s.source === "ai" ? "KI-Vorschlag" : "Regel-Vorschlag"}
-                          </span>
-                          <span className="text-[11px] px-2 py-1 rounded-full border bg-[#fbfbfc] text-gray-700">
-                            Sicherheit {toPct(s.confidence)}
-                          </span>
-                          {s.already_applied ? (
-                            <span className="text-[11px] px-2 py-1 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800">
-                              Bereits aktiv
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      <div className="mt-2 text-xs text-gray-700">{s.impact}</div>
-
-                      {preview.length > 0 ? (
-                        <ul className="mt-2 list-disc pl-5 space-y-1 text-xs text-gray-700">
-                          {preview.map((line) => (
-                            <li key={line}>{line}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-
-                      <div className="mt-3">
-                        <Button
-                          onClick={() => void handleApplySuggestion(s.id)}
-                          disabled={s.already_applied || !!applyingSuggestionId}
-                        >
-                          {applying
-                            ? "Übernehme…"
-                            : s.already_applied
-                              ? "Bereits übernommen"
-                              : "Mit 1 Klick übernehmen"}
-                        </Button>
-                      </div>
+                <div
+                  className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2"
+                  data-tour="tone-style-knobs"
+                >
+                  <div className="rounded-xl border app-surface-muted px-4 py-4" data-tour="tone-style-formality">
+                    <div className="text-sm font-medium text-gray-900">Anrede</div>
+                    <div className="mt-1 text-xs text-gray-600">
+                      Einheitlich für neue Antworten und Vorschläge.
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    <select
+                      value={formality}
+                      onChange={(e) => setFormality(e.target.value)}
+                      className="app-field mt-3 h-11 w-full rounded-xl border px-3 text-sm"
+                    >
+                      <option value="Sie-Form">Sie-Form</option>
+                      <option value="Du-Form">Du-Form</option>
+                    </select>
+                  </div>
 
-          <div
-            className="rounded-2xl border bg-white p-5 shadow-sm"
-            data-tour="tone-style-card"
-          >
-            {/* Tone Style Selection */}
-            <h2
-              className="text-lg font-semibold mb-1"
-              data-tour="tone-style-tone-title"
-            >
-              Antwort-Ton wählen
-            </h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              Wählen Sie einen generellen Stil für Ihre Kommunikation mit
-              Interessenten.
-            </p>
-            <div data-tour="tone-style-selector">
-              <ToneStyleSelector
-                selectedStyle={selectedStyle}
-                setSelectedStyle={setSelectedStyle}
-              />
+                  <div className="rounded-xl border app-surface-muted px-4 py-4" data-tour="tone-style-length">
+                    <div className="text-sm font-medium text-gray-900">Antwortlänge</div>
+                    <div className="mt-1 text-xs text-gray-600">
+                      Steuert die Grundtiefe neuer Antworten.
+                    </div>
+                    <select
+                      value={lengthPref}
+                      onChange={(e) => setLengthPref(e.target.value)}
+                      className="app-field mt-3 h-11 w-full rounded-xl border px-3 text-sm"
+                    >
+                      <option value="kurz">Kurz</option>
+                      <option value="mittel">Mittel</option>
+                      <option value="detailliert">Detailliert</option>
+                    </select>
+                  </div>
+
+                  <div className="rounded-xl border app-surface-muted px-4 py-4" data-tour="tone-style-emoji">
+                    <div className="text-sm font-medium text-gray-900">Emoji-Level</div>
+                    <div className="mt-1 text-xs text-gray-600">
+                      Optional und nur sinnvoll, wenn es wirklich zu deinem Stil passt.
+                    </div>
+                    <select
+                      value={emojiLevel}
+                      onChange={(e) => setEmojiLevel(e.target.value)}
+                      className="app-field mt-3 h-11 w-full rounded-xl border px-3 text-sm"
+                    >
+                      <option value="none">Keine</option>
+                      <option value="low">Wenig</option>
+                      <option value="medium">Normal</option>
+                    </select>
+                  </div>
+
+                  <div className="rounded-xl border app-surface-muted px-4 py-4" data-tour="tone-style-signoff">
+                    <div className="text-sm font-medium text-gray-900">
+                      Signatur
+                    </div>
+                    <div className="mt-1 text-xs text-gray-600">
+                      Wird am Ende neuer KI-Antworten bevorzugt verwendet.
+                    </div>
+                    <Input
+                      className="mt-3"
+                      placeholder="z. B. Viele Grüße, Max"
+                      value={signOff}
+                      onChange={(e) => setSignOff(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </SectionCard>
             </div>
 
-            <Separator className="my-6" />
-
-            {/* Structured knobs */}
-            <div
-              className="grid grid-cols-1 md:grid-cols-2 gap-4"
-              data-tour="tone-style-knobs"
+            <SectionCard
+              className="shadow-sm"
+              title={<div data-tour="tone-style-rules-title">2. Guardrails & Wünsche</div>}
+              description="Formuliere hier, was Advaic beachten oder bewusst vermeiden soll. Das sind deine stabilen Leitplanken für neue Entwürfe."
             >
-              <div data-tour="tone-style-formality">
-                <div className="text-sm font-medium mb-1">Anrede</div>
-                <select
-                  value={formality}
-                  onChange={(e) => setFormality(e.target.value)}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="Sie-Form">Sie-Form</option>
-                  <option value="Du-Form">Du-Form</option>
-                </select>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Einheitliche Anrede in allen Antworten.
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+                <div>
+                  <Textarea
+                    placeholder="z. B. keine Emojis verwenden, keine künstlich lockeren Formulierungen, klarer nächster Schritt am Ende."
+                    value={customTone}
+                    onChange={(e) => setCustomTone(e.target.value)}
+                    className="min-h-[180px]"
+                    data-tour="tone-style-rules-text"
+                  />
+                </div>
+                <div className="rounded-xl border app-surface-muted px-4 py-4">
+                  <div className="app-text-meta-label">So funktionieren Guardrails</div>
+                  <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-gray-700">
+                    <li>Gelten für neue Entwürfe und Follow-up-Vorschläge.</li>
+                    <li>Ergänzen deinen Grundstil, statt ihn zu ersetzen.</li>
+                    <li>Können Ton, Tabus und gewünschte Struktur festlegen.</li>
+                  </ul>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {splitRuleLines(customTone).slice(0, 3).map((rule) => (
+                      <StatusBadge key={rule} tone="neutral" size="sm">
+                        {rule}
+                      </StatusBadge>
+                    ))}
+                    {splitRuleLines(customTone).length === 0 ? (
+                      <StatusBadge tone="neutral" size="sm">
+                        Noch keine Zusatzregel
+                      </StatusBadge>
+                    ) : null}
+                  </div>
                 </div>
               </div>
+            </SectionCard>
 
-              <div data-tour="tone-style-length">
-                <div className="text-sm font-medium mb-1">Antwortlänge</div>
-                <select
-                  value={lengthPref}
-                  onChange={(e) => setLengthPref(e.target.value)}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="kurz">Kurz</option>
-                  <option value="mittel">Mittel</option>
-                  <option value="detailliert">Detailliert</option>
-                </select>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Wie ausführlich die KI standardmäßig antwortet.
-                </div>
-              </div>
-
-              <div data-tour="tone-style-emoji">
-                <div className="text-sm font-medium mb-1">Emoji-Level</div>
-                <select
-                  value={emojiLevel}
-                  onChange={(e) => setEmojiLevel(e.target.value)}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="none">Keine</option>
-                  <option value="low">Wenig</option>
-                  <option value="medium">Normal</option>
-                </select>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Optional – passt gut zum gewählten Ton.
-                </div>
-              </div>
-
-              <div data-tour="tone-style-signoff">
-                <div className="text-sm font-medium mb-1">
-                  Signatur (optional)
-                </div>
-                <Input
-                  placeholder="z.B. Viele Grüße, Max"
-                  value={signOff}
-                  onChange={(e) => setSignOff(e.target.value)}
-                />
-                <div className="text-xs text-muted-foreground mt-1">
-                  Wird am Ende der KI-Antworten bevorzugt verwendet.
-                </div>
-              </div>
-            </div>
-
-            <Separator className="my-6" />
-
-            {/* Custom Tone Instructions */}
-            <h2
-              className="text-lg font-semibold mb-1"
-              data-tour="tone-style-rules-title"
+            <SectionCard
+              className="shadow-sm"
+              title={<div data-tour="tone-style-formulations-title">3. Stilbeispiele & Lieblingsformulierungen</div>}
+              description="Nutze gepinnte Beispiele für deinen bevorzugten Wortlaut, Use-Cases für wiederkehrende Antworten und No-Go-Beispiele für unerwünschte Formulierungen."
             >
-              Wünsche oder Einschränkungen
-            </h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              Teilen Sie uns mit, was die KI vermeiden oder beachten soll –
-              z. B. keine Emojis, gendergerechte Sprache, etc.
-            </p>
-            <Textarea
-              placeholder="Z. B. 'Bitte keine Emojis verwenden', 'Gegendert ansprechen', etc."
-              value={customTone}
-              onChange={(e) => setCustomTone(e.target.value)}
-              data-tour="tone-style-rules-text"
-            />
-
-            <Separator className="my-6" />
-
-            {/* Preferred Formulations */}
-            <h2
-              className="text-lg font-semibold mb-1"
-              data-tour="tone-style-formulations-title"
-            >
-              Eigene Lieblingsformulierungen
-            </h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              Diese Beispiele sind echte Stil-Anker für die KI. Nutze <span className="font-medium">Pinned</span> für deine wichtigsten Sätze, und <span className="font-medium">No-Go</span> für Formulierungen, die niemals vorkommen sollen.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-2 mb-3" data-tour="tone-style-formulations-add">
-              <div className="md:col-span-4">
-                <Input
-                  placeholder="Formulierung (Text)"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={handleQuickSaveOnEnter}
-                  data-tour="tone-style-formulations-input"
-                />
+              <div className="mb-4 flex flex-wrap gap-2">
+                <StatusBadge tone="brand" size="sm">
+                  {styleStats.pinned} gepinnt
+                </StatusBadge>
+                <StatusBadge tone="neutral" size="sm">
+                  {formulations.length} Beispiele
+                </StatusBadge>
+                <StatusBadge tone="warning" size="sm">
+                  {styleStats.noGos} No-Go
+                </StatusBadge>
               </div>
 
-              <div className="md:col-span-3">
-                <Input
-                  placeholder="Label (optional) z.B. Haustiere"
-                  value={inputLabel}
-                  onChange={(e) => setInputLabel(e.target.value)}
-                  data-tour="tone-style-formulations-label"
-                />
+              <div
+                className="grid grid-cols-1 gap-2 md:grid-cols-12"
+                data-tour="tone-style-formulations-add"
+              >
+                <div className="md:col-span-4">
+                  <Input
+                    placeholder="Formulierung"
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={handleQuickSaveOnEnter}
+                    data-tour="tone-style-formulations-input"
+                  />
+                </div>
+
+                <div className="md:col-span-3">
+                  <Input
+                    placeholder="Label, z. B. Haustiere"
+                    value={inputLabel}
+                    onChange={(e) => setInputLabel(e.target.value)}
+                    data-tour="tone-style-formulations-label"
+                  />
+                </div>
+
+                <div className="md:col-span-3">
+                  <select
+                    value={inputKind}
+                    onChange={(e) => setInputKind(normalizeKind(e.target.value))}
+                    className="app-field h-10 w-full rounded-lg border px-3 text-sm"
+                    data-tour="tone-style-formulations-kind"
+                  >
+                    {KIND_OPTIONS.map((kind) => (
+                      <option key={kind.value} value={kind.value}>
+                        {kind.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="md:col-span-2 flex items-center gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setInputPinned((v) => !v)}
+                    className={`h-10 px-3 rounded-lg border text-sm inline-flex items-center gap-2 transition-colors ${
+                      inputPinned
+                        ? "bg-amber-50 border-amber-200 text-amber-900"
+                        : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                    }`}
+                    title={inputPinned ? "Gepinnt" : "Pin setzen"}
+                    data-tour="tone-style-formulations-pin"
+                  >
+                    {inputPinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
+                    {inputPinned ? "Gepinnt" : "Pinnen"}
+                  </button>
+
+                  <Button
+                    onClick={() => void handleAddFormulation()}
+                    data-tour="tone-style-formulations-add-btn"
+                  >
+                    Hinzufügen
+                  </Button>
+                </div>
               </div>
 
-              <div className="md:col-span-3">
-                <select
-                  value={inputKind}
-                  onChange={(e) => setInputKind(normalizeKind(e.target.value))}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                  data-tour="tone-style-formulations-kind"
-                >
-                  {KIND_OPTIONS.map((k) => (
-                    <option key={k.value} value={k.value}>
-                      {k.label}
-                    </option>
-                  ))}
-                </select>
+              <div className="mt-3 text-xs text-gray-500">
+                Gepinnte Beispiele priorisieren den Stil. No-Go-Beispiele markieren Formulierungen, die nie auftauchen sollen.
               </div>
 
-              <div className="md:col-span-2 flex items-center gap-2 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setInputPinned((v) => !v)}
-                  className={`h-10 px-3 rounded-md border text-sm inline-flex items-center gap-2 transition-colors ${
-                    inputPinned
-                      ? "bg-amber-50 border-amber-200 text-amber-900"
-                      : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                  }`}
-                  title={inputPinned ? "Gepinnt" : "Pin setzen (wird bevorzugt genutzt)"}
-                  data-tour="tone-style-formulations-pin"
-                >
-                  {inputPinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
-                  {inputPinned ? "Pinned" : "Pin"}
-                </button>
+              {loading ? (
+                <div className="mt-4 text-sm text-gray-500">Lade Beispiele…</div>
+              ) : formulations.length === 0 ? (
+                <div className="mt-4 rounded-xl border app-surface-muted px-4 py-4 text-sm text-gray-600">
+                  Noch keine Stilbeispiele gespeichert. Lege zuerst 2–3 echte Lieblingsformulierungen an.
+                </div>
+              ) : (
+                <div className="mt-4 space-y-3" data-tour="tone-style-formulations-list">
+                  {formulations
+                    .slice()
+                    .sort((a, b) => {
+                      const ap = !!a.is_pinned;
+                      const bp = !!b.is_pinned;
+                      if (ap !== bp) return ap ? -1 : 1;
+                      const ak = kindLabel(a.kind);
+                      const bk = kindLabel(b.kind);
+                      if (ak !== bk) return ak.localeCompare(bk);
+                      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                    })
+                    .map((formulation) => (
+                      <div
+                        key={formulation.id}
+                        className="rounded-xl border app-surface-panel px-3 py-3"
+                        data-tour="tone-style-formulation-item"
+                      >
+                        <div className="flex items-start gap-3">
+                          <button
+                            type="button"
+                            onClick={() => void handleTogglePinned(formulation)}
+                            className={`mt-0.5 h-9 w-9 rounded-md border inline-flex items-center justify-center transition-colors ${
+                              formulation.is_pinned
+                                ? "bg-amber-50 border-amber-200 text-amber-900"
+                                : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                            }`}
+                            title={formulation.is_pinned ? "Gepinnt" : "Pin setzen"}
+                          >
+                            {formulation.is_pinned ? (
+                              <Pin className="h-4 w-4" />
+                            ) : (
+                              <PinOff className="h-4 w-4" />
+                            )}
+                          </button>
 
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <StatusBadge tone="neutral" size="sm">
+                                <Tag className="h-3 w-3" />
+                                {kindLabel(formulation.kind)}
+                              </StatusBadge>
+                              {formulation.label ? (
+                                <StatusBadge tone="brand" size="sm">
+                                  {formulation.label}
+                                </StatusBadge>
+                              ) : null}
+                            </div>
+
+                            <div className="mt-2 whitespace-pre-line break-words text-sm text-gray-800">
+                              {formulation.text}
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-12">
+                              <div className="md:col-span-4">
+                                <Input
+                                  value={formulation.label ?? ""}
+                                  onChange={(e) =>
+                                    void handleUpdateExampleMeta(formulation, {
+                                      label: e.target.value.trim()
+                                        ? e.target.value
+                                        : null,
+                                    })
+                                  }
+                                  placeholder="Label (optional)"
+                                />
+                              </div>
+
+                              <div className="md:col-span-4">
+                                <select
+                                  value={formulation.kind}
+                                  onChange={(e) =>
+                                    void handleUpdateExampleMeta(formulation, {
+                                      kind: normalizeKind(e.target.value),
+                                    })
+                                  }
+                                  className="app-field h-10 w-full rounded-lg border px-3 text-sm"
+                                >
+                                  {KIND_OPTIONS.map((kind) => (
+                                    <option key={kind.value} value={kind.value}>
+                                      {kind.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="md:col-span-4 flex items-center justify-end">
+                                <Button
+                                  variant="ghost"
+                                  className="text-red-500 hover:text-red-700"
+                                  onClick={() => void handleRemoveFormulation(formulation.id)}
+                                  title="Löschen"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+
+                            {formulation.kind === "no_go" ? (
+                              <div className="mt-2 text-xs text-amber-700">
+                                Hinweis: No-Go-Beispiele markieren Formulierungen, die aktiv vermieden werden.
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </SectionCard>
+
+            <SectionCard
+              className="shadow-sm"
+              title="4. Advaic lernt aus deinen Freigaben"
+              description="Wir analysieren deine manuellen Änderungen und schlagen konkrete Anpassungen für Ton, Guardrails und Beispiele vor."
+              meta={
+                suggestionAiMeta ? (
+                  <StatusBadge tone={suggestionAiMeta.used ? "brand" : "neutral"} size="sm">
+                    {suggestionAiMeta.used
+                      ? "KI-Vorschläge aktiv"
+                      : suggestionAiMeta.enabled
+                        ? "Regeln + KI bereit"
+                        : "Nur Regel-Engine"}
+                  </StatusBadge>
+                ) : undefined
+              }
+              actions={
                 <Button
-                  onClick={() => void handleAddFormulation()}
-                  data-tour="tone-style-formulations-add-btn"
+                  variant="secondary"
+                  onClick={() => void loadAll()}
+                  disabled={loading || saving || suggestionsLoading}
                 >
-                  Hinzufügen
+                  Aktualisieren
+                </Button>
+              }
+            >
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <StatCard
+                  title="Geprüfte Freigaben"
+                  value={suggestionMetrics?.total_reviews ?? 0}
+                  hint="Grundlage für automatische Stilhinweise."
+                />
+                <StatCard
+                  title="Änderungsquote"
+                  value={toPct(suggestionMetrics?.edited_rate ?? 0)}
+                  hint={`${suggestionMetrics?.edited_reviews ?? 0} Freigaben wurden sichtbar angepasst.`}
+                />
+                <StatCard
+                  title="Top-Feedbacktreiber"
+                  value={feedbackReasonLabel(suggestionMetrics?.feedback_top_reason)}
+                  hint={`Anteil ${toPct(suggestionMetrics?.feedback_top_reason_share ?? 0)}`}
+                />
+              </div>
+
+              {suggestionAiMeta?.error ? (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  KI-Hinweis: {suggestionAiMeta.error}
+                </div>
+              ) : null}
+
+              {suggestionsLoading ? (
+                <div className="mt-4 text-sm text-gray-500">Lernhinweise werden geladen…</div>
+              ) : suggestionsError ? (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                  Vorschläge konnten nicht geladen werden: {suggestionsError}
+                </div>
+              ) : suggestions.length === 0 ? (
+                <div className="mt-4 rounded-xl border app-surface-muted px-4 py-4 text-sm text-gray-600">
+                  Aktuell liegen keine konkreten Verbesserungsvorschläge vor.
+                </div>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {suggestions.map((suggestion) => {
+                    const preview = previewFromPatch(suggestion.patch);
+                    const applying = applyingSuggestionId === suggestion.id;
+
+                    return (
+                      <div
+                        key={suggestion.id}
+                        className="rounded-xl border app-surface-panel px-4 py-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-gray-900">
+                              {suggestion.title}
+                            </div>
+                            <div className="mt-1 text-xs text-gray-600">
+                              {suggestion.reason}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge
+                              tone={suggestion.source === "ai" ? "brand" : "neutral"}
+                              size="sm"
+                            >
+                              {suggestion.source === "ai"
+                                ? "KI-Vorschlag"
+                                : "Regel-Vorschlag"}
+                            </StatusBadge>
+                            <StatusBadge tone="neutral" size="sm">
+                              Sicherheit {toPct(suggestion.confidence)}
+                            </StatusBadge>
+                            {suggestion.already_applied ? (
+                              <StatusBadge tone="success" size="sm">
+                                Bereits aktiv
+                              </StatusBadge>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 rounded-xl border app-surface-muted px-3 py-3 text-sm text-gray-700">
+                          {suggestion.impact}
+                        </div>
+
+                        {preview.length > 0 ? (
+                          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-700">
+                            {preview.map((line) => (
+                              <li key={line}>{line}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+
+                        <div className="mt-4">
+                          <Button
+                            onClick={() => void handleApplySuggestion(suggestion.id)}
+                            disabled={suggestion.already_applied || !!applyingSuggestionId}
+                          >
+                            {applying
+                              ? "Übernehme…"
+                              : suggestion.already_applied
+                                ? "Bereits übernommen"
+                                : "Mit 1 Klick übernehmen"}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </SectionCard>
+
+            <div
+              className="rounded-2xl border app-surface-panel app-panel-padding"
+              data-tour="tone-style-bottom-save"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="app-text-section-title text-gray-900">
+                    Setup abschließen
+                  </div>
+                  <div className="app-text-helper mt-1">
+                    Speichere deinen Stil, sobald Vorschau, Guardrails und Beispiele konsistent wirken.
+                  </div>
+                </div>
+                <Button
+                  onClick={handleSave}
+                  disabled={loading || saving}
+                  data-tour="tone-style-bottom-save-btn"
+                >
+                  {saving ? "Speichern…" : "Einstellungen speichern"}
                 </Button>
               </div>
             </div>
-
-            <div className="text-xs text-muted-foreground mb-2">
-              Tipp: <span className="font-medium">Pinned</span> Beispiele werden von der KI bevorzugt genutzt. <span className="font-medium">No-Go</span> Beispiele helfen, unerwünschte Formulierungen zu vermeiden.
-            </div>
-
-            {loading ? (
-              <div className="text-sm text-muted-foreground">Lade…</div>
-            ) : formulations.length === 0 ? (
-              <div className="text-sm text-muted-foreground">
-                Noch keine Formulierungen gespeichert.
-              </div>
-            ) : (
-              <div className="space-y-2" data-tour="tone-style-formulations-list">
-                {formulations
-                  .slice()
-                  .sort((a, b) => {
-                    const ap = !!a.is_pinned;
-                    const bp = !!b.is_pinned;
-                    if (ap !== bp) return ap ? -1 : 1;
-                    const ak = kindLabel(a.kind);
-                    const bk = kindLabel(b.kind);
-                    if (ak !== bk) return ak.localeCompare(bk);
-                    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-                  })
-                  .map((f) => (
-                    <div
-                      key={f.id}
-                      className="rounded-xl border bg-white px-3 py-2 flex items-start gap-3"
-                      data-tour="tone-style-formulation-item"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void handleTogglePinned(f)}
-                        className={`mt-0.5 h-9 w-9 rounded-md border inline-flex items-center justify-center transition-colors ${
-                          f.is_pinned
-                            ? "bg-amber-50 border-amber-200 text-amber-900"
-                            : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                        }`}
-                        title={f.is_pinned ? "Pinned (wird bevorzugt genutzt)" : "Pin setzen"}
-                      >
-                        {f.is_pinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
-                      </button>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[11px] px-2 py-0.5 rounded-full border bg-[#fbfbfc] text-gray-700 inline-flex items-center gap-1">
-                            <Tag className="h-3 w-3" />
-                            {kindLabel(f.kind)}
-                          </span>
-
-                          {f.label ? (
-                            <span className="text-[11px] px-2 py-0.5 rounded-full border bg-white text-gray-700">
-                              {f.label}
-                            </span>
-                          ) : null}
-                        </div>
-
-                        <div className="mt-1 text-sm text-gray-800 whitespace-pre-line break-words">
-                          {f.text}
-                        </div>
-
-                        <div className="mt-2 grid grid-cols-1 md:grid-cols-12 gap-2">
-                          <div className="md:col-span-4">
-                            <Input
-                              value={f.label ?? ""}
-                              onChange={(e) =>
-                                void handleUpdateExampleMeta(f, {
-                                  label: e.target.value.trim() ? e.target.value : null,
-                                })
-                              }
-                              placeholder="Label (optional)"
-                            />
-                          </div>
-
-                          <div className="md:col-span-4">
-                            <select
-                              value={f.kind}
-                              onChange={(e) =>
-                                void handleUpdateExampleMeta(f, {
-                                  kind: normalizeKind(e.target.value),
-                                })
-                              }
-                              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                            >
-                              {KIND_OPTIONS.map((k) => (
-                                <option key={k.value} value={k.value}>
-                                  {k.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div className="md:col-span-4 flex items-center justify-end">
-                            <Button
-                              variant="ghost"
-                              className="text-red-500 hover:text-red-700"
-                              onClick={() => void handleRemoveFormulation(f.id)}
-                              title="Löschen"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-
-                        {f.kind === "no_go" ? (
-                          <div className="mt-2 text-xs text-amber-700">
-                            Hinweis: <span className="font-medium">No-Go</span> Beispiele werden als „nicht verwenden“ interpretiert.
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-
-            <Separator className="my-6" />
-
-            <div className="mt-6" data-tour="tone-style-bottom-save">
-              <Button
-                onClick={handleSave}
-                disabled={loading || saving}
-                data-tour="tone-style-bottom-save-btn"
-              >
-                {saving ? "Speichern…" : "Einstellungen speichern"}
-              </Button>
-              <p className="text-xs text-muted-foreground mt-2">
-                Alle Angaben helfen uns, Ihren Kommunikationsstil möglichst
-                exakt zu treffen.
-              </p>
-            </div>
           </div>
-        </div>
 
-        {/* RIGHT: Sticky Preview */}
-        <div className="w-full lg:w-1/3" data-tour="tone-style-right">
-          <div className="sticky top-24" data-tour="tone-style-preview-sticky">
-            <div
-              className="bg-white border rounded-2xl p-4 shadow-sm"
-              data-tour="tone-style-preview-card"
-            >
-              <div data-tour="tone-style-preview-summary">
-                <TonePreviewSummary
-                  selectedStyle={selectedStyle}
-                  customTone={customTone}
-                  formulations={formulationStrings}
-                />
-              </div>
-              <div
-                className="mt-4 text-xs text-muted-foreground"
-                data-tour="tone-style-preview-hint"
+          <div className="w-full" data-tour="tone-style-right">
+            <div className="sticky top-24 space-y-4" data-tour="tone-style-preview-sticky">
+              <SectionCard
+                className="shadow-sm"
+                bodyClassName="space-y-4"
+                title="Live-Vorschau & Sicherheit"
+                description="Änderungen erst prüfen, dann speichern. So bleibt Ton konsistent und kontrolliert."
               >
-                Vorschau berücksichtigt: Ton, Einschränkungen und gespeicherte
-                Formulierungen.
-              </div>
+                <div data-tour="tone-style-preview-card">
+                  <div data-tour="tone-style-preview-summary">
+                    <TonePreviewSummary
+                      selectedStyle={selectedStyle}
+                      customTone={customTone}
+                      formality={formality}
+                      lengthPref={lengthPref}
+                      emojiLevel={emojiLevel}
+                      signOff={signOff}
+                      pinnedExamples={groupedFormulations.pinnedExamples}
+                      scenarioExamples={groupedFormulations.scenarioExamples}
+                      noGoExamples={groupedFormulations.noGoExamples}
+                      dirty={isDirty}
+                    />
+                  </div>
+                  <div
+                    className="text-xs text-gray-500"
+                    data-tour="tone-style-preview-hint"
+                  >
+                    Vorschau berücksichtigt Grundstil, Guardrails, Stilanker und No-Go-Beispiele.
+                  </div>
+                </div>
+              </SectionCard>
             </div>
           </div>
         </div>

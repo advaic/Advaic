@@ -5,6 +5,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, Send, Sparkles, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { trackPublicEvent } from "@/lib/funnel/public-track";
+import { readCookieConsent } from "@/lib/marketing/cookie-consent";
+import {
+  MARKETING_MOBILE_MEDIA_QUERY,
+  subscribeMarketingCookieBannerState,
+} from "@/lib/marketing/public-overlay-state";
 
 type UiMessage = {
   id: string;
@@ -103,6 +108,8 @@ export default function PublicAssistantWidget() {
   const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [cookieBannerOpen, setCookieBannerOpen] = useState(false);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const greetedRef = useRef(false);
@@ -122,6 +129,25 @@ export default function PublicAssistantWidget() {
   useEffect(() => {
     if (hidden) return;
     ensureSessionId();
+  }, [hidden]);
+
+  useEffect(() => {
+    if (hidden) return;
+
+    const media = window.matchMedia(MARKETING_MOBILE_MEDIA_QUERY);
+    const syncViewport = () => setIsMobileViewport(media.matches);
+    syncViewport();
+
+    setCookieBannerOpen(!readCookieConsent());
+    const unsubscribeCookieBanner = subscribeMarketingCookieBannerState(
+      setCookieBannerOpen,
+    );
+
+    media.addEventListener("change", syncViewport);
+    return () => {
+      media.removeEventListener("change", syncViewport);
+      unsubscribeCookieBanner();
+    };
   }, [hidden]);
 
   useEffect(() => {
@@ -148,6 +174,12 @@ export default function PublicAssistantWidget() {
       behavior: "smooth",
     });
   }, [messages, sending, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!cookieBannerOpen && !isMobileViewport) return;
+    setOpen(false);
+  }, [cookieBannerOpen, isMobileViewport, open]);
 
   const sendQuestion = async (value?: string) => {
     const raw = typeof value === "string" ? value : input;
@@ -262,7 +294,9 @@ export default function PublicAssistantWidget() {
     }
   };
 
-  if (hidden) return null;
+  const suppressWidget = hidden || cookieBannerOpen || isMobileViewport;
+
+  if (suppressWidget) return null;
 
   return (
     <>
@@ -283,12 +317,16 @@ export default function PublicAssistantWidget() {
           }}
           className="fixed bottom-[92px] right-4 z-[80] inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--text)] shadow-[var(--shadow-md)] transition hover:-translate-y-[1px] hover:ring-1 hover:ring-[var(--gold-soft)] md:bottom-6 md:right-6"
           aria-label="Advaic Assistent öffnen"
+          data-tour="marketing-assistant-launcher"
         >
           <MessageCircle className="h-4 w-4 text-[var(--gold)]" />
           Frage an Advaic
         </button>
       ) : (
-        <div className="fixed bottom-[92px] right-4 z-[80] w-[min(92vw,400px)] overflow-hidden rounded-2xl border border-[var(--border)] bg-white shadow-[var(--shadow-md)] md:bottom-6 md:right-6">
+        <div
+          className="fixed bottom-[92px] right-4 z-[80] w-[min(92vw,400px)] overflow-hidden rounded-2xl border border-[var(--border)] bg-white shadow-[var(--shadow-md)] md:bottom-6 md:right-6"
+          data-tour="marketing-assistant-panel"
+        >
           <div className="flex items-start justify-between gap-4 border-b border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
             <div>
               <p className="text-sm font-semibold text-[var(--text)]">Advaic Assistent</p>

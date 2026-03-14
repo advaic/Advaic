@@ -1,63 +1,66 @@
-import { PauseCircle, ShieldCheck, TriangleAlert } from "lucide-react";
 import Container from "@/components/marketing/Container";
 import TrackedLink from "@/components/marketing/TrackedLink";
-import PremiumVideoFrame from "./PremiumVideoFrame";
+import { MARKETING_FLOW_CTA_LABEL, MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
+import HeroStillVisual from "./HeroStillVisual";
 
 const trustChips = [
   {
-    text: "Autopilot jederzeit pausierbar",
-    Icon: PauseCircle,
+    mobile: "Versandpfad sichtbar",
+    desktop: "Versandpfad pro Nachricht sichtbar",
+    tag: "Pfad",
   },
   {
-    text: "Unklar → Freigabe",
-    Icon: TriangleAlert,
+    mobile: "Freigabe begründet",
+    desktop: "Freigabegründe bleiben sichtbar",
+    tag: "Grund",
   },
   {
-    text: "Qualitätschecks vor Auto-Versand",
-    Icon: ShieldCheck,
+    mobile: "Checks vor Versand",
+    desktop: "Checks greifen vor dem Versand",
+    tag: "Checks",
   },
   {
-    text: "DSGVO-konforme Verarbeitung",
-    Icon: ShieldCheck,
+    mobile: "Safe-Start steuerbar",
+    desktop: "Safe-Start bleibt steuerbar",
+    tag: "Start",
   },
-];
-
-const trialOutcomes = [
-  "Sie wissen exakt, wann Advaic automatisch sendet und wann bewusst gestoppt wird.",
-  "Sie sehen, wie Qualitätschecks vor jedem Auto-Versand greifen.",
-  "Sie behalten die finale Kontrolle über unklare oder heikle Fälle.",
 ];
 
 const quickAnchors = [
-  { href: "#ablauf", label: "Praxisablauf" },
-  { href: "#regeln", label: "Regellogik" },
-  { href: "#setup", label: "Setup" },
-  { href: "#followups", label: "Follow-ups" },
+  { href: "#ablauf", step: "1", label: "Ablauf sehen" },
+  { href: "#regeln", step: "2", label: "Regeln prüfen" },
+  { href: "#freigabe", step: "3", label: "Freigabe sehen" },
+  { href: "#qualitaet", step: "4", label: "Checks prüfen" },
+  { href: "#setup", step: "5", label: "Go-live planen" },
 ];
 
 export default function Hero() {
   return (
-    <section id="top" className="py-20 md:py-28">
+    <section id="top" className="py-12 sm:py-14 md:py-28" data-tour="produkt-hero">
       <Container>
-        <div className="grid grid-cols-12 gap-8 md:gap-12 lg:items-center">
+        <div className="grid grid-cols-12 gap-6 md:gap-12 lg:items-center">
           <div className="col-span-12 lg:col-span-5">
             <p className="label">Produkt</p>
-            <h1 className="h1 mt-4 max-w-[17ch]">Autopilot für Interessenten-Anfragen per E-Mail</h1>
-            <p className="body-lg mt-6 max-w-[62ch] text-[var(--muted)]">
-              Advaic beantwortet Anfragen automatisch in Ihrem Stil, damit Sie weniger Zeit im Postfach verbringen.
-              Wenn etwas unklar ist, geht es zur Freigabe. Vor jedem automatischen Versand laufen
-              Qualitätskontrollen, bei Freigaben entscheiden Sie final.
+            <h1 className="h1 mt-3 max-w-[12ch] md:mt-4 md:max-w-[15ch]">
+              So entscheidet Advaic im echten Ablauf.
+            </h1>
+            <p className="body-lg mt-4 max-w-[56ch] text-[var(--muted)] md:mt-6">
+              <span className="md:hidden">
+                Sie sehen, wann Auto-Versand greift, wann Freigabe übernimmt und welche Checks vor dem Versand laufen.
+              </span>
+              <span className="hidden md:inline">
+                Diese Seite zeigt Eingang, Regelprüfung, Qualitätschecks, Freigabe und Versand im echten Ablauf. Sie
+                sehen, wann Auto-Versand greift und an welchen Stellen Ihr Team bewusst übernimmt.
+              </span>
             </p>
-            <ul className="mt-6 space-y-2">
-              {trialOutcomes.map((item) => (
-                <li key={item} className="flex items-start gap-2 text-sm text-[var(--muted)]">
-                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[var(--gold)]" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
+          </div>
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <div className="col-span-12 lg:col-span-7 lg:row-span-2">
+            <HeroStillVisual />
+          </div>
+
+          <div className="col-span-12 lg:col-span-5">
+            <div className="mt-1 flex flex-col gap-3 sm:flex-row lg:mt-0">
               <TrackedLink
                 href="/signup"
                 className="btn-primary"
@@ -66,48 +69,59 @@ export default function Hero() {
                 pageGroup="produkt"
                 section="produkt-hero"
                 meta={{ section: "produkt-hero" }}
+                data-tour="produkt-hero-primary-cta"
               >
-                14 Tage kostenlos testen
+                {MARKETING_PRIMARY_CTA_LABEL}
               </TrackedLink>
               <a href="#ablauf" className="btn-secondary">
-                Video ansehen
+                {MARKETING_FLOW_CTA_LABEL}
               </a>
             </div>
 
-            <p className="helper mt-3">
-              Danach läuft Starter monatlich weiter. Jederzeit kündbar.
+            <p className="helper mt-3 max-w-[44ch]">
+              14 Tage im echten Postfach testen und danach anhand von Qualität, Freigaben und Antwortzeit entscheiden.
             </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {quickAnchors.map((anchor) => (
-                <a key={anchor.href} href={anchor.href} className="btn-secondary !min-h-9 !px-3 !py-2 !text-xs">
-                  {anchor.label}
-                </a>
-              ))}
-            </div>
 
-            <div className="mt-8 grid gap-2 sm:grid-cols-2">
+            <article className="mt-5 rounded-[26px] border border-[rgba(11,15,23,.08)] bg-white/95 p-4 shadow-[var(--shadow-sm)]">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+                  Diese Tour führt Sie durch 5 Stationen
+                </p>
+                <p className="mt-1 text-sm font-semibold text-[var(--text)]">
+                  Erst den Ablauf sehen, dann Regeln, Freigabe, Checks und Go-live prüfen.
+                </p>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-3" data-tour="produkt-hero-quickanchors">
+                {quickAnchors.map((anchor) => (
+                  <a
+                    key={anchor.href}
+                    href={anchor.href}
+                    className="btn-secondary !min-h-11 !justify-start !px-3 !py-2 !text-left !text-xs"
+                  >
+                    <span className="mr-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface)] text-[10px] font-semibold text-[var(--text)] ring-1 ring-[var(--gold-soft)]">
+                      {anchor.step}
+                    </span>
+                    {anchor.label}
+                  </a>
+                ))}
+              </div>
+            </article>
+
+            <div className="mt-4 grid grid-cols-2 gap-2" data-tour="produkt-hero-trustchips">
               {trustChips.map((chip) => (
                 <div
-                  key={chip.text}
-                  className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm text-[var(--muted)] ring-1 ring-[var(--border)]"
+                  key={chip.desktop}
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-[13px] text-[var(--muted)] ring-1 ring-[var(--border)] md:text-sm"
                 >
-                  <chip.Icon className="h-4 w-4 text-[var(--gold)]" />
-                  <span>{chip.text}</span>
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--surface-2)] px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--gold)] ring-1 ring-[var(--gold-soft)]">
+                    {chip.tag}
+                  </span>
+                  <span className="md:hidden">{chip.mobile}</span>
+                  <span className="hidden md:inline">{chip.desktop}</span>
                 </div>
               ))}
             </div>
-          </div>
-
-          <div className="col-span-12 lg:col-span-7">
-            <PremiumVideoFrame
-              label="Produkt"
-              webm="/loops/product-hero.webm"
-              mp4="/loops/product-hero.mp4"
-              poster="/loops/product-hero.jpg"
-              priority
-              ariaLabel="Produktvideo: Eingang, Entscheidung und Versand"
-              caption="Eingang → Entscheidung → Versand. Voll sichtbar im Verlauf."
-            />
           </div>
         </div>
       </Container>

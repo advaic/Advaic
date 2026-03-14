@@ -24,7 +24,7 @@ const intents = [
   },
   {
     title: "E-Mail-Automatisierung für Immobilienmakler",
-    text: "Überblick für Makler, die Antwortzeiten verkürzen und Standardfälle sicher automatisieren möchten.",
+    text: "Überblick für Makler, die Antwortzeiten verkürzen und wiederkehrende Erstantworten mit sauberem Objektbezug sicher automatisieren möchten.",
     href: "/email-automatisierung-immobilienmakler",
   },
   {

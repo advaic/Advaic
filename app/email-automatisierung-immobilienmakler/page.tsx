@@ -4,11 +4,12 @@ import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import DecisionSimulator from "@/components/marketing/DecisionSimulator";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
-const outcomes = [
-  "Schnellere Erstreaktion bei klaren Standardanfragen",
-  "Weniger manuelle Routinearbeit im Postfach",
-  "Saubere Freigabe bei unklaren oder riskanten Fällen",
+const quickTake = [
+  "E-Mail-Automatisierung lohnt sich dort, wo viele ähnliche Interessenten-Anfragen schnell und sauber beantwortet werden müssen.",
+  "Vor dem Rollout brauchen Sie Regeln für Objektbezug, Pflichtangaben, Freigabegrenzen und Antwortqualität.",
+  "Ein guter Start ist konservativ: hohe Freigabequote, klare KPI und erst dann schrittweiser Ausbau.",
 ];
 
 const problemPatterns = [
@@ -22,20 +23,27 @@ const problemPatterns = [
   },
   {
     title: "Sensible Fälle und Routinefälle konkurrieren",
-    text: "Ohne klare Entscheidungslogik landen konfliktnahe oder unklare Fälle im selben Arbeitsmodus wie Standardanfragen.",
+    text: "Ohne klare Entscheidungslogik landen konfliktnahe oder informationsarme Fälle im selben Arbeitsmodus wie sauber prüfbare Interessenten-Anfragen.",
   },
 ];
 
-const suitable = [
-  "Regelmäßiges Anfragevolumen (z. B. Vermietung oder mittelpreisige Objekte)",
-  "Viele wiederkehrende Fragen zu Verfügbarkeit, Unterlagen und Besichtigung",
-  "Wunsch nach kontrollierter Automatisierung statt Komplett-Autopilot ab Tag 1",
+const fitSignals = [
+  "Regelmäßiges Anfragevolumen, bei dem ähnliche Erstfragen mehrfach pro Woche auftreten",
+  "Viele Nachrichten drehen sich um Verfügbarkeit, Unterlagen, Besichtigung oder nächste Prozessschritte",
+  "Sie möchten Reaktionszeit senken, ohne Preis-, Konflikt- oder Ausnahmefälle automatisch laufen zu lassen",
 ];
 
-const notIdeal = [
-  "Sehr wenige Anfragen pro Monat",
-  "Jede Antwort muss immer vollständig individuell formuliert werden",
-  "Keine Bereitschaft, Regeln und Ton einmal sauber festzulegen",
+const notFitYet = [
+  "Sehr geringes Anfragevolumen ohne wiederkehrenden E-Mail-Prozess",
+  "Antworten hängen fast immer an individueller Verhandlung oder Einzelfallprüfung",
+  "Objektdaten, Zuständigkeiten und Antwortregeln sind intern noch nicht sauber gepflegt",
+];
+
+const prerequisites = [
+  "Welche Antworttypen dürfen automatisch beantwortet werden?",
+  "Welche Pflichtangaben müssen für eine richtige Antwort vorliegen?",
+  "Welche Gründe führen immer zur Freigabe?",
+  "Wer prüft im Pilotbetrieb täglich Freigaben und korrigierte Entwürfe?",
 ];
 
 const rolloutPlan = [
@@ -61,7 +69,7 @@ const kpis = [
   "Ø Erstreaktionszeit auf neue Interessenten-Anfragen",
   "Freigabequote je 100 eingehende Anfragen",
   "QA-Fehlerquote vor Versand",
-  "Manuelle Minuten pro Standardanfrage",
+  "Manuelle Minuten pro wiederkehrender Erstantwort",
 ];
 
 const sources = [
@@ -87,27 +95,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "E-Mail-Automatisierung Immobilienmakler | Advaic",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Wann E-Mail-Automatisierung für Makler wirklich lohnt",
+  ogTitle: "E-Mail-Automatisierung für Makler | Advaic",
   description:
-    "Wie Immobilienmakler E-Mail-Antworten sicher automatisieren: klare Auto-Regeln, Freigabe bei Unsicherheit und Qualitätschecks vor jedem Versand.",
-  alternates: {
-    canonical: "/email-automatisierung-immobilienmakler",
-  },
-  openGraph: {
-    title: "E-Mail-Automatisierung Immobilienmakler | Advaic",
-    description:
-      "Wie Immobilienmakler E-Mail-Antworten sicher automatisieren: klare Auto-Regeln, Freigabe bei Unsicherheit und Qualitätschecks vor jedem Versand.",
-    url: "/email-automatisierung-immobilienmakler",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "E-Mail-Automatisierung Immobilienmakler | Advaic",
-    description:
-      "Wie Immobilienmakler E-Mail-Antworten sicher automatisieren: klare Auto-Regeln, Freigabe bei Unsicherheit und Qualitätschecks vor jedem Versand.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Leitfaden für Makler: Wann sich E-Mail-Automatisierung lohnt, welche Voraussetzungen vor dem Start stehen müssen und wie ein sicherer 30-Tage-Rollout aussieht.",
+  path: "/email-automatisierung-immobilienmakler",
+  template: "guide",
+  eyebrow: "Leitfaden E-Mail-Automatisierung",
+  proof: "Klarer Fit, klare Voraussetzungen und ein konservativer Rollout statt Vollautomatik-Versprechen.",
+});
 
 export default function EmailAutomatisierungImmobilienmaklerPage() {
   const siteUrl = getSiteUrl();
@@ -127,13 +124,13 @@ export default function EmailAutomatisierungImmobilienmaklerPage() {
         { name: "E-Mail-Automatisierung Immobilienmakler", path: "/email-automatisierung-immobilienmakler" },
       ]}
       schema={schema}
-      kicker="E-Mail-Automatisierung für Immobilienmakler"
-      title="Schneller antworten, ohne die Kontrolle abzugeben"
-      description="Advaic automatisiert klare Standardanfragen in Ihrem Stil. Unklare Fälle gehen zur Freigabe. Vor jedem Auto-Versand greifen Qualitätschecks."
+      kicker="Leitfaden E-Mail-Automatisierung"
+      title="Wann E-Mail-Automatisierung für Makler wirklich lohnt"
+      description="Sie lohnt sich dort, wo viele ähnliche Anfragen schnell, korrekt und nachvollziehbar beantwortet werden müssen. Vor dem Start sollten Sie Volumen, Datenlage, Freigabegründe und Qualitätsgrenzen prüfen."
       actions={
         <>
-          <Link href="/produkt" className="btn-secondary">
-            Produkt ansehen
+          <Link href="/manuell-vs-advaic" className="btn-secondary">
+            Vergleich öffnen
           </Link>
           <Link href="/signup" className="btn-primary">
             14 Tage testen
@@ -149,27 +146,50 @@ export default function EmailAutomatisierungImmobilienmaklerPage() {
       sources={sources}
       sourcesDescription="Die Empfehlungen kombinieren öffentliche Studien und konservative Prozesslogik für Maklerbetriebe."
     >
+      <section id="kurzfassung" className="py-8 md:py-10">
+        <Container>
+          <article className="card-base p-6">
+            <h2 className="h3">Kurzantwort in 60 Sekunden</h2>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              {quickTake.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <a href="#fit-check" className="btn-secondary">
+                Fit prüfen
+              </a>
+              <a href="#rollout" className="btn-secondary">
+                Rollout ansehen
+              </a>
+            </div>
+          </article>
+        </Container>
+      </section>
+
       <section className="marketing-section-clear py-14 md:py-18">
         <Container>
           <div className="grid gap-6 lg:grid-cols-12">
             <article className="card-base p-6 lg:col-span-8 md:p-8">
-              <h2 className="h3">Sales Brief: Wann E-Mail-Automatisierung für Makler wirklich sinnvoll ist</h2>
+              <h2 className="h3">Für wen dieser Leitfaden gedacht ist</h2>
               <p className="body mt-4 text-[var(--muted)]">
-                Der Haupthebel liegt nicht darin, jede Nachricht automatisch zu beantworten. Der Hebel liegt darin, den
-                großen Block wiederkehrender Standardfälle sicher aus der manuellen Routine zu nehmen und Sonderfälle
-                bewusst bei Ihnen zu halten.
+                Diese Seite ist für Maklerteams gedacht, die im Tagesgeschäft wiederkehrende E-Mails schneller
+                beantworten wollen, ohne Preis-, Konflikt- oder Ausnahmefälle aus der Hand zu geben.
               </p>
               <p className="body mt-4 text-[var(--muted)]">
-                Deshalb ist diese Seite als Entscheidungsfunnel aufgebaut: erst Engpässe verstehen, dann Guardrails
-                prüfen, anschließend mit Safe-Start-Konfiguration kontrolliert testen.
+                Entscheidend ist nicht, wie viel Automatisierung ein Anbieter verspricht, sondern ob Volumen,
+                Datenlage, Freigabegrenzen und Qualitätskontrollen zu Ihrem Betrieb passen.
               </p>
             </article>
             <article className="card-base p-6 lg:col-span-4">
-              <h2 className="h3">Zielbild nach 30 Tagen</h2>
+              <h2 className="h3">Das Ziel nach 30 Tagen</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                <li>Standardfälle werden konsistent und schneller beantwortet.</li>
-                <li>Sensible Fälle landen transparent in der Freigabe.</li>
-                <li>Die Prozessqualität wird über KPI statt Bauchgefühl gesteuert.</li>
+                <li>Wiederkehrende Erstfragen werden konsistent und schneller beantwortet.</li>
+                <li>Informationsarme, sensible oder konfliktnahe Nachrichten landen in der Freigabe.</li>
+                <li>Die Entscheidung über Ausbau oder Stopp erfolgt über KPI statt Bauchgefühl.</li>
               </ul>
             </article>
           </div>
@@ -185,21 +205,13 @@ export default function EmailAutomatisierungImmobilienmaklerPage() {
         </Container>
       </section>
 
-      <section className="marketing-section-clear py-20 md:py-28">
+      <section id="fit-check" className="marketing-section-clear py-20 md:py-28">
         <Container>
-          <div className="grid gap-4 md:grid-cols-3">
-            {outcomes.map((item) => (
-              <article key={item} className="card-base p-6">
-                <h2 className="text-base font-semibold text-[var(--text)]">{item}</h2>
-              </article>
-            ))}
-          </div>
-
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2">
             <article className="card-base p-6">
-              <h2 className="h3">Für wen das gut passt</h2>
+              <h2 className="h3">Woran Sie einen guten Fit erkennen</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {suitable.map((item) => (
+                {fitSignals.map((item) => (
                   <li key={item} className="flex items-start gap-2">
                     <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
                     <span>{item}</span>
@@ -208,9 +220,9 @@ export default function EmailAutomatisierungImmobilienmaklerPage() {
               </ul>
             </article>
             <article className="card-base p-6">
-              <h2 className="h3">Wo Grenzen liegen</h2>
+              <h2 className="h3">Wann Sie zuerst intern aufräumen sollten</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {notIdeal.map((item) => (
+                {notFitYet.map((item) => (
                   <li key={item} className="flex items-start gap-2">
                     <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
                     <span>{item}</span>
@@ -221,6 +233,18 @@ export default function EmailAutomatisierungImmobilienmaklerPage() {
           </div>
 
           <article className="card-base mt-6 p-6">
+            <h2 className="h3">Was vor dem Start stehen sollte</h2>
+            <ul className="mt-4 grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2">
+              {prerequisites.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+
+          <article id="rollout" className="card-base mt-6 p-6">
             <h2 className="h3">Empfohlener 30-Tage-Rollout</h2>
             <div className="mt-4 space-y-3">
               {rolloutPlan.map((step) => (

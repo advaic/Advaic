@@ -6,6 +6,7 @@ import { CheckCircle2 } from "lucide-react";
 import Container from "./Container";
 import TrackedLink from "./TrackedLink";
 import { resolveLandingConversion } from "@/lib/marketing/conversion-map";
+import { MARKETING_PRIMARY_CTA_LABEL } from "./cta-copy";
 
 const stageOrder = ["orientierung", "bewertung", "entscheidung"] as const;
 
@@ -49,6 +50,9 @@ export default function ConversionPathPanel({ className = "" }: ConversionPathPa
   const conversion = useMemo(() => resolveLandingConversion(pathname), [pathname]);
   const activeIndex = Math.max(0, stageOrder.indexOf(conversion.stage));
   const progressPct = ((activeIndex + 1) / stageOrder.length) * 100;
+  const primaryLabel = conversion.primaryHref.startsWith("/signup")
+    ? MARKETING_PRIMARY_CTA_LABEL
+    : stageCopy[conversion.stage].actionLabel;
   const stageReason =
     stageReasonByFamily[conversion.family] ||
     "Sie sehen den nächsten sinnvollen Schritt entlang Orientierung, Bewertung und Entscheidung.";
@@ -118,7 +122,7 @@ export default function ConversionPathPanel({ className = "" }: ConversionPathPa
                 family: conversion.family,
               }}
             >
-              {stageCopy[conversion.stage].actionLabel}
+              {primaryLabel}
             </TrackedLink>
             <TrackedLink
               href={conversion.secondaryHref}

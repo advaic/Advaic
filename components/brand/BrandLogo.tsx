@@ -12,11 +12,11 @@ type BrandLogoProps = {
 
 const SIZE_MAP: Record<
   NonNullable<BrandLogoProps["size"]>,
-  { icon: number; wordmarkW: number; wordmarkH: number; text: string }
+  { icon: number; text: string }
 > = {
-  sm: { icon: 26, wordmarkW: 92, wordmarkH: 19, text: "text-[1.2rem]" },
-  md: { icon: 34, wordmarkW: 116, wordmarkH: 24, text: "text-[1.55rem]" },
-  lg: { icon: 42, wordmarkW: 146, wordmarkH: 30, text: "text-[2rem]" },
+  sm: { icon: 26, text: "text-[1.2rem]" },
+  md: { icon: 34, text: "text-[1.55rem]" },
+  lg: { icon: 42, text: "text-[2rem]" },
 };
 
 export default function BrandLogo({
@@ -26,13 +26,9 @@ export default function BrandLogo({
   className = "",
 }: BrandLogoProps) {
   const cfg = SIZE_MAP[size];
-  // Expected asset paths:
-  // - /public/brand/advaic-icon.png
-  // - /public/brand/advaic-wordmark.png
   const iconCandidates = useMemo(() => ["/brand/advaic-icon.png", "/Advaic_Logo_Cropped.webp"], []);
   const [iconSrcIdx, setIconSrcIdx] = useState(0);
   const [iconBroken, setIconBroken] = useState(false);
-  const [wordmarkBroken, setWordmarkBroken] = useState(false);
 
   return (
     <span className={`inline-flex items-center gap-2.5 ${className}`.trim()}>
@@ -56,22 +52,11 @@ export default function BrandLogo({
         </span>
       ) : null}
 
-      {!wordmarkBroken ? (
-        <Image
-          src="/brand/advaic-wordmark.png"
-          alt="Advaic"
-          width={cfg.wordmarkW}
-          height={cfg.wordmarkH}
-          className="h-auto w-auto object-contain"
-          onError={() => setWordmarkBroken(true)}
-        />
-      ) : (
-        <span className={`brand-wordmark ${cfg.text} leading-none`} aria-label="Advaic">
-          <span className="brand-wordmark-core">adv</span>
-          <span className="brand-wordmark-ai">ai</span>
-          <span className="brand-wordmark-core">c</span>
-        </span>
-      )}
+      <span className={`brand-wordmark ${cfg.text} leading-none`} aria-label="Advaic">
+        <span className="brand-wordmark-core">adv</span>
+        <span className="brand-wordmark-ai">ai</span>
+        <span className="brand-wordmark-core">c</span>
+      </span>
     </span>
   );
 }

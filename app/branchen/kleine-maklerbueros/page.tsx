@@ -6,6 +6,7 @@ import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
 import StageCTA from "@/components/marketing/StageCTA";
 import FinalCTA from "@/components/marketing/FinalCTA";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const painPoints = [
   "Wenig Personal für viele parallele Aufgaben",
@@ -13,10 +14,23 @@ const painPoints = [
   "Wichtige Sonderfälle bleiben zu lange im Postfach liegen",
 ];
 
+const quickTake = [
+  "Für kleine Maklerbüros lohnt sich Automatisierung vor allem bei wiederkehrenden Erstantworten, die fachlich sauber prüfbar sind.",
+  "Preisverhandlung, Beschwerden, Ausnahmen und Nachrichten mit fehlenden Angaben sollten bewusst manuell bleiben.",
+  "Ein sicherer Start ist konservativ: hohe Freigabequote, kurze Lernschleife und erst danach kontrollierter Ausbau.",
+];
+
 const guardrails = [
-  "Auto nur für eindeutig wiederkehrende Standardfälle",
-  "Freigabe als Pflichtpfad bei Unsicherheit und Konfliktthemen",
-  "Follow-up-Stufen nur in kleinen Schritten aktivieren",
+  "Auto nur für wiederkehrende Erstantworten mit prüfbarem Objektbezug und vollständigen Pflichtangaben",
+  "Freigabe als Pflichtpfad bei Beschwerden, Ausnahmen, Konflikten oder fehlenden Informationen",
+  "Follow-up-Stufen erst aktivieren, wenn Antwortqualität und Freigabevolumen stabil bleiben",
+];
+
+const manualBoundaries = [
+  "Preis- und Verhandlungsgespräche",
+  "Beschwerden, Eskalationen und konfliktnahe Nachrichten",
+  "Anfragen ohne klaren Objektbezug oder ohne nötige Angaben",
+  "Ausnahmesituationen, bei denen Teamentscheidung wichtiger ist als Geschwindigkeit",
 ];
 
 const pitfalls = [
@@ -35,10 +49,10 @@ const pitfalls = [
 ];
 
 const rollout = [
-  "Tag 1–3: Nur klarste Standardfälle auf Auto, alle unsicheren Fälle in Freigabe.",
+  "Tag 1–3: Nur wiederkehrende Erstantworten mit klaren Angaben auf Auto, alles andere in Freigabe.",
   "Tag 4–10: Freigabe-Muster analysieren und Regeln nachschärfen.",
   "Tag 11–20: Follow-up Stufe 1 vorsichtig aktivieren.",
-  "Tag 21–30: Auto-Anteil nur bei stabiler QA und sauberem Verlauf anheben.",
+  "Tag 21–30: Auto-Anteil nur bei stabiler QA, nachvollziehbarem Verlauf und tragbarem Freigabeaufwand anheben.",
 ];
 
 const sources = [
@@ -56,27 +70,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Kleine Maklerbüros | Branchenprofil Advaic",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Wie kleine Maklerbüros Anfragen sauber skalieren",
+  ogTitle: "Kleine Maklerbüros | Branchenprofil Advaic",
   description:
-    "Branchenprofil für kleine Maklerbüros: Entlastung bei Standardanfragen mit klaren Guardrails, Freigabelogik und kontrolliertem Safe-Start.",
-  alternates: {
-    canonical: "/branchen/kleine-maklerbueros",
-  },
-  openGraph: {
-    title: "Kleine Maklerbüros | Branchenprofil Advaic",
-    description:
-      "Branchenprofil für kleine Maklerbüros: Entlastung bei Standardanfragen mit klaren Guardrails, Freigabelogik und kontrolliertem Safe-Start.",
-    url: "/branchen/kleine-maklerbueros",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Kleine Maklerbüros | Branchenprofil Advaic",
-    description:
-      "Branchenprofil für kleine Maklerbüros: Entlastung bei Standardanfragen mit klaren Guardrails, Freigabelogik und kontrolliertem Safe-Start.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Leitfaden für kleine Maklerbüros: Wo Automatisierung wirklich entlastet, welche Nachrichten manuell bleiben sollten und wie ein sicherer 30-Tage-Start aussieht.",
+  path: "/branchen/kleine-maklerbueros",
+  template: "usecase",
+  eyebrow: "Branchenprofil",
+  proof: "Wiederkehrende Erstantworten automatisieren, Ausnahmen bewusst manuell halten und konservativ ausrollen.",
+});
 
 export default function BranchenKleineMaklerbuerosPage() {
   const siteUrl = getSiteUrl();
@@ -97,8 +100,8 @@ export default function BranchenKleineMaklerbuerosPage() {
       />
       <PageIntro
         kicker="Branchenprofil"
-        title="Kleine Maklerbüros"
-        description="Wenn wenige Personen ein hohes Anfragevolumen bearbeiten, muss Automatisierung zuverlässig entlasten, ohne die Kontrolle über sensible Kommunikation zu verlieren."
+        title="Wie kleine Maklerbüros Anfragen sauber skalieren"
+        description="In kleinen Teams ist nicht maximale Automatisierung das Ziel, sondern spürbare Entlastung ohne Kontrollverlust. Entscheidend ist, welche Nachrichten wiederkehrend und sauber prüfbar sind und welche bewusst manuell bleiben."
         actions={
           <>
             <Link href="/branchen" className="btn-secondary">
@@ -111,9 +114,25 @@ export default function BranchenKleineMaklerbuerosPage() {
         }
       />
 
+      <section id="kurzfassung" className="py-8 md:py-10">
+        <Container>
+          <article className="card-base p-6">
+            <h2 className="h3">Kurzantwort in 60 Sekunden</h2>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              {quickTake.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </Container>
+      </section>
+
       <StageCTA
         stage="bewertung"
-        primaryHref="/produkt#safe-start-konfiguration"
+        primaryHref="/produkt#setup"
         primaryLabel="Safe-Start berechnen"
         secondaryHref="/freigabe-inbox"
         secondaryLabel="Freigabe-Inbox prüfen"
@@ -173,10 +192,22 @@ export default function BranchenKleineMaklerbuerosPage() {
           <article className="card-base mt-4 p-6">
             <h2 className="h3">Praktischer Startablauf</h2>
             <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-[var(--muted)]">
-              <li>Mit hoher Freigabequote starten und nur klarste Fälle automatisch senden.</li>
+              <li>Mit hoher Freigabequote starten und nur klar prüfbare Erstantworten automatisch senden.</li>
               <li>Nach einer Woche Freigabe-Muster auswerten und Regeln verfeinern.</li>
               <li>Auto-Anteil schrittweise anheben, sobald Qualität stabil nachweisbar ist.</li>
             </ol>
+          </article>
+
+          <article className="card-base mt-4 p-6">
+            <h2 className="h3">Was kleine Teams bewusst manuell halten sollten</h2>
+            <ul className="mt-4 grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2">
+              {manualBoundaries.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
           </article>
 
           <article className="card-base mt-4 p-6">

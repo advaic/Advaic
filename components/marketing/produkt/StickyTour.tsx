@@ -96,9 +96,10 @@ export default function StickyTour() {
     <section id="ablauf" className="py-20 md:py-28">
       <Container>
         <div className="max-w-[70ch]">
-          <h2 className="h2">So läuft eine Anfrage in der Praxis ab</h2>
+          <p className="section-kicker">Schritt 1 von 5</p>
+          <h2 className="h2 mt-2">So läuft eine Anfrage im echten Produkt durch</h2>
           <p className="body mt-4 text-[var(--muted)]">
-            Hier sehen Sie Schritt für Schritt, was passiert — und warum das sicher ist.
+            Erst sehen Sie den Ablauf. Danach prüfen Sie Regeln, Freigabe, Qualitätschecks und den Go-live-Pfad.
           </p>
         </div>
 

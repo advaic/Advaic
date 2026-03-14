@@ -99,7 +99,7 @@ export default function LoginPage() {
       subtitle="Melden Sie sich an und steuern Sie Autopilot, Freigaben und Follow-ups an einem Ort."
       points={[
         "Autopilot kann jederzeit pausiert werden.",
-        "Unklare Fälle bleiben in Ihrer Freigabe-Inbox.",
+        "Nachrichten mit fehlenden Angaben oder Risikosignalen bleiben in Ihrer Freigabe-Inbox.",
         "Jede Entscheidung bleibt im Verlauf nachvollziehbar.",
       ]}
     >

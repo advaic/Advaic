@@ -4,12 +4,17 @@
 @tailwind utilities;
 
 :root {
+  --font-inter: "Aptos", "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: "Avenir Next", "Aptos Display", "Segoe UI", system-ui, -apple-system, sans-serif;
+
   --bg: #ffffff;
   --surface: #f7f8fa;
   --surface-2: #fbfbfc;
+  --surface-3: #f2f4f7;
 
   --text: #0b0f17;
-  --muted: #5b6472;
+  --muted: #55606d;
+  --muted-strong: #46515e;
   --border: rgba(11, 15, 23, 0.1);
 
   --black: #0b0f17;
@@ -21,6 +26,48 @@
   --radius: 14px;
   --shadow-sm: 0 1px 2px rgba(11, 15, 23, 0.06);
   --shadow-md: 0 10px 30px rgba(11, 15, 23, 0.08);
+
+  --app-shell: #f7f7f8;
+  --app-shell-rgb: 247 247 248;
+  --app-surface: #ffffff;
+  --app-surface-muted: #fbfbfc;
+  --app-surface-soft: #f2f4f7;
+  --app-border-subtle: rgba(11, 15, 23, 0.1);
+  --app-border-strong: rgba(11, 15, 23, 0.16);
+  --app-focus-ring: rgba(201, 162, 39, 0.24);
+
+  --status-success-bg: #ecfdf5;
+  --status-success-border: #a7f3d0;
+  --status-success-text: #065f46;
+  --status-warning-bg: #fffbeb;
+  --status-warning-border: #fcd34d;
+  --status-warning-text: #92400e;
+  --status-danger-bg: #fef2f2;
+  --status-danger-border: #fecaca;
+  --status-danger-text: #b91c1c;
+  --status-neutral-bg: #f8fafc;
+  --status-neutral-border: rgba(11, 15, 23, 0.16);
+  --status-neutral-text: #334155;
+  --status-brand-bg: #0b0f17;
+  --status-brand-border: rgba(11, 15, 23, 0.18);
+  --status-brand-text: #f3d26d;
+
+  --status-success-surface-bg: #f6fef9;
+  --status-warning-surface-bg: #fffaf0;
+  --status-danger-surface-bg: #fff5f5;
+  --status-neutral-surface-bg: #f8fafc;
+  --status-brand-surface-bg: #f8f3e4;
+
+  --status-success-row-bg: #f4fbf7;
+  --status-success-row-hover: #edf8f1;
+  --status-warning-row-bg: #fff9ee;
+  --status-warning-row-hover: #fff4dd;
+  --status-danger-row-bg: #fff6f6;
+  --status-danger-row-hover: #ffefef;
+  --status-neutral-row-bg: #f8fafc;
+  --status-neutral-row-hover: #f1f5f9;
+  --status-brand-row-bg: #f8f3e4;
+  --status-brand-row-hover: #f4ead0;
 }
 
 html,
@@ -88,12 +135,65 @@ h6 {
   color: var(--muted);
 }
 
+.app-text-display {
+  font-family: var(--font-display), "Manrope", "Sora", Inter, sans-serif;
+  font-size: clamp(2.25rem, 5vw, 3rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+.app-text-page-title {
+  font-family: var(--font-display), "Manrope", "Sora", Inter, sans-serif;
+  font-size: clamp(1.5rem, 2.5vw, 1.95rem);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+.app-text-section-title {
+  font-family: var(--font-display), "Manrope", "Sora", Inter, sans-serif;
+  font-size: clamp(1rem, 1.4vw, 1.125rem);
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  font-weight: 700;
+}
+
+.app-text-meta-label {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  color: var(--muted-strong);
+}
+
+.app-text-helper {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.app-text-badge {
+  font-size: 0.75rem;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+.app-text-stat-value {
+  font-family: var(--font-display), "Manrope", "Sora", Inter, sans-serif;
+  font-size: clamp(1.75rem, 2.4vw, 2.25rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
 .label {
   font-size: 0.75rem;
   line-height: 1.25rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--muted-strong);
 }
 
 .btn-primary {
@@ -183,6 +283,188 @@ h6 {
 .focus-ring:focus-visible {
   outline: none;
   box-shadow: 0 0 0 4px var(--gold-soft);
+}
+
+.app-shell {
+  background: var(--app-shell);
+}
+
+.app-shell-header {
+  background: rgb(var(--app-shell-rgb) / 0.9);
+  border-color: var(--app-border-subtle);
+}
+
+.app-surface-card {
+  background: var(--app-surface);
+  border-color: var(--app-border-subtle);
+}
+
+.app-surface-panel {
+  background: var(--app-surface);
+  border-color: var(--app-border-subtle);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-surface-muted {
+  background: var(--app-surface-muted);
+  border-color: var(--app-border-subtle);
+}
+
+.app-surface-soft {
+  background: var(--app-surface-soft);
+  border-color: var(--app-border-subtle);
+}
+
+.app-page-section {
+  padding-block: 1.5rem;
+}
+
+.app-page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.app-panel-padding {
+  padding: 1rem;
+}
+
+.app-panel-padding-compact {
+  padding: 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .app-panel-padding {
+    padding: 1.5rem;
+  }
+}
+
+.app-field {
+  background: var(--app-surface);
+  border-color: var(--app-border-subtle);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.app-focusable {
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    outline-color 180ms ease;
+}
+
+.app-focusable:focus-visible,
+.app-shell :where(a[href], button, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid rgba(201, 162, 39, 0.72);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--app-focus-ring);
+}
+
+.app-field:focus-visible {
+  outline: none;
+  border-color: rgba(201, 162, 39, 0.34);
+  box-shadow: 0 0 0 4px var(--app-focus-ring);
+}
+
+.app-badge-brand {
+  background: var(--status-brand-bg);
+  border: 1px solid var(--status-brand-border);
+  color: var(--status-brand-text);
+}
+
+.app-status-success {
+  background: var(--status-success-bg);
+  border-color: var(--status-success-border);
+  color: var(--status-success-text);
+}
+
+.app-status-warning {
+  background: var(--status-warning-bg);
+  border-color: var(--status-warning-border);
+  color: var(--status-warning-text);
+}
+
+.app-status-danger {
+  background: var(--status-danger-bg);
+  border-color: var(--status-danger-border);
+  color: var(--status-danger-text);
+}
+
+.app-status-neutral {
+  background: var(--status-neutral-bg);
+  border-color: var(--status-neutral-border);
+  color: var(--status-neutral-text);
+}
+
+.app-surface-success {
+  background: var(--status-success-surface-bg);
+  border-color: var(--status-success-border);
+}
+
+.app-surface-warning {
+  background: var(--status-warning-surface-bg);
+  border-color: var(--status-warning-border);
+}
+
+.app-surface-danger {
+  background: var(--status-danger-surface-bg);
+  border-color: var(--status-danger-border);
+}
+
+.app-surface-neutral {
+  background: var(--status-neutral-surface-bg);
+  border-color: var(--status-neutral-border);
+}
+
+.app-surface-brand {
+  background: var(--status-brand-surface-bg);
+  border-color: var(--status-brand-border);
+}
+
+.app-row-success {
+  background: var(--status-success-row-bg);
+  border-color: var(--status-success-border);
+}
+
+.app-row-success:hover {
+  background: var(--status-success-row-hover);
+}
+
+.app-row-warning {
+  background: var(--status-warning-row-bg);
+  border-color: var(--status-warning-border);
+}
+
+.app-row-warning:hover {
+  background: var(--status-warning-row-hover);
+}
+
+.app-row-danger {
+  background: var(--status-danger-row-bg);
+  border-color: var(--status-danger-border);
+}
+
+.app-row-danger:hover {
+  background: var(--status-danger-row-hover);
+}
+
+.app-row-neutral {
+  background: var(--status-neutral-row-bg);
+  border-color: var(--status-neutral-border);
+}
+
+.app-row-neutral:hover {
+  background: var(--status-neutral-row-hover);
+}
+
+.app-row-brand {
+  background: var(--status-brand-row-bg);
+  border-color: var(--status-brand-border);
+}
+
+.app-row-brand:hover {
+  background: var(--status-brand-row-hover);
 }
 
 .link-subtle {
@@ -499,7 +781,7 @@ h6 {
   line-height: 1.25rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--muted-strong);
 }
 
 .section-kicker::before {
@@ -523,6 +805,129 @@ h6 {
   );
 }
 
+@keyframes motion-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes motion-soft-scale {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes motion-drawer-right {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes motion-drawer-down {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.app-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    180deg,
+    var(--app-surface-muted) 0%,
+    var(--app-surface-soft) 100%
+  );
+  border: 1px solid var(--app-border-subtle);
+}
+
+.app-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(255 255 255 / 0.72) 45%,
+    transparent 100%
+  );
+  animation: skeleton-shimmer 1.25s ease-in-out infinite;
+}
+
+.motion-enter {
+  animation: motion-fade-up 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+.motion-enter-soft {
+  animation: motion-soft-scale 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+.motion-enter-drawer-right {
+  animation: motion-drawer-right 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+.motion-enter-drawer-down {
+  animation: motion-drawer-down 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+.motion-delay-1 {
+  animation-delay: 60ms;
+}
+
+.motion-delay-2 {
+  animation-delay: 120ms;
+}
+
+.motion-delay-3 {
+  animation-delay: 180ms;
+}
+
+.motion-delay-4 {
+  animation-delay: 240ms;
+}
+
+.motion-transition {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    opacity 180ms ease;
+}
+
 :focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
@@ -536,5 +941,10 @@ h6 {
   * {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+
+  .app-skeleton::after {
+    animation: none !important;
   }
 }

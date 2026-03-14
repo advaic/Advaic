@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import type { Database } from "@/types/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/app-ui";
 import { Loader2, RefreshCw, Wand2, AlertTriangle } from "lucide-react";
 
 type Props = {
@@ -284,8 +285,12 @@ export default function LeadKeyInfoCard({ leadId }: Props) {
 
         <CardContent>
           {copilotLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <div className="space-y-3 py-2">
+              <Skeleton className="h-20 w-full rounded-2xl" />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Skeleton className="h-24 w-full rounded-2xl" />
+                <Skeleton className="h-24 w-full rounded-2xl" />
+              </div>
             </div>
           ) : !copilot ? (
             <div className="rounded-2xl border border-border bg-muted/20 p-4">
@@ -441,8 +446,10 @@ export default function LeadKeyInfoCard({ leadId }: Props) {
           <CardHeader>
             <CardTitle>Unterlagen</CardTitle>
           </CardHeader>
-          <CardContent className="flex items-center justify-center py-8">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <CardContent className="space-y-3 py-2">
+            <Skeleton className="h-20 w-full rounded-2xl" />
+            <Skeleton className="h-20 w-full rounded-2xl" />
+            <Skeleton className="h-20 w-full rounded-2xl" />
           </CardContent>
         </Card>
       ) : !docs?.length ? (

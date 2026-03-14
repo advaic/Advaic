@@ -1,0 +1,35 @@
+{
+  "generatedAt": "2026-03-12T15:16:01.336Z",
+  "videos": [
+    {
+      "id": "tagesgeschaeft",
+      "title": "Wie Advaic im Tagesgeschäft arbeitet",
+      "slug": "tagesgeschaeft",
+      "runtimeMs": 142000,
+      "poster": "/videos/posters/tagesgeschaeft.png",
+      "audio": "/videos/audio/tagesgeschaeft.m4a",
+      "captions": "/videos/captions/tagesgeschaeft.vtt",
+      "transcript": "/videos/transcripts/tagesgeschaeft.txt"
+    },
+    {
+      "id": "auto-vs-freigabe",
+      "title": "Wann automatisch gesendet wird und wann nicht",
+      "slug": "auto-vs-freigabe",
+      "runtimeMs": 140000,
+      "poster": "/videos/posters/auto-vs-freigabe.png",
+      "audio": "/videos/audio/auto-vs-freigabe.m4a",
+      "captions": "/videos/captions/auto-vs-freigabe.vtt",
+      "transcript": "/videos/transcripts/auto-vs-freigabe.txt"
+    },
+    {
+      "id": "qualitaetschecks-followups",
+      "title": "Qualitätschecks und Follow-ups im Live-Betrieb",
+      "slug": "qualitaetschecks-followups",
+      "runtimeMs": 129000,
+      "poster": "/videos/posters/qualitaetschecks-followups.png",
+      "audio": "/videos/audio/qualitaetschecks-followups.m4a",
+      "captions": "/videos/captions/qualitaetschecks-followups.vtt",
+      "transcript": "/videos/transcripts/qualitaetschecks-followups.txt"
+    }
+  ]
+}

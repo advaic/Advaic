@@ -4,8 +4,8 @@ const leftPoints = [
   "Advaic prüft eingehende E-Mails auf echte Interessenten-Signale.",
   "Newsletter, Systemmails und Spam werden nicht automatisch beantwortet.",
   "Technische no-reply Absender ohne Reply-To werden zuerst geprüft.",
-  "Klare Fälle können automatisch beantwortet werden.",
-  "Unklare Fälle gehen automatisch zur Freigabe.",
+  "Erstantworten mit sauberem Objektbezug können automatisch beantwortet werden.",
+  "Nachrichten mit fehlenden Angaben oder Risikosignalen gehen automatisch zur Freigabe.",
   "Jeder Schritt ist im Verlauf sichtbar.",
 ];
 
@@ -38,7 +38,7 @@ export default function TransparencyBox() {
                   <strong>Auto:</strong> klare Interessenten-Anfragen
                 </div>
                 <div className="rounded-xl bg-[var(--surface-2)] px-3 py-2 text-[var(--text)] ring-1 ring-[var(--gold-soft)]">
-                  <strong>Freigabe:</strong> unklare oder sensible Fälle
+                  <strong>Freigabe:</strong> fehlende Angaben, Konflikte oder sensible Aussagen
                 </div>
                 <div className="rounded-xl bg-[var(--surface-2)] px-3 py-2 text-[var(--text)] ring-1 ring-[var(--border)]">
                   <strong>Ignorieren:</strong> Newsletter, Systemmails, Spam

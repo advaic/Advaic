@@ -1,0 +1,172 @@
+[
+  {
+    "id": "dashboard-startmodul",
+    "title": "Dashboard – Startmodul",
+    "route": "/app/startseite",
+    "selector": "[data-tour=\"dashboard-quickstart\"]",
+    "message": "Der Einstieg in die Automatisierung bleibt kontrolliert und schrittweise.",
+    "usage": "Homepage, Produkt, Video 1",
+    "file": "docs/marketing-screenshots/2026-03-12/raw/dashboard-startmodul.png",
+    "finalUrl": "http://127.0.0.1:4010/app/startseite",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  {
+    "id": "dashboard-systemstatus",
+    "title": "Dashboard – Systemstatus",
+    "route": "/app/startseite",
+    "selector": "[data-tour=\"dashboard-system-health\"]",
+    "message": "Versand, Deliverability und Lernkurve werden als Betriebszustand sichtbar.",
+    "usage": "Homepage, Sicherheit, Video 2",
+    "file": "docs/marketing-screenshots/2026-03-12/raw/dashboard-systemstatus.png",
+    "finalUrl": "http://127.0.0.1:4010/app/startseite",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  {
+    "id": "dashboard-automation",
+    "title": "Dashboard – Automationssteuerung",
+    "route": "/app/startseite",
+    "selector": "[data-tour=\"dashboard-automation-control\"]",
+    "message": "Guardrails und Sandbox steuern den Rollout, nicht ein Blackbox-Schalter.",
+    "usage": "Produkt, Autopilot, Video 2",
+    "file": "docs/marketing-screenshots/2026-03-12/raw/dashboard-automation.png",
+    "finalUrl": "http://127.0.0.1:4010/app/startseite",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  {
+    "id": "messages-inbox",
+    "title": "Nachrichten – Inbox",
+    "route": "/app/nachrichten",
+    "selector": "[data-tour=\"messages-list\"]",
+    "message": "Die Inbox priorisiert offene Arbeit statt nur neue E-Mails aufzulisten.",
+    "usage": "Produkt, So funktioniert's, Video 1",
+    "file": "docs/marketing-screenshots/2026-03-12/raw/messages-inbox.png",
+    "finalUrl": "http://127.0.0.1:4010/app/nachrichten",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  {
+    "id": "messages-filters",
+    "title": "Nachrichten – Schnellfilter",
+    "route": "/app/nachrichten",
+    "selector": "[data-tour=\"messages-quickfilters\"]",
+    "message": "Freigabe, Eskalation und Priorität sind mit einem Klick erreichbar.",
+    "usage": "Produkt, Follow-up-Logik, Video 1",
+    "file": "docs/marketing-screenshots/2026-03-12/raw/messages-filters.png",
+    "finalUrl": "http://127.0.0.1:4010/app/nachrichten",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  {
+    "id": "conversation-thread",
+    "title": "Konversation – Arbeitsfläche",
+    "route": "/app/nachrichten/f867b1cc-6afd-4be3-a5a3-1f59bc319162",
+    "selector": "[data-tour=\"conversation-thread-card\"]",
+    "message": "Die eigentliche Antwortarbeit läuft in einer ruhigen Produktionsfläche.",
+    "usage": "Produkt, Freigabe-Inbox, Video 1",
+    "file": "docs/marketing-screenshots/2026-03-12/raw/conversation-thread.png",
+    "finalUrl": "http://127.0.0.1:4010/app/nachrichten/f867b1cc-6afd-4be3-a5a3-1f59bc319162",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  {
+    "id": "conversation-context",
+    "title": "Konversation – Kontextleiste",
+    "route": "/app/nachrichten/f867b1cc-6afd-4be3-a5a3-1f59bc319162",
+    "selector": "[data-tour=\"conversation-context-rail\"]",
+    "message": "Objektbezug, Regeln und Follow-ups bleiben neben der E-Mail sichtbar.",
+    "usage": "Produkt, Qualitätschecks, Video 2",
+    "file": "docs/marketing-screenshots/2026-03-12/raw/conversation-context.png",
+    "finalUrl": "http://127.0.0.1:4010/app/nachrichten/f867b1cc-6afd-4be3-a5a3-1f59bc319162",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  {
+    "id": "approval-review-flow",
+    "title": "Freigabe – Prüf-Reihenfolge",
+    "route": "/app/zur-freigabe",
+    "parentSelector": "[data-tour=\"approval-card\"]",
+    "selector": "[data-tour=\"approval-review-order\"]",
+    "message": "Freigaben folgen einer festen Reihenfolge statt Bauchgefühl.",
+    "usage": "Produkt, Freigabe-Inbox, Video 3",
+    "file": "docs/marketing-screenshots/2026-03-12/raw/approval-review-flow.png",
+    "finalUrl": "http://127.0.0.1:4010/app/zur-freigabe",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  {
+    "id": "approval-decision",
+    "title": "Freigabe – Entscheidung",
+    "route": "/app/zur-freigabe",
+    "parentSelector": "[data-tour=\"approval-card\"]",
+    "selector": "[data-tour=\"approval-decision\"]",
+    "message": "Senden, Bearbeiten und Ablehnen sind klar getrennte Entscheidungen.",
+    "usage": "Produkt, Sicherheit, Video 3",
+    "file": "docs/marketing-screenshots/2026-03-12/raw/approval-decision.png",
+    "finalUrl": "http://127.0.0.1:4010/app/zur-freigabe",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  {
+    "id": "tone-style-setup",
+    "title": "Ton & Stil – Setup",
+    "route": "/app/ton-und-stil",
+    "selector": "[data-tour=\"tone-style-card\"]",
+    "message": "Antwortstil wird wie ein Setup gepflegt, nicht wie ein loses Formular.",
+    "usage": "Produkt, Ton & Stil, Video 3",
+    "file": "docs/marketing-screenshots/2026-03-12/raw/tone-style-setup.png",
+    "finalUrl": "http://127.0.0.1:4010/app/ton-und-stil",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  {
+    "id": "tone-style-preview",
+    "title": "Ton & Stil – Vorschau",
+    "route": "/app/ton-und-stil",
+    "selector": "[data-tour=\"tone-style-preview-card\"]",
+    "message": "Änderungen werden direkt an einer realen Antwortvorschau sichtbar.",
+    "usage": "Produkt, Ton & Stil, Video 3",
+    "file": "docs/marketing-screenshots/2026-03-12/raw/tone-style-preview.png",
+    "finalUrl": "http://127.0.0.1:4010/app/ton-und-stil",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  {
+    "id": "billing-plan-access",
+    "title": "Abo – Plan & Zugriff",
+    "route": "/app/konto/abo",
+    "selector": "[data-tour=\"account-billing-plan-card\"]",
+    "message": "Planstatus und Zugriffsmodell sind ohne Support-Rückfrage verständlich.",
+    "usage": "Preise, Abo, interner Sales-Kontext",
+    "file": "docs/marketing-screenshots/2026-03-12/raw/billing-plan-access.png",
+    "finalUrl": "http://127.0.0.1:4010/app/konto/abo",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  }
+]

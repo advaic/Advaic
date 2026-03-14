@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Container from "./Container";
 import { trackPublicEvent } from "@/lib/funnel/public-track";
+import { MARKETING_PRIMARY_CTA_LABEL } from "./cta-copy";
 
 const sources = [
   {
@@ -56,7 +57,7 @@ function scoreInboxHours(hoursPerDay: number) {
   return 15;
 }
 
-function scoreStandardAutomation(share: number) {
+function scoreRepeatableAutomation(share: number) {
   if (share >= 60) return 100;
   if (share >= 45) return 75;
   if (share >= 30) return 50;
@@ -92,7 +93,7 @@ export default function PublicEvidenceGap() {
   const diagnostic = useMemo(() => {
     const responseScore = scoreResponseHours(responseHours);
     const inboxScore = scoreInboxHours(inboxHoursPerDay);
-    const automationScore = scoreStandardAutomation(autoShare);
+    const automationScore = scoreRepeatableAutomation(autoShare);
     const followUpScore = scoreFollowUpHours(followUpHours);
     const total = Math.round((responseScore + inboxScore + automationScore + followUpScore) / 4);
 
@@ -105,7 +106,7 @@ export default function PublicEvidenceGap() {
         score: responseScore,
         issue:
           "Anfragen bleiben zu lange ohne Erstreaktion. Dadurch sinkt die Chance auf qualifizierte Gespräche deutlich.",
-        fix: "Advaic sendet bei klaren Standardfällen direkt und stoppt bei Unsicherheit.",
+        fix: "Advaic sendet wiederkehrende Erstantworten mit sauberem Objektbezug direkt und legt Fälle mit fehlenden Angaben oder Risikosignalen vor.",
       },
       {
         key: "postfach",
@@ -128,12 +129,12 @@ export default function PublicEvidenceGap() {
       },
       {
         key: "auto",
-        label: "Auto-Anteil Standardfälle",
+        label: "Auto-Anteil wiederkehrender Erstantworten",
         valueLabel: `${autoShare} %`,
         targetLabel: "≥ 45 %",
         score: automationScore,
-        issue: "Zu viele Standardfälle bleiben manuell und erzeugen unnötigen Durchsatzdruck im Team.",
-        fix: "Advaic erhöht den sicheren Auto-Anteil schrittweise über klare Regeln und Qualitätschecks.",
+        issue: "Zu viele wiederkehrende Erstantworten bleiben manuell und erzeugen unnötigen Durchsatzdruck im Team.",
+        fix: "Advaic erhöht den sicheren Auto-Anteil schrittweise über klare Versandregeln, Qualitätschecks und Freigabegründe.",
       },
     ].sort((a, b) => a.score - b.score);
 
@@ -151,7 +152,7 @@ export default function PublicEvidenceGap() {
       level = "mittel";
       title = "Größte Lücke: Zu viel manuelle Standardarbeit";
       reason =
-        "Sie haben solides Fundament, aber zu viele Standardfälle laufen noch manuell. Advaic kann diese Fälle sicher aus dem Postfach ziehen.";
+        "Sie haben solides Fundament, aber zu viele wiederkehrende Erstantworten laufen noch manuell. Advaic kann diese Fälle sicher aus dem Postfach ziehen.";
     }
 
     return {
@@ -175,20 +176,61 @@ export default function PublicEvidenceGap() {
         : "border-red-200 bg-red-50 text-red-800";
 
   return (
-    <section id="oeffentliche-benchmarks" className="marketing-section-clear py-20 md:py-28">
+    <section
+      id="oeffentliche-benchmarks"
+      className="marketing-section-clear py-20 md:py-28"
+      data-tour="marketing-public-benchmark"
+    >
       <Container>
         <div className="max-w-[74ch]">
-          <h2 className="h2">Öffentliche Benchmarks</h2>
+          <p className="section-kicker">Marktmaßstab</p>
+          <h2 className="h2">So können Sie Ihren heutigen Prozess realistisch einordnen</h2>
           <p className="body mt-4 text-[var(--muted)]">
-            Weil wir noch keine veröffentlichten Pilot-Referenzen zeigen, arbeiten wir mit transparenten öffentlichen
-            Kennzahlen. So sehen Sie klar, wo im aktuellen Ablauf Zeit, Qualität und Antwortgeschwindigkeit verloren
-            gehen.
+            Nachdem Sie den Produktfluss, die Freigabe und die Qualitätschecks gesehen haben, können Sie hier Ihren
+            heutigen Maklerprozess gegen öffentliche Referenzwerte für Reaktionszeit, Postfach-Last und Follow-up
+            prüfen.
           </p>
+        </div>
+
+        <div className="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <article className="card-base p-5 md:p-6" data-tour="marketing-public-benchmark-explainer">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+              Wofür dieser Block gedacht ist
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-[var(--border)] bg-white px-4 py-4 text-sm text-[var(--muted)]">
+                Sie prüfen, ob Reaktionszeit, Inbox-Last oder Follow-ups heute überhaupt der relevante Engpass sind.
+              </div>
+              <div className="rounded-2xl border border-[var(--border)] bg-white px-4 py-4 text-sm text-[var(--muted)]">
+                Die Werte basieren auf öffentlichen Markt- und Arbeitsbenchmarks, nicht auf erfundenen Fallstudien.
+              </div>
+              <div className="rounded-2xl border border-[var(--border)] bg-white px-4 py-4 text-sm text-[var(--muted)]">
+                Produktbeweise haben Sie weiter oben gesehen; hier geht es um Einordnung und Priorisierung des Problems.
+              </div>
+            </div>
+          </article>
+
+          <article className="card-base p-5 md:p-6" data-tour="marketing-public-benchmark-summary">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+              Woran Sie den Fit erkennen
+            </p>
+            <h3 className="mt-2 text-lg font-semibold text-[var(--text)]">
+              Advaic passt vor allem dann, wenn Tempo und Routinearbeit Ihr Bottleneck sind
+            </h3>
+            <p className="helper mt-3">
+              Wenn viele wiederkehrende Erstantworten, unregelmäßige Follow-ups oder zu viel manuelle Inbox-Arbeit den
+              Tag dominieren, ist der Hebel hoch. Wenn Ihr Prozess schon sehr straff läuft, liegt der Wert eher in
+              Qualität, Nachvollziehbarkeit und kontrollierter Skalierung.
+            </p>
+          </article>
         </div>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           {sources.map((item) => (
             <article key={item.title} className="card-base card-hover p-6">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+                Öffentliche Referenz
+              </p>
               <p className="text-3xl font-semibold tracking-[-0.02em] text-[var(--text)]">{item.stat}</p>
               <h3 className="mt-3 text-base font-semibold text-[var(--text)]">{item.title}</h3>
               <p className="helper mt-2">{item.detail}</p>
@@ -206,10 +248,10 @@ export default function PublicEvidenceGap() {
 
         <div className="mt-8 grid gap-6 lg:grid-cols-12">
           <article className="card-base p-6 lg:col-span-7 md:p-7">
-            <h3 className="h3">Diagnose: Wo verliert Ihr Prozess heute Wirkung?</h3>
+            <h3 className="h3">Diagnose: Wo verliert Ihr Prozess heute am meisten Wirkung?</h3>
             <p className="helper mt-2">
-              Tragen Sie realistische Ist-Werte ein. Die Diagnose zeigt die größte operative Lücke und die passende
-              Advaic-Lösung.
+              Tragen Sie realistische Ist-Werte ein. Die Diagnose zeigt, ob Reaktionszeit, Inbox-Last,
+              Follow-up-Stabilität oder der Auto-Anteil wiederkehrender Erstantworten heute der größte Engpass sind.
             </p>
 
             <div className="mt-5 grid gap-5 md:grid-cols-2">
@@ -254,7 +296,7 @@ export default function PublicEvidenceGap() {
 
               <label className="block md:col-span-2">
                 <span className="text-sm font-semibold text-[var(--text)]">
-                  Anteil Standardfälle, die heute bereits automatisch laufen: {autoShare} %
+                  Anteil wiederkehrender Erstantworten, die heute bereits automatisch laufen: {autoShare} %
                 </span>
                 <input
                   type="range"
@@ -377,13 +419,13 @@ export default function PublicEvidenceGap() {
                     })
                   }
                 >
-                  14 Tage testen
+                  {MARKETING_PRIMARY_CTA_LABEL}
                 </Link>
               </div>
 
               <p className="helper mt-4">
-                Hinweis: Benchmarks sind öffentlich und dienen zur Einordnung. Ihre tatsächlichen Ergebnisse hängen von
-                Bestand, Prozessdisziplin, Antwortstil und Objektmix ab.
+                Hinweis: Das ist eine Einordnungshilfe auf Basis öffentlicher Benchmarks. Ihre tatsächlichen Werte
+                hängen von Anfragevolumen, Objektmix, Prozessdisziplin und den freigegebenen Versandregeln ab.
               </p>
             </div>
           </article>

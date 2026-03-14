@@ -8,33 +8,48 @@ import QualityChecks from "@/components/marketing/QualityChecks";
 import DecisionSimulator from "@/components/marketing/DecisionSimulator";
 import Guarantee from "@/components/marketing/Guarantee";
 import FinalCTA from "@/components/marketing/FinalCTA";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const principles = [
-  "Automatisierung nur bei klaren Fällen",
-  "Manuelle Freigabe als Standard bei Unsicherheit",
-  "Nachvollziehbare Entscheidung je Nachricht",
-  "Sicherheitsorientierter Fallback statt Risiko",
+  "Automatisch gesendet wird nur bei prüfbarem Objektbezug, ausreichenden Angaben und passender Versandfreigabe.",
+  "Fehlende Informationen, Beschwerden, Ausnahmen oder rechtlich sensible Aussagen gehen in die Freigabe.",
+  "Spam, Newsletter und sonstige Nicht-Anfragen werden ignoriert statt beantwortet.",
+  "Jede Entscheidung muss als Regel beschreibbar und im Verlauf nachvollziehbar sein.",
 ];
 
 const summary = [
-  "Autopilot ist regelbasiert: keine Blackbox, keine freie Interpretation ohne Guardrails.",
-  "Unsichere Fälle werden nicht automatisch gesendet, sondern in die Freigabe gelegt.",
-  "Jede Entscheidung ist im Verlauf nachvollziehbar und kann operativ ausgewertet werden.",
+  "Ein brauchbarer Autopilot beantwortet nicht möglichst viele Nachrichten, sondern nur die fachlich sauberen Fälle.",
+  "Freigabe ist kein Fehlerzustand, sondern die notwendige Schutzschicht bei fehlenden Angaben, Konflikten oder Ausnahmen.",
+  "Für den Betrieb zählt, ob Regeln, Gründe und Eingriffe pro Nachricht prüfbar bleiben.",
 ];
 
-const decisionLevels = [
+const decisionMatrix = [
   {
-    title: "Relevanzebene",
-    text: "Ist die Nachricht überhaupt eine echte Interessenten-Anfrage oder nur Nicht-Anfrage?",
+    title: "Automatisch senden",
+    text: "Bei echter Interessenten-Anfrage mit belegbarem Objektbezug, vorhandenen Pflichtangaben und bestandenen Qualitätschecks.",
   },
   {
-    title: "Kontextebene",
-    text: "Sind Objektbezug und notwendige Informationen für eine sichere Antwort vorhanden?",
+    title: "Zur Freigabe",
+    text: "Bei fehlenden Angaben, Beschwerden, Ausnahmewünschen, nicht prüfbarem Absender oder rechtlich sensibler Aussage.",
   },
   {
-    title: "Risikobene",
-    text: "Liegt ein Sonderfall, Konflikt oder sonstige Unsicherheit vor, die Freigabe erfordert?",
+    title: "Ignorieren",
+    text: "Bei Spam, Newslettern, Systemmails oder sonstigen E-Mails ohne operativen Antwortbedarf.",
   },
+];
+
+const beforeStart = [
+  "Welche Antworttypen dürfen automatisch raus und welche nicht?",
+  "Welche Pflichtangaben müssen pro Nachricht vorhanden sein?",
+  "Welche Ausnahmen, Beschwerden oder Preisfragen bleiben grundsätzlich manuell?",
+  "Wer prüft Freigaben und wie wird im Verlauf dokumentiert?",
+];
+
+const redFlags = [
+  "Das Tool kann Auto-Fälle nicht mit konkreten Kriterien erklären.",
+  "Es gibt keinen klaren Unterschied zwischen Freigabe und automatischem Versand.",
+  "Blockierende Gründe pro Nachricht sind im Verlauf nicht sichtbar.",
+  "Der Pilot startet sofort mit zu viel Auto-Anteil statt mit konservativen Grenzen.",
 ];
 
 const deepDives = [
@@ -50,7 +65,7 @@ const deepDives = [
   },
   {
     title: "Freigabe-Inbox im Detail",
-    text: "Wie unklare Fälle strukturiert geprüft und sauber entschieden werden.",
+    text: "Wie Nachrichten mit fehlenden Angaben, Konflikten oder Ausnahmen strukturiert geprüft und sauber entschieden werden.",
     href: "/freigabe-inbox",
   },
   {
@@ -75,23 +90,28 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Autopilot-Regeln | Advaic",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Wie ein Makler-Autopilot entscheiden sollte",
+  ogTitle: "Autopilot mit Guardrails | Advaic",
   description:
-    "Verstehen Sie die Autopilot-Logik von Advaic: klare Auto-Fälle, Freigabe bei Unsicherheit, Ignorieren bei Nicht-Anfragen und Fail-Safe Guardrails.",
-};
+    "Wie ein sinnvoller E-Mail-Autopilot für Makler aufgebaut sein sollte: klare Auto-Kriterien, Freigabe bei fehlenden Angaben oder Konflikten und nachvollziehbare Regeln pro Nachricht.",
+  path: "/autopilot",
+  template: "guide",
+  eyebrow: "Leitfaden Autopilot",
+  proof: "Automatik nur mit Objektbezug, Pflichtangaben und nachvollziehbaren Regeln.",
+});
 
 export default function AutopilotPage() {
   return (
     <PageShell>
       <PageIntro
-        kicker="Autopilot-Logik"
-        title="Regeln statt Blackbox"
-        description="Advaic entscheidet nicht beliebig. Jeder Auto-Versand basiert auf klaren Regeln und dokumentierten Qualitätschecks."
+        kicker="Leitfaden Autopilot"
+        title="Wie ein Makler-Autopilot entscheiden sollte"
+        description="Ein brauchbarer Autopilot beantwortet nur Nachrichten, die fachlich und operativ sauber prüfbar sind. Alles andere wird ignoriert oder zur Freigabe vorgelegt."
         actions={
           <>
-            <Link href="/sicherheit" className="btn-secondary">
-              Sicherheitsdetails
+            <Link href="/autopilot-regeln" className="btn-secondary">
+              Regeln im Detail
             </Link>
             <Link href="/signup" className="btn-primary">
               14 Tage testen
@@ -127,7 +147,7 @@ export default function AutopilotPage() {
       <section id="autopilot-details" className="marketing-section-clear py-20 md:py-28">
         <Container>
           <article className="card-base p-8 md:p-10">
-            <h2 className="h2">Kernprinzipien des Autopiloten</h2>
+            <h2 className="h2">Woran Sie einen belastbaren Autopiloten erkennen</h2>
             <ul className="mt-6 grid gap-3 md:grid-cols-2">
               {principles.map((point) => (
                 <li key={point} className="flex items-start gap-2 text-sm text-[var(--muted)]">
@@ -137,18 +157,43 @@ export default function AutopilotPage() {
               ))}
             </ul>
             <p className="helper mt-6">
-              In der Praxis gilt: Auto-Senden nur bei klaren Standardanfragen mit vollständigem Kontext. Beschwerden,
-              Sonderfälle oder unklare Zuordnung gehen grundsätzlich in die Freigabe.
+              Gute Systeme beantworten nicht einfach viel, sondern treffen je Nachricht eine saubere Entscheidung
+              zwischen Auto, Freigabe und Ignorieren.
             </p>
           </article>
 
           <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {decisionLevels.map((item) => (
+            {decisionMatrix.map((item) => (
               <article key={item.title} className="card-base p-6">
                 <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
                 <p className="helper mt-3">{item.text}</p>
               </article>
             ))}
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
+            <article className="card-base p-6">
+              <h2 className="h3">Vor dem Start festlegen</h2>
+              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                {beforeStart.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+            <article className="card-base p-6">
+              <h2 className="h3">Warnzeichen im Auswahlprozess</h2>
+              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                {redFlags.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
           </div>
 
           <div className="mt-8 grid gap-4 md:grid-cols-2">

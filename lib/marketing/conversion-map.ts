@@ -97,7 +97,7 @@ const MAP: Array<{
       reportingKey: "lp_followups_v1",
       stage: "bewertung",
       primaryHref: "/signup",
-      secondaryHref: "/produkt#followups",
+      secondaryHref: "/produkt#setup",
     },
   },
   {
@@ -107,7 +107,7 @@ const MAP: Array<{
       reportingKey: "lp_vergleich_v1",
       stage: "entscheidung",
       primaryHref: "/signup",
-      secondaryHref: "/produkt#safe-start-konfiguration",
+      secondaryHref: "/produkt#setup",
     },
   },
   {
@@ -140,7 +140,7 @@ const MAP: Array<{
       reportingKey: "lp_fit_v1",
       stage: "bewertung",
       primaryHref: "/signup",
-      secondaryHref: "/produkt#safe-start-konfiguration",
+      secondaryHref: "/produkt#setup",
     },
   },
   {

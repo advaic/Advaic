@@ -15,7 +15,7 @@ const items = [
   },
   {
     title: "Freigabe-Inbox",
-    text: "Operativer Ablauf für unklare Fälle inklusive Entscheidungsoptionen.",
+    text: "Operativer Ablauf für Nachrichten mit Freigabebedarf inklusive Entscheidungsoptionen.",
     href: "/freigabe-inbox",
   },
   {

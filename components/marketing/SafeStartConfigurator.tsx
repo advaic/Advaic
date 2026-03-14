@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import Container from "./Container";
 import { trackPublicEvent } from "@/lib/funnel/public-track";
+import { MARKETING_PRIMARY_CTA_LABEL } from "./cta-copy";
 
 type VolumeBand = "niedrig" | "mittel" | "hoch";
 type SpecialCases = "niedrig" | "mittel" | "hoch";
@@ -92,15 +93,15 @@ export default function SafeStartConfigurator({ id = "safe-start-konfiguration" 
 
     const fitReason =
       fitScore >= 75
-        ? "Ihr Profil hat genügend Volumen und Standardanteil, damit kontrollierte Automatisierung schnell Wirkung zeigt."
+        ? "Ihr Profil hat genügend Volumen und genügend wiederkehrende Erstantworten, damit kontrollierte Automatisierung schnell Wirkung zeigt."
         : fitScore >= 58
           ? "Advaic passt, wenn Sie mit enger Freigabelogik starten und den Auto-Anteil schrittweise erhöhen."
-          : "Automatisierung sollte zunächst nur sehr klar eingegrenzte Standardfälle abdecken. Freigabe bleibt der Hauptpfad.";
+          : "Automatisierung sollte zunächst nur Anfragen mit sauberem Objektbezug, vollständigen Kerndaten und unkritischem Inhalt abdecken. Freigabe bleibt der Hauptpfad.";
 
     const nextActions =
       fitScore >= 75
         ? [
-            "Woche 1: Standardfälle mit klarer Objektzuordnung auf Auto aktivieren.",
+            "Woche 1: Erstantworten mit klarem Objektbezug, vollständigen Kerndaten und freigegebenem Versandkorridor auf Auto aktivieren.",
             "Woche 2: Freigabegründe clustern und Regeln präzisieren.",
             "Ab Woche 3: Follow-up Stufe 1 auf 48h prüfen.",
           ]
@@ -211,7 +212,7 @@ export default function SafeStartConfigurator({ id = "safe-start-konfiguration" 
               </fieldset>
 
               <fieldset>
-                <legend className="text-sm font-semibold text-[var(--text)]">Anteil Sonderfälle</legend>
+                <legend className="text-sm font-semibold text-[var(--text)]">Anteil Fälle mit Freigabebedarf</legend>
                 <div className="mt-2 grid gap-2 sm:grid-cols-3">
                   {[
                     { value: "niedrig", label: "Niedrig" },
@@ -352,8 +353,9 @@ export default function SafeStartConfigurator({ id = "safe-start-konfiguration" 
               <article className="mt-5 rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
                 <p className="text-sm font-semibold text-[var(--text)]">Warum diese Empfehlung?</p>
                 <p className="helper mt-2">
-                  Ziel ist ein kontrollierter Start: klare Standardfälle automatisieren, Sonderfälle bewusst in Ihrer
-                  Freigabe halten und Follow-ups nur in sinnvollen Stufen aktivieren.
+                  Ziel ist ein kontrollierter Start: Erstantworten mit sauberem Objektbezug automatisieren, Fälle mit
+                  fehlenden Angaben oder Risikosignalen bewusst in Ihrer Freigabe halten und Follow-ups nur in
+                  sinnvollen Stufen aktivieren.
                 </p>
               </article>
 
@@ -375,7 +377,7 @@ export default function SafeStartConfigurator({ id = "safe-start-konfiguration" 
 
               <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                 <Link href={signupHref} className="btn-primary" onClick={() => void onPrimaryClick()}>
-                  Mit dieser Konfiguration testen
+                  {MARKETING_PRIMARY_CTA_LABEL}
                 </Link>
                 <Link href="/manuell-vs-advaic#vergleich" className="btn-secondary">
                   Mit manuell vergleichen

@@ -3,34 +3,52 @@ import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
-const pillars = [
+const quickTake = [
+  "KI ist im Makleralltag dann nützlich, wenn sie wiederkehrende Arbeit beschleunigt und nicht Beratungs- oder Haftungsfragen pauschal übernimmt.",
+  "Der größte Hebel liegt meist in Anfrageeingang, Antwortentwürfen, Qualitätsprüfung und Follow-up-Steuerung.",
+  "Vor dem Tool-Kauf sollten Sie prüfen, ob Regeln, Freigaben, Verlauf und Datenqualität zum Betrieb passen.",
+];
+
+const useCases = [
   {
-    title: "Antwortgeschwindigkeit",
-    text: "Bei hoher Anfragezahl entscheidet die Zeit bis zur ersten qualifizierten Antwort über Rücklauf und Terminquote.",
+    title: "Anfrageeingang sortieren",
+    text: "KI kann echte Interessenten-Anfragen von Spam, Newslettern und internen Mails trennen und damit das Postfach sauberer priorisieren.",
   },
   {
-    title: "Kontrollierte Automatisierung",
-    text: "Nicht alles wird automatisiert: klare Standardfälle laufen automatisch, unklare Fälle gehen zur Freigabe.",
+    title: "Antwortentwürfe vorbereiten",
+    text: "Wiederkehrende Erstfragen lassen sich schneller beantworten, wenn Entwürfe auf Objektbezug, Stil und nächste Schritte abgestimmt werden.",
   },
   {
-    title: "Nachvollziehbare Entscheidungen",
-    text: "Jede Nachricht bleibt prüfbar: Eingang, Entscheidung, Qualitätschecks und Versandstatus im Verlauf.",
+    title: "Qualität vor Versand prüfen",
+    text: "Seriöse Systeme prüfen vor dem Versand Relevanz, fehlende Angaben, Ton, Risiko und Lesbarkeit statt nur Text zu generieren.",
+  },
+  {
+    title: "Follow-ups regelbasiert steuern",
+    text: "Nachfassen funktioniert gut, wenn Stop-Regeln, Timing und Eskalationsgrenzen vorab festgelegt sind.",
   },
 ];
 
-const whatMaklerNeed = [
-  "Klare Auto/Freigabe/Ignorieren-Logik statt generischer Textautomatisierung",
-  "Qualitätschecks vor Versand (Relevanz, Kontext, Vollständigkeit, Ton, Risiko, Lesbarkeit)",
-  "Sicheren Start mit hoher Freigabequote und schrittweisem Ausbau",
-  "Follow-up-Steuerung mit Stop-Regeln bei Antwort oder Unsicherheit",
+const evaluationChecklist = [
+  "Kann das System echte Anfragen, Freigabefälle und Nicht-Anfragen sauber unterscheiden?",
+  "Sind blockierende Gründe pro Nachricht sichtbar und operativ prüfbar?",
+  "Lässt sich der Start mit hoher Freigabequote und konservativen Regeln fahren?",
+  "Bleiben Stil, Qualitätschecks und Verlauf auch bei mehreren Teammitgliedern konsistent?",
+];
+
+const manualBoundary = [
+  "Beschwerden, Eskalationen und konfliktnahe Gespräche",
+  "Preis-, Verhandlungs- und Ausnahmesituationen",
+  "Nachrichten mit fehlenden Angaben, die sonst spekulative Antworten erzwingen würden",
+  "Rechtlich sensible Aussagen oder Vorgänge mit besonderer Dokumentationspflicht",
 ];
 
 const commonMistakes = [
-  "Zu früh zu viel automatisieren, ohne Guardrails und Freigabeprozess",
-  "Nur auf Textqualität schauen statt auf den End-to-End-Prozess",
-  "Keine KPI-Definition vor Rollout (Antwortzeit, Freigabequote, Korrekturzeit)",
-  "KI als Ersatz für Teamentscheidungen sehen statt als operatives Assistenzsystem",
+  "Zu früh zu viel automatisieren, bevor Freigabegrenzen und Qualitätschecks stehen",
+  "Nur auf Formulierungsqualität schauen statt auf den gesamten Interessenten-Prozess",
+  "Keine KPI vor dem Rollout definieren, etwa Antwortzeit, Freigabequote und Korrekturaufwand",
+  "KI als Ersatz für Teamentscheidung verkaufen, statt als operatives Assistenzsystem einzusetzen",
 ];
 
 const sources = [
@@ -56,27 +74,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "KI für Immobilienmakler",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Wofür KI im Makleralltag wirklich sinnvoll ist",
+  ogTitle: "KI für Immobilienmakler | Advaic",
   description:
-    "Wie KI für Immobilienmakler sinnvoll eingesetzt wird: schnelle Erstreaktion, klare Guardrails, Freigabe bei Unsicherheit und kontrollierter Rollout.",
-  alternates: {
-    canonical: "/ki-fuer-immobilienmakler",
-  },
-  openGraph: {
-    title: "KI für Immobilienmakler | Advaic",
-    description:
-      "Wie KI für Immobilienmakler sinnvoll eingesetzt wird: schnelle Erstreaktion, klare Guardrails, Freigabe bei Unsicherheit und kontrollierter Rollout.",
-    url: "/ki-fuer-immobilienmakler",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "KI für Immobilienmakler | Advaic",
-    description:
-      "Wie KI für Immobilienmakler sinnvoll eingesetzt wird: schnelle Erstreaktion, klare Guardrails, Freigabe bei Unsicherheit und kontrollierter Rollout.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Leitfaden für Makler: Wo KI echten Nutzen stiftet, welche Aufgaben besser manuell bleiben und woran Sie seriöse KI-Lösungen erkennen.",
+  path: "/ki-fuer-immobilienmakler",
+  template: "guide",
+  eyebrow: "Leitfaden KI",
+  proof: "Nutzen bei Anfrageeingang, Antwortentwürfen, Qualitätsprüfung und Follow-up statt KI als Allzweckversprechen.",
+});
 
 export default function KiFuerImmobilienmaklerPage() {
   const siteUrl = getSiteUrl();
@@ -98,7 +105,7 @@ export default function KiFuerImmobilienmaklerPage() {
             name: "Sollten Makler sofort alles automatisieren?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "Nein. Ein sicherer Start erfolgt konservativ: klare Standardfälle automatisch, unklare Fälle in die Freigabe.",
+              text: "Nein. Ein sicherer Start erfolgt konservativ: sauber prüfbare Interessenten-Anfragen automatisieren, Beschwerden, fehlende Angaben und Ausnahmen manuell prüfen.",
             },
           },
           {
@@ -106,7 +113,7 @@ export default function KiFuerImmobilienmaklerPage() {
             name: "Woran erkennt man gute KI-Lösungen für Makler?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "An klarer Entscheidungslogik, Qualitätschecks vor Versand, nachvollziehbarem Verlauf und kontrolliertem Rollout statt reiner Textgenerierung.",
+              text: "An klarer Entscheidungslogik, Qualitätschecks vor Versand, sichtbaren blockierenden Gründen pro Nachricht und einem konservativen Rollout statt reiner Textgenerierung.",
             },
           },
         ],
@@ -121,13 +128,13 @@ export default function KiFuerImmobilienmaklerPage() {
         { name: "KI für Immobilienmakler", path: "/ki-fuer-immobilienmakler" },
       ]}
       schema={schema}
-      kicker="High-Intent Leitfaden"
-      title="KI für Immobilienmakler: sinnvoll einsetzen statt blind automatisieren"
-      description="Die höchste Wirkung entsteht, wenn KI einen klaren Maklerprozess unterstützt: Anfrage erkennen, Entscheidung absichern, Qualität prüfen, Versand kontrollieren."
+      kicker="Leitfaden KI"
+      title="Wofür KI im Makleralltag wirklich sinnvoll ist"
+      description="Der größte Nutzen entsteht bei Anfrageeingang, Entwurfsunterstützung, Qualitätsprüfung und Follow-up-Steuerung. Schwach wird KI dort, wo Beratung, Ausnahmen oder Haftungsfragen den Ton angeben."
       actions={
         <>
-          <Link href="/produkt" className="btn-secondary">
-            Produkt im Detail
+          <Link href="/best-ai-tools-immobilienmakler" className="btn-secondary">
+            Vergleich ansehen
           </Link>
           <Link href="/signup?entry=ki-fuer-immobilienmakler" className="btn-primary">
             14 Tage testen
@@ -142,17 +149,41 @@ export default function KiFuerImmobilienmaklerPage() {
       secondaryLabel="Manuell vergleichen"
       sources={sources}
     >
-      <section className="marketing-section-clear py-20 md:py-28">
+      <section id="kurzfassung" className="py-8 md:py-10">
+        <Container>
+          <article className="card-base p-6">
+            <h2 className="h3">Kurzantwort in 60 Sekunden</h2>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              {quickTake.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <a href="#einsatzfelder" className="btn-secondary">
+                Einsatzfelder ansehen
+              </a>
+              <a href="#tool-check" className="btn-secondary">
+                Tool-Check öffnen
+              </a>
+            </div>
+          </article>
+        </Container>
+      </section>
+
+      <section id="einsatzfelder" className="marketing-section-clear py-20 md:py-28">
         <Container>
           <div className="max-w-[74ch]">
-            <h2 className="h2">Was KI im Makleralltag tatsächlich verbessern muss</h2>
+            <h2 className="h2">Vier Einsatzfelder mit echtem Nutzen</h2>
             <p className="body mt-4 text-[var(--muted)]">
-              Für Makler ist KI kein Selbstzweck. Entscheidend sind schnelle Erstreaktion, stabile Qualität und
-              klarer Schutz vor Fehlversand bei Unsicherheit.
+              Gute KI-Lösungen beschleunigen Arbeit, die sich wiederholt und sauber prüfen lässt. Sie ersetzen keine
+              Beratung, sondern entlasten bei Routinen im Interessenten-Prozess.
             </p>
           </div>
           <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {pillars.map((item) => (
+            {useCases.map((item) => (
               <article key={item.title} className="card-base p-6">
                 <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
                 <p className="helper mt-3">{item.text}</p>
@@ -162,13 +193,13 @@ export default function KiFuerImmobilienmaklerPage() {
         </Container>
       </section>
 
-      <section className="marketing-soft-cool py-20 md:py-28">
+      <section id="tool-check" className="marketing-soft-cool py-20 md:py-28">
         <Container>
           <div className="grid gap-4 md:grid-cols-2">
             <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Was Makler von KI erwarten sollten</h2>
+              <h2 className="h3">Woran Sie seriöse KI-Angebote erkennen</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {whatMaklerNeed.map((item) => (
+                {evaluationChecklist.map((item) => (
                   <li key={item} className="flex items-start gap-2">
                     <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
                     <span>{item}</span>
@@ -177,9 +208,9 @@ export default function KiFuerImmobilienmaklerPage() {
               </ul>
             </article>
             <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Häufige Fehlentscheidungen</h2>
+              <h2 className="h3">Diese Aufgaben sollten Makler bewusst manuell halten</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {commonMistakes.map((item) => (
+                {manualBoundary.map((item) => (
                   <li key={item} className="flex items-start gap-2">
                     <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
                     <span>{item}</span>
@@ -188,6 +219,18 @@ export default function KiFuerImmobilienmaklerPage() {
               </ul>
             </article>
           </div>
+          <article className="card-base mt-4 p-6 md:p-8">
+            <h2 className="h3">Häufige Fehlentscheidungen beim KI-Einsatz</h2>
+            <ul className="mt-4 grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2">
+              {commonMistakes.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+
           <article className="card-base mt-4 p-6 md:p-8">
             <h2 className="h3">Nächste sinnvolle Seiten</h2>
             <div className="mt-4 flex flex-wrap gap-2">

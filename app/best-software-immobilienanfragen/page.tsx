@@ -3,6 +3,8 @@ import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
+import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const mustHaveCriteria = [
   "Klare Trennung zwischen echten Interessenten-Anfragen und irrelevanten E-Mails.",
@@ -21,16 +23,16 @@ const evaluationFramework = [
   {
     title: "Entscheidung",
     question: "Ist klar geregelt, wann Auto-Versand erlaubt ist?",
-    warning: "Ohne klare Policy landen unklare Fälle im falschen Kanal.",
+    warning: "Ohne klare Policy landen Nachrichten mit fehlenden Angaben oder Risiko schnell im falschen Kanal.",
   },
   {
     title: "Antwortqualität",
-    question: "Gibt es vor Versand harte Prüfungen statt bloßer Textgenerierung?",
+    question: "Gibt es vor Versand harte Prüfungen jenseits reiner Textgenerierung?",
     warning: "Ohne QA-Checks steigt das Risiko unpassender Antworten.",
   },
   {
     title: "Kontrolle",
-    question: "Können Sie unklare Fälle aktiv freigeben, bearbeiten oder stoppen?",
+    question: "Können Sie Nachrichten mit Lücken oder Risiko aktiv freigeben, bearbeiten oder stoppen?",
     warning: "Ohne Freigabepfad fehlt das Sicherheitsnetz im Alltag.",
   },
   {
@@ -43,7 +45,7 @@ const evaluationFramework = [
 const implementationSteps = [
   {
     title: "1) Startprofil definieren",
-    text: "Konservativ beginnen: mehr Freigaben, nur klare Standardfälle automatisiert senden.",
+    text: "Konservativ beginnen: hoher Freigabeanteil, nur Anfragen mit sauberem Objektbezug und vollständigen Angaben automatisiert senden.",
   },
   {
     title: "2) Qualitätsgrenzen festziehen",
@@ -87,27 +89,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildMarketingMetadata({
   title: "Best Software für Immobilienanfragen",
+  ogTitle: "Best Software für Immobilienanfragen | Advaic",
   description:
-    "Auswahlleitfaden für Makler: Welche Software beantwortet Immobilienanfragen wirklich sicher, schnell und nachvollziehbar?",
-  alternates: {
-    canonical: "/best-software-immobilienanfragen",
-  },
-  openGraph: {
-    title: "Best Software für Immobilienanfragen | Advaic",
-    description:
-      "Auswahlleitfaden für Makler: Welche Software beantwortet Immobilienanfragen wirklich sicher, schnell und nachvollziehbar?",
-    url: "/best-software-immobilienanfragen",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Best Software für Immobilienanfragen | Advaic",
-    description:
-      "Auswahlleitfaden für Makler: Welche Software beantwortet Immobilienanfragen wirklich sicher, schnell und nachvollziehbar?",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Auswahlleitfaden für Makler: Welche Software erkennt Anfragen sauber, trifft belastbare Versandentscheidungen und hält Freigabe und Verlauf im Griff?",
+  path: "/best-software-immobilienanfragen",
+  template: "compare",
+  eyebrow: "Softwarevergleich",
+  proof: "Eingang, Freigabe und Qualitätschecks sind wichtiger als generisches KI-Wording.",
+});
 
 export default function BestSoftwareImmobilienanfragenPage() {
   const siteUrl = getSiteUrl();
@@ -161,15 +152,15 @@ export default function BestSoftwareImmobilienanfragenPage() {
       ]}
       schema={schema}
       kicker="Kaufentscheidung"
-      title="Best Software für Immobilienanfragen: Auswahl ohne Blindflug"
-      description="Diese Seite zeigt ein klares Prüfschema für Makler: Welche Software entlastet wirklich, welche erzeugt nur neue Oberfläche ohne stabile Prozesslogik."
+      title="Best Software für Immobilienanfragen: Welche Lösungen wirklich zuverlässig arbeiten"
+      description="Prüfen Sie Eingang, Entscheidungslogik, Qualitätschecks, Freigabe und Verlauf. Genau daran entscheidet sich, ob Software Maklerteams wirklich entlastet."
       actions={
         <>
           <Link href="/produkt#ablauf" className="btn-secondary">
-            Ablauf im Produkt
+            Ablauf im Produkt ansehen
           </Link>
           <Link href="/signup?entry=best-software-anfragen" className="btn-primary">
-            14 Tage testen
+            {MARKETING_PRIMARY_CTA_LABEL}
           </Link>
         </>
       }
@@ -186,10 +177,10 @@ export default function BestSoftwareImmobilienanfragenPage() {
         <Container>
           <div className="grid gap-6 lg:grid-cols-12">
             <article className="card-base p-6 lg:col-span-8 md:p-8">
-              <h2 className="h3">Woran gute Anfrage-Software erkennbar ist</h2>
+              <h2 className="h3">Woran Sie gute Anfrage-Software sofort erkennen</h2>
               <p className="body mt-4 text-[var(--muted)]">
-                Gute Software reduziert nicht nur Klicks, sondern operative Unsicherheit. Sie brauchen ein System, das
-                klar begründet, warum etwas automatisch gesendet wird oder bewusst in Ihrer Freigabe bleibt.
+                Gute Software reduziert Klicks und operative Reibung. Sie brauchen ein System,
+                das klar begründet, warum etwas automatisch gesendet wird oder bewusst in Ihrer Freigabe bleibt.
               </p>
               <ul className="mt-5 space-y-2 text-sm text-[var(--muted)]">
                 {mustHaveCriteria.map((item) => (
@@ -203,8 +194,8 @@ export default function BestSoftwareImmobilienanfragenPage() {
             <article className="card-base p-6 lg:col-span-4">
               <h2 className="h3">Kurzregel für die Auswahl</h2>
               <p className="helper mt-3">
-                Wenn ein Tool keine klare Antwort auf „Wann Auto? Wann Freigabe? Warum?“ liefert, ist es für
-                risikoarme Anfrageautomatisierung meist nicht ausreichend.
+                Wenn ein Tool nicht sauber beantwortet, wann es sendet, wann es stoppt und warum, reicht es für
+                risikoarme Anfrageautomatisierung meist nicht aus.
               </p>
             </article>
           </div>
@@ -229,7 +220,7 @@ export default function BestSoftwareImmobilienanfragenPage() {
       <section className="marketing-section-clear py-20 md:py-28">
         <Container>
           <article className="card-base p-6 md:p-8">
-            <h2 className="h3">Empfohlene Einführungsreihenfolge</h2>
+            <h2 className="h3">So führen Sie neue Anfrage-Software kontrolliert ein</h2>
             <div className="mt-5 space-y-3">
               {implementationSteps.map((step) => (
                 <article key={step.title} className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
@@ -241,7 +232,7 @@ export default function BestSoftwareImmobilienanfragenPage() {
           </article>
 
           <article className="card-base mt-4 p-6 md:p-8">
-            <h2 className="h3">Weiterführende Seiten</h2>
+            <h2 className="h3">Diese Seiten helfen bei der Auswahl</h2>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link href="/best-ai-tools-immobilienmakler" className="btn-secondary">
                 Best AI Tools Immobilienmakler

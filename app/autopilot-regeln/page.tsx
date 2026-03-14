@@ -5,10 +5,11 @@ import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
 import FinalCTA from "@/components/marketing/FinalCTA";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const matrixRows = [
   {
-    signal: "Eindeutige Interessenten-Anfrage, Standardfall, vollständiger Kontext",
+    signal: "Eindeutige Interessenten-Anfrage mit vollständigem Kontext und passendem Antwortzweck",
     action: "Auto senden",
     reason: "Schnelle Reaktion ohne Qualitätsverlust.",
     tone: "border-emerald-200 bg-emerald-50 text-emerald-900",
@@ -16,7 +17,7 @@ const matrixRows = [
   {
     signal: "Unklarer Objektbezug oder fehlende kritische Angaben",
     action: "Zur Freigabe",
-    reason: "Unsicherheit wird nicht automatisch versendet.",
+    reason: "Nachrichten mit Lücken werden nicht automatisch versendet.",
     tone: "border-amber-200 bg-amber-50 text-amber-900",
   },
   {
@@ -46,9 +47,15 @@ const approvalExamples = [
 ];
 
 const summary = [
-  "Auto-Senden greift nur bei klarer Anfrage, Standardfall und vollständigem Kontext.",
-  "Unsicherheit führt nicht zu Auto-Versand, sondern verpflichtend zur Freigabe.",
+  "Auto-Senden greift nur bei klarer Anfrage, vollständigem Kontext und bestandenen Qualitätschecks.",
+  "Fehlende Angaben, Konflikte oder Ausnahmen führen nicht zu Auto-Versand, sondern verpflichtend zur Freigabe.",
   "Nicht-Anfragen (z. B. Newsletter, Systemmails, Spam) werden konsequent ignoriert.",
+];
+
+const quickTake = [
+  "Die Regelmatrix ist keine Blackbox. Jede Nachricht wird zuerst auf Relevanz, Kontext und Risiko geprüft.",
+  "Entscheidet das System nicht sauber zwischen Auto, Freigabe und Ignorieren, ist der Autopilot noch nicht betriebstauglich.",
+  "Gute Regeln beschreiben konkrete Kriterien statt allgemeine Vertrauenswörter.",
 ];
 
 const controlPoints = [
@@ -62,12 +69,12 @@ const controlPoints = [
   },
   {
     title: "Risiko-/Sonderfallprüfung",
-    text: "Beschwerden, Konflikte und heikle Themen werden immer in die Freigabe gelegt.",
+    text: "Beschwerden, Konflikte, rechtlich sensible Aussagen und Ausnahmen werden immer in die Freigabe gelegt.",
   },
 ];
 
 const kpis = [
-  "Auto-Anteil bei klaren Standardfällen",
+  "Auto-Anteil bei sauber prüfbaren Erstantworten",
   "Freigabequote bei unklaren/sensiblen Fällen",
   "Quote nachträglicher manueller Korrekturen",
   "Ø Erstreaktionszeit auf klare Anfragen",
@@ -91,27 +98,15 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildMarketingMetadata({
   title: "Autopilot-Regeln im Detail | Advaic",
   description:
     "Signal-zu-Aktion Matrix mit Beispielen: wann Advaic automatisch sendet, wann Freigabe greift und wann Nachrichten ignoriert werden.",
-  alternates: {
-    canonical: "/autopilot-regeln",
-  },
-  openGraph: {
-    title: "Autopilot-Regeln im Detail | Advaic",
-    description:
-      "Signal-zu-Aktion Matrix mit Beispielen: wann Advaic automatisch sendet, wann Freigabe greift und wann Nachrichten ignoriert werden.",
-    url: "/autopilot-regeln",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Autopilot-Regeln im Detail | Advaic",
-    description:
-      "Signal-zu-Aktion Matrix mit Beispielen: wann Advaic automatisch sendet, wann Freigabe greift und wann Nachrichten ignoriert werden.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+  path: "/autopilot-regeln",
+  template: "guide",
+  eyebrow: "Regelwerk",
+  proof: "Signal-zu-Aktion-Matrix für Auto, Freigabe und Ignorieren mit klarer Logik.",
+});
 
 export default function AutopilotRegelnPage() {
   const siteUrl = getSiteUrl();
@@ -133,7 +128,7 @@ export default function AutopilotRegelnPage() {
       <PageIntro
         kicker="Entscheidungslogik"
         title="Wann Advaic automatisch sendet und wann bewusst stoppt"
-        description="Diese Seite zeigt die operative Regelmatrix von Advaic: welche Eingangssignale zu Auto, Freigabe oder Ignorieren führen und warum."
+        description="Diese Seite zeigt die operative Regelmatrix von Advaic: welche Eingangssignale zu Auto, Freigabe oder Ignorieren führen und welche Kriterien dahinterstehen."
         actions={
           <>
             <Link href="/produkt#regeln" className="btn-secondary">
@@ -151,7 +146,7 @@ export default function AutopilotRegelnPage() {
           <article className="card-base p-6">
             <h2 className="h3">Kurzfassung in 60 Sekunden</h2>
             <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-              {summary.map((item) => (
+              {[...quickTake, ...summary].map((item) => (
                 <li key={item} className="flex items-start gap-2">
                   <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
                   <span>{item}</span>

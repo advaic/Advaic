@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Container from "./Container";
 import { trackPublicEvent } from "@/lib/funnel/public-track";
+import { MARKETING_PRIMARY_CTA_LABEL } from "./cta-copy";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -28,38 +29,50 @@ const PRESETS: Record<
   PresetKey,
   {
     label: string;
+    headline: string;
+    summary: string;
+    watch: string;
     anfragenProWoche: number;
     minutenProAnfrage: number;
-    standardfallAnteil: number;
-    autoAnteilBeiStandard: number;
+    wiederkehrendeQuote: number;
+    autoAnteilBeiWiederkehrend: number;
     firstResponseHeuteMin: number;
     stundenSatzEur: number;
   }
 > = {
   solo: {
     label: "Solo-Makler",
+    headline: "Wenig Leute, aber konstante Postfachlast",
+    summary: "Gut, wenn ein einzelner Makler oder eine kleine Assistenz viel Zeit in wiederkehrende Erstantworten verliert.",
+    watch: "Wichtig ist hier vor allem, ob ein enger Auto-Korridor sofort spürbar Zeit für Besichtigungen und Rückrufe freimacht.",
     anfragenProWoche: 32,
     minutenProAnfrage: 9,
-    standardfallAnteil: 62,
-    autoAnteilBeiStandard: 45,
+    wiederkehrendeQuote: 62,
+    autoAnteilBeiWiederkehrend: 45,
     firstResponseHeuteMin: 110,
     stundenSatzEur: 55,
   },
   team: {
     label: "Kleines Team",
+    headline: "Der beste Beispielpfad für den ersten Check",
+    summary: "Ein kleines Team mit spürbarer Eingangslast, aber noch genug Nähe zum Tagesgeschäft, um Regeln und Freigaben schnell nachzuschärfen.",
+    watch: "Achten Sie hier besonders auf Erstreaktion, Freigabequote und die Frage, ob der sichere Auto-Korridor breit genug für einen Pilot ist.",
     anfragenProWoche: 58,
     minutenProAnfrage: 8,
-    standardfallAnteil: 68,
-    autoAnteilBeiStandard: 56,
+    wiederkehrendeQuote: 68,
+    autoAnteilBeiWiederkehrend: 56,
     firstResponseHeuteMin: 85,
     stundenSatzEur: 65,
   },
   volume: {
     label: "Hohes Volumen",
+    headline: "Viele Eingänge, hoher Druck auf Reaktionszeit",
+    summary: "Sinnvoll, wenn Ihr Postfach täglich stark belastet ist und wiederkehrende Erstfragen einen großen Anteil ausmachen.",
+    watch: "Hier zählt vor allem, ob Qualitätschecks und Freigabelogik bei höherem Volumen stabil bleiben.",
     anfragenProWoche: 110,
     minutenProAnfrage: 7,
-    standardfallAnteil: 74,
-    autoAnteilBeiStandard: 64,
+    wiederkehrendeQuote: 74,
+    autoAnteilBeiWiederkehrend: 64,
     firstResponseHeuteMin: 70,
     stundenSatzEur: 75,
   },
@@ -71,8 +84,10 @@ export default function ROICalculator() {
   const [preset, setPreset] = useState<PresetKey>("team");
   const [anfragenProWoche, setAnfragenProWoche] = useState(PRESETS.team.anfragenProWoche);
   const [minutenProAnfrage, setMinutenProAnfrage] = useState(PRESETS.team.minutenProAnfrage);
-  const [standardfallAnteil, setStandardfallAnteil] = useState(PRESETS.team.standardfallAnteil);
-  const [autoAnteilBeiStandard, setAutoAnteilBeiStandard] = useState(PRESETS.team.autoAnteilBeiStandard);
+  const [wiederkehrendeQuote, setWiederkehrendeQuote] = useState(PRESETS.team.wiederkehrendeQuote);
+  const [autoAnteilBeiWiederkehrend, setAutoAnteilBeiWiederkehrend] = useState(
+    PRESETS.team.autoAnteilBeiWiederkehrend,
+  );
   const [firstResponseHeuteMin, setFirstResponseHeuteMin] = useState(PRESETS.team.firstResponseHeuteMin);
   const [stundenSatzEur, setStundenSatzEur] = useState(PRESETS.team.stundenSatzEur);
 
@@ -81,8 +96,8 @@ export default function ROICalculator() {
     setPreset(key);
     setAnfragenProWoche(p.anfragenProWoche);
     setMinutenProAnfrage(p.minutenProAnfrage);
-    setStandardfallAnteil(p.standardfallAnteil);
-    setAutoAnteilBeiStandard(p.autoAnteilBeiStandard);
+    setWiederkehrendeQuote(p.wiederkehrendeQuote);
+    setAutoAnteilBeiWiederkehrend(p.autoAnteilBeiWiederkehrend);
     setFirstResponseHeuteMin(p.firstResponseHeuteMin);
     setStundenSatzEur(p.stundenSatzEur);
     void trackPublicEvent({
@@ -95,8 +110,8 @@ export default function ROICalculator() {
   };
 
   const model = useMemo(() => {
-    const standardFaelle = anfragenProWoche * (standardfallAnteil / 100);
-    const autoFaelle = standardFaelle * (autoAnteilBeiStandard / 100);
+    const wiederkehrendeFaelle = anfragenProWoche * (wiederkehrendeQuote / 100);
+    const autoFaelle = wiederkehrendeFaelle * (autoAnteilBeiWiederkehrend / 100);
     const manuelleFaelle = Math.max(0, anfragenProWoche - autoFaelle);
     const autoQuote = clamp(autoFaelle / Math.max(1, anfragenProWoche), 0, 1);
     const minutenProAutoFall = Math.max(1.5, minutenProAnfrage * 0.28);
@@ -120,7 +135,7 @@ export default function ROICalculator() {
     const within60MitAdvaic = clamp(within60Heute + autoQuote * 30, within60Heute + 1, 99);
 
     return {
-      standardFaelle,
+      wiederkehrendeFaelle,
       autoFaelle,
       manuelleFaelle,
       minutenProAutoFall,
@@ -141,8 +156,8 @@ export default function ROICalculator() {
   }, [
     anfragenProWoche,
     minutenProAnfrage,
-    standardfallAnteil,
-    autoAnteilBeiStandard,
+    wiederkehrendeQuote,
+    autoAnteilBeiWiederkehrend,
     firstResponseHeuteMin,
     stundenSatzEur,
   ]);
@@ -151,10 +166,10 @@ export default function ROICalculator() {
     if (model.autoQuote < 0.28) {
       return {
         title: "Nächster Hebel: Regelwerk schärfen",
-        text: "Ihre Auto-Quote ist noch niedrig. Für einen spürbaren ROI sollten zuerst klare Standardfälle präziser definiert werden.",
+        text: "Ihre Auto-Quote ist noch niedrig. Für einen spürbaren ROI sollten zuerst wiederkehrende Erstantworten mit sauberem Objektbezug präziser definiert werden.",
         bullets: [
-          "Top-3 Standardfragen explizit als Auto-Fälle setzen",
-          "Unklare Objektbezüge konsequent auf Freigabe lassen",
+          "Top-3 wiederkehrende Erstfragen explizit als Auto-Fälle setzen",
+          "Fehlende oder widersprüchliche Objektbezüge konsequent auf Freigabe lassen",
           "Nach 7 Tagen Auto- und Freigabe-Quote erneut prüfen",
         ],
         href: "/autopilot-regeln",
@@ -228,6 +243,9 @@ export default function ROICalculator() {
           <article className="card-base p-6 lg:col-span-7 md:p-7">
             <div className="mb-5">
               <p className="text-sm font-semibold text-[var(--text)]">Schnellstart-Profil</p>
+              <p className="helper mt-2">
+                Starten Sie im Zweifel mit <strong className="text-[var(--text)]">Kleines Team</strong>. Das ist der sinnvollste Beispielpfad für die erste Orientierung.
+              </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {(Object.keys(PRESETS) as PresetKey[]).map((key) => (
                   <button
@@ -244,6 +262,13 @@ export default function ROICalculator() {
                   </button>
                 ))}
               </div>
+              <article className="mt-4 rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                <p className="text-sm font-semibold text-[var(--text)]">{PRESETS[preset].headline}</p>
+                <p className="helper mt-2">{PRESETS[preset].summary}</p>
+                <p className="mt-3 text-sm text-[var(--muted)]">
+                  <strong className="text-[var(--text)]">Worauf Sie achten sollten:</strong> {PRESETS[preset].watch}
+                </p>
+              </article>
             </div>
 
             <div className="grid gap-5 md:grid-cols-2">
@@ -297,30 +322,30 @@ export default function ROICalculator() {
 
               <label className="block md:col-span-2">
                 <span className="text-sm font-semibold text-[var(--text)]">
-                  Anteil Standardfälle: {standardfallAnteil} %
+                  Anteil wiederkehrender Erstantworten: {wiederkehrendeQuote} %
                 </span>
                 <input
                   type="range"
                   min={20}
                   max={90}
                   step={1}
-                  value={standardfallAnteil}
-                  onChange={(e) => setStandardfallAnteil(clamp(Number(e.target.value || 0), 20, 90))}
+                  value={wiederkehrendeQuote}
+                  onChange={(e) => setWiederkehrendeQuote(clamp(Number(e.target.value || 0), 20, 90))}
                   className="mt-2 w-full accent-[var(--gold)]"
                 />
               </label>
 
               <label className="block md:col-span-2">
                 <span className="text-sm font-semibold text-[var(--text)]">
-                  Auto-Anteil innerhalb Standardfälle: {autoAnteilBeiStandard} %
+                  Auto-Anteil innerhalb dieser wiederkehrenden Erstantworten: {autoAnteilBeiWiederkehrend} %
                 </span>
                 <input
                   type="range"
                   min={20}
                   max={90}
                   step={1}
-                  value={autoAnteilBeiStandard}
-                  onChange={(e) => setAutoAnteilBeiStandard(clamp(Number(e.target.value || 0), 20, 90))}
+                  value={autoAnteilBeiWiederkehrend}
+                  onChange={(e) => setAutoAnteilBeiWiederkehrend(clamp(Number(e.target.value || 0), 20, 90))}
                   className="mt-2 w-full accent-[var(--gold)]"
                 />
               </label>
@@ -333,8 +358,12 @@ export default function ROICalculator() {
               <p className="text-sm font-semibold text-[var(--text)]">Konservative Modellrechnung</p>
               <div className="mt-4 space-y-3">
                 <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
-                  <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Standardfälle/Woche</p>
-                  <p className="mt-1 text-xl font-semibold text-[var(--text)]">{formatNumber(model.standardFaelle)}</p>
+                  <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">
+                    Wiederkehrende Erstantworten/Woche
+                  </p>
+                  <p className="mt-1 text-xl font-semibold text-[var(--text)]">
+                    {formatNumber(model.wiederkehrendeFaelle)}
+                  </p>
                 </div>
                 <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
                   <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Auto-Fälle/Woche</p>
@@ -383,14 +412,15 @@ export default function ROICalculator() {
                     {formatNumber(model.within60MitAdvaic)} % (heute: {formatNumber(model.within60Heute)} %)
                   </p>
                   <p className="helper mt-1">
-                    Modellannahme: klare Standardfälle laufen schneller durch, unsichere Fälle bleiben in Freigabe.
+                    Modellannahme: wiederkehrende Erstantworten mit sauberem Objektbezug laufen schneller durch, Fälle
+                    mit fehlenden Angaben bleiben in Freigabe.
                   </p>
                 </div>
               </div>
 
               <p className="helper mt-4">
-                Annahme: Nicht jeder Fall wird automatisiert. Unklare und risikobehaftete Fälle bleiben in der Freigabe
-                und werden weiterhin manuell entschieden.
+                Annahme: Nicht jede Nachricht wird automatisiert. Fälle mit fehlenden Angaben, Konfliktpotenzial oder
+                Risikoindikatoren bleiben in der Freigabe und werden weiterhin manuell entschieden.
               </p>
 
               <article className="mt-4 rounded-xl bg-white p-4 ring-1 ring-[var(--border)]">
@@ -434,8 +464,8 @@ export default function ROICalculator() {
                         anfragen_pro_woche: anfragenProWoche,
                         minuten_pro_anfrage: minutenProAnfrage,
                         first_response_heute_min: firstResponseHeuteMin,
-                        standardfall_anteil: standardfallAnteil,
-                        auto_anteil_standard: autoAnteilBeiStandard,
+                        wiederkehrende_quote: wiederkehrendeQuote,
+                        auto_anteil_wiederkehrend: autoAnteilBeiWiederkehrend,
                         stunden_satz_eur: stundenSatzEur,
                         gesparte_stunden_monat: Number(model.gesparteStundenProMonat.toFixed(2)),
                         monetarer_hebel_monat: Number(model.monetarerHebelProMonat.toFixed(0)),
@@ -444,7 +474,7 @@ export default function ROICalculator() {
                     })
                   }
                 >
-                  14 Tage testen
+                  {MARKETING_PRIMARY_CTA_LABEL}
                 </Link>
                 <Link
                   href="/produkt#setup"

@@ -210,11 +210,11 @@ const PUBLIC_DOCS: PublicKnowledgeDoc[] = [
   {
     id: "trust_center",
     kind: "public_page",
-    title: "Trust Center",
+    title: "Trust-Hub",
     href: "/trust",
     tags: ["trust", "betrieb", "kontrollen", "transparenz", "verlässlichkeit"],
     content:
-      "Das Trust Center bündelt Sicherheits- und Betriebsprinzipien: klare Regeln, dokumentierte Entscheidungen, kontrollierte Eskalation und nachvollziehbare Abläufe.",
+      "Der Trust-Hub bündelt Sicherheitslogik, Datenschutz, Unterauftragsverarbeiter und Freigabe-Prüfpfade in einem kompakten Hub.",
   },
   {
     id: "pricing",

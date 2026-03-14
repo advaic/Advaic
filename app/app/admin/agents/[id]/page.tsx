@@ -93,9 +93,10 @@ async function getAgentDetail(id: string) {
 export default async function AdminAgentDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  const data = await getAgentDetail(params.id);
+  const { id } = await params;
+  const data = await getAgentDetail(id);
   const a = data.agent;
 
   return (
@@ -173,7 +174,7 @@ export default async function AdminAgentDetailPage({
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <form action={actionToggleAutosend}>
-                <input type="hidden" name="agent_id" value={String(a?.id || params.id)} />
+                <input type="hidden" name="agent_id" value={String(a?.id || id)} />
                 <input
                   type="hidden"
                   name="next"
@@ -191,7 +192,7 @@ export default async function AdminAgentDetailPage({
               </form>
 
               <form action={actionToggleFollowupsDefault}>
-                <input type="hidden" name="agent_id" value={String(a?.id || params.id)} />
+                <input type="hidden" name="agent_id" value={String(a?.id || id)} />
                 <input
                   type="hidden"
                   name="next"
@@ -209,7 +210,7 @@ export default async function AdminAgentDetailPage({
               </form>
 
               <form action={actionSetOnboardingCompleted}>
-                <input type="hidden" name="agent_id" value={String(a?.id || params.id)} />
+                <input type="hidden" name="agent_id" value={String(a?.id || id)} />
                 <input
                   type="hidden"
                   name="next"

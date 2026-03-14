@@ -6,6 +6,7 @@ import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
 import FinalCTA from "@/components/marketing/FinalCTA";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const timeline = [
   {
@@ -31,7 +32,7 @@ const guardrails = [
   "Nur aktiv, wenn der Interessent zuletzt nicht geantwortet hat.",
   "Bis zu zwei Stufen in der aktuellen Version.",
   "Vor jedem Follow-up laufen dieselben Qualitätschecks wie bei normalen Antworten.",
-  "Bei Risiko oder Unsicherheit geht der Fall in die Freigabe statt in den Auto-Versand.",
+  "Bei fehlenden Angaben, verändertem Kontext oder Qualitätswarnung geht der Fall in die Freigabe statt in den Auto-Versand.",
 ];
 
 const stopReasons = [
@@ -59,7 +60,7 @@ const timelineDetails = [
 const operatingModel = [
   {
     title: "Auslöser",
-    text: "Follow-up wird nur erzeugt, wenn auf eine vorherige Interessenten-Nachricht noch keine Antwort eingegangen ist und die Funktion aktiv ist.",
+      text: "Follow-up wird nur erzeugt, wenn auf eine vorherige Interessenten-Nachricht noch keine Antwort eingegangen ist und die Funktion aktiv ist.",
   },
   {
     title: "Qualitätsgate",
@@ -67,7 +68,7 @@ const operatingModel = [
   },
   {
     title: "Fail-Safe",
-    text: "Bei niedriger Sicherheit oder unklarem Kontext geht der Fall zur Freigabe statt in den Auto-Versand.",
+      text: "Bei Qualitätswarnung, fehlenden Angaben oder verändertem Kontext geht der Fall zur Freigabe statt in den Auto-Versand.",
   },
 ];
 
@@ -96,27 +97,15 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildMarketingMetadata({
   title: "Follow-up-Logik | Advaic",
   description:
     "Kontrollierte Follow-ups mit Guardrails: Stufen, Stop-Gründe, Sicherheitschecks und manuelle Steuerung für den Makleralltag.",
-  alternates: {
-    canonical: "/follow-up-logik",
-  },
-  openGraph: {
-    title: "Follow-up-Logik | Advaic",
-    description:
-      "Kontrollierte Follow-ups mit Guardrails: Stufen, Stop-Gründe, Sicherheitschecks und manuelle Steuerung für den Makleralltag.",
-    url: "/follow-up-logik",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Follow-up-Logik | Advaic",
-    description:
-      "Kontrollierte Follow-ups mit Guardrails: Stufen, Stop-Gründe, Sicherheitschecks und manuelle Steuerung für den Makleralltag.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+  path: "/follow-up-logik",
+  template: "guide",
+  eyebrow: "Follow-ups",
+  proof: "Nachfassen nur kontrolliert, mit Stufen, Stop-Regeln und denselben Qualitätschecks.",
+});
 
 export default function FollowUpLogikPage() {
   const siteUrl = getSiteUrl();
@@ -137,11 +126,11 @@ export default function FollowUpLogikPage() {
       />
       <PageIntro
         kicker="Nachfass-Prozess"
-        title="Follow-ups: kontrolliert planen, sicher stoppen"
-        description="Follow-ups sollen nicht drängen, sondern Klarheit schaffen. Deshalb folgt der Ablauf festen Regeln und stoppt automatisch, sobald eine Antwort eingeht."
+        title="Follow-ups mit festen Wartezeiten, Stop-Regeln und Qualitätschecks"
+        description="Follow-ups sollen nicht drängen, sondern rechtzeitig und nachvollziehbar an offene Interessenten erinnern. Deshalb folgt der Ablauf festen Regeln und stoppt automatisch, sobald eine Antwort eingeht oder ein Warnsignal auftaucht."
         actions={
           <>
-            <Link href="/produkt#followups" className="btn-secondary">
+            <Link href="/produkt#setup" className="btn-secondary">
               Zur Produktsektion
             </Link>
             <Link href="/signup" className="btn-primary">
@@ -155,7 +144,7 @@ export default function FollowUpLogikPage() {
         <Container>
           <div className="grid gap-6 lg:grid-cols-12">
             <article className="card-base p-6 lg:col-span-8 md:p-8">
-              <h2 className="h3">Sales Brief: Warum Follow-ups oft falsch umgesetzt werden</h2>
+              <h2 className="h3">Warum Follow-ups oft schlecht umgesetzt werden</h2>
               <p className="body mt-4 text-[var(--muted)]">
                 Viele Teams setzen Nachfassen als starre Erinnerungsfunktion um. Das führt zu unpassenden Nachrichten,
                 unnötigem Druck und einer schlechten Interessenten-Erfahrung.
@@ -170,7 +159,7 @@ export default function FollowUpLogikPage() {
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
                 <li>Nur relevante Nachfassungen</li>
                 <li>Automatischer Stopp bei Antwort</li>
-                <li>Freigabe bei Unsicherheit</li>
+                <li>Freigabe bei Qualitätswarnung oder geändertem Kontext</li>
               </ul>
             </article>
           </div>

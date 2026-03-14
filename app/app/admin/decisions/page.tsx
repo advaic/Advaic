@@ -132,16 +132,17 @@ function sendTone(v: string | null) {
 export default async function AdminDecisionsPage({
   searchParams,
 }: {
-  searchParams: Record<string, string | undefined>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const verdict = searchParams.verdict || "";
-  const risk = searchParams.risk || "";
-  const prompt_key = searchParams.prompt_key || "";
-  const action = searchParams.action || "";
-  const reason_code = searchParams.reason_code || "";
-  const agent_id = searchParams.agent_id || "";
-  const lead_id = searchParams.lead_id || "";
-  const limit = searchParams.limit || "100";
+  const resolvedSearchParams = await searchParams;
+  const verdict = resolvedSearchParams.verdict || "";
+  const risk = resolvedSearchParams.risk || "";
+  const prompt_key = resolvedSearchParams.prompt_key || "";
+  const action = resolvedSearchParams.action || "";
+  const reason_code = resolvedSearchParams.reason_code || "";
+  const agent_id = resolvedSearchParams.agent_id || "";
+  const lead_id = resolvedSearchParams.lead_id || "";
+  const limit = resolvedSearchParams.limit || "100";
 
   const data = await getDecisions({
     verdict,

@@ -6,7 +6,17 @@ import type { Lead } from "@/types/lead";
 import type { Message } from "@/types/message";
 import type { Database, Json } from "@/types/supabase";
 import { useSupabaseClient } from "@supabase/auth-helpers-react";
+import {
+  appButtonClass,
+  ConversationLoadingState,
+  StatusBadge,
+  statusBadgeClass,
+  statusSurfaceClass,
+  type StatusTone,
+} from "@/components/app-ui";
 import { trackFunnelEvent } from "@/lib/funnel/track";
+import { trackUiMetricEvent, useUiRouteMetric } from "@/lib/funnel/ui-metrics";
+import { uiActionCopy } from "@/lib/ui/action-copy";
 import LeadDocumentList from "./LeadDocumentList";
 import LeadKeyInfoCard from "./LeadKeyInfoCard";
 
@@ -270,6 +280,39 @@ function followupStatusLabel(s: any): string {
   return v;
 }
 
+function followupStatusTone(s: any): StatusTone {
+  const v = String(s || "")
+    .toLowerCase()
+    .trim();
+  if (!v || v === "idle") return "neutral";
+  if (v === "planned" || v === "queued") return "brand";
+  if (v === "sent") return "success";
+  if (v === "paused" || v === "needs_approval") return "warning";
+  if (v === "stopped") return "danger";
+  return "neutral";
+}
+
+function leadPriorityTone(v: unknown): StatusTone {
+  const raw = String(v ?? "")
+    .toLowerCase()
+    .trim();
+  if (!raw) return "neutral";
+
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    if (numeric >= 3) return "danger";
+    if (numeric === 2) return "warning";
+    return "neutral";
+  }
+
+  if (raw === "high" || raw === "hot" || raw === "hoch") return "danger";
+  if (raw === "medium" || raw === "warm" || raw === "med" || raw === "mittel") {
+    return "warning";
+  }
+  if (raw === "low" || raw === "cold" || raw === "niedrig") return "neutral";
+  return "warning";
+}
+
 function computeRuleSource(
   lead: any,
   agentDefaults: any | null,
@@ -296,11 +339,26 @@ function qaVerdictLabel(v: unknown) {
 
 function qaVerdictTone(v: unknown) {
   const s = String(v || "").toLowerCase().trim();
-  if (s === "pass")
-    return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  if (s === "warn") return "border-amber-200 bg-amber-50 text-amber-900";
-  if (s === "fail") return "border-red-200 bg-red-50 text-red-700";
-  return "border-gray-200 bg-white text-gray-700";
+  if (s === "pass") return statusBadgeClass("success");
+  if (s === "warn") return statusBadgeClass("warning");
+  if (s === "fail") return statusBadgeClass("danger");
+  return statusBadgeClass("neutral");
+}
+
+function trustEventTone(kind: unknown): StatusTone {
+  const value = String(kind || "")
+    .toLowerCase()
+    .trim();
+  if (value === "versand") return "success";
+  if (value === "fehler") return "danger";
+  if (value === "freigabe") return "warning";
+  return "neutral";
+}
+
+function ruleSourceTone(source: "Lead" | "Immobilie" | "Standard"): StatusTone {
+  if (source === "Lead") return "warning";
+  if (source === "Immobilie") return "brand";
+  return "neutral";
 }
 
 function parseQaConfidence(meta: any): number | null {
@@ -356,11 +414,10 @@ function computeDraftQualityScore(input: {
 }
 
 function qualityScoreTone(score: number | null): string {
-  if (score === null)
-    return "border-gray-200 bg-gray-50 text-gray-600";
-  if (score >= 80) return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  if (score >= 60) return "border-amber-200 bg-amber-50 text-amber-900";
-  return "border-red-200 bg-red-50 text-red-700";
+  if (score === null) return statusBadgeClass("neutral");
+  if (score >= 80) return statusBadgeClass("success");
+  if (score >= 60) return statusBadgeClass("warning");
+  return statusBadgeClass("danger");
 }
 
 function summarizeApprovalWhy(input: {
@@ -429,6 +486,108 @@ function summarizeApprovalWhy(input: {
           : "Kurz prüfen und freigeben.");
 
   return { reasons: reasons.slice(0, 2), recommendation };
+}
+
+function buildEscalationGuidance(input: {
+  isEscalated: boolean;
+  pendingApprovalCount: number;
+  latestQaInsight: { qa: DraftQaRow | null } | null;
+}): {
+  tone: StatusTone;
+  stateLabel: string;
+  summary: string;
+  blocker: string;
+  nextStep: string;
+  reasons: string[];
+} {
+  const qa = input.latestQaInsight?.qa ?? null;
+  const verdict = String(qa?.verdict || "").toLowerCase();
+  const confidence = parseQaConfidence(qa?.meta);
+  const risks = Array.isArray(qa?.risk_flags)
+    ? qa.risk_flags
+        .map((flag) => String(flag || "").replace(/_/g, " ").trim())
+        .filter(Boolean)
+    : [];
+
+  const reasons: string[] = [];
+
+  if (input.pendingApprovalCount > 0) {
+    reasons.push(
+      input.pendingApprovalCount === 1
+        ? "1 offene Freigabe hält den Fall in manueller Prüfung."
+        : `${input.pendingApprovalCount} offene Freigaben halten den Fall in manueller Prüfung.`,
+    );
+  }
+
+  if (verdict === "fail") {
+    reasons.push("Mindestens ein Qualitätscheck blockiert sichere Automatisierung.");
+  } else if (verdict === "warn") {
+    reasons.push("Die Qualitätsprüfung meldet einen Warnhinweis.");
+  }
+
+  if (risks.length > 0) {
+    reasons.push(`Risikosignale: ${risks.slice(0, 2).join(", ")}.`);
+  }
+
+  if (confidence !== null && confidence < 0.8) {
+    reasons.push(
+      `Die Confidence liegt mit ${confidence.toFixed(2)} unter dem sicheren Bereich.`,
+    );
+  }
+
+  if (!reasons.length && input.isEscalated) {
+    reasons.push(
+      "Der Fall wurde manuell eskaliert und bleibt bis zur Klärung in menschlicher Prüfung.",
+    );
+  }
+
+  if (input.isEscalated) {
+    return {
+      tone: "danger",
+      stateLabel: "Eskalation aktiv",
+      summary:
+        reasons[0] ||
+        "Der Fall ist eskaliert und läuft nicht mehr automatisch weiter.",
+      blocker:
+        input.pendingApprovalCount > 0
+          ? "Auto-Senden und automatische Antworten bleiben pausiert, bis offene Freigaben geklärt sind."
+          : "Automatische Antworten bleiben pausiert, bis du den Fall deeskalierst.",
+      nextStep:
+        input.pendingApprovalCount > 0
+          ? "Zuerst offene Freigaben prüfen, dann die Konversation manuell klären und erst danach deeskalieren."
+          : qa?.action
+            ? String(qa.action)
+            : "Konversation manuell prüfen und erst nach Klärung deeskalieren.",
+      reasons: reasons.slice(0, 3),
+    };
+  }
+
+  if (reasons.length > 0) {
+    return {
+      tone: "warning",
+      stateLabel: "Warnsignale ohne Eskalation",
+      summary: "Noch keine Eskalation aktiv, aber es gibt erkennbare Warnsignale.",
+      blocker:
+        "Dieser Fall sollte nur nach manueller Prüfung automatisch weiterlaufen.",
+      nextStep:
+        input.pendingApprovalCount > 0
+          ? "Freigaben prüfen oder bei Unsicherheit gezielt eskalieren."
+          : qa?.action
+            ? `Bei Unsicherheit: ${String(qa.action)}`
+            : "Bei Unsicherheit eskalieren, statt automatisch zu senden.",
+      reasons: reasons.slice(0, 3),
+    };
+  }
+
+  return {
+    tone: "neutral",
+    stateLabel: "Keine Eskalation",
+    summary: "Aktuell gibt es keinen aktiven Eskalationsfall.",
+    blocker: "Es gibt derzeit keinen aktiven Eskalations-Blocker.",
+    nextStep:
+      "Nur eskalieren, wenn Antwort, Risiko oder Ton manuell geklärt werden müssen.",
+    reasons: [],
+  };
 }
 
 const QUICK_TEMPLATES: Array<{ label: string; value: string }> = [
@@ -552,6 +711,12 @@ export default function LeadChatView({
   documents: initialDocuments,
 }: LeadChatViewProps) {
   const supabase = useSupabaseClient<Database>();
+  const { markFirstAction: markConversationFirstAction } = useUiRouteMetric({
+    routeKey: "conversation_detail",
+    source: "conversation_detail",
+    path: "/app/nachrichten",
+    viewMeta: { lead_id: leadId },
+  });
 
   const debugEnabled = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -607,6 +772,8 @@ export default function LeadChatView({
   >([]);
   const [styleUiOpen, setStyleUiOpen] = useState(false);
   const [styleInstruction, setStyleInstruction] = useState("");
+  const [mobileContextOpen, setMobileContextOpen] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
 
   const exampleGroups = useMemo(() => {
     return groupExamples(agentStyleExamples);
@@ -677,6 +844,24 @@ export default function LeadChatView({
   const [assignError, setAssignError] = useState<string | null>(null);
   const [propertySearch, setPropertySearch] = useState("");
   const [propertyResults, setPropertyResults] = useState<PropertyMini[]>([]);
+
+  const trackConversationAction = (
+    action: string,
+    meta?: Record<string, unknown>,
+  ) => {
+    markConversationFirstAction(action, meta);
+    trackUiMetricEvent({
+      event: "conversation_primary_action",
+      source: "conversation_detail",
+      path: "/app/nachrichten",
+      routeKey: "conversation_detail",
+      meta: {
+        lead_id: leadId,
+        action,
+        ...(meta || {}),
+      },
+    });
+  };
 
   const trySelectProperties = async (agentId: string, q: string) => {
     const selectCols =
@@ -1751,6 +1936,19 @@ export default function LeadChatView({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    if (!assignOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (assignBusy) return;
+      setAssignOpen(false);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [assignBusy, assignOpen]);
+
   const isPendingApprovalDraft = (m: any): boolean => {
     const approval =
       typeof m?.approval_required === "boolean" ? m.approval_required : false;
@@ -1778,6 +1976,7 @@ export default function LeadChatView({
 
   const approveDraftAndSend = async (draftId: string) => {
     if (!draftId) return;
+    trackConversationAction("approve_draft_and_send", { draft_id: draftId });
 
     // 1) Freigabe entfernen + als send-ready markieren
     const { error: updErr } = await (supabase.from("messages") as any)
@@ -1838,6 +2037,9 @@ export default function LeadChatView({
 
   const startEditDraft = (draft: any) => {
     const text = String(draft?.text || "");
+    trackConversationAction("start_edit_draft", {
+      draft_id: String(draft?.id || ""),
+    });
     setEditingDraftId(String(draft?.id || ""));
     setEditingDraftOriginal(text);
     setNewMessage(text);
@@ -1862,6 +2064,9 @@ export default function LeadChatView({
 
     setSending(true);
     setSendError(null);
+    trackConversationAction("save_edited_draft", {
+      draft_id: editingDraftId,
+    });
 
     try {
       const { error } = await (supabase.from("messages") as any)
@@ -1894,6 +2099,10 @@ export default function LeadChatView({
 
     setSending(true);
     setSendError(null);
+    trackConversationAction("send_reply", {
+      draft_length: newMessage.trim().length,
+      attachment_count: pendingAttachments.length,
+    });
 
     const newMessageText = newMessage.trim();
     const subject = `Re: ${lead.type ?? "Anfrage"}`;
@@ -2212,6 +2421,17 @@ export default function LeadChatView({
     return null;
   }, [filteredMessages, qaByDraftId]);
 
+  const pendingApprovalCount = filteredMessages.reduce(
+    (count, msg) => count + (isPendingApprovalDraft(msg) ? 1 : 0),
+    0,
+  );
+
+  const escalationGuidance = buildEscalationGuidance({
+    isEscalated,
+    pendingApprovalCount,
+    latestQaInsight,
+  });
+
   const trustLogStats = useMemo(() => {
     const counts = {
       eingang: 0,
@@ -2332,24 +2552,12 @@ export default function LeadChatView({
   }, [agentFollowupsDefaults, propertyFollowupPolicy]);
 
   if (loading) {
-    return (
-      <div className="min-h-[70vh] bg-[#f7f7f8] px-4 md:px-6 py-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="h-10 w-64 bg-white rounded-xl border border-gray-200 animate-pulse mb-3" />
-          <div className="h-4 w-96 bg-white rounded-xl border border-gray-200 animate-pulse mb-6" />
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 space-y-3">
-            <div className="h-16 bg-gray-100 rounded-xl animate-pulse" />
-            <div className="h-16 bg-gray-100 rounded-xl animate-pulse" />
-            <div className="h-16 bg-gray-100 rounded-xl animate-pulse" />
-          </div>
-        </div>
-      </div>
-    );
+    return <ConversationLoadingState />;
   }
 
   if (!lead) {
     return (
-      <div className="p-6 text-red-600 bg-[#f7f7f8]">
+      <div className="p-6 text-red-600 app-shell">
         Interessent nicht gefunden.
       </div>
     );
@@ -2357,33 +2565,127 @@ export default function LeadChatView({
 
   return (
     <div
-      className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900"
+      className="min-h-[calc(100vh-80px)] app-shell text-gray-900"
       data-tour="conversation-panel"
     >
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Sticky header */}
         <div
-          className="sticky top-16 md:top-0 z-30 -mx-4 px-4 md:mx-0 md:px-0 pt-3 md:pt-4 bg-[#f7f7f8]/90 backdrop-blur border-b border-gray-200"
+          className="sticky top-16 md:top-0 z-30 -mx-4 px-4 md:mx-0 md:px-0 pt-3 md:pt-4 app-shell-header backdrop-blur border-b"
           data-tour="conversation-header"
         >
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 pb-4">
-            <div className="min-w-0">
+          <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4 pb-4">
+            <div className="min-w-0 flex-1">
+              <div className="app-text-meta-label">Lead-Kontext</div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl max-[375px]:text-lg md:text-2xl font-semibold truncate">
+                <h1 className="app-text-page-title max-[375px]:text-[1.35rem] truncate">
                   {lead.name}
                 </h1>
 
-                <span className="text-xs font-medium px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-700">
+                <StatusBadge tone="neutral" size="sm">
                   {lead.type ?? "Anfrage"}
-                </span>
+                </StatusBadge>
 
-                <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800">
+                <StatusBadge
+                  tone={leadPriorityTone((lead as any).priority)}
+                  size="sm"
+                >
                   Priorität: {(lead as any).priority ?? "-"}
-                </span>
+                </StatusBadge>
 
-                <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
+                <StatusBadge tone="brand" size="sm">
                   Advaic
-                </span>
+                </StatusBadge>
+              </div>
+
+              <div className="app-text-helper mt-1 flex items-center gap-2">
+                <span className="truncate">{shortEmail(lead.email)}</span>
+                {copied && (
+                  <StatusBadge tone="success" size="sm">
+                    {copied}
+                  </StatusBadge>
+                )}
+              </div>
+
+              <div
+                className="mt-3 rounded-2xl border app-surface-card p-3 md:hidden"
+                data-tour="conversation-mobile-workbar"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge tone={isSolved ? "success" : "brand"} size="sm">
+                    {isSolved ? "Erledigt" : "Offen"}
+                  </StatusBadge>
+                  <StatusBadge tone={escalationGuidance.tone} size="sm">
+                    {escalationGuidance.stateLabel}
+                  </StatusBadge>
+                  <StatusBadge tone={activeProperty ? "success" : "warning"} size="sm">
+                    {activeProperty ? "Objekt zugeordnet" : "Objekt offen"}
+                  </StatusBadge>
+                </div>
+                <div className="mt-2 text-xs text-gray-600">
+                  Thread zuerst, Kontext und Aktionen nur bei Bedarf.
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMobileContextOpen((value) => !value)}
+                    className={appButtonClass({
+                      variant: mobileContextOpen ? "utility" : "secondary",
+                      size: "sm",
+                      className: "w-full",
+                    })}
+                    data-tour="conversation-mobile-context-toggle"
+                  >
+                    {mobileContextOpen ? "Kontext schließen" : "Kontext öffnen"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMobileActionsOpen((value) => !value)}
+                    className={appButtonClass({
+                      variant: mobileActionsOpen ? "utility" : "secondary",
+                      size: "sm",
+                      className: "w-full",
+                    })}
+                    data-tour="conversation-mobile-actions-toggle"
+                  >
+                    {mobileActionsOpen ? "Aktionen schließen" : "Aktionen öffnen"}
+                  </button>
+                </div>
+              </div>
+
+              <div
+                className={`mt-3 gap-2 sm:grid-cols-2 xl:grid-cols-4 ${
+                  mobileContextOpen ? "grid" : "hidden md:grid"
+                }`}
+                data-tour="conversation-context-summary"
+              >
+                <div className="rounded-xl border app-surface-card px-3 py-3">
+                  <div className="app-text-meta-label">Arbeitsstatus</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900">
+                    {isSolved ? "Erledigt" : "Offen"}
+                  </div>
+                  <div className="app-text-helper mt-1">
+                    {isSolved
+                      ? "Diese Konversation ist abgeschlossen."
+                      : "Antwort und Entscheidung stehen noch aus."}
+                  </div>
+                </div>
+
+                <div
+                  className={`rounded-xl border px-3 py-3 ${statusSurfaceClass(
+                    escalationGuidance.tone,
+                  )}`}
+                  data-tour="conversation-escalation-summary"
+                >
+                  <div className="app-text-meta-label">Eskalation</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900">
+                    {escalationGuidance.stateLabel}
+                  </div>
+                  <div className="app-text-helper mt-1 text-gray-700">
+                    {escalationGuidance.summary}
+                  </div>
+                </div>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -2394,49 +2696,53 @@ export default function LeadChatView({
                       });
                     }
                   }}
-                  className={`text-xs font-medium px-2 py-1 rounded-full border transition-colors ${
-                    activeProperty
-                      ? "bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"
-                      : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                  }`}
+                  className="rounded-xl border app-surface-card px-3 py-3 text-left transition hover:bg-[var(--app-surface-muted)]"
                   title={
                     activeProperty
-                      ? "Immobilie ist zugeordnet (klicken zum Anzeigen)"
-                      : "Noch keine Immobilie zugeordnet (klicken zum Anzeigen)"
+                      ? "Zum Objektkontext springen"
+                      : "Zum Objektbereich springen"
                   }
+                  data-tour="conversation-property-jump"
                 >
-                  {activeProperty
-                    ? "Immobilie: Zugeordnet"
-                    : "Immobilie: Offen"}
+                  <div className="app-text-meta-label">Objekt</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900">
+                    {activeProperty ? "Zugeordnet" : "Noch offen"}
+                  </div>
+                  <div className="app-text-helper mt-1">
+                    {activeProperty
+                      ? activeProperty.street_address || "Objektkontext öffnen"
+                      : "Property Matching und manuelle Zuordnung prüfen"}
+                  </div>
                 </button>
-              </div>
 
-              <div className="mt-1 text-sm text-gray-600 flex items-center gap-2">
-                <span className="truncate">{shortEmail(lead.email)}</span>
-                {copied && (
-                  <span className="text-xs text-emerald-600">{copied}</span>
-                )}
+                <div className="rounded-xl border app-surface-card px-3 py-3">
+                  <div className="app-text-meta-label">Follow-ups</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900">
+                    {copilotEffectiveEnabled ? "Aktiv" : "Deaktiviert"}
+                  </div>
+                  <div className="app-text-helper mt-1">
+                    {copilotRuleSource}-Regeln sind aktuell wirksam.
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="w-full lg:w-auto flex flex-wrap items-center gap-2">
-              <div className="hidden md:block">
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Suche…"
-                  className="w-48 px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                />
-              </div>
-
+            <div
+              className={`w-full xl:w-auto xl:min-w-[320px] rounded-2xl border app-surface-panel p-3 ${
+                mobileActionsOpen ? "block" : "hidden md:block"
+              }`}
+              data-tour="conversation-action-bar"
+            >
+              <div className="app-text-meta-label">Aktionen</div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={handleToggleSolved}
-                className={`w-full sm:w-auto px-3 py-2 text-sm rounded-lg border transition-colors ${
-                  isSolved
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100"
-                    : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                }`}
+                className={appButtonClass({
+                  variant: isSolved ? "utility" : "secondary",
+                  size: "sm",
+                  className: "w-full sm:w-auto",
+                })}
                 title="Als erledigt markieren"
               >
                 {isSolved ? "Erledigt" : "Offen"}
@@ -2454,7 +2760,11 @@ export default function LeadChatView({
                     setTimeout(() => setCopied(null), 1200);
                   }
                 }}
-                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                className={appButtonClass({
+                  variant: "secondary",
+                  size: "sm",
+                  className: "w-full sm:w-auto",
+                })}
                 title="E-Mail kopieren"
                 data-tour="copy-email"
               >
@@ -2464,7 +2774,11 @@ export default function LeadChatView({
               <button
                 type="button"
                 onClick={() => setProfileOpen(true)}
-                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                className={appButtonClass({
+                  variant: "secondary",
+                  size: "sm",
+                  className: "w-full sm:w-auto",
+                })}
                 title="Profil öffnen"
                 data-tour="lead-profile-button"
               >
@@ -2474,7 +2788,11 @@ export default function LeadChatView({
               <button
                 type="button"
                 onClick={handleExportConversation}
-                className="w-full sm:w-auto px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                className={appButtonClass({
+                  variant: "secondary",
+                  size: "sm",
+                  className: "w-full sm:w-auto",
+                })}
                 title="Verlauf exportieren"
                 data-tour="export-button"
               >
@@ -2501,28 +2819,65 @@ export default function LeadChatView({
                   }
                 }}
                 disabled={isEscalated}
-                className={`w-full sm:w-auto px-3 py-2 text-sm rounded-lg border ${
-                  isEscalated
-                    ? "bg-red-50 border-red-200 text-red-700 opacity-60 cursor-not-allowed"
-                    : "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
-                }`}
+                className={appButtonClass({
+                  variant: "destructive",
+                  size: "sm",
+                  className: "w-full sm:w-auto",
+                })}
                 title="Eskalieren"
                 data-tour="escalate-button"
               >
                 {isEscalated ? "Eskaliert" : "Eskalieren"}
               </button>
+              </div>
+
+              <div className="mt-2 flex items-center gap-2">
+                <div className="app-text-helper hidden md:block">
+                  Profil, Versandstatus und Export bleiben oben erreichbar.
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Chat + Composer */}
-        <div className="py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-4">
+        <div className="app-page-section">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-4">
             {/* LEFT: Chat */}
-            <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+            <div className="rounded-2xl border app-surface-card overflow-hidden">
+              <div
+                className="border-b app-surface-muted px-3 md:px-6 py-4"
+                data-tour="conversation-thread-card"
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="app-text-meta-label">Konversation</div>
+                    <div className="app-text-section-title text-gray-900">
+                      Echte E-Mail-Kommunikation
+                    </div>
+                    <div className="app-text-helper mt-1 hidden md:block">
+                      Antwort, Freigabe und Versand laufen hier in einer Arbeitsfläche statt in getrennten Schritten.
+                    </div>
+                  </div>
+
+                  <div className="w-full lg:w-auto flex flex-col gap-2 lg:items-end">
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Suche im Verlauf…"
+                      className="w-full lg:w-56 px-3 py-2 text-sm rounded-lg border app-field"
+                      data-tour="conversation-search-input"
+                    />
+                    <div className="text-xs text-gray-500">
+                      Enter = senden · Shift+Enter = neue Zeile
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Messages */}
               <div
-                className="min-h-[420px] md:min-h-0 md:h-[calc(100vh-260px)] overflow-y-auto px-3 md:px-6 py-4 space-y-6 bg-[#fbfbfc]"
+                className="min-h-[420px] md:min-h-0 md:h-[calc(100vh-320px)] overflow-y-auto px-3 md:px-6 py-4 space-y-6 app-surface-muted"
                 data-tour="conversation-messages"
               >
                 <div className="sr-only" data-tour="email-truth">
@@ -2530,11 +2885,11 @@ export default function LeadChatView({
                   (eingehend/ausgehend).
                 </div>
                 {!hasMessages && (
-                  <div className="rounded-2xl border border-gray-200 bg-[#fbfbfc] p-6 text-center">
-                    <div className="text-gray-900 font-medium">
+                  <div className="rounded-2xl border app-surface-muted p-6 text-center">
+                    <div className="app-text-section-title text-gray-900">
                       Noch keine Nachrichten.
                     </div>
-                    <div className="text-sm text-gray-600 mt-1">
+                    <div className="app-text-helper mt-1">
                       Schreibe deine erste Antwort – Enter sendet, Shift+Enter
                       macht eine neue Zeile.
                     </div>
@@ -2596,8 +2951,7 @@ export default function LeadChatView({
                       let prependIcon = null;
 
                       if (isSystem) {
-                        bubbleClasses =
-                          "bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl max-w-[72%]";
+                        bubbleClasses = `${statusSurfaceClass("warning")} rounded-2xl max-w-[72%]`;
                         prependIcon = (
                           <span className="mr-2" aria-label="System">
                             🤖
@@ -2605,7 +2959,7 @@ export default function LeadChatView({
                         );
                       } else if (isAgent) {
                         bubbleClasses = pendingApproval
-                          ? "bg-amber-50/70 border border-amber-300 text-slate-900 rounded-2xl max-w-[72%] shadow-sm"
+                          ? `${statusSurfaceClass("warning")} rounded-2xl max-w-[72%] shadow-sm`
                           : "bg-white border border-slate-200 shadow-sm text-slate-900 rounded-2xl max-w-[72%]";
                       } else {
                         // Incoming (lead) bubbles: clean neutral
@@ -2632,9 +2986,9 @@ export default function LeadChatView({
                               <div className="flex-1 min-w-0">
                                 {pendingApproval && !isSystem && (
                                   <div className="mb-3 space-y-2">
-                                    <span className="inline-flex items-center gap-2 text-[11px] px-2 py-1 rounded-full border border-amber-300 bg-amber-100/60 text-amber-900">
+                                    <StatusBadge tone="warning" size="sm">
                                       ⏳ Zur Freigabe
-                                    </span>
+                                    </StatusBadge>
                                     <span
                                       className={`inline-flex items-center gap-2 text-[11px] px-2 py-1 rounded-full border ${qualityScoreTone(
                                         draftQualityScore,
@@ -2644,8 +2998,8 @@ export default function LeadChatView({
                                         ? `Qualitäts-Score ${draftQualityScore}/100`
                                         : "Qualitäts-Score offen"}
                                     </span>
-                                    <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-[11px] text-gray-800">
-                                      <div className="font-semibold text-amber-900">
+                                    <div className={`rounded-lg border px-2.5 py-2 text-[11px] text-gray-800 ${statusSurfaceClass("warning")}`}>
+                                      <div className="font-semibold text-gray-900">
                                         Warum Freigabe?
                                       </div>
                                       <ul className="mt-1 list-disc space-y-0.5 pl-4">
@@ -2664,9 +3018,9 @@ export default function LeadChatView({
                                 )}
                                 {isAgent && isFollowup && !isSystem && (
                                   <div className="mb-2">
-                                    <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-800">
+                                    <StatusBadge tone="warning" size="sm">
                                       Follow-up
-                                    </span>
+                                    </StatusBadge>
                                   </div>
                                 )}
                                 {looksLikeImage ? (
@@ -2793,19 +3147,25 @@ export default function LeadChatView({
                                           );
                                         }
                                       }}
-                                      className="text-[11px] px-3 py-1.5 rounded-full border border-gray-900 bg-gray-900 text-amber-200 hover:bg-gray-800"
-                                      title="Freigeben & sofort senden"
+                                      className={appButtonClass({
+                                        variant: "primary",
+                                        size: "chip",
+                                      })}
+                                      title={uiActionCopy.sendApprove}
                                     >
-                                      Akzeptieren
+                                      {uiActionCopy.sendApprove}
                                     </button>
 
                                     <button
                                       type="button"
                                       onClick={() => startEditDraft(msg)}
-                                      className="text-[11px] px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                                      title="Entwurf bearbeiten"
+                                      className={appButtonClass({
+                                        variant: "secondary",
+                                        size: "chip",
+                                      })}
+                                      title={uiActionCopy.editProposal}
                                     >
-                                      Bearbeiten
+                                      {uiActionCopy.editProposal}
                                     </button>
 
                                     <button
@@ -2828,7 +3188,10 @@ export default function LeadChatView({
                                           );
                                         }
                                       }}
-                                      className="text-[11px] px-3 py-1.5 rounded-full border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                                      className={appButtonClass({
+                                        variant: "destructive",
+                                        size: "chip",
+                                      })}
                                       title="Entwurf ignorieren"
                                     >
                                       Löschen
@@ -2888,7 +3251,7 @@ export default function LeadChatView({
               {/* Error banner */}
               {sendError && (
                 <div className="px-3 md:px-6">
-                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-sm">
+                  <div className={`mb-3 rounded-xl border px-4 py-3 text-sm text-red-800 ${statusSurfaceClass("danger")}`}>
                     {sendError}
                   </div>
                 </div>
@@ -2990,7 +3353,7 @@ export default function LeadChatView({
                             return (
                               <div
                                 key={`preview:${a.path}`}
-                                className="rounded-2xl border border-gray-200 bg-white p-3"
+                                className="rounded-2xl border app-surface-card p-3"
                               >
                                 <div className="text-xs text-gray-600 mb-2 truncate">
                                   {a.name}
@@ -3038,7 +3401,7 @@ export default function LeadChatView({
               )}
 
               <div
-                className="px-3 md:px-6 py-4 border-t border-gray-200 bg-[#fbfbfc]"
+                className="px-3 md:px-6 py-4 border-t app-surface-muted"
                 data-tour="composer"
               >
                 <div className="flex items-center justify-between gap-3 mb-2">
@@ -3054,7 +3417,7 @@ export default function LeadChatView({
                           );
                         }
                       }}
-                      className="text-sm rounded-lg bg-white border border-gray-200 px-3 py-2 text-gray-800"
+                      className="text-sm rounded-lg border app-field px-3 py-2 text-gray-800"
                       data-tour="quick-templates"
                     >
                       {QUICK_TEMPLATES.map((t) => (
@@ -3090,13 +3453,13 @@ export default function LeadChatView({
                     ) : null}
 
                     {exampleGroups.nogos.length > 0 ? (
-                      <span className="text-xs px-2 py-1 rounded-full border border-red-200 bg-red-50 text-red-700 whitespace-nowrap">
+                      <StatusBadge tone="danger" size="sm" className="whitespace-nowrap">
                         No-Go aktiv
-                      </span>
+                      </StatusBadge>
                     ) : null}
 
                     {editingDraftId && (
-                      <div className="text-xs px-3 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-800">
+                      <div className={`text-xs px-3 py-1 rounded-full border ${statusBadgeClass("warning")}`}>
                         Bearbeite Entwurf: {shortId(editingDraftId)}
                       </div>
                     )}
@@ -3115,7 +3478,7 @@ export default function LeadChatView({
                     </div>
                   </div>
                 {styleUiOpen ? (
-                  <div className="mb-3 rounded-2xl border border-gray-200 bg-white p-3">
+                  <div className="mb-3 rounded-2xl border app-surface-card p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-sm font-medium text-gray-900">
@@ -3128,7 +3491,10 @@ export default function LeadChatView({
                       <button
                         type="button"
                         onClick={() => setStyleUiOpen(false)}
-                        className="text-xs px-2 py-1 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                        className={appButtonClass({
+                          variant: "secondary",
+                          size: "chip",
+                        })}
                       >
                         Schließen
                       </button>
@@ -3136,7 +3502,7 @@ export default function LeadChatView({
 
                     {/* Quick inserts */}
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                      <div className="rounded-xl border app-surface-muted p-3">
                         <div className="text-xs font-medium text-gray-800 mb-2">
                           Anrede
                         </div>
@@ -3158,7 +3524,10 @@ export default function LeadChatView({
                                   }),
                                 )
                               }
-                              className="text-xs px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                              className={appButtonClass({
+                                variant: "secondary",
+                                size: "chip",
+                              })}
                               title={ex.label || "Anrede"}
                             >
                               {ex.label || "Anrede"}
@@ -3175,7 +3544,7 @@ export default function LeadChatView({
                         </div>
                       </div>
 
-                      <div className="rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                      <div className="rounded-xl border app-surface-muted p-3">
                         <div className="text-xs font-medium text-gray-800 mb-2">
                           Abschluss
                         </div>
@@ -3197,7 +3566,10 @@ export default function LeadChatView({
                                   }),
                                 )
                               }
-                              className="text-xs px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                              className={appButtonClass({
+                                variant: "secondary",
+                                size: "chip",
+                              })}
                               title={ex.label || "Abschluss"}
                             >
                               {ex.label || "Abschluss"}
@@ -3224,7 +3596,7 @@ export default function LeadChatView({
                         value={styleInstruction}
                         onChange={(e) => setStyleInstruction(e.target.value)}
                         placeholder='z.B. "kürzer", "mehr Druck", "konkreter nächster Schritt"'
-                        className="mt-1 w-full px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                        className="mt-1 w-full px-3 py-2 text-sm rounded-lg border app-field"
                       />
                       <div className="mt-1 text-[11px] text-gray-500">
                         Wird bei Copilot-Vorschlägen als zusätzliche Anweisung genutzt.
@@ -3232,7 +3604,7 @@ export default function LeadChatView({
                     </div>
 
                     {exampleGroups.nogos.length > 0 ? (
-                      <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3">
+                      <div className={`mt-3 rounded-xl border p-3 ${statusSurfaceClass("danger")}`}>
                         <div className="text-xs font-medium text-red-800">
                           No-Go Regeln
                         </div>
@@ -3254,7 +3626,10 @@ export default function LeadChatView({
                     <button
                       type="button"
                       onClick={handlePickFile}
-                      className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                      className={appButtonClass({
+                        variant: "secondary",
+                        size: "sm",
+                      })}
                       title="Datei hochladen (privat, als Anhang)"
                       data-tour="attachments-button"
                     >
@@ -3289,7 +3664,7 @@ export default function LeadChatView({
                         ? "Entwurf bearbeiten… (wird NICHT automatisch gesendet)"
                         : "Antwort schreiben…"
                     }
-                    className="flex-1 px-4 py-3 rounded-xl text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50 resize-none"
+                    className="flex-1 px-4 py-3 rounded-xl text-sm border app-field resize-none"
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyDown={(e) => {
@@ -3305,7 +3680,10 @@ export default function LeadChatView({
                       <button
                         type="button"
                         onClick={cancelEditDraft}
-                        className="px-4 py-3 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                        className={appButtonClass({
+                          variant: "secondary",
+                          size: "lg",
+                        })}
                       >
                         Abbrechen
                       </button>
@@ -3313,7 +3691,10 @@ export default function LeadChatView({
                       <button
                         type="submit"
                         disabled={sending || !newMessage.trim()}
-                        className="px-4 py-3 rounded-xl text-sm font-medium bg-gray-900 border border-gray-900 text-amber-200 transition-all duration-200 hover:bg-amber-200 hover:border-amber-200 hover:text-gray-900 hover:shadow-[0_10px_30px_rgba(245,158,11,0.18)] active:translate-y-[1px] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-900 disabled:hover:border-gray-900 disabled:hover:text-amber-200 disabled:hover:shadow-none"
+                        className={appButtonClass({
+                          variant: "primary",
+                          size: "lg",
+                        })}
                         data-tour="send-button"
                       >
                         {sending ? "Speichert…" : "Änderungen speichern"}
@@ -3323,7 +3704,10 @@ export default function LeadChatView({
                     <button
                       type="submit"
                       disabled={sending || !newMessage.trim()}
-                      className="px-4 py-3 rounded-xl text-sm font-medium bg-gray-900 border border-gray-900 text-amber-200 transition-all duration-200 hover:bg-amber-200 hover:border-amber-200 hover:text-gray-900 hover:shadow-[0_10px_30px_rgba(245,158,11,0.18)] active:translate-y-[1px] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-900 disabled:hover:border-gray-900 disabled:hover:text-amber-200 disabled:hover:shadow-none"
+                      className={appButtonClass({
+                        variant: "primary",
+                        size: "lg",
+                      })}
                       data-tour="send-button"
                     >
                       {sending ? "Sendet…" : "Senden"}
@@ -3334,31 +3718,33 @@ export default function LeadChatView({
             </div>
             {/* RIGHT: Lead Copilot Card */}
             <div
-              className="rounded-2xl border border-gray-200 bg-white overflow-hidden h-fit shadow-sm lg:sticky lg:top-24"
+              className="rounded-2xl border app-surface-panel overflow-hidden h-fit lg:sticky lg:top-24"
               data-tour="lead-copilot-card"
             >
-              <div className="px-4 py-4 border-b border-gray-200 bg-[#fbfbfc]">
+              <div className="px-4 py-4 border-b app-surface-muted">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-xs text-gray-500">Copilot</div>
-                    <div className="text-sm font-semibold text-gray-900">
-                      Lead Status &amp; Regeln
+                    <div className="app-text-meta-label">Arbeitskontext</div>
+                    <div className="app-text-section-title text-gray-900">
+                      Status, Regeln &amp; Objekt
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] px-2 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-800">
+                    <StatusBadge
+                      tone={ruleSourceTone(copilotRuleSource)}
+                      size="sm"
+                    >
                       {copilotRuleSource}
-                    </span>
+                    </StatusBadge>
                     {/* Follow-ups toggle switch moved here */}
                     <button
                       type="button"
                       onClick={handleToggleFollowups}
                       disabled={followupsBusy}
-                      className={`px-3 py-2 text-xs rounded-lg border transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
-                        followupsEnabled
-                          ? "bg-gray-900 border-gray-900 text-amber-200 hover:bg-gray-800"
-                          : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
-                      }`}
+                      className={appButtonClass({
+                        variant: followupsEnabled ? "primary" : "secondary",
+                        size: "sm",
+                      })}
                       title={
                         followupsEnabled
                           ? "Follow-ups sind aktiv für diesen Interessenten"
@@ -3374,7 +3760,30 @@ export default function LeadChatView({
                     </button>
                   </div>
                 </div>
-                <div className="mt-2 text-xs text-gray-600">
+                <div
+                  className="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-1"
+                  data-tour="conversation-context-rail"
+                >
+                  <div className="rounded-xl border app-surface-card px-3 py-2">
+                    <div className="app-text-meta-label">Regelquelle</div>
+                    <div className="mt-1 text-sm font-semibold text-gray-900">
+                      {copilotRuleSource}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border app-surface-card px-3 py-2">
+                    <div className="app-text-meta-label">Effektiv</div>
+                    <div className="mt-1 text-sm font-semibold text-gray-900">
+                      {copilotEffectiveEnabled ? "Aktiv" : "Deaktiviert"}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border app-surface-card px-3 py-2">
+                    <div className="app-text-meta-label">Objektstatus</div>
+                    <div className="mt-1 text-sm font-semibold text-gray-900">
+                      {activeProperty ? "Zugeordnet" : "Offen"}
+                    </div>
+                  </div>
+                </div>
+                <div className="app-text-helper mt-2">
                   Effektiv:{" "}
                   <span className="font-medium">
                     {copilotEffectiveEnabled ? "Aktiv" : "Deaktiviert"}
@@ -3396,12 +3805,16 @@ export default function LeadChatView({
                 <button
                   type="button"
                   onClick={() => setCopilotHelpOpen((v) => !v)}
-                  className="mt-2 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                  className={appButtonClass({
+                    variant: "secondary",
+                    size: "chip",
+                    className: "mt-2",
+                  })}
                 >
                   {copilotHelpOpen ? "Hinweise ausblenden" : "Hinweise anzeigen"}
                 </button>
                 {copilotHelpOpen && (
-                  <div className="mt-2 rounded-xl border border-gray-200 bg-[#fbfbfc] px-3 py-2 text-xs text-gray-700 space-y-1">
+                  <div className="mt-2 rounded-xl border app-surface-muted px-3 py-2 text-xs text-gray-700 space-y-1">
                     <div>
                       <span className="font-medium text-gray-900">Regelquelle:</span>{" "}
                       zeigt, ob Lead-, Immobilien- oder Standardregeln greifen.
@@ -3418,7 +3831,7 @@ export default function LeadChatView({
                 )}
                 {followupsError && (
                   <div className="mt-2">
-                    <div className="rounded-xl border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-xs">
+                    <div className={`rounded-xl border px-4 py-3 text-xs text-red-800 ${statusSurfaceClass("danger")}`}>
                       {followupsError}
                     </div>
                   </div>
@@ -3426,8 +3839,60 @@ export default function LeadChatView({
               </div>
 
               <div className="p-4 space-y-4">
+                <div
+                  className={`rounded-xl border px-3 py-3 ${statusSurfaceClass(
+                    escalationGuidance.tone,
+                  )}`}
+                  data-tour="conversation-escalation-card"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="app-text-meta-label">Eskalation & Blocker</div>
+                    <StatusBadge tone={escalationGuidance.tone} size="sm">
+                      {escalationGuidance.stateLabel}
+                    </StatusBadge>
+                  </div>
+
+                  <div className="mt-2 space-y-2">
+                    <div className="rounded-lg border bg-white/70 px-2.5 py-2">
+                      <div className="text-[11px] text-gray-500">Ursache</div>
+                      <div className="mt-0.5 text-xs text-gray-800">
+                        {escalationGuidance.summary}
+                      </div>
+                    </div>
+
+                    {escalationGuidance.reasons.length > 0 ? (
+                      <div className="rounded-lg border bg-white/70 px-2.5 py-2">
+                        <div className="text-[11px] text-gray-500">
+                          Sichtbare Signale
+                        </div>
+                        <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-800">
+                          {escalationGuidance.reasons.map((reason, index) => (
+                            <li key={`${reason}-${index}`}>{reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-lg border bg-white/70 px-2.5 py-2">
+                      <div className="text-[11px] text-gray-500">Blockiert</div>
+                      <div className="mt-0.5 text-xs text-gray-800">
+                        {escalationGuidance.blocker}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border bg-white/70 px-2.5 py-2">
+                      <div className="text-[11px] text-gray-500">
+                        Nächster sicherer Schritt
+                      </div>
+                      <div className="mt-0.5 text-xs text-gray-800">
+                        {escalationGuidance.nextStep}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {debugEnabled && (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-3 text-xs space-y-2">
+                  <div className={`rounded-xl border p-3 text-xs space-y-2 text-gray-800 ${statusSurfaceClass("warning")}`}>
                     <div className="flex items-center justify-between gap-2">
                       <div className="font-medium">Debug</div>
                       <a
@@ -3444,14 +3909,14 @@ export default function LeadChatView({
                     </div>
 
                     <div className="grid grid-cols-2 max-[375px]:grid-cols-1 gap-2">
-                      <div className="rounded-lg border border-amber-200 bg-white px-2 py-1">
-                        <div className="text-[10px] text-amber-700">leadId</div>
+                      <div className="rounded-lg border app-surface-card px-2 py-1">
+                        <div className="text-[10px] text-gray-500">leadId</div>
                         <div className="font-mono break-all">
                           {String(leadId)}
                         </div>
                       </div>
-                      <div className="rounded-lg border border-amber-200 bg-white px-2 py-1">
-                        <div className="text-[10px] text-amber-700">
+                      <div className="rounded-lg border app-surface-card px-2 py-1">
+                        <div className="text-[10px] text-gray-500">
                           agent_id (lead)
                         </div>
                         <div className="font-mono break-all">
@@ -3460,8 +3925,8 @@ export default function LeadChatView({
                       </div>
                     </div>
 
-                    <div className="rounded-lg border border-amber-200 bg-white px-2 py-2">
-                      <div className="text-[10px] text-amber-700 mb-1">
+                    <div className="rounded-lg border app-surface-card px-2 py-2">
+                      <div className="text-[10px] text-gray-500 mb-1">
                         active_property_id (state)
                       </div>
                       <div className="font-mono break-all">
@@ -3469,8 +3934,8 @@ export default function LeadChatView({
                       </div>
                     </div>
 
-                    <details className="rounded-lg border border-amber-200 bg-white px-2 py-2">
-                      <summary className="cursor-pointer text-[11px] text-amber-800">
+                    <details className="rounded-lg border app-surface-card px-2 py-2">
+                      <summary className="cursor-pointer text-[11px] text-gray-700">
                         debugInfo (JSON)
                       </summary>
                       <pre className="mt-2 whitespace-pre-wrap break-words text-[10px]">
@@ -3478,7 +3943,7 @@ export default function LeadChatView({
                       </pre>
                     </details>
 
-                    <div className="text-[10px] text-amber-700">
+                    <div className="text-[10px] text-gray-600">
                       Tipp: Öffne diese Seite mit{" "}
                       <span className="font-mono">?debug=1</span> und schau dir
                       in der Konsole{" "}
@@ -3489,12 +3954,13 @@ export default function LeadChatView({
                 )}
                 <div
                   ref={propertyCardRef}
-                  className="rounded-xl border border-gray-200 bg-white p-3"
+                  className="rounded-xl border app-surface-card p-3"
+                  data-tour="conversation-property-card"
                 >
-                  <div className="text-xs text-gray-500">Property Matching</div>
+                  <div className="app-text-meta-label">Property Matching</div>
 
                   <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm font-medium text-gray-900">
+                    <div className="app-text-section-title text-gray-900">
                       {activeProperty ? "Zugeordnet" : "Keine Immobilie"}
                     </div>
 
@@ -3510,8 +3976,12 @@ export default function LeadChatView({
                           <button
                             type="button"
                             onClick={openAssignModal}
-                            className="text-[11px] px-2 py-1 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                            className={appButtonClass({
+                              variant: "secondary",
+                              size: "chip",
+                            })}
                             title="Andere Immobilie auswählen"
+                            data-tour="conversation-property-manage"
                           >
                             Ändern
                           </button>
@@ -3519,7 +3989,10 @@ export default function LeadChatView({
                             type="button"
                             onClick={() => assignProperty(null)}
                             disabled={assignBusy}
-                            className="text-[11px] px-2 py-1 rounded-full border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-60"
+                            className={appButtonClass({
+                              variant: "destructive",
+                              size: "chip",
+                            })}
                             title="Zuordnung entfernen"
                           >
                             Entfernen
@@ -3529,8 +4002,12 @@ export default function LeadChatView({
                         <button
                           type="button"
                           onClick={openAssignModal}
-                          className="text-[11px] px-2 py-1 rounded-full border border-gray-900 bg-gray-900 text-amber-200 hover:bg-gray-800"
+                          className={appButtonClass({
+                            variant: "primary",
+                            size: "chip",
+                          })}
                           title="Immobilie manuell zuordnen"
+                          data-tour="conversation-property-manage"
                         >
                           Zuordnen
                         </button>
@@ -3539,7 +4016,7 @@ export default function LeadChatView({
                   </div>
 
                   {activeProperty ? (
-                    <div className="mt-2 rounded-xl border border-gray-200 bg-[#fbfbfc] p-3">
+                    <div className="mt-2 rounded-xl border app-surface-muted p-3">
                       <div className="text-sm font-semibold text-gray-900 truncate">
                         {activeProperty.street_address || "Immobilie"}
                       </div>
@@ -3610,7 +4087,11 @@ export default function LeadChatView({
                             href={String(activeProperty.url)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="w-full text-sm inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2"
+                            className={appButtonClass({
+                              variant: "secondary",
+                              size: "sm",
+                              fullWidth: true,
+                            })}
                           >
                             Listing öffnen
                           </a>
@@ -3618,48 +4099,53 @@ export default function LeadChatView({
 
                         <a
                           href={`/app/immobilien/bearbeiten/${activeProperty.id}`}
-                          className="w-full text-sm inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 px-3 py-2"
+                          className={appButtonClass({
+                            variant: "primary",
+                            size: "sm",
+                            fullWidth: true,
+                          })}
                           title="Immobilie in Advaic öffnen"
                         >
                           In Advaic öffnen
                         </a>
 
                         {!activeProperty.url && (
-                          <div className="text-[11px] text-gray-500">
+                          <div className="app-text-helper">
                             Kein Listing-Link hinterlegt.
                           </div>
                         )}
                       </div>
                     </div>
                   ) : (
-                    <div className="mt-2 text-xs text-gray-600">
+                    <div className="app-text-helper mt-2">
                       Noch keine Immobilie zugeordnet. Sobald der Matcher eine
                       passende Immobilie findet, erscheint sie hier.
                     </div>
                   )}
                   {assignError && (
-                    <div className="mt-3 rounded-xl border border-red-200 bg-red-50 text-red-800 px-3 py-2 text-xs">
+                    <div className={`mt-3 rounded-xl border px-3 py-2 text-xs text-red-800 ${statusSurfaceClass("danger")}`}>
                       {assignError}
                     </div>
                   )}
                   {/* Manual Property Assignment Modal */}
                   {assignOpen && (
-                    <div className="fixed inset-0 z-50">
+                    <div className="fixed inset-0 z-[80]" data-tour="conversation-property-modal">
                       <div
                         className="absolute inset-0 bg-black/40"
+                        data-tour="conversation-property-modal-backdrop"
                         onClick={() =>
                           assignBusy ? null : setAssignOpen(false)
                         }
                       />
 
-                      <div className="absolute inset-0 flex items-start justify-center p-4 md:p-8">
-                        <div className="w-full max-w-2xl rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
-                          <div className="px-4 py-4 border-b border-gray-200 bg-[#fbfbfc] flex items-center justify-between gap-3">
+                      <div className="absolute inset-0 flex items-start justify-center overflow-y-auto p-4 pt-24 md:p-8 md:pt-28">
+                        <div className="mt-20 w-full max-w-2xl rounded-2xl border app-surface-panel shadow-2xl overflow-hidden md:mt-24">
+                          <div className="px-4 py-4 border-b app-surface-muted flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="text-xs text-gray-500">
+                              <div className="app-text-meta-label">
                                 Property Matching
                               </div>
-                              <div className="text-sm font-semibold text-gray-900">
+                              <div className="app-text-section-title text-gray-900">
                                 Immobilie manuell zuordnen
                               </div>
                             </div>
@@ -3669,7 +4155,10 @@ export default function LeadChatView({
                               onClick={() =>
                                 assignBusy ? null : setAssignOpen(false)
                               }
-                              className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
+                              className={appButtonClass({
+                                variant: "secondary",
+                                size: "sm",
+                              })}
                               title="Schließen"
                             >
                               Schließen
@@ -3684,7 +4173,7 @@ export default function LeadChatView({
                                   setPropertySearch(e.target.value)
                                 }
                                 placeholder="Suche nach Straße, Stadt, Stadtteil…"
-                                className="flex-1 px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
+                                className="flex-1 px-3 py-2 text-sm rounded-lg border app-field"
                               />
                               <button
                                 type="button"
@@ -3692,20 +4181,23 @@ export default function LeadChatView({
                                   runPropertySearch(propertySearch)
                                 }
                                 disabled={assignBusy}
-                                className="px-4 py-2 text-sm rounded-lg bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 disabled:opacity-60"
+                                className={appButtonClass({
+                                  variant: "primary",
+                                  size: "md",
+                                })}
                               >
                                 Suchen
                               </button>
                             </div>
 
-                            <div className="text-xs text-gray-600">
+                            <div className="app-text-helper">
                               Tipp: Wähle eine Immobilie aus der Liste. Das
                               überschreibt die aktuelle Zuordnung.
                             </div>
 
                             <div className="max-h-[60vh] overflow-y-auto rounded-2xl border border-gray-200">
                               {propertyResults.length === 0 ? (
-                                <div className="p-4 text-sm text-gray-600">
+                                <div className="app-text-helper p-4">
                                   Keine Immobilien gefunden.
                                 </div>
                               ) : (
@@ -3764,9 +4256,9 @@ export default function LeadChatView({
                                               {shortId(p.id)}
                                             </span>
                                             {p.url ? (
-                                              <span className="text-[11px] px-2 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-800">
+                                              <StatusBadge tone="brand" size="sm">
                                                 Listing-Link
-                                              </span>
+                                              </StatusBadge>
                                             ) : null}
                                           </div>
                                         </div>
@@ -3782,7 +4274,11 @@ export default function LeadChatView({
                                 type="button"
                                 onClick={() => assignProperty(null)}
                                 disabled={assignBusy}
-                                className="w-full md:w-auto px-4 py-2 text-sm rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-60"
+                                className={appButtonClass({
+                                  variant: "destructive",
+                                  size: "md",
+                                  className: "w-full md:w-auto",
+                                })}
                               >
                                 Zuordnung entfernen
                               </button>
@@ -3791,14 +4287,18 @@ export default function LeadChatView({
                                 type="button"
                                 onClick={() => setAssignOpen(false)}
                                 disabled={assignBusy}
-                                className="w-full md:w-auto px-4 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+                                className={appButtonClass({
+                                  variant: "secondary",
+                                  size: "md",
+                                  className: "w-full md:w-auto",
+                                })}
                               >
                                 Abbrechen
                               </button>
                             </div>
 
                             {assignError && (
-                              <div className="rounded-xl border border-red-200 bg-red-50 text-red-800 px-3 py-2 text-xs">
+                              <div className={`rounded-xl border px-3 py-2 text-xs text-red-800 ${statusSurfaceClass("danger")}`}>
                                 {assignError}
                               </div>
                             )}
@@ -3831,57 +4331,50 @@ export default function LeadChatView({
                   )}
                 </div>
                 {copilotError && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 text-red-800 px-3 py-2 text-xs">
+                  <div className={`rounded-xl border px-3 py-2 text-xs text-red-800 ${statusSurfaceClass("danger")}`}>
                     {copilotError}
                   </div>
                 )}
 
-                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                <div
+                  className="rounded-xl border border-gray-200 bg-white app-panel-padding-compact"
+                  data-tour="conversation-trust-log-card"
+                >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-xs text-gray-500">Trust-Log</div>
+                    <div className="app-text-meta-label">Trust-Log</div>
                     <span className="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-700">
                       {trustLog.length} Einträge
                     </span>
                   </div>
                   <div className="mt-2 space-y-2">
                     <div className="flex flex-wrap gap-1.5">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-gray-200 bg-white text-gray-700">
+                      <StatusBadge tone="neutral" size="sm">
                         Eingang: {trustLogStats.eingang}
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-900">
+                      </StatusBadge>
+                      <StatusBadge tone="warning" size="sm">
                         Freigabe: {trustLogStats.freigabe}
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800">
+                      </StatusBadge>
+                      <StatusBadge tone="success" size="sm">
                         Versand: {trustLogStats.versand}
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-red-200 bg-red-50 text-red-700">
+                      </StatusBadge>
+                      <StatusBadge tone="danger" size="sm">
                         Fehler: {trustLogStats.fehler}
-                      </span>
+                      </StatusBadge>
                     </div>
                     {trustLog.length === 0 ? (
-                      <div className="text-xs text-gray-500">
+                      <div className="app-text-helper">
                         Noch keine nachvollziehbaren Statusereignisse vorhanden.
                       </div>
                     ) : (
                       trustLog.map((event) => (
                         <div
                           key={event.id}
-                          className="rounded-lg border border-gray-200 bg-[#fbfbfc] px-2.5 py-2"
+                          className="rounded-lg border app-surface-muted px-2.5 py-2"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span
-                              className={`text-[11px] px-2 py-0.5 rounded-full border ${
-                                event.kind === "versand"
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                                  : event.kind === "fehler"
-                                    ? "border-red-200 bg-red-50 text-red-700"
-                                    : event.kind === "freigabe"
-                                      ? "border-amber-200 bg-amber-50 text-amber-900"
-                                      : "border-gray-200 bg-white text-gray-700"
-                              }`}
-                            >
+                            <StatusBadge tone={trustEventTone(event.kind)} size="sm">
                               {event.title}
-                            </span>
+                            </StatusBadge>
                             <span className="text-[11px] text-gray-500">
                               {formatDateTimeDE(event.timestamp)}
                             </span>
@@ -3931,9 +4424,12 @@ export default function LeadChatView({
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-gray-200 bg-white p-3">
+                <div
+                  className="rounded-xl border border-gray-200 bg-white app-panel-padding-compact"
+                  data-tour="conversation-decision-logic-card"
+                >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-xs text-gray-500">Entscheidungslogik</div>
+                    <div className="app-text-meta-label">Entscheidungslogik</div>
                     {latestQaInsight?.qa ? (
                       <span
                         className={`text-[11px] px-2 py-0.5 rounded-full border ${qaVerdictTone(
@@ -3946,13 +4442,13 @@ export default function LeadChatView({
                   </div>
 
                   {!latestQaInsight?.qa ? (
-                    <div className="mt-2 text-xs text-gray-500">
+                    <div className="app-text-helper mt-2">
                       Noch keine QA-Details vorhanden.
                     </div>
                   ) : (
                     <div className="mt-2 space-y-2">
                       {latestQaInsight.qa.reason ? (
-                        <div className="rounded-lg border border-gray-200 bg-[#fbfbfc] px-2.5 py-2">
+                        <div className="rounded-lg border app-surface-muted px-2.5 py-2">
                           <div className="text-[11px] text-gray-500">Grund</div>
                           <div className="text-xs text-gray-800 mt-0.5">
                             {latestQaInsight.qa.reason}
@@ -3961,7 +4457,7 @@ export default function LeadChatView({
                       ) : null}
 
                       {latestQaInsight.qa.reason_long ? (
-                        <div className="rounded-lg border border-gray-200 bg-[#fbfbfc] px-2.5 py-2">
+                        <div className="rounded-lg border app-surface-muted px-2.5 py-2">
                           <div className="text-[11px] text-gray-500">Details</div>
                           <div className="text-xs text-gray-800 mt-0.5">
                             {latestQaInsight.qa.reason_long}
@@ -3970,7 +4466,7 @@ export default function LeadChatView({
                       ) : null}
 
                       {latestQaInsight.qa.action ? (
-                        <div className="rounded-lg border border-gray-200 bg-[#fbfbfc] px-2.5 py-2">
+                        <div className="rounded-lg border app-surface-muted px-2.5 py-2">
                           <div className="text-[11px] text-gray-500">
                             Empfohlene Aktion
                           </div>
@@ -3984,12 +4480,9 @@ export default function LeadChatView({
                         {Array.isArray(latestQaInsight.qa.risk_flags) &&
                         latestQaInsight.qa.risk_flags.length > 0
                           ? latestQaInsight.qa.risk_flags.slice(0, 4).map((flag) => (
-                              <span
-                                key={flag}
-                                className="text-[10px] px-1.5 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-900"
-                              >
+                              <StatusBadge key={flag} tone="warning" size="sm">
                                 {flag}
-                              </span>
+                              </StatusBadge>
                             ))
                           : null}
                         {parseQaConfidence(latestQaInsight.qa.meta) !== null ? (
@@ -4020,15 +4513,18 @@ export default function LeadChatView({
                   )}
                 </div>
 
-                <div className="rounded-xl border border-gray-200 bg-white p-3">
-                  <div className="text-xs text-gray-500">Qualitäts-Feedback</div>
+                <div
+                  className="rounded-xl border border-gray-200 bg-white app-panel-padding-compact"
+                  data-tour="conversation-followups-card"
+                >
+                  <div className="app-text-meta-label">Qualitäts-Feedback</div>
                   {!latestSentAgentMessage ? (
-                    <div className="mt-2 text-xs text-gray-500">
+                    <div className="app-text-helper mt-2">
                       Gib Feedback, sobald eine Antwort gesendet wurde.
                     </div>
                   ) : (
                     <div className="mt-2 space-y-2">
-                      <div className="rounded-lg border border-gray-200 bg-[#fbfbfc] px-2.5 py-2">
+                      <div className="rounded-lg border app-surface-muted px-2.5 py-2">
                         <div className="text-[11px] text-gray-500">
                           Letzte gesendete Antwort
                         </div>
@@ -4053,12 +4549,14 @@ export default function LeadChatView({
                               "helpful",
                             )
                           }
-                          className={`text-xs px-2.5 py-1.5 rounded-lg border ${
-                            feedbackByMessageId[latestSentAgentMessage.id]
-                              ?.rating === "helpful"
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                          } disabled:opacity-60`}
+                          className={appButtonClass({
+                            variant:
+                              feedbackByMessageId[latestSentAgentMessage.id]
+                                ?.rating === "helpful"
+                                ? "utility"
+                                : "secondary",
+                            size: "sm",
+                          })}
                         >
                           Hilfreich
                         </button>
@@ -4074,12 +4572,14 @@ export default function LeadChatView({
                               "zu_lang",
                             )
                           }
-                          className={`text-xs px-2.5 py-1.5 rounded-lg border ${
-                            feedbackByMessageId[latestSentAgentMessage.id]
-                              ?.reason === "zu_lang"
-                              ? "border-red-200 bg-red-50 text-red-700"
-                              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                          } disabled:opacity-60`}
+                          className={appButtonClass({
+                            variant:
+                              feedbackByMessageId[latestSentAgentMessage.id]
+                                ?.reason === "zu_lang"
+                                ? "destructive"
+                                : "secondary",
+                            size: "sm",
+                          })}
                         >
                           Zu lang
                         </button>
@@ -4095,12 +4595,14 @@ export default function LeadChatView({
                               "falscher_fokus",
                             )
                           }
-                          className={`text-xs px-2.5 py-1.5 rounded-lg border ${
-                            feedbackByMessageId[latestSentAgentMessage.id]
-                              ?.reason === "falscher_fokus"
-                              ? "border-red-200 bg-red-50 text-red-700"
-                              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                          } disabled:opacity-60`}
+                          className={appButtonClass({
+                            variant:
+                              feedbackByMessageId[latestSentAgentMessage.id]
+                                ?.reason === "falscher_fokus"
+                                ? "destructive"
+                                : "secondary",
+                            size: "sm",
+                          })}
                         >
                           Falscher Fokus
                         </button>
@@ -4116,12 +4618,14 @@ export default function LeadChatView({
                               "fehlende_infos",
                             )
                           }
-                          className={`text-xs px-2.5 py-1.5 rounded-lg border ${
-                            feedbackByMessageId[latestSentAgentMessage.id]
-                              ?.reason === "fehlende_infos"
-                              ? "border-red-200 bg-red-50 text-red-700"
-                              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                          } disabled:opacity-60`}
+                          className={appButtonClass({
+                            variant:
+                              feedbackByMessageId[latestSentAgentMessage.id]
+                                ?.reason === "fehlende_infos"
+                                ? "destructive"
+                                : "secondary",
+                            size: "sm",
+                          })}
                         >
                           Fehlende Infos
                         </button>
@@ -4148,30 +4652,33 @@ export default function LeadChatView({
                     </div>
                   )}
                   {feedbackError ? (
-                    <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700">
+                    <div
+                      className={`mt-2 rounded-lg border px-2.5 py-2 text-xs text-red-700 ${statusSurfaceClass("danger")}`}
+                    >
                       {feedbackError}
                     </div>
                   ) : null}
                 </div>
 
-                <div className="rounded-xl border border-gray-200 bg-white p-3">
-                  <div className="text-xs text-gray-500">Follow-ups</div>
+                <div className="rounded-xl border border-gray-200 bg-white app-panel-padding-compact">
+                  <div className="app-text-meta-label">Follow-ups</div>
                   <div className="mt-1 flex items-center justify-between gap-2">
-                    <div className="text-sm font-medium text-gray-900">
+                    <div className="app-text-section-title text-gray-900">
                       {copilotEffectiveEnabled ? "Aktiv" : "Deaktiviert"}
                     </div>
-                    <span
-                      className={`text-[11px] px-2 py-1 rounded-full border ${
+                    <StatusBadge
+                      tone={
                         copilotEffectiveEnabled
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                          : "border-gray-200 bg-gray-50 text-gray-700"
-                      }`}
+                          ? followupStatusTone((lead as any)?.followup_status)
+                          : "neutral"
+                      }
+                      size="sm"
                     >
                       {followupStatusLabel((lead as any)?.followup_status)}
-                    </span>
+                    </StatusBadge>
                   </div>
 
-                  <div className="mt-2 text-xs text-gray-600 space-y-1">
+                  <div className="app-text-helper mt-2 space-y-1">
                     <div>
                       <span className="text-gray-500">Stufe:</span>{" "}
                       {Number((lead as any)?.followup_stage ?? 0)} /{" "}
@@ -4187,7 +4694,7 @@ export default function LeadChatView({
                     </div>
                   </div>
 
-                  <div className="mt-3 text-xs text-gray-600">
+                  <div className="app-text-helper mt-3">
                     {(() => {
                       if (!copilotEffectiveEnabled) {
                         if (
@@ -4241,12 +4748,12 @@ export default function LeadChatView({
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-gray-200 bg-white p-3">
-                  <div className="text-xs text-gray-500">Timing (Standard)</div>
-                  <div className="mt-1 text-sm text-gray-900 font-medium">
+                <div className="rounded-xl border border-gray-200 bg-white app-panel-padding-compact">
+                  <div className="app-text-meta-label">Timing (Standard)</div>
+                  <div className="app-text-section-title mt-1 text-gray-900">
                     Stufe 1: {copilotDelays.d1}h · Stufe 2: {copilotDelays.d2}h
                   </div>
-                  <div className="mt-1 text-xs text-gray-600">
+                  <div className="app-text-helper mt-1">
                     Diese Werte kommen aus{" "}
                     {copilotRuleSource === "Immobilie"
                       ? "der Immobilienregel"
@@ -4258,25 +4765,33 @@ export default function LeadChatView({
                 <div className="flex flex-col gap-2">
                   <a
                     href="/app/follow-ups"
-                    className="w-full text-sm inline-flex items-center justify-center gap-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2"
+                    className={appButtonClass({
+                      variant: "secondary",
+                      size: "sm",
+                      fullWidth: true,
+                    })}
                   >
                     Zur Follow-ups Übersicht
                   </a>
 
                   <a
                     href="/app/follow-ups/settings"
-                    className="w-full text-sm inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 px-3 py-2"
+                    className={appButtonClass({
+                      variant: "primary",
+                      size: "sm",
+                      fullWidth: true,
+                    })}
                   >
                     Follow-ups Einstellungen
                   </a>
 
-                  <div className="text-[11px] text-gray-500">
+                  <div className="app-text-helper">
                     Tipp: Du kannst Follow-ups auch pro Lead (oben)
                     deaktivieren.
                   </div>
 
                   {copilotLoading && (
-                    <div className="text-[11px] text-gray-500">
+                    <div className="app-text-helper">
                       Lade Copilot-Daten…
                     </div>
                   )}
@@ -4300,20 +4815,23 @@ export default function LeadChatView({
           >
             <div className="p-4 border-b border-gray-200 flex items-center justify-between">
               <div className="min-w-0">
-                <div className="text-sm text-gray-500">
+                <div className="app-text-meta-label">
                   Interessenten-Profil
                 </div>
-                <div className="text-lg font-semibold truncate">
+                <div className="app-text-section-title truncate">
                   {lead.name}
                 </div>
-                <div className="text-sm text-gray-600 truncate">
+                <div className="app-text-helper truncate">
                   {lead.email}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setProfileOpen(false)}
-                className="px-3 py-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 text-sm"
+                className={appButtonClass({
+                  variant: "secondary",
+                  size: "sm",
+                })}
               >
                 Schließen
               </button>
@@ -4357,7 +4875,11 @@ export default function LeadChatView({
                 <button
                   type="button"
                   onClick={handleExportConversation}
-                  className="w-full text-sm bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2 rounded-xl"
+                  className={appButtonClass({
+                    variant: "secondary",
+                    size: "sm",
+                    fullWidth: true,
+                  })}
                 >
                   Verlauf exportieren
                 </button>
@@ -4380,11 +4902,11 @@ export default function LeadChatView({
                     }
                   }}
                   disabled={isEscalated}
-                  className={`w-full text-sm px-3 py-2 rounded-xl border ${
-                    isEscalated
-                      ? "bg-red-50 border-red-200 text-red-700 opacity-60 cursor-not-allowed"
-                      : "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
-                  }`}
+                  className={appButtonClass({
+                    variant: "destructive",
+                    size: "sm",
+                    fullWidth: true,
+                  })}
                 >
                   {isEscalated ? "Eskalation aktiviert" : "Eskalieren"}
                 </button>

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient, requireRouteUser } from "@/lib/supabase/routeAuth";
-import { deriveCommercialAccess } from "@/lib/billing/commercial-access";
+import {
+  applyInternalCommercialAccessOverride,
+  deriveCommercialAccess,
+} from "@/lib/billing/commercial-access";
 
 export const runtime = "nodejs";
 
@@ -103,8 +106,9 @@ export async function GET(req: NextRequest) {
   }
 
   const planKey = String(subscription?.plan_key || "free");
-  const summary: BillingSummary = {
-    access: deriveCommercialAccess({
+  const derivedAccess = applyInternalCommercialAccessOverride(
+    agentId,
+    deriveCommercialAccess({
       agentCreatedAt: agentRow?.created_at ? String(agentRow.created_at) : null,
       subscription: subscription
         ? {
@@ -120,12 +124,23 @@ export async function GET(req: NextRequest) {
           }
         : null,
     }),
+  );
+  const effectivePlanKey = derivedAccess.billing.plan_key || planKey;
+  const effectivePlanStatus = derivedAccess.internal_override
+    ? "active"
+    : String(subscription?.status || "inactive");
+  const summary: BillingSummary = {
+    access: derivedAccess,
     plan: {
-      key: planKey,
-      status: String(subscription?.status || "inactive"),
-      name: formatPlanName(planKey),
+      key: effectivePlanKey,
+      status: effectivePlanStatus,
+      name: formatPlanName(effectivePlanKey),
       price_monthly_cents:
-        typeof subscription?.amount_cents === "number" ? subscription.amount_cents : null,
+        derivedAccess.internal_override
+          ? null
+          : typeof subscription?.amount_cents === "number"
+            ? subscription.amount_cents
+            : null,
       currency: subscription?.currency ? String(subscription.currency) : null,
       interval: subscription?.interval ? String(subscription.interval) : null,
       current_period_start: subscription?.current_period_start

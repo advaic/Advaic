@@ -3,6 +3,8 @@ import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
+import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const comparisonRows = [
   {
@@ -21,9 +23,9 @@ const comparisonRows = [
     advaic: "Verbindlich vor Auto-Versand: Relevanz, Kontext, Vollständigkeit, Ton, Risiko, Lesbarkeit.",
   },
   {
-    topic: "Fail-Safe bei Unsicherheit",
+    topic: "Fail-Safe bei fehlenden Angaben oder Risiko",
     crm: "Je nach Setup; oft kein spezialisierter Freigabeweg für Antwortentwürfe.",
-    advaic: "Unklare Fälle gehen standardmäßig in die Freigabe-Inbox.",
+    advaic: "Nachrichten mit fehlenden Angaben, Konflikten oder Ausnahmen gehen standardmäßig in die Freigabe-Inbox.",
   },
   {
     topic: "Verlauf für Support und Kontrolle",
@@ -37,6 +39,12 @@ const comparisonRows = [
   },
 ];
 
+const quickTake = [
+  "Ein CRM verwaltet Kontakte, Pipeline und Aufgaben. Es ist meist nicht das System, das Antwortentscheidungen pro E-Mail absichert.",
+  "Advaic ist kein CRM-Ersatz, sondern ein Ausführungssystem für den Anfrageeingang: Eingang prüfen, Antwort entscheiden, Qualität sichern, Verlauf dokumentieren.",
+  "Wenn Ihr Hauptengpass im Postfach liegt, ergänzen sich CRM und Advaic oft besser, als wenn Sie beides in ein System pressen.",
+];
+
 const stackRecommendation = [
   {
     title: "CRM bleibt System of Record",
@@ -47,7 +55,7 @@ const stackRecommendation = [
     text: "Advaic übernimmt den operativen Antwortfluss und sichert Entscheidungen mit Guardrails ab.",
   },
   {
-    title: "Gemeinsame KPI statt Tool-Silos",
+    title: "Gemeinsame KPI über beide Systeme",
     text: "Messen Sie Antwortzeit, Freigabequote, QA-Korrekturzeit und Conversion entlang desselben Prozesses.",
   },
 ];
@@ -81,27 +89,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildMarketingMetadata({
   title: "Advaic vs CRM-Tools",
+  ogTitle: "Advaic vs CRM-Tools | Vergleich für Makler",
   description:
-    "Vergleich: Was CRM-Tools leisten und was ein spezialisierter Makler-Anfrage-Autopilot wie Advaic zusätzlich abdeckt.",
-  alternates: {
-    canonical: "/advaic-vs-crm-tools",
-  },
-  openGraph: {
-    title: "Advaic vs CRM-Tools | Vergleich für Makler",
-    description:
-      "Vergleich: Was CRM-Tools leisten und was ein spezialisierter Makler-Anfrage-Autopilot wie Advaic zusätzlich abdeckt.",
-    url: "/advaic-vs-crm-tools",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Advaic vs CRM-Tools | Vergleich für Makler",
-    description:
-      "Vergleich: Was CRM-Tools leisten und was ein spezialisierter Makler-Anfrage-Autopilot wie Advaic zusätzlich abdeckt.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Vergleich: CRM verwaltet Kontakte und Deals. Advaic steuert Antwortentscheidungen pro Nachricht. Diese Seite zeigt, wann welches System den größeren Hebel hat.",
+  path: "/advaic-vs-crm-tools",
+  template: "compare",
+  eyebrow: "Vergleich",
+  proof: "CRM ist nicht dasselbe wie operative Anfragebearbeitung mit Guardrails und Freigabe.",
+});
 
 export default function AdvaicVsCrmToolsPage() {
   const siteUrl = getSiteUrl();
@@ -122,15 +119,15 @@ export default function AdvaicVsCrmToolsPage() {
       ]}
       schema={schema}
       kicker="Vergleich"
-      title="Advaic vs CRM-Tools: kein Entweder-oder, sondern klare Rollen"
-      description="CRM und Advaic lösen unterschiedliche Aufgaben. Diese Seite zeigt präzise, wann welches System den größeren Hebel hat und wie Sie beides sinnvoll kombinieren."
+      title="Wann CRM reicht und wann Sie zusätzlich Advaic brauchen"
+      description="CRM und Advaic lösen unterschiedliche Aufgaben. Der Kernunterschied liegt nicht im Feature-Umfang, sondern darin, wer den operativen Antwortfluss pro Nachricht steuert."
       actions={
         <>
           <Link href="/produkt" className="btn-secondary">
-            Produkt verstehen
+            Produkt prüfen
           </Link>
           <Link href="/signup?entry=advaic-vs-crm" className="btn-primary">
-            Kombi-Setup testen
+            {MARKETING_PRIMARY_CTA_LABEL}
           </Link>
         </>
       }
@@ -143,13 +140,29 @@ export default function AdvaicVsCrmToolsPage() {
       sources={sources}
       sourcesDescription="Die Quellen unterstützen die Markt- und Risikoeinordnung. Für die konkrete Toolauswahl sollten Sie immer mit Ihren realen Anfragefällen testen."
     >
+      <section id="kurzfassung" className="py-8 md:py-10">
+        <Container>
+          <article className="card-base p-6">
+            <h2 className="h3">Kurzantwort in 60 Sekunden</h2>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              {quickTake.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </Container>
+      </section>
+
       <section className="marketing-section-clear py-20 md:py-28">
         <Container>
           <article className="card-base p-6 md:p-8">
-            <h2 className="h2">Direktvergleich nach operativer Wirkung</h2>
+            <h2 className="h2">Wo CRM endet und Advaic beginnt</h2>
             <p className="body mt-4 max-w-[74ch] text-[var(--muted)]">
-              Wenn Sie schneller und sicherer auf Interessenten reagieren wollen, ist die Frage nicht nur „haben wir
-              ein CRM?“, sondern „wie steuern wir die Antwortausführung pro Anfrage?“.
+              Wenn Sie schneller und sicherer auf Interessenten reagieren wollen, reicht die Frage „haben wir ein
+              CRM?“ nicht aus. Entscheidend ist, wie Antwortausführung pro Anfrage gesteuert wird.
             </p>
             <div className="mt-6 overflow-x-auto">
               <table className="min-w-full text-left text-sm">
@@ -177,7 +190,7 @@ export default function AdvaicVsCrmToolsPage() {
 
       <section className="marketing-soft-cool py-20 md:py-28">
         <Container>
-          <h2 className="h2">Empfohlener Ziel-Stack für kleine Maklerteams</h2>
+          <h2 className="h2">So sieht die sinnvolle Aufgabentrennung aus</h2>
           <div className="mt-8 grid gap-4 md:grid-cols-3">
             {stackRecommendation.map((item) => (
               <article key={item.title} className="card-base p-6">
@@ -193,7 +206,7 @@ export default function AdvaicVsCrmToolsPage() {
         <Container>
           <div className="grid gap-4 md:grid-cols-2">
             <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Entscheidungssignale für die Priorisierung</h2>
+              <h2 className="h3">Daran erkennen Sie, was zuerst Priorität hat</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
                 {decisionSignals.map((item) => (
                   <li key={item} className="flex items-start gap-2">
@@ -204,7 +217,7 @@ export default function AdvaicVsCrmToolsPage() {
               </ul>
             </article>
             <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Nächste sinnvolle Schritte</h2>
+              <h2 className="h3">Diese Seiten vertiefen den Vergleich</h2>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link href="/produkt#regeln" className="btn-secondary">
                   Regeln prüfen

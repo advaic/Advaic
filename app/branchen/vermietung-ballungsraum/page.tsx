@@ -6,11 +6,18 @@ import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
 import StageCTA from "@/components/marketing/StageCTA";
 import FinalCTA from "@/components/marketing/FinalCTA";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const typicalCases = [
   "Viele gleichartige Erstfragen zu Verfügbarkeit, Unterlagen und Terminen",
   "Anfragespitzen nach Portalausspielung oder Preisanpassung",
   "Reaktionsdruck in den ersten Stunden nach Eingang",
+];
+
+const quickTake = [
+  "In stark nachgefragten Mietmärkten ist Reaktionsgeschwindigkeit ein echter Hebel, aber nur bei sauberer Qualitätskontrolle.",
+  "Automatisierung lohnt sich vor allem für wiederkehrende Erstfragen mit klarem Objektbezug und vorhandenen Pflichtangaben.",
+  "Beschwerden, Ausnahmen und informationsarme Nachrichten sollten in Ballungsmärkten bewusst in die Freigabe gehen.",
 ];
 
 const failurePatterns = [
@@ -29,8 +36,8 @@ const failurePatterns = [
 ];
 
 const startPlan = [
-  "Auto nur für klare Standardanfragen aktivieren (z. B. Verfügbarkeit, Unterlagenliste).",
-  "Sonderfälle wie Beschwerden und unklaren Objektbezug in die Freigabe legen.",
+  "Auto nur für wiederkehrende Erstfragen aktivieren, etwa Verfügbarkeit, Unterlagenliste oder Termininteresse.",
+  "Beschwerden, fehlender Objektbezug und Sonderwünsche konsequent in die Freigabe legen.",
   "Follow-ups zunächst vorsichtig (48 h / 96 h) starten und danach nachschärfen.",
 ];
 
@@ -38,7 +45,14 @@ const kpis = [
   "Ø Erstreaktionszeit auf neue Interessenten-Anfragen",
   "Freigabequote bei eingehenden Nachrichten",
   "QA-Fehlerquote vor Versand",
-  "Anteil manuell bearbeiteter Standardfälle",
+  "Anteil manuell bearbeiteter wiederkehrender Erstfragen",
+];
+
+const manualBoundaries = [
+  "Preis- oder Verhandlungssituationen",
+  "Beschwerden und Konfliktthemen",
+  "Nachrichten ohne eindeutigen Objektbezug",
+  "Fälle, in denen Angaben für eine richtige Antwort fehlen",
 ];
 
 const sources = [
@@ -56,27 +70,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Vermietung in Ballungsräumen | Branchenprofil Advaic",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Wie Vermietungsteams Anfragewellen sauber steuern",
+  ogTitle: "Vermietung in Ballungsräumen | Branchenprofil Advaic",
   description:
-    "Branchenprofil für Vermietung in Ballungsräumen: typische Anfragewellen, sichere Startkonfiguration und Guardrails für maklergerechte Automatisierung.",
-  alternates: {
-    canonical: "/branchen/vermietung-ballungsraum",
-  },
-  openGraph: {
-    title: "Vermietung in Ballungsräumen | Branchenprofil Advaic",
-    description:
-      "Branchenprofil für Vermietung in Ballungsräumen: typische Anfragewellen, sichere Startkonfiguration und Guardrails für maklergerechte Automatisierung.",
-    url: "/branchen/vermietung-ballungsraum",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Vermietung in Ballungsräumen | Branchenprofil Advaic",
-    description:
-      "Branchenprofil für Vermietung in Ballungsräumen: typische Anfragewellen, sichere Startkonfiguration und Guardrails für maklergerechte Automatisierung.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Leitfaden für Vermietung in Ballungsräumen: Wie Teams hohe Anfragewellen schneller bearbeiten, welche Nachrichten automatisch laufen können und was manuell bleiben sollte.",
+  path: "/branchen/vermietung-ballungsraum",
+  template: "usecase",
+  eyebrow: "Branchenprofil",
+  proof: "Wiederkehrende Erstfragen automatisieren, Ausnahmen in Freigabe halten und KPI-basiert ausrollen.",
+});
 
 export default function BranchenVermietungBallungsraumPage() {
   const siteUrl = getSiteUrl();
@@ -97,8 +100,8 @@ export default function BranchenVermietungBallungsraumPage() {
       />
       <PageIntro
         kicker="Branchenprofil"
-        title="Vermietung in Ballungsräumen"
-        description="In diesem Umfeld entscheiden schnelle Erstreaktionen und klare Nachvollziehbarkeit. Advaic automatisiert wiederkehrende Standardfälle und hält sensible Situationen bewusst in Ihrer Freigabe."
+        title="Wie Vermietungsteams Anfragewellen sauber steuern"
+        description="In Ballungsräumen entsteht der größte Hebel nicht bei Einzelfällen, sondern bei hoher Zahl ähnlicher Erstfragen. Entscheidend ist, welche Antworten sicher automatisiert werden können und welche Nachrichten bewusst manuell bleiben."
         actions={
           <>
             <Link href="/branchen" className="btn-secondary">
@@ -111,9 +114,25 @@ export default function BranchenVermietungBallungsraumPage() {
         }
       />
 
+      <section id="kurzfassung" className="py-8 md:py-10">
+        <Container>
+          <article className="card-base p-6">
+            <h2 className="h3">Kurzantwort in 60 Sekunden</h2>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              {quickTake.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </Container>
+      </section>
+
       <StageCTA
         stage="bewertung"
-        primaryHref="/produkt#safe-start-konfiguration"
+        primaryHref="/produkt#setup"
         primaryLabel="Safe-Start berechnen"
         secondaryHref="/manuell-vs-advaic"
         secondaryLabel="Prozessvergleich"
@@ -126,7 +145,7 @@ export default function BranchenVermietungBallungsraumPage() {
             <h2 className="h2">Betriebsrealität in Ballungsräumen</h2>
             <p className="body mt-4 text-[var(--muted)]">
               In stark nachgefragten Mietmärkten wird nicht der einzelne Sonderfall zum Hauptproblem, sondern die Masse
-              wiederkehrender Erstanfragen. Genau dort entsteht der operative Hebel: Standardfälle schnell und sicher
+              wiederkehrender Erstanfragen. Genau dort entsteht der operative Hebel: wiederkehrende Erstantworten schnell und sicher
               bearbeiten, während sensible Fälle konsequent in der Freigabe bleiben.
             </p>
             <p className="body mt-4 text-[var(--muted)]">
@@ -149,10 +168,10 @@ export default function BranchenVermietungBallungsraumPage() {
             </article>
 
             <article className="card-base p-6">
-              <h2 className="h3">Warum Advaic hier strategisch passt</h2>
+              <h2 className="h3">Wo Automatisierung in diesem Markt sinnvoll ist</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                <li>Klare Standardanfragen können direkt und im definierten Ton beantwortet werden.</li>
-                <li>Unklare Fälle gehen in die Freigabe statt in den Autopilot.</li>
+                <li>Wiederkehrende Erstfragen können direkt und im definierten Ton beantwortet werden.</li>
+                <li>Nachrichten mit fehlenden Angaben oder Sonderwünschen gehen in die Freigabe statt in den Autopilot.</li>
                 <li>Der Verlauf bleibt mit Status und Zeitstempeln vollständig nachvollziehbar.</li>
                 <li>Follow-ups bleiben regelbasiert und stoppen automatisch, sobald eine Antwort eingeht.</li>
               </ul>
@@ -172,6 +191,18 @@ export default function BranchenVermietungBallungsraumPage() {
             <h2 className="h3">Empfohlener Safe-Start</h2>
             <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
               {startPlan.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+
+          <article className="card-base mt-4 p-6">
+            <h2 className="h3">Diese Nachrichten sollten bewusst manuell bleiben</h2>
+            <ul className="mt-4 grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2">
+              {manualBoundaries.map((item) => (
                 <li key={item} className="flex items-start gap-2">
                   <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
                   <span>{item}</span>

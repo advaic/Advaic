@@ -1,7 +1,11 @@
 import Link from "next/link";
-import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
+import LegalDocumentLayout, {
+  type LegalJumpLink,
+  type LegalSummaryItem,
+} from "@/components/marketing/LegalDocumentLayout";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 type Entry = {
   name: string;
@@ -92,6 +96,38 @@ const entries: Entry[] = [
   },
 ];
 
+const COOKIE_SUMMARY: LegalSummaryItem[] = [
+  {
+    title: "Notwendig",
+    body: "Login-, Session- und OAuth-Speicher werden nur für technisch erforderliche Produktfunktionen eingesetzt.",
+  },
+  {
+    title: "Einwilligungspflichtig",
+    body: "Öffentliche Funnel- und CTA-Speicher laufen nur nach aktiver Einwilligung im Cookie-Banner.",
+  },
+  {
+    title: "Löschbarkeit",
+    body: "Cookies sowie Local- und Session-Storage können jederzeit im Browser entfernt oder über Logout beendet werden.",
+  },
+];
+
+const COOKIE_JUMP_LINKS: LegalJumpLink[] = [
+  { id: "stand", label: "Aktueller Stand" },
+  { id: "eintraege", label: "Einträge im Browser" },
+  { id: "loeschen", label: "Löschen & Anfragen" },
+];
+
+export const metadata = buildMarketingMetadata({
+  title: "Cookie & Storage | Advaic",
+  ogTitle: "Cookie & Storage | Advaic",
+  description:
+    "Transparente Übersicht zu Cookies, Local Storage und Session Storage bei Advaic mit Zweck, Rechtsgrundlage und Speicherdauer.",
+  path: "/cookie-und-storage",
+  template: "trust",
+  eyebrow: "Cookie & Storage",
+  proof: "Browser-Speicher, Rechtsgrundlagen und Löschpfade öffentlich dokumentiert.",
+});
+
 export default function CookieUndStoragePage() {
   const privacyEmail =
     process.env.NEXT_PUBLIC_LEGAL_PRIVACY_EMAIL ||
@@ -116,44 +152,63 @@ export default function CookieUndStoragePage() {
         }
       />
 
-      <section className="marketing-section-clear py-20 md:py-28">
-        <Container>
-          <article className="card-base p-6 md:p-8">
+      <LegalDocumentLayout
+        currentPath="/cookie-und-storage"
+        summaryTitle="Kurzüberblick"
+        summaryItems={COOKIE_SUMMARY}
+        jumpLinks={COOKIE_JUMP_LINKS}
+        asideExtras={
+          <article className="card-base p-5">
+            <p className="section-kicker">Stand & Kontakt</p>
+            <p className="mt-3 text-sm text-[var(--muted)]">Stand: 26. Februar 2026.</p>
+            <a className="mt-3 inline-flex text-sm font-semibold underline underline-offset-4" href={`mailto:${privacyEmail}`}>
+              {privacyEmail}
+            </a>
+          </article>
+        }
+      >
+        <article id="stand" className="card-base p-6 md:p-8 scroll-mt-28">
             <h2 className="h2">Aktueller Stand</h2>
             <p className="helper mt-3">
               Stand: 26. Februar 2026. Auf öffentlichen Seiten setzen wir optionale Analyse- und Marketing-Speicher
               erst nach Einwilligung im Cookie-Banner. Externe Werbe-Tracker sind im aktuellen Stand nicht eingebunden.
             </p>
-          </article>
+        </article>
 
-          <div className="card-base mt-6 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-[var(--surface)] text-left text-[var(--text)]">
-                  <tr>
-                    <th className="px-4 py-3 font-semibold">Name</th>
-                    <th className="px-4 py-3 font-semibold">Speicherort</th>
-                    <th className="px-4 py-3 font-semibold">Zweck</th>
-                    <th className="px-4 py-3 font-semibold">Rechtsgrundlage</th>
-                    <th className="px-4 py-3 font-semibold">Speicherdauer</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((entry) => (
-                    <tr key={entry.name} className="border-t border-[var(--border)] align-top">
-                      <td className="px-4 py-3 text-[var(--text)]">{entry.name}</td>
-                      <td className="px-4 py-3 text-[var(--muted)]">{entry.place}</td>
-                      <td className="px-4 py-3 text-[var(--muted)]">{entry.purpose}</td>
-                      <td className="px-4 py-3 text-[var(--muted)]">{entry.legalBase}</td>
-                      <td className="px-4 py-3 text-[var(--muted)]">{entry.retention}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        <article id="eintraege" className="card-base overflow-hidden scroll-mt-28">
+          <div className="border-b border-[var(--border)] px-6 py-5">
+            <h2 className="h3">Einträge im Browser</h2>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Die Übersicht trennt bewusst zwischen technisch notwendigen Speichern und einwilligungsbasierten Einträgen.
+            </p>
           </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-[var(--surface)] text-left text-[var(--text)]">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Name</th>
+                  <th className="px-4 py-3 font-semibold">Speicherort</th>
+                  <th className="px-4 py-3 font-semibold">Zweck</th>
+                  <th className="px-4 py-3 font-semibold">Rechtsgrundlage</th>
+                  <th className="px-4 py-3 font-semibold">Speicherdauer</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((entry) => (
+                  <tr key={entry.name} className="border-t border-[var(--border)] align-top">
+                    <td className="px-4 py-3 text-[var(--text)]">{entry.name}</td>
+                    <td className="px-4 py-3 text-[var(--muted)]">{entry.place}</td>
+                    <td className="px-4 py-3 text-[var(--muted)]">{entry.purpose}</td>
+                    <td className="px-4 py-3 text-[var(--muted)]">{entry.legalBase}</td>
+                    <td className="px-4 py-3 text-[var(--muted)]">{entry.retention}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </article>
 
-          <article className="card-base mt-6 p-6 md:p-8">
+        <article id="loeschen" className="card-base p-6 md:p-8 scroll-mt-28">
             <h3 className="h3">Wie Sie Einträge löschen können</h3>
             <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
               <li>Cookies sowie Local-/Session-Storage können Sie in den Browser-Einstellungen löschen.</li>
@@ -166,9 +221,8 @@ export default function CookieUndStoragePage() {
                 .
               </li>
             </ul>
-          </article>
-        </Container>
-      </section>
+        </article>
+      </LegalDocumentLayout>
     </PageShell>
   );
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowRight, CheckCircle2, CircleHelp, MailX, ShieldCheck } from "lucide-react";
 import Container from "./Container";
 import { trackPublicEvent } from "@/lib/funnel/public-track";
+import { MARKETING_PRIMARY_CTA_LABEL } from "./cta-copy";
 
 type DecisionType = "auto" | "freigabe" | "ignorieren";
 
@@ -217,7 +218,7 @@ export default function DecisionSimulator({
                       })
                     }
                   >
-                    14 Tage kostenlos testen
+                    {MARKETING_PRIMARY_CTA_LABEL}
                     <ArrowRight className="h-4 w-4" />
                   </Link>
                 </div>

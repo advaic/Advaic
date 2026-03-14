@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  PageHeader,
+  PrimaryActionBar,
+  SectionCard,
+  StatCard,
+  StatusBadge,
+  type StatusTone,
+} from "@/components/app-ui";
 import { Button } from "@/components/ui/button";
 import { trackFunnelEvent } from "@/lib/funnel/track";
 
@@ -17,6 +25,9 @@ type BillingSummaryResponse = {
       trial_ends_at: string | null;
       is_urgent: boolean;
       upgrade_required: boolean;
+      internal_override?: boolean;
+      internal_override_reason?: "owner" | "internal_premium";
+      owner_override?: boolean;
       billing: {
         plan_key: string;
         status: string;
@@ -202,9 +213,11 @@ export default function AboPage() {
   const plan = summary?.plan;
   const access = summary?.access;
   const dunning = summary?.dunning || null;
+  const internalOverride = !!access?.internal_override;
   const isFree = (plan?.key || "free") === "free";
 
   const statusLabel = useMemo(() => {
+    if (internalOverride) return "Aktiv";
     const s = String(plan?.status || "inactive");
     if (s === "active") return "Aktiv";
     if (s === "trialing") return "Testphase";
@@ -213,13 +226,26 @@ export default function AboPage() {
     if (s === "unpaid") return "Unbezahlt";
     if (s === "incomplete") return "Unvollständig";
     return "Kein aktives Abo";
-  }, [plan?.status]);
+  }, [internalOverride, plan?.status]);
 
   const showDunningWarning =
-    !!dunning?.is_active ||
+    (!internalOverride && !!dunning?.is_active) ||
     ["past_due", "unpaid", "incomplete"].includes(
       String(plan?.status || "").toLowerCase(),
     );
+  const invoiceCount = summary?.invoices?.length ?? 0;
+  const renewalDate = formatDate(plan?.current_period_end || null);
+  const planPriceLabel = plan?.price_monthly_cents
+    ? `${formatMoney(plan.price_monthly_cents, plan.currency)}/${plan.interval === "year" ? "Jahr" : "Monat"}`
+    : "Preis wird individuell geführt";
+  const billingTone: StatusTone =
+    access?.state === "trial_expired"
+      ? "danger"
+      : showDunningWarning
+        ? "warning"
+        : access?.state === "paid_active"
+          ? "success"
+          : "neutral";
 
   const openCheckout = async () => {
     void trackFunnelEvent({
@@ -289,207 +315,362 @@ export default function AboPage() {
   };
 
   return (
-    <div className="space-y-8" data-tour="account-link-abozahlungen">
-      <div>
-        <h1 className="text-2xl font-bold">Abo & Zahlungen</h1>
-        <p className="text-muted-foreground text-sm">
-          Verwalte dein Abo, Zahlungen und Rechnungen.
-        </p>
-      </div>
+    <div className="app-page-stack" data-tour="account-billing-page">
+      <PageHeader
+        sticky={false}
+        dataTour="account-billing-header"
+        title={
+          <h1 className="app-text-page-title" data-tour="account-billing-title">
+            Abo & Zahlungen
+          </h1>
+        }
+        meta={
+          <>
+            <StatusBadge tone="brand">Advaic</StatusBadge>
+            <StatusBadge tone={billingTone}>{statusLabel}</StatusBadge>
+            {internalOverride ? (
+              <StatusBadge tone="success">Interner Zugriff</StatusBadge>
+            ) : null}
+          </>
+        }
+        description="Verwalte dein Abo, Zahlungen und Rechnungen in derselben ruhigen Settings-Struktur wie den Rest der App."
+        actions={
+          !loading ? (
+            <>
+              {!internalOverride ? (
+                <Button
+                  onClick={openCheckout}
+                  disabled={busy !== null}
+                  className="w-full sm:w-auto"
+                  data-tour="account-billing-cta-checkout"
+                >
+                  {busy === "checkout"
+                    ? "Weiterleiten…"
+                    : isFree
+                      ? "Starter aktivieren"
+                      : "Starter verwalten"}
+                </Button>
+              ) : null}
+              <Button
+                variant="secondary"
+                onClick={openPortal}
+                disabled={busy !== null || internalOverride}
+                className="w-full sm:w-auto"
+                data-tour="account-billing-cta-portal"
+              >
+                {busy === "portal" ? "Öffne Portal…" : "Zahlungen verwalten"}
+              </Button>
+            </>
+          ) : null
+        }
+      />
 
       {checkoutParam === "success" ? (
-        <div
-          className={`rounded-lg border p-4 text-sm ${
+        <SectionCard
+          surface="panel"
+          data-tour="account-billing-checkout-success"
+          title={syncingAfterCheckout ? "Checkout synchronisiert" : "Checkout erfolgreich"}
+          description={
             syncingAfterCheckout
-              ? "border-amber-300 bg-amber-50 text-amber-900"
-              : "border-emerald-300 bg-emerald-50 text-emerald-900"
-          }`}
+              ? "Wir aktualisieren deinen Plan gerade im Hintergrund und laden den Status automatisch nach."
+              : "Dein Abo ist aktiv. Auto-Senden und Follow-ups bleiben damit nutzbar."
+          }
+          meta={<StatusBadge tone={syncingAfterCheckout ? "warning" : "success"}>{syncingAfterCheckout ? "Synchronisiert…" : "Aktiv"}</StatusBadge>}
         >
-          <p className="font-medium">
+          <div className="text-sm text-gray-700">
             {syncingAfterCheckout
-              ? "Checkout abgeschlossen. Wir synchronisieren dein Abo gerade."
-              : "Checkout erfolgreich. Dein Abo ist aktiv."}
-          </p>
-          <p className="mt-1">
-            {syncingAfterCheckout
-              ? "Falls der Status noch nicht aktualisiert ist, laden wir automatisch nach."
-              : "Auto-Senden und Follow-ups bleiben damit aktiv."}
-          </p>
-        </div>
+              ? "Falls der Status noch nicht umspringt, läuft die Synchronisierung bereits."
+              : "Du musst nichts weiter tun. Die Freischaltung ist abgeschlossen."}
+          </div>
+        </SectionCard>
       ) : null}
 
       {checkoutParam === "cancel" ? (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
-          <p className="font-medium text-gray-900">Checkout abgebrochen</p>
-          <p className="mt-1">
-            Es wurde keine Zahlung ausgelöst. Sie können den Vorgang jederzeit neu starten.
-          </p>
-        </div>
+        <SectionCard
+          surface="panel"
+          data-tour="account-billing-checkout-cancel"
+          title="Checkout abgebrochen"
+          description="Es wurde keine Zahlung ausgelöst. Du kannst den Vorgang jederzeit neu starten."
+        >
+          <div className="text-sm text-gray-700">
+            Der bisherige Planstatus bleibt unverändert.
+          </div>
+        </SectionCard>
       ) : null}
 
       {upgradeRequiredParam && checkoutParam !== "success" ? (
-        <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800">
-          <p className="font-medium">Starter erforderlich</p>
-          <p className="mt-1">
-            Deine Testphase ist beendet. Aktiviere Starter, damit Auto-Senden und Follow-ups weiterlaufen.
-          </p>
-        </div>
+        <SectionCard
+          surface="panel"
+          data-tour="account-billing-upgrade-required"
+          title="Starter erforderlich"
+          description="Deine Testphase ist beendet. Aktiviere Starter, damit Auto-Senden und Follow-ups weiterlaufen."
+          meta={<StatusBadge tone="danger">Upgrade nötig</StatusBadge>}
+        >
+          <div className="text-sm text-gray-700">
+            Ohne aktiven Starter-Plan bleiben Automationen pausiert.
+          </div>
+        </SectionCard>
+      ) : null}
+
+      {error ? (
+        <SectionCard
+          surface="panel"
+          data-tour="account-billing-error"
+          title="Billing-Daten konnten nicht geladen werden"
+          description={error}
+          meta={<StatusBadge tone="danger">Fehler</StatusBadge>}
+        >
+          <div className="text-sm text-gray-700">
+            Bitte lade die Seite erneut oder öffne später noch einmal das Billing-Portal.
+          </div>
+        </SectionCard>
       ) : null}
 
       {loading ? (
-        <div className="border rounded-lg p-6 bg-muted/30 text-sm text-muted-foreground">
-          Lade Billing-Daten...
-        </div>
+        <SectionCard
+          surface="panel"
+          data-tour="account-billing-loading"
+          title="Billing-Daten werden geladen"
+          description="Plan, Zahlungen und Rechnungen werden gerade synchronisiert."
+        >
+          <div className="text-sm text-gray-600">Einen Moment bitte…</div>
+        </SectionCard>
       ) : (
         <>
-          <div className="border rounded-lg p-6 bg-muted/30 space-y-2">
-            <h2 className="font-semibold text-lg">Aktueller Plan</h2>
-            <p className="text-sm">
-              {plan?.name || "Advaic Free"} {plan?.price_monthly_cents ? `• ${formatMoney(plan.price_monthly_cents, plan.currency)}/${plan.interval === "year" ? "Jahr" : "Monat"}` : ""}
-            </p>
-            {access?.state === "trial_active" ? (
-              <div
-                className={`mt-2 rounded-lg border p-3 text-sm ${
-                  access.is_urgent
-                    ? "border-amber-300 bg-amber-50 text-amber-900"
-                    : "border-sky-200 bg-sky-50 text-sky-900"
-                }`}
-              >
-                <p className="font-medium">
-                  Testphase Tag {access.trial_day_number} von {access.trial_days_total}
-                </p>
-                <p className="mt-1">
-                  Noch {access.trial_days_remaining} Tage bis zur Aktivierung von Starter.
-                </p>
-              </div>
-            ) : null}
-            {access?.state === "trial_expired" ? (
-              <div className="mt-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
-                <p className="font-medium">Testphase beendet</p>
-                <p className="mt-1">
-                  Auto-Senden und Follow-ups sind pausiert, bis Starter aktiv ist.
-                </p>
-              </div>
-            ) : null}
-            <p className="text-sm text-muted-foreground">Status: {statusLabel}</p>
-            <p className="text-sm text-muted-foreground">
-              Nächste Verlängerung: {formatDate(plan?.current_period_end || null)}
-            </p>
-            <p className="text-sm text-muted-foreground" data-tour="account-link-kontoloschen">
-              Kündigung und Tarifwechsel erfolgen über das Billing-Portal.
-            </p>
-            {plan?.cancel_at_period_end ? (
-              <p className="text-sm text-amber-700">
-                Kündigung zum Periodenende aktiv.
-              </p>
-            ) : null}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4" data-tour="account-billing-stats">
+            <StatCard
+              title="Aktiver Plan"
+              value={plan?.name || "Advaic Free"}
+              hint={planPriceLabel}
+            />
+            <StatCard
+              title="Planstatus"
+              value={statusLabel}
+              hint={
+                internalOverride
+                  ? "Intern freigeschaltet, kein Checkout nötig."
+                  : access?.state === "trial_active"
+                    ? `Noch ${access.trial_days_remaining} Tage Testphase.`
+                    : access?.state === "trial_expired"
+                      ? "Automationen pausiert, bis Starter aktiv ist."
+                      : "Abo ist aktiv und betriebsbereit."
+              }
+            />
+            <StatCard
+              title="Nächste Verlängerung"
+              value={renewalDate}
+              hint={plan?.cancel_at_period_end ? "Kündigung zum Periodenende aktiv." : "Keine Kündigung vorgemerkt."}
+            />
+            <StatCard
+              title="Rechnungen"
+              value={invoiceCount}
+              hint={invoiceCount > 0 ? "Vergangene Belege und PDFs stehen bereit." : "Noch keine Rechnungen vorhanden."}
+            />
+          </div>
 
-            {showDunningWarning ? (
-              <div className="mt-3 border border-red-300 bg-red-50 rounded-lg p-4 space-y-2">
-                <p className="text-sm font-semibold text-red-800">
-                  Zahlung fehlgeschlagen. Bitte Zahlungsmethode aktualisieren.
-                </p>
-                {typeof dunning?.amount_due_cents === "number" ? (
-                  <p className="text-sm text-red-800">
-                    Offener Betrag:{" "}
-                    {formatMoney(dunning.amount_due_cents, dunning.currency || plan?.currency || null)}
-                  </p>
-                ) : null}
-                {dunning?.failure_message ? (
-                  <p className="text-sm text-red-800">Grund: {dunning.failure_message}</p>
-                ) : null}
-                {dunning?.next_payment_attempt_at ? (
-                  <p className="text-xs text-red-700">
-                    Nächster Zahlungsversuch: {formatDate(dunning.next_payment_attempt_at)}
-                  </p>
-                ) : null}
-                {dunning?.last_email_sent_at ? (
-                  <p className="text-xs text-red-700">
-                    E-Mail-Hinweis gesendet am: {formatDate(dunning.last_email_sent_at)}
-                  </p>
-                ) : null}
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <Button variant="outline" onClick={openPortal} disabled={busy !== null}>
-                    Zahlungsmethode aktualisieren
-                  </Button>
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="space-y-6">
+              <SectionCard
+                data-tour="account-billing-plan-card"
+                title="Planstatus & Zugriff"
+                description="Hier siehst du, ob dein Zugang stabil freigeschaltet ist und was als Nächstes relevant wird."
+              >
+                <div className="space-y-3">
+                  <div className="rounded-xl border app-surface-muted px-4 py-4">
+                    <div className="app-text-meta-label">Aktueller Plan</div>
+                    <div className="mt-1 text-sm font-semibold text-gray-900">
+                      {plan?.name || "Advaic Free"}
+                    </div>
+                    <div className="mt-1 text-sm text-gray-700">
+                      {planPriceLabel}
+                    </div>
+                  </div>
+
+                  {internalOverride ? (
+                    <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+                      <div className="font-medium">Interner Premium-Zugang aktiv</div>
+                      <div className="mt-1">
+                        Dieser Account wird intern wie ein aktiver Starter-Plan behandelt. Es ist kein Checkout und keine eigene Zahlung nötig.
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {access?.state === "trial_active" ? (
+                    <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-900">
+                      <div className="font-medium">
+                        Testphase Tag {access.trial_day_number} von {access.trial_days_total}
+                      </div>
+                      <div className="mt-1">
+                        Noch {access.trial_days_remaining} Tage bis zur Aktivierung von Starter.
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {access?.state === "trial_expired" ? (
+                    <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-4 text-sm text-red-800">
+                      <div className="font-medium">Testphase beendet</div>
+                      <div className="mt-1">
+                        Auto-Senden und Follow-ups sind pausiert, bis Starter aktiv ist.
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {showDunningWarning ? (
+                    <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-4 text-sm text-red-800">
+                      <div className="font-medium">Zahlung fehlgeschlagen</div>
+                      <div className="mt-1">
+                        Bitte aktualisiere deine Zahlungsmethode, damit dein Zugang stabil bleibt.
+                      </div>
+                      {typeof dunning?.amount_due_cents === "number" ? (
+                        <div className="mt-2">
+                          Offener Betrag:{" "}
+                          {formatMoney(dunning.amount_due_cents, dunning.currency || plan?.currency || null)}
+                        </div>
+                      ) : null}
+                      {dunning?.failure_message ? (
+                        <div className="mt-1">Grund: {dunning.failure_message}</div>
+                      ) : null}
+                      {dunning?.next_payment_attempt_at ? (
+                        <div className="mt-1 text-xs text-red-700">
+                          Nächster Zahlungsversuch: {formatDate(dunning.next_payment_attempt_at)}
+                        </div>
+                      ) : null}
+                      {dunning?.last_email_sent_at ? (
+                        <div className="mt-1 text-xs text-red-700">
+                          E-Mail-Hinweis gesendet am: {formatDate(dunning.last_email_sent_at)}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <div className="rounded-xl border app-surface-panel px-4 py-4 text-sm text-gray-700">
+                    <div className="app-text-meta-label">Abrechnungslogik</div>
+                    <div className="mt-2" data-tour="account-link-kontoloschen">
+                      Kündigung und Tarifwechsel erfolgen über das Billing-Portal.
+                    </div>
+                  </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                data-tour="account-billing-invoices"
+                title="Rechnungen"
+                description="Alle verfügbaren Rechnungen und PDFs an einem Ort."
+              >
+                {!summary?.invoices?.length ? (
+                  <div className="rounded-xl border app-surface-muted px-4 py-4 text-sm text-gray-600">
+                    Noch keine Rechnungen vorhanden.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {summary.invoices.map((inv) => (
+                      <div
+                        key={inv.id}
+                        className="rounded-xl border app-surface-panel px-4 py-4"
+                      >
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div className="text-sm">
+                            <div className="font-medium text-gray-900">
+                              {formatMoney(inv.amount_paid_cents ?? inv.amount_due_cents, inv.currency)}
+                            </div>
+                            <div className="mt-1 text-gray-600">
+                              {formatDate(inv.period_start)} – {formatDate(inv.period_end)}
+                            </div>
+                            <div className="mt-1 text-gray-600">Status: {inv.status || "—"}</div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {inv.hosted_invoice_url ? (
+                              <a
+                                href={inv.hosted_invoice_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <Button variant="secondary">Rechnung öffnen</Button>
+                              </a>
+                            ) : null}
+                            {inv.invoice_pdf ? (
+                              <a href={inv.invoice_pdf} target="_blank" rel="noopener noreferrer">
+                                <Button variant="outline">PDF</Button>
+                              </a>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </SectionCard>
+            </div>
+
+            <div className="space-y-4">
+              <SectionCard
+                data-tour="account-billing-actions"
+                title="Nächste sinnvolle Aktion"
+                description="Die wichtigsten Billing-Schritte direkt in einer kompakten Seitenleiste."
+              >
+                <div className="space-y-3">
+                  <div className="rounded-xl border app-surface-muted px-4 py-4 text-sm text-gray-700">
+                    {internalOverride
+                      ? "Dieser Account ist intern freigeschaltet. Du musst kein Abo abschließen und keine Zahlung auslösen."
+                      : showDunningWarning
+                        ? "Aktualisiere zuerst die Zahlungsmethode, damit es keinen Unterbruch im Versand gibt."
+                        : isFree || access?.state === "trial_expired"
+                          ? "Aktiviere Starter, damit Auto-Senden und Follow-ups weiterlaufen."
+                          : "Verwalte Plan, Zahlungsmethode und Kündigung zentral über das Billing-Portal."}
+                  </div>
+
+                  <PrimaryActionBar
+                    data-tour="account-billing-action-bar"
+                    leading={
+                      <>
+                        <StatusBadge tone={billingTone}>
+                          {internalOverride ? "Intern aktiv" : statusLabel}
+                        </StatusBadge>
+                        {plan?.cancel_at_period_end ? (
+                          <StatusBadge tone="warning">Kündigung aktiv</StatusBadge>
+                        ) : null}
+                      </>
+                    }
+                    trailing={
+                      <>
+                        {!internalOverride ? (
+                          <Button
+                            onClick={openCheckout}
+                            disabled={busy !== null}
+                            className="w-full sm:w-auto"
+                          >
+                            {busy === "checkout"
+                              ? "Weiterleiten…"
+                              : isFree || access?.state === "trial_expired"
+                                ? "Starter aktivieren"
+                                : "Starter verwalten"}
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="secondary"
+                          onClick={openPortal}
+                          disabled={busy !== null || internalOverride}
+                          className="w-full sm:w-auto"
+                        >
+                          {busy === "portal" ? "Öffne Portal…" : "Billing-Portal"}
+                        </Button>
+                      </>
+                    }
+                  />
+
                   {dunning?.hosted_invoice_url ? (
                     <a href={dunning.hosted_invoice_url} target="_blank" rel="noopener noreferrer">
-                      <Button variant="outline">Rechnung öffnen</Button>
+                      <Button variant="outline" className="w-full">
+                        Letzte offene Rechnung öffnen
+                      </Button>
                     </a>
                   ) : null}
                 </div>
-              </div>
-            ) : null}
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button
-                variant={isFree ? "default" : "outline"}
-                onClick={openCheckout}
-                disabled={busy !== null}
-              >
-                {busy === "checkout"
-                  ? "Weiterleiten..."
-                  : isFree
-                    ? "Starter aktivieren"
-                    : "Starter verwalten"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={openPortal}
-                disabled={busy !== null}
-              >
-                {busy === "portal" ? "Öffne Portal..." : "Zahlungen verwalten"}
-              </Button>
+              </SectionCard>
             </div>
-          </div>
-
-          <div className="border rounded-lg p-6 bg-muted/30 space-y-4">
-            <h2 className="font-semibold text-lg">Rechnungen</h2>
-            {!summary?.invoices?.length ? (
-              <p className="text-sm text-muted-foreground">Noch keine Rechnungen vorhanden.</p>
-            ) : (
-              <div className="space-y-3">
-                {summary.invoices.map((inv) => (
-                  <div
-                    key={inv.id}
-                    className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between border rounded p-3 bg-background"
-                  >
-                    <div className="text-sm">
-                      <p className="font-medium">{formatMoney(inv.amount_paid_cents ?? inv.amount_due_cents, inv.currency)}</p>
-                      <p className="text-muted-foreground">
-                        {formatDate(inv.period_start)} - {formatDate(inv.period_end)}
-                      </p>
-                      <p className="text-muted-foreground">Status: {inv.status || "—"}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      {inv.hosted_invoice_url ? (
-                        <a
-                          href={inv.hosted_invoice_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <Button variant="outline">Rechnung öffnen</Button>
-                        </a>
-                      ) : null}
-                      {inv.invoice_pdf ? (
-                        <a href={inv.invoice_pdf} target="_blank" rel="noopener noreferrer">
-                          <Button variant="outline">PDF</Button>
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </>
       )}
-
-      {error ? (
-        <div className="border border-red-200 bg-red-50 rounded-lg p-4 text-sm text-red-700">
-          {error}
-        </div>
-      ) : null}
     </div>
   );
 }

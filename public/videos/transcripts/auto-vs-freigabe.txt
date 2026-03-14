@@ -1,0 +1,11 @@
+Wenn Teams über Auto-Versand nachdenken, ist die entscheidende Frage nicht, ob ein Modell eine E-Mail formulieren kann. Die entscheidende Frage ist, wann das System wirklich senden darf und wann es bewusst stoppen muss.
+
+Automatisch gesendet wird nur dann, wenn die Grundlage sauber ist. Das heißt: Der Objektbezug passt, der Empfänger ist plausibel, der Eingang enthält genug Informationen und der Fall liegt innerhalb der freigegebenen Regeln.
+
+Sobald diese Sicherheit fehlt, greift nicht stillschweigend irgendeine Antwort. Dann greift Freigabe. Typische Gründe sind fehlende Angaben, ein technisch unsauberer oder schwer prüfbarer Rückkanal, ein sensibler Inhalt oder ein Fall, der menschliche Entscheidung verlangt.
+
+Wichtig ist dabei: Diese Logik bleibt sichtbar. Im Produkt sehen Sie nicht nur das Ergebnis, sondern auch den Pfad dorthin. Freigaben folgen einer festen Reihenfolge, und die Entscheidung am Ende ist bewusst getrennt von Original, Vorschlag und Änderungen.
+
+Vor jedem Auto-Versand laufen außerdem Qualitätschecks. So ist Auto-Versand nicht an Vertrauen in ein Modell gebunden, sondern an nachvollziehbare Guardrails und einen sichtbaren Rollout.
+
+Wenn Sie genau prüfen wollen, wie diese Regeln bei Ihrem Team aussehen würden, sehen Sie sich die Regel- und Freigabelogik im Detail an oder testen Sie Advaic direkt im echten Betrieb.

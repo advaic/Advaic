@@ -5,15 +5,16 @@ import PageIntro from "@/components/marketing/PageIntro";
 import StageCTA from "@/components/marketing/StageCTA";
 import FinalCTA from "@/components/marketing/FinalCTA";
 import ObjectionArticle from "@/components/marketing/ObjectionArticle";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const mechanics = [
   {
-    title: "Auto nur bei Klarheit",
-    text: "Advaic sendet nicht pauschal automatisch. Auto-Versand gilt nur für klare Standardfälle mit ausreichendem Kontext und bestandenen Qualitätschecks.",
+    title: "Auto nur bei prüfbaren Kriterien",
+    text: "Advaic sendet nicht pauschal automatisch. Auto-Versand gilt nur bei klarem Objektbezug, ausreichenden Angaben und bestandenen Qualitätschecks.",
   },
   {
-    title: "Unsicher = Zur Freigabe",
-    text: "Bei Objekt-Unklarheit, Konflikten, Beschwerden oder niedriger Sicherheit geht die Nachricht verpflichtend in die Freigabe-Inbox.",
+    title: "Fehlende Angaben oder Konflikte = Zur Freigabe",
+    text: "Bei unklarem Objektbezug, Konflikten, Beschwerden oder fehlenden Angaben geht die Nachricht verpflichtend in die Freigabe-Inbox.",
   },
   {
     title: "Autopilot jederzeit pausierbar",
@@ -26,10 +27,10 @@ const mechanics = [
 ];
 
 const implementation = [
-  "Start mit konservativer Konfiguration: mehr Freigabe, weniger Auto.",
+  "Start mit konservativer Konfiguration: hoher Freigabeanteil, niedriger Auto-Anteil.",
   "Wöchentliche Auswertung: Warum landeten Fälle in Freigabe?",
-  "Auto-Regeln nur für klar validierte Standardfälle erweitern.",
-  "Bei Unsicherheit sofort Auto-Anteil zurücknehmen und Regeln schärfen.",
+  "Auto-Regeln nur für klar validierte wiederkehrende Erstantworten erweitern.",
+  "Bei gehäuften Konflikten, fehlenden Angaben oder Korrekturen sofort Auto-Anteil zurücknehmen und Regeln schärfen.",
 ];
 
 const kpis = [
@@ -57,27 +58,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Einwand Kontrolle | Advaic",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Wie Makler Kontrolle über Autopilot behalten",
+  ogTitle: "Einwand Kontrolle | Advaic",
   description:
-    "Wie Advaic Kontrolle sicherstellt: Auto nur bei Klarheit, verpflichtende Freigabe bei Risiko und vollständig dokumentierter Verlauf.",
-  alternates: {
-    canonical: "/einwaende/kontrolle",
-  },
-  openGraph: {
-    title: "Einwand Kontrolle | Advaic",
-    description:
-      "Wie Advaic Kontrolle sicherstellt: Auto nur bei Klarheit, verpflichtende Freigabe bei Risiko und vollständig dokumentierter Verlauf.",
-    url: "/einwaende/kontrolle",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Einwand Kontrolle | Advaic",
-    description:
-      "Wie Advaic Kontrolle sicherstellt: Auto nur bei Klarheit, verpflichtende Freigabe bei Risiko und vollständig dokumentierter Verlauf.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Leitfaden zum Einwand Kontrolle: Welche Regeln, Freigabegrenzen und Nachweise ein Makler-Autopilot braucht, damit kein unkontrollierter Versand entsteht.",
+  path: "/einwaende/kontrolle",
+  template: "trust",
+  eyebrow: "Einwand Kontrolle",
+  proof: "Prüfbare Auto-Kriterien, Pflicht-Freigabe und ein dokumentierter Verlauf pro Nachricht.",
+});
 
 export default function ObjectionKontrollePage() {
   return (
@@ -85,7 +75,7 @@ export default function ObjectionKontrollePage() {
       <PageIntro
         kicker="Einwand: Kontrolle"
         title="„Ich will keinen Kontrollverlust durch Autopilot.“"
-        description="Dieser Einwand ist berechtigt. Deshalb ist Advaic als kontrolliertes System gebaut: klare Regeln, Fail-Safe zur Freigabe und jederzeit pausierbarer Automatikmodus."
+        description="Dieser Einwand ist berechtigt. Entscheidend ist, ob ein System klare Auto-Kriterien, verpflichtende Freigabegrenzen und einen nachvollziehbaren Verlauf pro Nachricht liefert."
         actions={
           <>
             <Link href="/autopilot-regeln" className="btn-secondary">
@@ -110,7 +100,7 @@ export default function ObjectionKontrollePage() {
       <ObjectionArticle
         context="kontrolle"
         concern="„Was passiert, wenn das System im falschen Moment selbst sendet?“"
-        concernSummary="Das zentrale Sicherheitsprinzip lautet: Im Zweifel stoppen. Unklare Fälle werden nicht automatisch versendet, sondern landen bei Ihnen zur Freigabe."
+        concernSummary="Das zentrale Sicherheitsprinzip lautet: Im Zweifel stoppen. Nachrichten mit fehlenden Angaben, Konflikten oder Ausnahmen werden nicht automatisch versendet, sondern landen bei Ihnen zur Freigabe."
         mechanicsTitle="Kontrollmechanik statt Blind-Automation"
         mechanics={mechanics}
         implementation={implementation}

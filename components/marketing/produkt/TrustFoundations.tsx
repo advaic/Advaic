@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { FileCheck2, ShieldCheck, Workflow, Clock3 } from "lucide-react";
 import Container from "@/components/marketing/Container";
 
 const pillars = [
   {
     title: "Klare Entscheidungsregeln",
-    text: "Autopilot nur bei klaren Standardfällen. Unklare Fälle gehen in die Freigabe.",
+    text: "Autopilot nur bei sauberem Objektbezug, vollständigen Angaben und prüfbarem Empfänger. Fehlt etwas, greift die Freigabe.",
     Icon: Workflow,
   },
   {
@@ -19,26 +20,62 @@ const pillars = [
   },
   {
     title: "Fail-Safe vor Auto-Versand",
-    text: "Vor automatischem Versand greifen Qualitätschecks. Bei Unsicherheit stoppt der Autopilot.",
+    text: "Vor automatischem Versand greifen Qualitätschecks. Bei fehlenden Angaben, Risikosignalen oder unsicherem Rückkanal stoppt der Autopilot.",
     Icon: FileCheck2,
   },
 ];
 
 export default function TrustFoundations() {
   return (
-    <section className="py-20 md:py-28">
+    <section id="vertrauen" className="py-20 md:py-28" data-tour="produkt-trust-block">
       <Container>
-        <div className="max-w-[72ch]">
-          <h2 className="h2">Vertrauen entsteht durch klare Regeln, nicht durch Buzzwords</h2>
-          <p className="body mt-4 text-[var(--muted)]">
-            Deshalb zeigt Advaic nicht nur Ergebnisse, sondern die zugrunde liegende Entscheidungslogik. Sie wissen
-            jederzeit, warum automatisch gesendet wurde, warum etwas in der Freigabe landet oder warum eine E-Mail
-            ignoriert wurde.
-          </p>
-          <p className="helper mt-2">
-            Aktuell gibt es noch keine veröffentlichten Kundenbeispiele. Diese Seite zeigt deshalb bewusst konkrete
-            Produktmechanik statt unkonkreter Erfolgszahlen.
-          </p>
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+          <div className="max-w-[72ch]">
+            <p className="section-kicker">Prüfbarer Betrieb</p>
+            <h2 className="h2 mt-2">Woran Sie merken, dass Advaic kontrollierbar bleibt</h2>
+            <p className="body mt-4 text-[var(--muted)]">
+              Auf dieser Seite sollten Sie eine belastbare Versandlogik sehen. Entscheidend ist, dass Auto,
+              Freigabe, Verlauf und Unterlagen zusammenpassen.
+            </p>
+            <p className="helper mt-3">
+              Wenn Sie diese vier Punkte sauber beantworten können, ist Advaic als Arbeitsprozess deutlich besser
+              prüfbar als viele generische AI-Demos.
+            </p>
+          </div>
+
+          <article className="card-base p-5">
+            <p className="label">Vier Fragen für Ihre Produktprüfung</p>
+            <ul className="mt-4 space-y-3 text-sm leading-6 text-[var(--muted)]">
+              <li className="flex gap-3">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--gold)]" />
+                <span>Wann darf Auto überhaupt senden?</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--gold)]" />
+                <span>Wann stoppt Advaic bewusst und schiebt in die Freigabe?</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--gold)]" />
+                <span>Wo bleibt der Verlauf pro Nachricht sichtbar?</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--gold)]" />
+                <span>Welche Unterlagen und Prüfseiten gibt es außerhalb der Demo?</span>
+              </li>
+            </ul>
+
+            <div className="mt-5 grid gap-2">
+              <Link href="/sicherheit" className="btn-secondary w-full justify-center">
+                Sicherheitsseite lesen
+              </Link>
+              <Link href="/datenschutz" className="btn-secondary w-full justify-center">
+                Datenschutz lesen
+              </Link>
+              <Link href="/preise" className="btn-secondary w-full justify-center">
+                Preis prüfen
+              </Link>
+            </div>
+          </article>
         </div>
 
         <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">

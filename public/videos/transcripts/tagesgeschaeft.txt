@@ -1,0 +1,11 @@
+Neue Immobilienanfragen kommen im Alltag nicht sauber sortiert an. Zwischen echten Interessenten, Rückfragen, Newslettern und Folgefällen verliert ein Team zuerst Zeit beim Einordnen und erst danach beim Antworten.
+
+Advaic macht aus diesem Posteingang eine Arbeitsqueue. Statt nur neue E-Mails zu zeigen, priorisiert die Oberfläche Freigaben, aktive Konversationen und Eskalationen. Das Team sieht sofort, was sicher beantwortet werden kann und wo bewusst geprüft werden muss.
+
+Öffnet man einen Fall, bleibt die eigentliche Antwortarbeit in einer ruhigen Produktionsfläche. Der Thread sitzt im Mittelpunkt. Gleichzeitig bleiben Objektbezug, Entscheidungslogik und Follow-ups daneben sichtbar. Genau das ist im Tagesgeschäft wichtig: Man antwortet nicht aus dem Bauch, sondern mit dem Kontext im Blick.
+
+Wenn eine Nachricht nicht sicher automatisch laufen darf, verschwindet sie nicht in einem unklaren Status. Sie landet in der Freigabe. Dort folgt jeder Fall derselben Reihenfolge: erst das Original, dann der Vorschlag, dann die Änderungen und am Ende die Entscheidung. So bleibt nachvollziehbar, warum etwas gesendet wird, bearbeitet wird oder bewusst nicht rausgeht.
+
+Der Einstieg beginnt absichtlich eng. Mit Safe-Start, ersten Freigaben und einem sichtbaren Systemstatus wächst Automatisierung Schritt für Schritt, statt sofort alles dem Autopiloten zu überlassen.
+
+Wenn Sie sehen wollen, wie das in Ihrem eigenen Postfach funktioniert, testen Sie Advaic 14 Tage im echten Betrieb.

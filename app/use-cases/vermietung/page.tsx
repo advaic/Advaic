@@ -6,12 +6,19 @@ import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
 import StageCTA from "@/components/marketing/StageCTA";
 import FinalCTA from "@/components/marketing/FinalCTA";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
-const standardfragen = [
+const recurringQuestions = [
   "Ist die Wohnung noch verfügbar?",
   "Welche Unterlagen werden für die Besichtigung benötigt?",
   "Wann wäre ein Besichtigungstermin möglich?",
   "Wie ist der weitere Ablauf nach meiner Anfrage?",
+];
+
+const quickTake = [
+  "Im Vermietungsprozess lohnt sich Automatisierung vor allem bei wiederkehrenden Erstantworten mit klarem Objektbezug.",
+  "Beschwerden, Ausnahmen und Nachrichten mit fehlenden Angaben sollten nicht automatisch versendet werden.",
+  "Entscheidend für den Erfolg sind Antwortzeit, Freigabequote und eine stabile Qualitätsprüfung vor dem Versand.",
 ];
 
 const guardrails = [
@@ -23,11 +30,11 @@ const guardrails = [
 
 const operatingModel = [
   {
-    title: "1) Standardfälle bündeln",
-    text: "Häufige Erstfragen werden auf feste Antwortpfade mit klaren Textbausteinen gelegt.",
+    title: "1) Wiederkehrende Erstantworten bündeln",
+    text: "Häufige Erstfragen werden auf feste Antwortpfade mit klaren Textbausteinen und prüfbaren Informationen gelegt.",
   },
   {
-    title: "2) Unklare Fälle isolieren",
+    title: "2) Freigabegründe konsequent isolieren",
     text: "Objektunklarheit, Konfliktthemen und fehlende Kerninfos gehen konsequent in die Freigabe.",
   },
   {
@@ -41,6 +48,13 @@ const kpis = [
   "Anteil der Anfragen mit Antwort innerhalb des Zielzeitfensters",
   "Freigabequote bei vermietungsrelevanten E-Mails",
   "Rate manueller Korrekturen nach Auto-Versand",
+];
+
+const manualBoundaries = [
+  "Preis- oder Verhandlungssituationen",
+  "Beschwerden und konfliktnahe Kommunikation",
+  "Nachrichten ohne klaren Objektbezug",
+  "Fälle, in denen Angaben für eine richtige Antwort fehlen",
 ];
 
 const sources = [
@@ -58,27 +72,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Anwendungsfall Vermietung | Advaic",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Use Case Vermietung: Wo Automatisierung wirklich hilft",
+  ogTitle: "Anwendungsfall Vermietung | Advaic",
   description:
-    "Wie Advaic bei hohem Anfragevolumen in der Vermietung Zeit spart und dabei über Freigabe- und Qualitätslogik sicher bleibt.",
-  alternates: {
-    canonical: "/use-cases/vermietung",
-  },
-  openGraph: {
-    title: "Anwendungsfall Vermietung | Advaic",
-    description:
-      "Wie Advaic bei hohem Anfragevolumen in der Vermietung Zeit spart und dabei über Freigabe- und Qualitätslogik sicher bleibt.",
-    url: "/use-cases/vermietung",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Anwendungsfall Vermietung | Advaic",
-    description:
-      "Wie Advaic bei hohem Anfragevolumen in der Vermietung Zeit spart und dabei über Freigabe- und Qualitätslogik sicher bleibt.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Praxisleitfaden für Vermietungsteams: Welche E-Mails sich für Automatisierung eignen, welche Freigabegründe wichtig sind und wie ein sicherer Start aussieht.",
+  path: "/use-cases/vermietung",
+  template: "usecase",
+  eyebrow: "Anwendungsfall",
+  proof: "Wiederkehrende Erstantworten beschleunigen, manuelle Grenzen sauber halten und über KPI steuern.",
+});
 
 export default function UseCaseVermietungPage() {
   const siteUrl = getSiteUrl();
@@ -100,7 +103,7 @@ export default function UseCaseVermietungPage() {
       <PageIntro
         kicker="Anwendungsfall"
         title="Vermietung mit hohem Anfragevolumen"
-        description="Wenn täglich viele ähnliche Anfragen eingehen, entscheidet Geschwindigkeit. Advaic automatisiert Standardfälle und hält Sonderfälle bewusst in Ihrer Freigabe."
+        description="Wenn täglich viele ähnliche Anfragen eingehen, entscheidet Geschwindigkeit nur dann, wenn Antworten fachlich sauber bleiben. Der wichtigste Hebel liegt bei wiederkehrenden Erstantworten, nicht bei Ausnahmen oder Konflikten."
         actions={
           <>
             <Link href="/use-cases" className="btn-secondary">
@@ -112,6 +115,22 @@ export default function UseCaseVermietungPage() {
           </>
         }
       />
+
+      <section id="kurzfassung" className="py-8 md:py-10">
+        <Container>
+          <article className="card-base p-6">
+            <h2 className="h3">Kurzantwort in 60 Sekunden</h2>
+            <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              {quickTake.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </Container>
+      </section>
       <StageCTA
         stage="bewertung"
         primaryHref="/signup"
@@ -127,7 +146,8 @@ export default function UseCaseVermietungPage() {
             <h2 className="h3">Kurzfassung für Vermietungsteams</h2>
             <p className="helper mt-3 max-w-[72ch]">
               In der Vermietung entsteht der größte Hebel aus schneller, konsistenter Erstantwort. Entscheidend ist
-              dabei eine klare Sicherheitslogik: Auto bei eindeutigen Standards, Freigabe bei Unsicherheit.
+              dabei eine klare Sicherheitslogik: Auto bei prüfbarem Objektbezug und ausreichenden Angaben, Freigabe bei
+              Konflikten, Ausnahmen oder fehlenden Informationen.
             </p>
           </article>
 
@@ -143,7 +163,7 @@ export default function UseCaseVermietungPage() {
             <article className="card-base p-6">
               <h2 className="h3">Was Advaic hier übernimmt</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {standardfragen.map((item) => (
+                {recurringQuestions.map((item) => (
                   <li key={item} className="flex items-start gap-2">
                     <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
                     <span>{item}</span>
@@ -175,9 +195,21 @@ export default function UseCaseVermietungPage() {
           </article>
 
           <article className="card-base mt-4 p-6">
+            <h2 className="h3">Diese Nachrichten sollten bewusst manuell bleiben</h2>
+            <ul className="mt-4 grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2">
+              {manualBoundaries.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+
+          <article className="card-base mt-4 p-6">
             <h2 className="h3">Sinnvoller Start in 3 Schritten</h2>
             <ol className="mt-4 space-y-2 pl-5 text-sm text-[var(--muted)] list-decimal">
-              <li>Mit hoher Freigabequote starten und nur klare Standardfälle automatisch senden.</li>
+              <li>Mit hoher Freigabequote starten und nur wiederkehrende Erstantworten automatisch senden.</li>
               <li>Ton und Textbausteine anhand realer Fälle nachjustieren.</li>
               <li>Autopilot-Anteil schrittweise erhöhen, sobald Qualität stabil ist.</li>
             </ol>

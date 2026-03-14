@@ -1,83 +1,370 @@
+import { existsSync, statSync } from "node:fs";
+import path from "node:path";
 import type { MetadataRoute } from "next";
 import { getSiteUrl } from "@/lib/seo/site-url";
 
 const BASE = getSiteUrl();
+const DEFAULT_LAST_MODIFIED = new Date("2026-03-01T00:00:00.000Z");
 
-const paths = [
-  "/",
-  "/produkt",
-  "/produkt/capabilities",
-  "/preise",
-  "/ki-fuer-immobilienmakler",
-  "/immobilienanfragen-automatisieren",
-  "/integrationen",
-  "/integrationen/gmail",
-  "/integrationen/outlook",
-  "/so-funktionierts",
-  "/autopilot",
-  "/autopilot-regeln",
-  "/qualitaetschecks",
-  "/freigabe-inbox",
-  "/follow-up-logik",
-  "/sicherheit",
-  "/trust",
-  "/faq",
-  "/manuell-vs-advaic",
-  "/advaic-vs-crm-tools",
-  "/best-ai-tools-immobilienmakler",
-  "/best-software-immobilienanfragen",
-  "/roi-rechner",
-  "/einwaende",
-  "/einwaende/dsgvo",
-  "/einwaende/kontrolle",
-  "/einwaende/qualitaet",
-  "/einwaende/aufwand",
-  "/einwaende/kosten",
-  "/email-automatisierung-immobilienmakler",
-  "/makler-freigabe-workflow",
-  "/dsgvo-email-autopilot",
-  "/use-cases",
-  "/use-cases/vermietung",
-  "/use-cases/kleines-team",
-  "/use-cases/mittelpreisige-objekte",
-  "/branchen",
-  "/branchen/vermietung-ballungsraum",
-  "/branchen/kleine-maklerbueros",
-  "/branchen/neubau-vertrieb",
-  "/impressum",
-  "/datenschutz",
-  "/nutzungsbedingungen",
-  "/cookie-und-storage",
-  "/unterauftragsverarbeiter",
-  "/llms.txt",
+type ChangeFrequency = MetadataRoute.Sitemap[number]["changeFrequency"];
+
+type RouteConfig = {
+  path: string;
+  sourceFiles: string[];
+  changeFrequency?: ChangeFrequency;
+  priority?: number;
+};
+
+const routes: RouteConfig[] = [
+  {
+    path: "/",
+    sourceFiles: [
+      "app/page.tsx",
+      "components/marketing/Hero.tsx",
+      "components/marketing/ProductVisualAuthority.tsx",
+      "components/marketing/Pricing.tsx",
+    ],
+    changeFrequency: "weekly",
+    priority: 1,
+  },
+  {
+    path: "/produkt",
+    sourceFiles: [
+      "app/produkt/page.tsx",
+      "components/marketing/produkt/Hero.tsx",
+      "components/marketing/produkt/WhatItDoes.tsx",
+      "components/marketing/produkt/PolicyRules.tsx",
+      "components/marketing/produkt/SecurityPrivacy.tsx",
+    ],
+    changeFrequency: "weekly",
+    priority: 0.9,
+  },
+  {
+    path: "/preise",
+    sourceFiles: ["app/preise/page.tsx", "components/marketing/Pricing.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.85,
+  },
+  {
+    path: "/so-funktionierts",
+    sourceFiles: ["app/so-funktionierts/page.tsx", "components/marketing/StickyTour.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.82,
+  },
+  {
+    path: "/demo/tagesgeschaeft",
+    sourceFiles: [
+      "app/(marketing-demo)/demo/tagesgeschaeft/page.tsx",
+      "components/marketing-video/MarketingVideoWatchPage.tsx",
+      "components/marketing-video/ProductionVideoPlayer.tsx",
+      "lib/video/production-videos.ts",
+      "lib/video/watch-pages.ts",
+      "lib/video/watch-page-server.ts",
+    ],
+    changeFrequency: "monthly",
+    priority: 0.74,
+  },
+  {
+    path: "/demo/auto-vs-freigabe",
+    sourceFiles: [
+      "app/(marketing-demo)/demo/auto-vs-freigabe/page.tsx",
+      "components/marketing-video/MarketingVideoWatchPage.tsx",
+      "components/marketing-video/ProductionVideoPlayer.tsx",
+      "lib/video/production-videos.ts",
+      "lib/video/watch-pages.ts",
+      "lib/video/watch-page-server.ts",
+    ],
+    changeFrequency: "monthly",
+    priority: 0.74,
+  },
+  {
+    path: "/demo/qualitaetschecks-followups",
+    sourceFiles: [
+      "app/(marketing-demo)/demo/qualitaetschecks-followups/page.tsx",
+      "components/marketing-video/MarketingVideoWatchPage.tsx",
+      "components/marketing-video/ProductionVideoPlayer.tsx",
+      "lib/video/production-videos.ts",
+      "lib/video/watch-pages.ts",
+      "lib/video/watch-page-server.ts",
+    ],
+    changeFrequency: "monthly",
+    priority: 0.74,
+  },
+  {
+    path: "/sicherheit",
+    sourceFiles: ["app/sicherheit/page.tsx", "components/marketing/TrustByDesign.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.82,
+  },
+  {
+    path: "/faq",
+    sourceFiles: ["app/faq/page.tsx", "components/marketing/FAQDecisionTree.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.8,
+  },
+  {
+    path: "/manuell-vs-advaic",
+    sourceFiles: ["app/manuell-vs-advaic/page.tsx", "components/marketing/ManualVsAdvaicComparison.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.8,
+  },
+  {
+    path: "/best-ai-tools-immobilienmakler",
+    sourceFiles: ["app/best-ai-tools-immobilienmakler/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.8,
+  },
+  {
+    path: "/best-software-immobilienanfragen",
+    sourceFiles: ["app/best-software-immobilienanfragen/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.8,
+  },
+  {
+    path: "/ki-fuer-immobilienmakler",
+    sourceFiles: ["app/ki-fuer-immobilienmakler/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.78,
+  },
+  {
+    path: "/immobilienanfragen-automatisieren",
+    sourceFiles: ["app/immobilienanfragen-automatisieren/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.78,
+  },
+  {
+    path: "/email-automatisierung-immobilienmakler",
+    sourceFiles: ["app/email-automatisierung-immobilienmakler/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.76,
+  },
+  {
+    path: "/autopilot",
+    sourceFiles: ["app/autopilot/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.76,
+  },
+  {
+    path: "/autopilot-regeln",
+    sourceFiles: ["app/autopilot-regeln/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.76,
+  },
+  {
+    path: "/qualitaetschecks",
+    sourceFiles: ["app/qualitaetschecks/page.tsx", "components/marketing/QualityChecks.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.76,
+  },
+  {
+    path: "/freigabe-inbox",
+    sourceFiles: ["app/freigabe-inbox/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.76,
+  },
+  {
+    path: "/follow-up-logik",
+    sourceFiles: ["app/follow-up-logik/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.74,
+  },
+  {
+    path: "/trust",
+    sourceFiles: ["app/trust/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.72,
+  },
+  {
+    path: "/roi-rechner",
+    sourceFiles: ["app/roi-rechner/page.tsx", "components/marketing/ROICalculator.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.72,
+  },
+  {
+    path: "/produkt/capabilities",
+    sourceFiles: ["app/produkt/capabilities/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.72,
+  },
+  {
+    path: "/advaic-vs-crm-tools",
+    sourceFiles: ["app/advaic-vs-crm-tools/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.72,
+  },
+  {
+    path: "/makler-freigabe-workflow",
+    sourceFiles: ["app/makler-freigabe-workflow/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.72,
+  },
+  {
+    path: "/dsgvo-email-autopilot",
+    sourceFiles: ["app/dsgvo-email-autopilot/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.7,
+  },
+  {
+    path: "/use-cases",
+    sourceFiles: ["app/use-cases/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.7,
+  },
+  {
+    path: "/use-cases/vermietung",
+    sourceFiles: ["app/use-cases/vermietung/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.68,
+  },
+  {
+    path: "/use-cases/kleines-team",
+    sourceFiles: ["app/use-cases/kleines-team/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.68,
+  },
+  {
+    path: "/use-cases/mittelpreisige-objekte",
+    sourceFiles: ["app/use-cases/mittelpreisige-objekte/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.68,
+  },
+  {
+    path: "/branchen",
+    sourceFiles: ["app/branchen/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.68,
+  },
+  {
+    path: "/branchen/vermietung-ballungsraum",
+    sourceFiles: ["app/branchen/vermietung-ballungsraum/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.66,
+  },
+  {
+    path: "/branchen/kleine-maklerbueros",
+    sourceFiles: ["app/branchen/kleine-maklerbueros/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.66,
+  },
+  {
+    path: "/branchen/neubau-vertrieb",
+    sourceFiles: ["app/branchen/neubau-vertrieb/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.66,
+  },
+  {
+    path: "/einwaende",
+    sourceFiles: ["app/einwaende/page.tsx", "components/marketing/ObjectionHandling.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.66,
+  },
+  {
+    path: "/einwaende/dsgvo",
+    sourceFiles: ["app/einwaende/dsgvo/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.64,
+  },
+  {
+    path: "/einwaende/kontrolle",
+    sourceFiles: ["app/einwaende/kontrolle/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.64,
+  },
+  {
+    path: "/einwaende/qualitaet",
+    sourceFiles: ["app/einwaende/qualitaet/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.64,
+  },
+  {
+    path: "/einwaende/aufwand",
+    sourceFiles: ["app/einwaende/aufwand/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.64,
+  },
+  {
+    path: "/einwaende/kosten",
+    sourceFiles: ["app/einwaende/kosten/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.64,
+  },
+  {
+    path: "/integrationen",
+    sourceFiles: ["app/integrationen/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.62,
+  },
+  {
+    path: "/integrationen/gmail",
+    sourceFiles: ["app/integrationen/gmail/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.62,
+  },
+  {
+    path: "/integrationen/outlook",
+    sourceFiles: ["app/integrationen/outlook/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.62,
+  },
+  {
+    path: "/impressum",
+    sourceFiles: ["app/impressum/page.tsx"],
+    changeFrequency: "yearly",
+    priority: 0.2,
+  },
+  {
+    path: "/datenschutz",
+    sourceFiles: ["app/datenschutz/page.tsx"],
+    changeFrequency: "yearly",
+    priority: 0.2,
+  },
+  {
+    path: "/nutzungsbedingungen",
+    sourceFiles: ["app/nutzungsbedingungen/page.tsx"],
+    changeFrequency: "yearly",
+    priority: 0.2,
+  },
+  {
+    path: "/cookie-und-storage",
+    sourceFiles: ["app/cookie-und-storage/page.tsx"],
+    changeFrequency: "yearly",
+    priority: 0.15,
+  },
+  {
+    path: "/unterauftragsverarbeiter",
+    sourceFiles: ["app/unterauftragsverarbeiter/page.tsx"],
+    changeFrequency: "yearly",
+    priority: 0.15,
+  },
+  {
+    path: "/llms.txt",
+    sourceFiles: ["app/llms.txt/route.ts"],
+    changeFrequency: "monthly",
+    priority: 0.1,
+  },
 ];
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  const now = new Date();
+function resolveLastModified(sourceFiles: string[]) {
+  let latestTimestamp = DEFAULT_LAST_MODIFIED.getTime();
 
-  return paths.map((path) => ({
-    url: `${BASE}${path}`,
-    lastModified: now,
-    changeFrequency:
-      path === "/" ||
-      path === "/produkt" ||
-      path === "/best-ai-tools-immobilienmakler" ||
-      path === "/ki-fuer-immobilienmakler" ||
-      path === "/immobilienanfragen-automatisieren"
-        ? "weekly"
-        : "monthly",
-    priority:
-      path === "/"
-        ? 1
-        : path === "/produkt"
-        ? 0.9
-        : path === "/best-ai-tools-immobilienmakler" ||
-          path === "/best-software-immobilienanfragen" ||
-          path === "/ki-fuer-immobilienmakler" ||
-          path === "/immobilienanfragen-automatisieren"
-        ? 0.85
-        : path === "/llms.txt"
-        ? 0.5
-        : 0.7,
+  for (const sourceFile of sourceFiles) {
+    const absolutePath = path.join(process.cwd(), sourceFile);
+    if (!existsSync(absolutePath)) continue;
+
+    const fileTimestamp = statSync(absolutePath).mtime.getTime();
+    if (fileTimestamp > latestTimestamp) {
+      latestTimestamp = fileTimestamp;
+    }
+  }
+
+  return new Date(latestTimestamp);
+}
+
+export default function sitemap(): MetadataRoute.Sitemap {
+  return routes.map(({ path: routePath, sourceFiles, changeFrequency, priority }) => ({
+    url: `${BASE}${routePath}`,
+    lastModified: resolveLastModified(sourceFiles),
+    ...(changeFrequency ? { changeFrequency } : {}),
+    ...(typeof priority === "number" ? { priority } : {}),
   }));
 }

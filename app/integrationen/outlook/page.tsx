@@ -1,8 +1,9 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 import Container from "@/components/marketing/Container";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
+import ProductStillFrame from "@/components/marketing/produkt/ProductStillFrame";
 
 const setupSteps = [
   "Postfach per Microsoft OAuth verbinden.",
@@ -16,6 +17,21 @@ const checks = [
   "Senden und Status-Update ohne Fehler",
   "Unsichere Fälle landen zuverlässig in der Freigabe",
   "Verlauf ist vollständig und supportfähig",
+];
+
+const proofCards = [
+  {
+    title: "Setup-Signal",
+    text: "Die Microsoft-Verbindung ist erst wirklich sauber, wenn Statusfluss, Rückkanal und richtiges Postfach im Betrieb stimmen. Eine erfolgreiche Freigabe im Microsoft-Dialog allein reicht dafür nicht.",
+  },
+  {
+    title: "Status-Signal",
+    text: "Sie müssen im Fall sofort sehen, ob Outlook sauber zugestellt hat oder ob Freigabe, Pause oder Fehler dazwischenlagen.",
+  },
+  {
+    title: "Versand-Signal",
+    text: "Entscheidend ist, ob Guardrails und Verlauf nach dem Go-live stabil bleiben und für Ihr Team im Alltag sauber lesbar sind.",
+  },
 ];
 
 const sources = [
@@ -36,14 +52,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
+export const metadata = buildMarketingMetadata({
   title: "Outlook-Integration für Immobilienmakler",
+  ogTitle: "Outlook-Integration für Immobilienmakler | Advaic",
   description:
     "So verbinden Sie Advaic mit Outlook: sichere OAuth-Anbindung, Guardrails, Freigabe-Logik und nachvollziehbarer Versandverlauf.",
-  alternates: {
-    canonical: "/integrationen/outlook",
-  },
-};
+  path: "/integrationen/outlook",
+  template: "integration",
+  eyebrow: "Integration: Outlook",
+  proof: "OAuth-Anbindung, Guardrails, Freigabe-Logik und nachvollziehbarer Versandpfad für Outlook.",
+});
 
 export default function IntegrationenOutlookPage() {
   const siteUrl = getSiteUrl();
@@ -69,18 +87,18 @@ export default function IntegrationenOutlookPage() {
       description="Die Outlook-Integration ist auf kontrollierten Betrieb ausgelegt: sichere Verbindung, klarer Freigabepfad und nachvollziehbarer Versand."
       actions={
         <>
-          <Link href="/app/konto/verknuepfungen" className="btn-secondary">
-            Verknüpfungen öffnen
+          <Link href="/produkt#setup" className="btn-secondary">
+            Setup ansehen
           </Link>
-          <Link href="/signup" className="btn-primary">
+          <Link href="/signup?entry=integrationen-outlook" className="btn-primary">
             14 Tage testen
           </Link>
         </>
       }
       stage="orientierung"
       stageContext="integrationen-outlook"
-      primaryHref="/app/konto/verknuepfungen"
-      primaryLabel="Outlook verbinden"
+      primaryHref="/signup?entry=integrationen-outlook"
+      primaryLabel="Mit Outlook testen"
       secondaryHref="/makler-freigabe-workflow"
       secondaryLabel="Freigabelogik prüfen"
       sources={sources}
@@ -101,9 +119,23 @@ export default function IntegrationenOutlookPage() {
     >
       <section className="marketing-section-clear py-20 md:py-28">
         <Container>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]" data-tour="integration-detail-proof">
+            <ProductStillFrame
+              label="Outlook-Betrieb"
+              src="/marketing-screenshots/core/raw/dashboard-systemstatus.png"
+              alt="Dashboard mit gemeinsamer Systemstatus-Zone"
+              caption="Nach der Outlook-Verbindung müssen Versand, Deliverability und Automationszustand im Alltag sichtbar bleiben."
+              imageClassName="object-cover object-[50%_10%] scale-[1.04]"
+              aspectClassName="aspect-[16/11]"
+              frameTour="integration-outlook-main-frame"
+              stageTour="integration-outlook-main-shot"
+            />
             <article className="card-base p-6 md:p-8">
               <h2 className="h3">Empfohlener Setup-Ablauf</h2>
+              <p className="helper mt-3">
+                Die eigentliche Outlook-Verbindung erfolgt nach Anmeldung in den Verknüpfungen. Diese Seite zeigt
+                Ihnen vorab, wie der sichere Setup-Pfad aufgebaut ist.
+              </p>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
                 {setupSteps.map((item) => (
                   <li key={item} className="flex items-start gap-2">
@@ -112,19 +144,48 @@ export default function IntegrationenOutlookPage() {
                   </li>
                 ))}
               </ul>
-            </article>
-            <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Go-Live-Checks</h2>
-              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {checks.map((item) => (
-                  <li key={item} className="flex items-start gap-2">
-                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
-                    <span>{item}</span>
-                  </li>
+              <div className="mt-5 grid gap-3">
+                {proofCards.map((item) => (
+                  <article
+                    key={item.title}
+                    className="rounded-2xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]"
+                  >
+                    <p className="text-sm font-semibold text-[var(--text)]">{item.title}</p>
+                    <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{item.text}</p>
+                  </article>
                 ))}
-              </ul>
+              </div>
             </article>
           </div>
+
+          <article className="card-base mt-6 p-6 md:p-8" data-tour="integration-outlook-checks">
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+              <div>
+                <h2 className="h3">Go-Live-Checks</h2>
+                <p className="helper mt-3">
+                  Diese vier Signale sollten Sie in den ersten Tagen mit Outlook sehen, bevor der Auto-Korridor größer wird.
+                </p>
+                <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                  {checks.map((item) => (
+                    <li key={item} className="flex items-start gap-2">
+                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <ProductStillFrame
+                label="Verlauf & Entscheidung"
+                src="/marketing-screenshots/core/raw/conversation-context.png"
+                alt="Konversationsansicht mit Kontext- und Statusspalte"
+                caption="Auch mit Outlook muss der Entscheidungs- und Versandpfad pro Fall transparent bleiben."
+                imageClassName="object-cover object-[53%_10%] scale-[1.05]"
+                aspectClassName="aspect-[16/10]"
+                frameTour="integration-outlook-secondary-frame"
+                stageTour="integration-outlook-secondary-shot"
+              />
+            </div>
+          </article>
         </Container>
       </section>
     </AiDiscoveryPageTemplate>

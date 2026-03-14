@@ -27,6 +27,7 @@ type AiDiscoveryPageTemplateProps = {
   title: string;
   description: string;
   actions?: ReactNode;
+  mobileQuickActions?: ReactNode;
   stage: Stage;
   stageContext: string;
   primaryHref?: string;
@@ -34,6 +35,7 @@ type AiDiscoveryPageTemplateProps = {
   secondaryHref?: string;
   secondaryLabel?: string;
   stageSectionId?: string;
+  withStageCta?: boolean;
   children: ReactNode;
   sources: SourceItem[];
   sourcesTitle?: string;
@@ -52,6 +54,7 @@ export default function AiDiscoveryPageTemplate({
   title,
   description,
   actions,
+  mobileQuickActions,
   stage,
   stageContext,
   primaryHref,
@@ -59,6 +62,7 @@ export default function AiDiscoveryPageTemplate({
   secondaryHref,
   secondaryLabel,
   stageSectionId = "stage-cta",
+  withStageCta = true,
   children,
   sources,
   sourcesTitle = "Quellen & Einordnung",
@@ -82,17 +86,25 @@ export default function AiDiscoveryPageTemplate({
         />
       ))}
 
-      <PageIntro kicker={kicker} title={title} description={description} actions={actions} />
-
-      <StageCTA
-        stage={stage}
-        primaryHref={primaryHref}
-        primaryLabel={primaryLabel}
-        secondaryHref={secondaryHref}
-        secondaryLabel={secondaryLabel}
-        context={stageContext}
-        sectionId={stageSectionId}
+      <PageIntro
+        kicker={kicker}
+        title={title}
+        description={description}
+        actions={actions}
+        mobileQuickActions={mobileQuickActions}
       />
+
+      {withStageCta ? (
+        <StageCTA
+          stage={stage}
+          primaryHref={primaryHref}
+          primaryLabel={primaryLabel}
+          secondaryHref={secondaryHref}
+          secondaryLabel={secondaryLabel}
+          context={stageContext}
+          sectionId={stageSectionId}
+        />
+      ) : null}
 
       {children}
 

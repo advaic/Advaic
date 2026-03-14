@@ -21,7 +21,7 @@ const checks = [
   },
   {
     title: "Risiko-Check (Fail-Safe)",
-    detail: "Bei Unsicherheit oder Konfliktthemen stoppt der Auto-Versand und geht in die Freigabe.",
+    detail: "Bei fehlenden Angaben, Konfliktthemen oder anderen Risikoindikatoren stoppt der Auto-Versand und geht in die Freigabe.",
   },
   {
     title: "Lesbarkeits-Check",
@@ -54,8 +54,8 @@ export default function QualityChecks() {
         <p className="body mt-8 flex items-start gap-2 text-[var(--muted)]">
           <ShieldCheck className="mt-1 h-5 w-5 shrink-0 text-[var(--gold)]" />
           <span>
-            Wenn Advaic nicht sicher ist, landet die Nachricht bei Ihnen –
-            nicht beim Interessenten.
+            Wenn Objektbezug, Inhalt oder Versandfreigabe nicht sauber passen, landet die Nachricht bei Ihnen statt
+            beim Interessenten.
           </span>
         </p>
       </Container>

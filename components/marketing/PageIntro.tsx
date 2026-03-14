@@ -7,6 +7,7 @@ type PageIntroProps = {
   title: string;
   description: string;
   actions?: ReactNode;
+  mobileQuickActions?: ReactNode;
   showProofLayer?: boolean;
   proofContext?: string;
 };
@@ -16,6 +17,7 @@ export default function PageIntro({
   title,
   description,
   actions,
+  mobileQuickActions,
   showProofLayer = false,
   proofContext = "marketing",
 }: PageIntroProps) {
@@ -34,6 +36,7 @@ export default function PageIntro({
                 {actions}
               </div>
             ) : null}
+            {mobileQuickActions ? <div className="mt-4 md:hidden">{mobileQuickActions}</div> : null}
           </div>
         </div>
         {showProofLayer ? <ProofLayer context={proofContext} className="mt-7" /> : null}

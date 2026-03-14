@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { trackPublicEvent } from "@/lib/funnel/public-track";
+import { readCookieConsent } from "@/lib/marketing/cookie-consent";
+import { subscribeMarketingCookieBannerState } from "@/lib/marketing/public-overlay-state";
+import { STARTER_PUBLIC_PRICE_LABEL } from "@/lib/billing/public-pricing";
+import { MARKETING_PRIMARY_CTA_LABEL } from "./cta-copy";
 
 type MobileBarConfig = {
   context: string;
@@ -51,7 +55,7 @@ function sectionsForPath(pathname: string): string[] {
     return ["problem", "how", "rules", "quality", "pricing", "cta"];
   }
   if (pathname.startsWith("/produkt")) {
-    return ["was", "ablauf", "regeln", "qualitaet", "freigabe", "sicherheit", "setup", "followups", "faq", "cta"];
+    return ["ablauf", "regeln", "freigabe", "qualitaet", "setup", "sicherheit", "faq", "cta"];
   }
   if (pathname.startsWith("/so-funktionierts")) {
     return ["prozess-details", "prozess-quellen", "cta"];
@@ -66,7 +70,6 @@ const SECTION_LABELS: Record<string, string> = {
   quality: "Checks",
   pricing: "Preise",
   cta: "Abschluss",
-  was: "Leistung",
   ablauf: "Tour",
   regeln: "Regeln",
   qualitaet: "Qualität",
@@ -91,11 +94,11 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       pageType,
       section: activeSection,
       title: "Starter in 14 Tagen testen",
-      subtitle: "Ohne Risiko starten, dann monatlich weiter.",
+      subtitle: `Danach ${STARTER_PUBLIC_PRICE_LABEL}.`,
       note: "Kündbar · pausierbar · klare Freigabelogik",
-      primaryLabel: "Jetzt testen",
+      primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
       primaryHref: "/signup?entry=mobile-preise",
-      secondaryLabel: "Preisdetails",
+      secondaryLabel: "Preise ansehen",
       secondaryHref: "/preise",
     };
   }
@@ -106,9 +109,9 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       pageType,
       section: activeSection,
       title: "Sicher starten mit Guardrails",
-      subtitle: "Unklare Fälle bleiben in Ihrer Freigabe.",
-      note: "Fail-Safe aktiv: im Zweifel kein Auto-Versand",
-      primaryLabel: "Sicher testen",
+      subtitle: "Nachrichten mit fehlenden Angaben oder Risikosignalen bleiben in Ihrer Freigabe.",
+      note: "Fail-Safe aktiv: kein Auto-Versand bei fehlenden Daten, Konfliktpotenzial oder Qualitätswarnung",
+      primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
       primaryHref: "/signup?entry=mobile-sicherheit",
       secondaryLabel: "Regeln ansehen",
       secondaryHref: "/autopilot-regeln",
@@ -123,10 +126,10 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       title: "Direkt mit Safe-Start testen",
       subtitle: "Konservativ beginnen und kontrolliert ausbauen.",
       note: "Erst Freigabe stabilisieren, dann Automatisierungsgrad erhöhen",
-      primaryLabel: "Test starten",
+      primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
       primaryHref: "/signup?entry=mobile-vergleich",
       secondaryLabel: "Konfiguration",
-      secondaryHref: "/produkt#safe-start-konfiguration",
+      secondaryHref: "/produkt#setup",
     };
   }
 
@@ -137,10 +140,10 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       section: activeSection,
       title: "Fragen geklärt? Dann live testen",
       subtitle: "14 Tage Testphase mit klarer Freigabelogik.",
-      note: "Sie behalten die finale Entscheidung in heiklen Fällen",
-      primaryLabel: "14 Tage testen",
+      note: "Sie behalten die finale Entscheidung bei Beschwerden, Konflikten oder fehlenden Angaben",
+      primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
       primaryHref: "/signup?entry=mobile-faq",
-      secondaryLabel: "Trust Center",
+      secondaryLabel: "Trust-Hub",
       secondaryHref: "/trust",
     };
   }
@@ -153,11 +156,11 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
         section: activeSection,
         title: "Ablauf passt zu Ihrem Alltag?",
         subtitle: "Dann starten Sie mit konservativer Auto/Freigabe-Logik.",
-        note: "Standardfälle automatisch, Unklares kontrolliert per Freigabe",
-        primaryLabel: "Mit Prozess testen",
+        note: "Erstantworten mit sauberem Objektbezug automatisch, fehlende Angaben kontrolliert per Freigabe",
+        primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
         primaryHref: "/signup?entry=mobile-prozess-details",
         secondaryLabel: "Safe-Start",
-        secondaryHref: "/produkt#safe-start-konfiguration",
+        secondaryHref: "/produkt#setup",
       };
     }
 
@@ -168,7 +171,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       title: "Mechanik verstanden? Jetzt live testen",
       subtitle: "Erkennen, Schreiben, Senden mit klaren Guardrails.",
       note: "Vor Auto-Versand laufen Qualitätschecks und Risikoprüfungen",
-      primaryLabel: "14 Tage testen",
+      primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
       primaryHref: "/signup?entry=mobile-prozess-default",
       secondaryLabel: "Regeln im Detail",
       secondaryHref: "/autopilot-regeln",
@@ -182,8 +185,8 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       section: activeSection,
       title: "Regellogik überzeugt?",
       subtitle: "Dann starten Sie kontrolliert mit hoher Freigabequote.",
-      note: "Im Zweifel stoppt das System und legt zur Freigabe vor",
-      primaryLabel: "Regelbasiert testen",
+      note: "Bei fehlenden Angaben, Konflikten oder Qualitätswarnungen geht die Nachricht zur Freigabe",
+      primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
       primaryHref: "/signup?entry=mobile-regeln",
       secondaryLabel: "Qualitätschecks",
       secondaryHref: "/qualitaetschecks",
@@ -191,18 +194,18 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
   }
 
   if (pageType === "produkt") {
-    if (activeSection === "was" || activeSection === "ablauf") {
+    if (activeSection === "ablauf") {
       return {
         context: "produkt-mechanik",
         pageType,
         section: activeSection,
         title: "Mechanik klar? Nächster Schritt",
-        subtitle: "Teste die Entscheidungslinie im Praxis-Simulator.",
-        note: "Sie sehen live, wann Auto, Freigabe oder Ignorieren greift",
-        primaryLabel: "Jetzt testen",
+        subtitle: "Prüfen Sie als Nächstes Freigabe und Qualitätslogik.",
+        note: "Sie sehen hier den echten Ablauf von Eingang über Entscheidung bis Versand",
+        primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
         primaryHref: "/signup?entry=mobile-produkt-mechanik",
-        secondaryLabel: "Simulator öffnen",
-        secondaryHref: "/produkt#simulator",
+        secondaryLabel: "Freigabe ansehen",
+        secondaryHref: "/produkt#freigabe",
       };
     }
 
@@ -213,26 +216,26 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
         section: activeSection,
         title: "Regeln und Checks passen?",
         subtitle: "Dann starten Sie kontrolliert mit Freigabe-Guardrails.",
-        note: "Kritische Fälle bleiben bei Ihnen, nicht beim Autopilot",
-        primaryLabel: "Sicher starten",
+        note: "Beschwerden, rechtlich sensible Inhalte und Qualitätswarnungen bleiben bei Ihnen, nicht beim Autopilot",
+        primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
         primaryHref: "/signup?entry=mobile-produkt-sicherheit",
-        secondaryLabel: "Trust Center",
+        secondaryLabel: "Trust-Hub",
         secondaryHref: "/trust",
       };
     }
 
-    if (activeSection === "setup" || activeSection === "followups") {
+    if (activeSection === "setup") {
       return {
         context: "produkt-setup",
         pageType,
         section: activeSection,
         title: "Ready für den Safe-Start?",
-        subtitle: "Lassen Sie Auto/Freigabe/Follow-ups passend vorkonfigurieren.",
+        subtitle: `14 Tage testen, danach ${STARTER_PUBLIC_PRICE_LABEL}.`,
         note: "Schrittweise aktivieren statt sofort vollautomatisch starten",
-        primaryLabel: "Konfiguration testen",
+        primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
         primaryHref: "/signup?entry=mobile-produkt-setup",
         secondaryLabel: "Safe-Start öffnen",
-        secondaryHref: "/produkt#safe-start-konfiguration",
+        secondaryHref: "/produkt#setup",
       };
     }
 
@@ -242,8 +245,8 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       section: activeSection,
       title: "Produkt verstanden? Jetzt live testen",
       subtitle: "14 Tage Testphase mit vollständigem Sicherheitsnetz.",
-      note: "Auto-Versand nur bei klaren Standardfällen",
-      primaryLabel: "Jetzt testen",
+      note: "Auto-Versand nur bei sauberem Objektbezug, freigegebenem Versandkorridor und bestandenen Checks",
+      primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
       primaryHref: "/signup?entry=mobile-produkt-default",
       secondaryLabel: "Prozess ansehen",
       secondaryHref: "/produkt#ablauf",
@@ -259,7 +262,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
         title: "Ist das Ihr Hauptproblem?",
         subtitle: "Dann prüfen Sie den Praxisvergleich und starten konservativ.",
         note: "Mehr Antwortgeschwindigkeit ohne Kontrollverlust",
-        primaryLabel: "14 Tage testen",
+        primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
         primaryHref: "/signup?entry=mobile-home-fit",
         secondaryLabel: "Manuell vs. Advaic",
         secondaryHref: "/manuell-vs-advaic#vergleich",
@@ -273,8 +276,8 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
         section: activeSection,
         title: "Guardrails überzeugen?",
         subtitle: "Dann starten Sie mit konservativem Autopilot-Profil.",
-        note: "Im Zweifel immer Freigabe statt riskanter Auto-Antwort",
-        primaryLabel: "Sicher testen",
+        note: "Fehlende Angaben, Konflikte oder Qualitätswarnungen gehen immer in die Freigabe",
+        primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
         primaryHref: "/signup?entry=mobile-home-sicherheit",
         secondaryLabel: "Regeln prüfen",
         secondaryHref: "/autopilot-regeln",
@@ -287,9 +290,9 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
         pageType,
         section: activeSection,
         title: "Bereit für den Live-Test?",
-        subtitle: "14 Tage testen, jederzeit pausierbar und kündbar.",
+        subtitle: `14 Tage testen, danach ${STARTER_PUBLIC_PRICE_LABEL}.`,
         note: "Starter bleibt steuerbar, auch bei höherem Anfragevolumen",
-        primaryLabel: "14 Tage testen",
+        primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
         primaryHref: "/signup?entry=mobile-home-entscheidung",
         secondaryLabel: "Preise ansehen",
         secondaryHref: "/preise",
@@ -303,7 +306,7 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       title: "Weniger Postfach, mehr Fokus",
       subtitle: "Advaic startet konservativ und bleibt kontrollierbar.",
       note: "Klare Guardrails für Auto, Freigabe und Ignorieren",
-      primaryLabel: "14 Tage testen",
+      primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
       primaryHref: "/signup?entry=mobile-home-default",
       secondaryLabel: "So funktioniert's",
       secondaryHref: "/so-funktionierts",
@@ -318,10 +321,10 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       title: "Passt Ihr Anwendungsfall?",
       subtitle: "Wählen Sie Safe-Start je nach Volumen und Risiko.",
       note: "Setup wird auf Miet-/Kauf-Fokus und Teamgröße abgestimmt",
-      primaryLabel: "Use Case testen",
+      primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
       primaryHref: "/signup?entry=mobile-use-cases",
       secondaryLabel: "Safe-Start",
-      secondaryHref: "/produkt#safe-start-konfiguration",
+      secondaryHref: "/produkt#setup",
     };
   }
 
@@ -330,10 +333,10 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
       context: "trust",
       pageType,
       section: activeSection,
-      title: "Trust Center geprüft?",
+      title: "Trust-Hub geprüft?",
       subtitle: "Dann testen Sie das Setup im eigenen Ablauf.",
       note: "Nachvollziehbarer Verlauf für jede Entscheidung",
-      primaryLabel: "Mit Trust testen",
+      primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
       primaryHref: "/signup?entry=mobile-trust",
       secondaryLabel: "Produkt ansehen",
       secondaryHref: "/produkt",
@@ -346,8 +349,8 @@ function getConfig(pathname: string, activeSection: string | null): MobileBarCon
     section: activeSection,
     title: "Weniger Postfach, mehr Fokus",
     subtitle: "Advaic startet konservativ und bleibt kontrollierbar.",
-    note: "14 Tage Testphase · danach Starter · jederzeit kündbar",
-    primaryLabel: "14 Tage testen",
+    note: `14 Tage Testphase · danach ${STARTER_PUBLIC_PRICE_LABEL} · jederzeit kündbar`,
+    primaryLabel: MARKETING_PRIMARY_CTA_LABEL,
     primaryHref: "/signup?entry=mobile-default",
     secondaryLabel: "So funktioniert's",
     secondaryHref: "/so-funktionierts",
@@ -358,7 +361,15 @@ export default function MobileConversionBar() {
   const pathname = usePathname() || "/";
   const hidden = shouldHide(pathname);
   const [activeSection, setActiveSection] = useState<string | null>(null);
+  const [cookieBannerOpen, setCookieBannerOpen] = useState(false);
   const config = useMemo(() => getConfig(pathname, activeSection), [activeSection, pathname]);
+
+  useEffect(() => {
+    if (hidden) return;
+
+    setCookieBannerOpen(!readCookieConsent());
+    return subscribeMarketingCookieBannerState(setCookieBannerOpen);
+  }, [hidden]);
 
   useEffect(() => {
     if (hidden) return;
@@ -439,7 +450,7 @@ export default function MobileConversionBar() {
     });
   }, [config.context, config.pageType, config.section, hidden, pathname]);
 
-  if (hidden) return null;
+  if (hidden || cookieBannerOpen) return null;
   const activeSectionLabel = getSectionLabel(config.section);
   const note = config.note || "14 Tage Testphase · danach Starter · jederzeit kündbar";
 
@@ -476,7 +487,10 @@ export default function MobileConversionBar() {
   return (
     <>
       <div className="h-40 sm:h-32 md:hidden" aria-hidden />
-      <div className="fixed inset-x-0 bottom-0 z-[70] rounded-t-2xl border-t border-[var(--border)] bg-white/96 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.8rem)] shadow-[0_-14px_34px_rgba(11,15,23,0.12)] backdrop-blur-md md:hidden">
+      <div
+        className="fixed inset-x-0 bottom-0 z-[70] rounded-t-2xl border-t border-[var(--border)] bg-white/96 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.8rem)] shadow-[0_-14px_34px_rgba(11,15,23,0.12)] backdrop-blur-md md:hidden"
+        data-tour="marketing-mobile-conversion-bar"
+      >
         <div className="mx-auto max-w-[1120px]">
           <div className="flex items-center justify-between gap-2">
             <p className="text-[13px] font-semibold leading-5 text-[var(--text)]">{config.title}</p>

@@ -1,0 +1,134 @@
+[
+  {
+    "route": "/",
+    "slug": "home",
+    "viewport": "desktop",
+    "width": 1440,
+    "height": 900,
+    "auth": false,
+    "final_url": "http://127.0.0.1:4010/",
+    "fold_file": "docs/ui-audit/2026-03-10/home-desktop-fold.png",
+    "file": "docs/ui-audit/2026-03-10/home-desktop.png"
+  },
+  {
+    "route": "/",
+    "slug": "home",
+    "viewport": "mobile",
+    "width": 390,
+    "height": 844,
+    "auth": false,
+    "final_url": "http://127.0.0.1:4010/",
+    "fold_file": "docs/ui-audit/2026-03-10/home-mobile-fold.png",
+    "file": "docs/ui-audit/2026-03-10/home-mobile.png"
+  },
+  {
+    "route": "/produkt",
+    "slug": "produkt",
+    "viewport": "desktop",
+    "width": 1440,
+    "height": 900,
+    "auth": false,
+    "final_url": "http://127.0.0.1:4010/produkt",
+    "fold_file": "docs/ui-audit/2026-03-10/produkt-desktop-fold.png",
+    "file": "docs/ui-audit/2026-03-10/produkt-desktop.png"
+  },
+  {
+    "route": "/produkt",
+    "slug": "produkt",
+    "viewport": "mobile",
+    "width": 390,
+    "height": 844,
+    "auth": false,
+    "final_url": "http://127.0.0.1:4010/produkt",
+    "fold_file": "docs/ui-audit/2026-03-10/produkt-mobile-fold.png",
+    "file": "docs/ui-audit/2026-03-10/produkt-mobile.png"
+  },
+  {
+    "route": "/app/startseite",
+    "slug": "dashboard",
+    "viewport": "desktop",
+    "width": 1440,
+    "height": 900,
+    "auth": true,
+    "final_url": "http://127.0.0.1:4010/app/startseite",
+    "fold_file": "docs/ui-audit/2026-03-10/dashboard-desktop-fold.png",
+    "file": "docs/ui-audit/2026-03-10/dashboard-desktop.png"
+  },
+  {
+    "route": "/app/startseite",
+    "slug": "dashboard",
+    "viewport": "mobile",
+    "width": 390,
+    "height": 844,
+    "auth": true,
+    "final_url": "http://127.0.0.1:4010/app/startseite",
+    "fold_file": "docs/ui-audit/2026-03-10/dashboard-mobile-fold.png",
+    "file": "docs/ui-audit/2026-03-10/dashboard-mobile.png"
+  },
+  {
+    "route": "/app/nachrichten",
+    "slug": "messages",
+    "viewport": "desktop",
+    "width": 1440,
+    "height": 900,
+    "auth": true,
+    "final_url": "http://127.0.0.1:4010/app/nachrichten",
+    "fold_file": "docs/ui-audit/2026-03-10/messages-desktop-fold.png",
+    "file": "docs/ui-audit/2026-03-10/messages-desktop.png"
+  },
+  {
+    "route": "/app/nachrichten",
+    "slug": "messages",
+    "viewport": "mobile",
+    "width": 390,
+    "height": 844,
+    "auth": true,
+    "final_url": "http://127.0.0.1:4010/app/nachrichten",
+    "fold_file": "docs/ui-audit/2026-03-10/messages-mobile-fold.png",
+    "file": "docs/ui-audit/2026-03-10/messages-mobile.png"
+  },
+  {
+    "route": "/app/nachrichten/f867b1cc-6afd-4be3-a5a3-1f59bc319162",
+    "slug": "conversation",
+    "viewport": "desktop",
+    "width": 1440,
+    "height": 900,
+    "auth": true,
+    "final_url": "http://127.0.0.1:4010/app/nachrichten/f867b1cc-6afd-4be3-a5a3-1f59bc319162",
+    "fold_file": "docs/ui-audit/2026-03-10/conversation-desktop-fold.png",
+    "file": "docs/ui-audit/2026-03-10/conversation-desktop.png"
+  },
+  {
+    "route": "/app/nachrichten/f867b1cc-6afd-4be3-a5a3-1f59bc319162",
+    "slug": "conversation",
+    "viewport": "mobile",
+    "width": 390,
+    "height": 844,
+    "auth": true,
+    "final_url": "http://127.0.0.1:4010/app/nachrichten/f867b1cc-6afd-4be3-a5a3-1f59bc319162",
+    "fold_file": "docs/ui-audit/2026-03-10/conversation-mobile-fold.png",
+    "file": "docs/ui-audit/2026-03-10/conversation-mobile.png"
+  },
+  {
+    "route": "/app/zur-freigabe",
+    "slug": "approvals",
+    "viewport": "desktop",
+    "width": 1440,
+    "height": 900,
+    "auth": true,
+    "final_url": "http://127.0.0.1:4010/app/zur-freigabe",
+    "fold_file": "docs/ui-audit/2026-03-10/approvals-desktop-fold.png",
+    "file": "docs/ui-audit/2026-03-10/approvals-desktop.png"
+  },
+  {
+    "route": "/app/zur-freigabe",
+    "slug": "approvals",
+    "viewport": "mobile",
+    "width": 390,
+    "height": 844,
+    "auth": true,
+    "final_url": "http://127.0.0.1:4010/app/zur-freigabe",
+    "fold_file": "docs/ui-audit/2026-03-10/approvals-mobile-fold.png",
+    "file": "docs/ui-audit/2026-03-10/approvals-mobile.png"
+  }
+]

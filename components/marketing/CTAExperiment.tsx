@@ -5,12 +5,14 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { trackPublicEvent } from "@/lib/funnel/public-track";
 import { canUseCategory } from "@/lib/marketing/cookie-consent";
+import { MARKETING_FLOW_CTA_LABEL, MARKETING_PRIMARY_CTA_LABEL } from "./cta-copy";
 
 type VariantKey = "tempo" | "sicherheit" | "kontrolle";
 
 const VARIANTS: Record<
   VariantKey,
   {
+    label: string;
     title: string;
     subtitle: string;
     bullets: string[];
@@ -19,28 +21,31 @@ const VARIANTS: Record<
   }
 > = {
   tempo: {
-    title: "Schneller antworten, ohne Qualität zu verlieren",
+    label: "Fokus: Reaktionszeit",
+    title: "Antwortzeiten senken, ohne problematische Nachrichten freizugeben",
     subtitle:
-      "Wenn Standardfälle sofort beantwortet werden, sinkt die Reaktionszeit deutlich und Ihr Postfach bleibt beherrschbar.",
-    bullets: ["Klare Standardfälle automatisch", "Unklare Fälle zur Freigabe", "Qualitätschecks vor jedem Versand"],
-    primary: "Jetzt 14 Tage testen",
-    secondary: "So funktioniert's",
+      "Wenn prüfbare Anfragen direkt beantwortet werden, sinkt die Reaktionszeit. Fehlen Angaben oder wird eine Nachricht riskant, greift die Freigabe.",
+    bullets: ["Auto bei sauberem Objektbezug", "Freigabe bei fehlenden Angaben", "Qualitätschecks vor jedem Versand"],
+    primary: MARKETING_PRIMARY_CTA_LABEL,
+    secondary: MARKETING_FLOW_CTA_LABEL,
   },
   sicherheit: {
-    title: "Automatisieren mit Sicherheitsnetz",
+    label: "Fokus: Versandkontrolle",
+    title: "Auto-Versand nur mit nachvollziehbaren Prüfregeln",
     subtitle:
-      "Advaic ist für kontrollierten Betrieb gebaut: Im Zweifel stoppt das System und übergibt den Fall in Ihre Freigabe.",
-    bullets: ["Fail-Safe bei Unsicherheit", "Freigabe bei Risiko", "Lückenlose Status-Transparenz"],
-    primary: "Sicher starten",
-    secondary: "Sicherheitsdetails",
+      "Advaic sendet nur, wenn Empfänger, Objektbezug und Inhalt sauber geprüft werden können. Sonst bleibt die Entscheidung bei Ihrem Team.",
+    bullets: ["Keine Auto-Antwort bei no-reply ohne Rückkanal", "Freigabe bei Risiko oder Lücken", "Statusverlauf pro Entscheidung"],
+    primary: MARKETING_PRIMARY_CTA_LABEL,
+    secondary: "Sicherheitsseite lesen",
   },
   kontrolle: {
-    title: "Volle Kontrolle trotz Automatisierung",
+    label: "Fokus: Steuerbarkeit",
+    title: "Ihr Team entscheidet, welche Nachrichten automatisch rausgehen",
     subtitle:
       "Sie bestimmen Regeln, Ton und Freigabegrad. Advaic arbeitet innerhalb Ihrer Leitplanken und nicht darüber hinaus.",
-    bullets: ["Regeln selbst steuerbar", "Autopilot pausierbar", "Follow-ups kontrolliert stoppbar"],
-    primary: "Kontrolliert testen",
-    secondary: "Regeln prüfen",
+    bullets: ["Regeln und Freigabegrenzen steuerbar", "Autopilot pausierbar", "Follow-ups mit Stop-Regeln"],
+    primary: MARKETING_PRIMARY_CTA_LABEL,
+    secondary: "Regeln ansehen",
   },
 };
 
@@ -173,9 +178,8 @@ export default function CTAExperiment({ id = "cta-variant" }: CTAExperimentProps
         <article className="card-base card-hover p-6 md:p-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="inline-flex rounded-full bg-[var(--surface-2)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--muted)] ring-1 ring-[var(--gold-soft)]">
-              Fokus: {variant}
+              {content.label}
             </span>
-            <span className="text-xs text-[var(--muted)]">Variante per `?cta=tempo|sicherheit|kontrolle` testbar</span>
           </div>
 
           <h3 className="h3 mt-4">{content.title}</h3>

@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { readCookieConsent, writeCookieConsent } from "@/lib/marketing/cookie-consent";
+import {
+  emitMarketingCookieBannerState,
+  isMarketingMobileViewport,
+  MARKETING_MOBILE_MEDIA_QUERY,
+} from "@/lib/marketing/public-overlay-state";
 
 const HIDE_PREFIXES = ["/app"];
 
@@ -20,9 +25,11 @@ export default function CookieConsentBanner() {
   const [analytics, setAnalytics] = useState(false);
   const [marketing, setMarketing] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   useEffect(() => {
     setHydrated(true);
+    setIsMobileViewport(isMarketingMobileViewport());
     const existing = readCookieConsent();
     if (!existing) {
       setIsOpen(true);
@@ -35,6 +42,17 @@ export default function CookieConsentBanner() {
   }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
+
+    const media = window.matchMedia(MARKETING_MOBILE_MEDIA_QUERY);
+    const syncViewport = () => setIsMobileViewport(media.matches);
+    syncViewport();
+
+    media.addEventListener("change", syncViewport);
+    return () => media.removeEventListener("change", syncViewport);
+  }, [hydrated]);
+
+  useEffect(() => {
     const onConsentChanged = () => {
       const next = readCookieConsent();
       if (!next) return;
@@ -45,6 +63,13 @@ export default function CookieConsentBanner() {
     window.addEventListener("advaic:cookie-consent-changed", onConsentChanged as EventListener);
     return () => window.removeEventListener("advaic:cookie-consent-changed", onConsentChanged as EventListener);
   }, []);
+
+  useEffect(() => {
+    if (!hydrated || isHiddenRoute) return;
+
+    emitMarketingCookieBannerState(isOpen);
+    return () => emitMarketingCookieBannerState(false);
+  }, [hydrated, isHiddenRoute, isOpen]);
 
   if (!hydrated || isHiddenRoute) return null;
 
@@ -59,7 +84,7 @@ export default function CookieConsentBanner() {
 
   return (
     <>
-      {hasSavedConsent ? (
+      {hasSavedConsent && !isMobileViewport ? (
         <button
           type="button"
           onClick={() => {
@@ -67,13 +92,17 @@ export default function CookieConsentBanner() {
             setIsOpen(true);
           }}
           className="focus-ring fixed bottom-5 left-5 z-[90] rounded-full border border-[var(--border)] bg-white px-3 py-2 text-xs font-medium text-[var(--muted)] shadow-[var(--shadow-sm)] transition hover:border-[rgba(11,15,23,.18)] hover:text-[var(--text)]"
+          data-tour="marketing-cookie-settings-button"
         >
           Cookie-Einstellungen
         </button>
       ) : null}
 
       {isOpen ? (
-        <div className="fixed inset-x-0 bottom-0 z-[100] border-t border-[var(--border)] bg-white/98 px-5 pb-5 pt-4 shadow-[0_-14px_32px_rgba(11,15,23,.12)] backdrop-blur">
+        <div
+          className="fixed inset-x-0 bottom-0 z-[100] border-t border-[var(--border)] bg-white/98 px-5 pb-5 pt-4 shadow-[0_-14px_32px_rgba(11,15,23,.12)] backdrop-blur"
+          data-tour="marketing-cookie-banner"
+        >
           <div className="mx-auto w-full max-w-[1120px]">
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div className="max-w-[70ch]">

@@ -1,5 +1,10 @@
 // components/ui/button.tsx
 import React from "react";
+import {
+  AppButton,
+  type AppButtonSize,
+  type AppButtonVariant,
+} from "@/components/app-ui";
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "default" | "destructive" | "ghost" | "outline" | "secondary"; // ✅ added
@@ -13,30 +18,28 @@ export function Button({
   className = "",
   ...props
 }: ButtonProps) {
-  const variantClasses =
+  const mappedVariant: AppButtonVariant =
     variant === "destructive"
-      ? "bg-red-600 hover:bg-red-700 text-white"
+      ? "destructive"
       : variant === "ghost"
-      ? "bg-transparent text-gray-700 hover:bg-gray-200"
-      : variant === "outline"
-      ? "border border-gray-300 text-gray-700 hover:bg-gray-100"
-      : variant === "secondary"
-      ? "bg-gray-100 text-gray-800 hover:bg-gray-200" // ✅ added
-      : "bg-blue-600 hover:bg-blue-700 text-white"; // default
+        ? "utility"
+        : variant === "outline"
+          ? "secondary"
+          : variant === "secondary"
+            ? "utility"
+            : "primary";
 
-  const sizeClasses =
-    size === "sm"
-      ? "px-3 py-1 text-sm"
-      : size === "lg"
-      ? "px-5 py-3 text-lg"
-      : "px-4 py-2 text-base";
+  const mappedSize: AppButtonSize =
+    size === "sm" ? "sm" : size === "lg" ? "lg" : "md";
 
   return (
-    <button
-      className={`rounded-md transition-colors ${variantClasses} ${sizeClasses} ${className}`}
+    <AppButton
+      variant={mappedVariant}
+      size={mappedSize}
+      className={className}
       {...props}
     >
       {children}
-    </button>
+    </AppButton>
   );
 }

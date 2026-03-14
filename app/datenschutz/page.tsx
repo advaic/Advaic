@@ -1,16 +1,37 @@
 import Link from "next/link";
-import Container from "@/components/marketing/Container";
 import PageShell from "@/components/marketing/PageShell";
 import PageIntro from "@/components/marketing/PageIntro";
+import LegalDocumentLayout, {
+  type LegalJumpLink,
+  type LegalSummaryItem,
+} from "@/components/marketing/LegalDocumentLayout";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 type PrivacySection = {
+  id: string;
   title: string;
   paragraphs?: string[];
   points?: string[];
 };
 
+const PRIVACY_QUICK_TAKE: LegalSummaryItem[] = [
+  {
+    title: "Rollenmodell",
+    body: "Kontodaten für Betrieb, Abrechnung und Sicherheit verarbeitet Advaic grundsätzlich als eigener Verantwortlicher. Nachrichteninhalte im Kundenbetrieb laufen im Kern als Auftragsverarbeitung.",
+  },
+  {
+    title: "Kundenverantwortung",
+    body: "Rechtsgrundlagen, Betroffeneninformationen und die Zulässigkeit der konkreten Kommunikation bleiben beim Kunden.",
+  },
+  {
+    title: "Produktgrenze",
+    body: "Automatisierte Verarbeitung ist bewusst begrenzt. Bei fehlenden Angaben oder Risikosignalen soll der Fall in die Freigabe gehen.",
+  },
+];
+
 const PRIVACY_SECTIONS: PrivacySection[] = [
   {
+    id: "rollenmodell",
     title: "1) Rollenmodell der Verarbeitung",
     points: [
       "Für Kontoanlage, Authentifizierung, Abrechnung, Sicherheit, Missbrauchsprävention und Support handelt Advaic regelmäßig als eigener Verantwortlicher.",
@@ -19,6 +40,7 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
+    id: "datenkategorien",
     title: "2) Verarbeitete Datenkategorien",
     points: [
       "Kontodaten: Name, E-Mail, Firmenangaben, Rollen, Einstellungen, Vertragsdaten.",
@@ -29,6 +51,7 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
+    id: "zwecke-rechtsgrundlagen",
     title: "3) Zwecke und Rechtsgrundlagen",
     points: [
       "Art. 6 Abs. 1 lit. b DSGVO: Vertragserfüllung, Bereitstellung und Betrieb der Plattform, Nutzerverwaltung, Support.",
@@ -39,15 +62,17 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
+    id: "automatisierte-verarbeitung",
     title: "4) Automatisierte Verarbeitung im Produkt",
     points: [
       "Advaic nutzt regel- und modellgestützte Verfahren zur Kategorisierung eingehender E-Mails sowie zur Entwurfserstellung.",
-      "Je nach Kundeneinstellung können klare Standardfälle automatisiert versendet werden; unklare oder risikobehaftete Fälle gehen zur Freigabe.",
+      "Je nach Kundeneinstellung können wiederkehrende, fachlich sauber prüfbare Erstantworten automatisiert versendet werden; Nachrichten mit fehlenden Angaben oder Risikosignalen gehen zur Freigabe.",
       "Trotz Guardrails und Qualitätschecks kann eine Fehlklassifikation technisch nicht vollständig ausgeschlossen werden.",
       "Die fachliche und rechtliche Verantwortung für aktive Konfiguration und Versandentscheidungen verbleibt beim Kunden.",
     ],
   },
   {
+    id: "empfaenger-dienstleister",
     title: "5) Empfänger und Dienstleister",
     points: [
       "Technische Infrastruktur- und Betriebsdienstleister (z. B. Hosting, Datenbank, Monitoring, Authentifizierung).",
@@ -58,6 +83,7 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
+    id: "drittland",
     title: "6) Drittlandübermittlungen",
     points: [
       "Soweit Daten außerhalb der EU/des EWR verarbeitet werden, erfolgen Übermittlungen nur bei geeigneten Garantien.",
@@ -66,6 +92,7 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
+    id: "speicherung-loeschung",
     title: "7) Speicherdauer und Löschung",
     points: [
       "Kontodaten: Speicherung für die Vertragslaufzeit; danach Löschung oder Einschränkung, soweit keine gesetzlichen Pflichten entgegenstehen.",
@@ -76,6 +103,7 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
+    id: "sicherheit",
     title: "8) Sicherheit der Verarbeitung",
     points: [
       "Rollen- und Rechtekonzepte mit Zugriff nach Need-to-know-Prinzip.",
@@ -85,6 +113,7 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
+    id: "newsletter",
     title: "9) Newsletter und Marketing-Kommunikation",
     points: [
       "Newsletter und vergleichbare Produkt-/Marketing-E-Mails erfolgen nur bei entsprechender Einwilligung.",
@@ -93,6 +122,7 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
+    id: "cookies",
     title: "10) Cookies und ähnliche Technologien",
     points: [
       "Notwendige Cookies und Speicher werden für Login, Sicherheit und technisch erforderliche Funktionen eingesetzt.",
@@ -102,6 +132,7 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
+    id: "rechte",
     title: "11) Rechte betroffener Personen",
     points: [
       "Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16 DSGVO), Löschung (Art. 17 DSGVO) und Einschränkung (Art. 18 DSGVO).",
@@ -111,6 +142,7 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
+    id: "pflichtdaten",
     title: "12) Pflicht zur Bereitstellung von Daten",
     points: [
       "Bestimmte Daten sind für Vertragsabschluss und Betrieb von Advaic erforderlich.",
@@ -118,6 +150,7 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
+    id: "aenderungen",
     title: "13) Änderungen dieser Datenschutzhinweise",
     points: [
       "Diese Hinweise können angepasst werden, wenn sich Rechtslage, technische Prozesse oder Produktfunktionen ändern.",
@@ -125,6 +158,26 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
 ];
+
+const PRIVACY_JUMP_LINKS: LegalJumpLink[] = [
+  { id: "verantwortlicher", label: "Verantwortlicher & Kontakt" },
+  ...PRIVACY_SECTIONS.map((section) => ({
+    id: section.id,
+    label: section.title.replace(/^\d+\)\s*/, ""),
+  })),
+  { id: "weitere-dokumente", label: "Weitere Dokumente" },
+];
+
+export const metadata = buildMarketingMetadata({
+  title: "Datenschutzhinweise",
+  ogTitle: "Datenschutzhinweise | Advaic",
+  description:
+    "Datenschutzhinweise für Advaic: Rollenmodell, Datenkategorien, Zwecke, Empfänger, Speicherdauer und die Grenzen automatisierter Verarbeitung im Produkt.",
+  path: "/datenschutz",
+  template: "trust",
+  eyebrow: "Datenschutz",
+  proof: "Rollen, Verarbeitungszwecke, Guardrails und Verantwortlichkeiten transparent dokumentiert.",
+});
 
 export default function DatenschutzPage() {
   const legalCompany = process.env.NEXT_PUBLIC_LEGAL_COMPANY_NAME || "Advaic";
@@ -141,11 +194,11 @@ export default function DatenschutzPage() {
       <PageIntro
         kicker="Datenschutz"
         title="Datenschutzhinweise"
-        description="Transparente Informationen zur Verarbeitung personenbezogener Daten bei der Nutzung von Advaic. Stand: 26. Februar 2026."
+        description="Das formale Datenschutzdokument für Rollen, Zwecke, Speicherfristen und Rechte bei der Nutzung von Advaic. Stand: 26. Februar 2026."
         actions={
           <>
-            <Link href="/cookie-und-storage" className="btn-secondary">
-              Cookie & Storage
+            <Link href="/trust" className="btn-secondary">
+              Trust-Hub
             </Link>
             <a href={`mailto:${privacyEmail}`} className="btn-primary">
               Datenschutz kontaktieren
@@ -154,9 +207,38 @@ export default function DatenschutzPage() {
         }
       />
 
-      <section className="marketing-section-clear py-20 md:py-28">
-        <Container>
-          <article className="card-base p-6 md:p-8">
+      <LegalDocumentLayout
+        currentPath="/datenschutz"
+        summaryTitle="Kurzüberblick"
+        summaryItems={PRIVACY_QUICK_TAKE}
+        jumpLinks={PRIVACY_JUMP_LINKS}
+        asideExtras={
+          <>
+            <article className="card-base p-5">
+              <p className="section-kicker">Rolle dieser Seite</p>
+              <p className="mt-3 text-sm text-[var(--muted)]">
+                Dieses Dokument erklärt Rollen, Zwecke und Speicherfristen. Für Auto-Grenzen und Freigabe-Regeln ist die Sicherheitsseite zuständig, für den Überblick der Trust-Hub.
+              </p>
+              <div className="mt-4 grid gap-2">
+                <Link href="/trust" className="btn-secondary w-full justify-center">
+                  Trust-Hub
+                </Link>
+                <Link href="/sicherheit" className="btn-secondary w-full justify-center">
+                  Sicherheitsseite
+                </Link>
+              </div>
+            </article>
+            <article className="card-base p-5">
+              <p className="section-kicker">Stand & Kontakt</p>
+              <p className="mt-3 text-sm text-[var(--muted)]">Stand: 26. Februar 2026.</p>
+              <a className="mt-3 inline-flex text-sm font-semibold underline underline-offset-4" href={`mailto:${privacyEmail}`}>
+                {privacyEmail}
+              </a>
+            </article>
+          </>
+        }
+      >
+        <article id="verantwortlicher" className="card-base p-6 md:p-8 scroll-mt-28">
             <h2 className="h3">Verantwortlicher</h2>
             <p className="mt-3 text-sm text-[var(--muted)]">
               Verantwortlich für die Datenverarbeitung im Sinne der DSGVO ist{" "}
@@ -167,38 +249,41 @@ export default function DatenschutzPage() {
               </a>
               .
             </p>
+        </article>
+
+        {PRIVACY_SECTIONS.map((section) => (
+          <article key={section.title} id={section.id} className="card-base p-6 md:p-8 scroll-mt-28">
+            <h2 className="h3">{section.title}</h2>
+
+            {section.paragraphs?.length ? (
+              <div className="mt-3 space-y-3 text-sm text-[var(--muted)]">
+                {section.paragraphs.map((paragraph) => (
+                  <p key={paragraph}>{paragraph}</p>
+                ))}
+              </div>
+            ) : null}
+
+            {section.points?.length ? (
+              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                {section.points.map((point) => (
+                  <li key={point} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--gold)]" />
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </article>
+        ))}
 
-          <div className="mt-6 space-y-4">
-            {PRIVACY_SECTIONS.map((section) => (
-              <article key={section.title} className="card-base p-6 md:p-8">
-                <h2 className="h3">{section.title}</h2>
-
-                {section.paragraphs?.length ? (
-                  <div className="mt-3 space-y-3 text-sm text-[var(--muted)]">
-                    {section.paragraphs.map((paragraph) => (
-                      <p key={paragraph}>{paragraph}</p>
-                    ))}
-                  </div>
-                ) : null}
-
-                {section.points?.length ? (
-                  <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                    {section.points.map((point) => (
-                      <li key={point} className="flex items-start gap-2">
-                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--gold)]" />
-                        <span>{point}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </article>
-            ))}
-          </div>
-
-          <article className="card-base mt-6 p-6 md:p-8">
+        <article id="weitere-dokumente" className="card-base p-6 md:p-8 scroll-mt-28">
             <h2 className="h3">Weitere Transparenzdokumente</h2>
             <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+              <li>
+                <Link href="/trust" className="underline underline-offset-4">
+                  Trust-Hub
+                </Link>
+              </li>
               <li>
                 <Link href="/unterauftragsverarbeiter" className="underline underline-offset-4">
                   Unterauftragsverarbeiter
@@ -215,17 +300,16 @@ export default function DatenschutzPage() {
                 </Link>
               </li>
             </ul>
-          </article>
+        </article>
 
-          <article className="card-base mt-6 p-6">
-            <h2 className="h3">Hinweis</h2>
-            <p className="mt-3 text-sm text-[var(--muted)]">
-              Diese Hinweise dienen der transparenten Information über unsere Datenverarbeitung und ersetzen keine
-              individuelle Rechtsberatung.
-            </p>
-          </article>
-        </Container>
-      </section>
+        <article className="card-base p-6">
+          <h2 className="h3">Hinweis</h2>
+          <p className="mt-3 text-sm text-[var(--muted)]">
+            Diese Hinweise dienen der transparenten Information über unsere Datenverarbeitung und ersetzen keine
+            individuelle Rechtsberatung.
+          </p>
+        </article>
+      </LegalDocumentLayout>
     </PageShell>
   );
 }

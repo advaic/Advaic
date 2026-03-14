@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
-import PageShell from "@/components/marketing/PageShell";
-import PageIntro from "@/components/marketing/PageIntro";
-import FinalCTA from "@/components/marketing/FinalCTA";
+import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
 const checks = [
   {
@@ -38,7 +37,7 @@ const checks = [
   {
     title: "Risiko-Check (Fail-Safe)",
     purpose: "Stoppt bei sensiblen oder konfliktgeladenen Fällen.",
-    blocks: "Beschwerden, Konflikte, heikle Themen",
+    blocks: "Beschwerden, Konflikte, Fristen, rechtlich sensible Aussagen",
     example: "Konfliktmail wird immer zur Freigabe gegeben.",
     onFail: "Kein Auto-Versand, Fall landet direkt in der Freigabe.",
   },
@@ -69,14 +68,21 @@ const phases = [
 const summary = [
   "Vor jedem Auto-Versand laufen sechs feste Qualitätschecks.",
   "Wenn ein Check fehlschlägt, wird nicht automatisch gesendet.",
-  "Unsicherheit führt zur Freigabe, nicht zum Risiko-Versand.",
+  "Fehlende Angaben, Konflikte oder sensible Inhalte führen zur Freigabe, nicht zum Versand.",
 ];
 
 const qualityMetrics = [
   "QA-Fehlerquote vor Auto-Versand",
   "Anteil blockierter Auto-Entwürfe pro Check-Typ",
-  "Freigabequote wegen Kontext- oder Risiko-Unsicherheit",
+  "Freigabequote wegen fehlender Angaben oder Risikosignalen",
   "Korrekturquote nach manueller Freigabe",
+];
+
+const beforeLaunchChecklist = [
+  "Welche Pflichtangaben müssen pro Antworttyp vorliegen?",
+  "Welche Gründe führen immer zur Freigabe?",
+  "Welche Texte, Tonregeln und Verbote gelten für automatische Antworten?",
+  "Wer prüft blockierte Entwürfe im Pilotbetrieb und wie wird dokumentiert?",
 ];
 
 const sources = [
@@ -97,27 +103,16 @@ const sources = [
   },
 ];
 
-export const metadata: Metadata = {
-  title: "Qualitätschecks | Advaic",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Welche Qualitätschecks vor Auto-Versand Pflicht sind",
+  ogTitle: "Qualitätschecks vor dem Versand | Advaic",
   description:
-    "Alle Qualitätskontrollen vor dem Auto-Versand: Relevanz, Kontext, Vollständigkeit, Ton, Risiko und Lesbarkeit inklusive Fail-Safe Verhalten.",
-  alternates: {
-    canonical: "/qualitaetschecks",
-  },
-  openGraph: {
-    title: "Qualitätschecks | Advaic",
-    description:
-      "Alle Qualitätskontrollen vor dem Auto-Versand: Relevanz, Kontext, Vollständigkeit, Ton, Risiko und Lesbarkeit inklusive Fail-Safe Verhalten.",
-    url: "/qualitaetschecks",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Qualitätschecks | Advaic",
-    description:
-      "Alle Qualitätskontrollen vor dem Auto-Versand: Relevanz, Kontext, Vollständigkeit, Ton, Risiko und Lesbarkeit inklusive Fail-Safe Verhalten.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Leitfaden für Makler: Welche Prüfungen eine automatische Antwort vor dem Versand bestehen muss und welche Signale zwingend zur Freigabe führen.",
+  path: "/qualitaetschecks",
+  template: "trust",
+  eyebrow: "Leitfaden Qualitätschecks",
+  proof: "Relevanz, Objektbezug, Pflichtangaben, Ton, Risiko und Lesbarkeit vor jedem Versand prüfen.",
+});
 
 export default function QualitaetschecksPage() {
   const siteUrl = getSiteUrl();
@@ -131,27 +126,34 @@ export default function QualitaetschecksPage() {
   };
 
   return (
-    <PageShell>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
-      />
-      <PageIntro
-        kicker="Qualität vor Versand"
-        title="Wie Advaic Fehler vor dem Senden erkennt"
-        description="Jede automatische Antwort durchläuft mehrere Prüfungen. Ziel ist ein verlässlicher Autopilot, der bei Unsicherheit stoppt."
-        actions={
-          <>
-            <Link href="/produkt#qualitaet" className="btn-secondary">
-              Zur Produktsektion
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              14 Tage testen
-            </Link>
-          </>
-        }
-      />
-
+    <AiDiscoveryPageTemplate
+      breadcrumbItems={[
+        { name: "Startseite", path: "/" },
+        { name: "Qualitätschecks", path: "/qualitaetschecks" },
+      ]}
+      schema={schema}
+      kicker="Leitfaden Qualitätschecks"
+      title="Welche Qualitätschecks vor dem Versand Pflicht sind"
+      description="Die zentrale Frage lautet nicht, ob ein Modell gut formuliert, sondern ob die Nachricht überhaupt automatisch raus darf. Dafür brauchen Sie feste Prüfungen für Relevanz, Objektbezug, Pflichtangaben, Ton, Risiko und Lesbarkeit."
+      actions={
+        <>
+          <Link href="/autopilot-regeln" className="btn-secondary">
+            Regeln lesen
+          </Link>
+          <Link href="/signup" className="btn-primary">
+            14 Tage testen
+          </Link>
+        </>
+      }
+      stage="bewertung"
+      stageContext="qualitaetschecks"
+      primaryHref="/signup"
+      primaryLabel="Mit Safe-Start testen"
+      secondaryHref="/autopilot"
+      secondaryLabel="Autopilot verstehen"
+      sources={sources}
+      sourcesDescription="Die Quellen dienen als Referenzrahmen für kontrollierte Risiko-Governance und nachvollziehbare Betriebsstandards. Sie ersetzen keine Rechtsberatung."
+    >
       <section id="kurzfassung" className="py-8 md:py-10">
         <Container>
           <article className="card-base p-6">
@@ -216,53 +218,42 @@ export default function QualitaetschecksPage() {
           <article className="card-base mt-8 p-6">
             <h3 className="h3">Fail-Safe-Prinzip</h3>
             <p className="body mt-3 text-[var(--muted)]">
-              Wenn eine Prüfung nicht bestanden wird, geht die Nachricht zur Freigabe. Dadurch bleibt die
-              Entscheidungsqualität hoch, auch wenn Autopilot aktiv ist.
+              Wenn eine Prüfung nicht bestanden wird, bleibt der Versand blockiert. Dadurch schützt der Betrieb
+              Qualität und Nachvollziehbarkeit auch dann, wenn Autopilot aktiv ist.
             </p>
           </article>
 
-          <article className="card-base mt-4 p-6">
-            <h3 className="h3">KPI-Set für die Qualitätssteuerung</h3>
-            <p className="helper mt-3">
-              Mit diesen Kennzahlen sehen Sie früh, ob die Check-Logik korrekt kalibriert ist oder nachgeschärft werden
-              muss.
-            </p>
-            <ul className="mt-4 grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2">
-              {qualityMetrics.map((metric) => (
-                <li key={metric} className="flex items-start gap-2">
-                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
-                  <span>{metric}</span>
-                </li>
-              ))}
-            </ul>
-          </article>
-
-          <article id="qualitaetschecks-quellen" className="card-base mt-4 p-6">
-            <h3 className="h3">Quellen & Einordnung</h3>
-            <p className="helper mt-3">
-              Die Prüfarchitektur orientiert sich an kontrollierter Risiko-Governance und nachvollziehbarer
-              Prozessführung. Die Quellen dienen als Referenzrahmen für den Betriebsstandard.
-            </p>
-            <div className="mt-4 space-y-3">
-              {sources.map((source) => (
-                <article key={source.href} className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
-                  <a
-                    href={source.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-semibold text-[var(--text)] underline underline-offset-4"
-                  >
-                    {source.label}
-                  </a>
-                  <p className="helper mt-2">{source.note}</p>
-                </article>
-              ))}
-            </div>
-          </article>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <article className="card-base p-6">
+              <h3 className="h3">Vor dem Pilotstart festlegen</h3>
+              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                {beforeLaunchChecklist.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+            <article className="card-base p-6">
+              <h3 className="h3">KPI-Set für die Qualitätssteuerung</h3>
+              <p className="helper mt-3">
+                Mit diesen Kennzahlen sehen Sie früh, ob die Check-Logik korrekt kalibriert ist oder nachgeschärft
+                werden muss.
+              </p>
+              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                {qualityMetrics.map((metric) => (
+                  <li key={metric} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{metric}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          </div>
         </Container>
       </section>
 
-      <FinalCTA />
-    </PageShell>
+    </AiDiscoveryPageTemplate>
   );
 }

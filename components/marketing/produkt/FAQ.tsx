@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import Container from "@/components/marketing/Container";
+import { STARTER_PUBLIC_PRICE_LABEL } from "@/lib/billing/public-pricing";
 
 const faqItems = [
   {
     question: "Sendet Advaic automatisch?",
     answer:
-      "Ja, wenn Autopilot aktiv ist, der Fall klar ist und die automatischen Prüfungen bestanden sind. Unklare Fälle gehen zur Freigabe.",
+      "Ja, wenn Autopilot aktiv ist, Objektbezug, Empfänger und Inhalt sauber passen und die automatischen Prüfungen bestanden sind. Nachrichten mit fehlenden Angaben oder Risikosignalen gehen zur Freigabe.",
   },
   {
     question: "Was verhindert falsche oder unpassende Antworten?",
@@ -35,12 +36,12 @@ const faqItems = [
   {
     question: "Was passiert nach den 14 Testtagen?",
     answer:
-      "Nach der Testphase läuft Starter monatlich weiter. Sie können jederzeit kündigen und Autopilot zusätzlich pausieren.",
+      `Nach der Testphase läuft Starter für ${STARTER_PUBLIC_PRICE_LABEL} weiter. Sie können jederzeit kündigen und Autopilot zusätzlich pausieren.`,
   },
   {
-    question: "Gibt es bereits veröffentlichte Kundenbeispiele?",
+    question: "Welche Belege sehe ich auf dieser Seite?",
     answer:
-      "Aktuell noch nicht. Deshalb zeigen wir auf dieser Seite bewusst die konkrete Entscheidungslogik und nicht nur Ergebnisversprechen.",
+      "Sie sehen den echten Produktablauf mit Eingang, Regelprüfung, Freigabe, Qualitätschecks und Versandlogik. Die Produktzustände sind anonymisiert, zeigen aber die reale Mechanik statt bloßer Werbeaussagen.",
   },
   {
     question: "Was passiert bei Follow-ups, wenn ein Interessent antwortet?",

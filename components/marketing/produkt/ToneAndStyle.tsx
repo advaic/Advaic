@@ -1,92 +1,56 @@
-"use client";
-
-import { useState, type KeyboardEvent } from "react";
 import Container from "@/components/marketing/Container";
-
-type Tab = {
-  title: string;
-  example: string;
-};
-
-const tabs: Tab[] = [
-  {
-    title: "Kurz & direkt",
-    example:
-      "Guten Tag, vielen Dank für Ihre Anfrage. Die Immobilie ist aktuell verfügbar.\nGern schlage ich Ihnen zwei Besichtigungstermine vor: …\nWelche Uhrzeit passt Ihnen besser?",
-  },
-  {
-    title: "Freundlich & warm",
-    example:
-      "Guten Tag, danke für Ihre Nachricht. Schön, dass Sie sich für die Immobilie interessieren.\nGern können wir eine Besichtigung vereinbaren. Passt Ihnen …?\nWenn Sie möchten, sende ich Ihnen vorab die Unterlagenliste.",
-  },
-  {
-    title: "Sehr professionell",
-    example:
-      "Guten Tag, vielen Dank für Ihre Anfrage.\nFür eine Besichtigung benötige ich vorab folgende Informationen/Unterlagen: …\nSobald diese vorliegen, schlage ich Ihnen passende Termine vor.",
-  },
-];
+import ProductStillFrame from "./ProductStillFrame";
 
 export default function ToneAndStyle() {
-  const [activeTab, setActiveTab] = useState(0);
-  const panelId = "tone-panel";
-
-  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      setActiveTab((index + 1) % tabs.length);
-    }
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      setActiveTab((index - 1 + tabs.length) % tabs.length);
-    }
-  };
-
   return (
     <section id="stil" className="py-20 md:py-28">
       <Container>
         <div className="max-w-[70ch]">
           <h2 className="h2">Antworten in Ihrem Stil</h2>
-          <p className="body mt-4 text-[var(--muted)]">Sie bestimmen die Tonalität. Advaic hält sich daran.</p>
+          <p className="body mt-4 text-[var(--muted)]">
+            Ton, Guardrails und Lieblingsformulierungen werden im Produkt gepflegt und direkt an einer Vorschau geprüft.
+          </p>
         </div>
 
-        <div className="mt-8 rounded-[var(--radius)] bg-white p-4 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)] md:p-6">
-          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Stilvarianten">
-            {tabs.map((tab, index) => {
-              const isActive = index === activeTab;
-              const tabId = `tone-tab-${index}`;
-              return (
-                <button
-                  key={tabId}
-                  type="button"
-                  onClick={() => setActiveTab(index)}
-                  onKeyDown={(event) => handleTabKeyDown(event, index)}
-                  className={`focus-ring rounded-full px-4 py-2 text-sm font-medium transition ${
-                    isActive
-                      ? "bg-[var(--black)] text-white shadow-sm ring-1 ring-[var(--gold)]"
-                      : "bg-white text-[var(--text)] ring-1 ring-[var(--border)] hover:ring-[rgba(11,15,23,.18)]"
-                  }`}
-                  role="tab"
-                  id={tabId}
-                  aria-controls={panelId}
-                  tabIndex={isActive ? 0 : -1}
-                  aria-selected={isActive}
-                >
-                  {tab.title}
-                </button>
-              );
-            })}
-          </div>
+        <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]" data-tour="produkt-tone-visual">
+          <ProductStillFrame
+            label="Setup"
+            src="/marketing-screenshots/core/raw/tone-style-setup.png"
+            alt="Ton-und-Stil-Seite mit Reglern, Guardrails und Stilbeispielen"
+            caption="Stil, Wünsche und Grenzen werden als Setup gepflegt und nicht als loses Formular."
+            frameTour="produkt-tone-main-frame"
+            stageTour="produkt-tone-main-shot"
+          />
 
-          <div
-            className="mt-6 rounded-xl bg-[var(--surface-2)] p-5 ring-1 ring-[var(--border)]"
-            role="tabpanel"
-            id={panelId}
-            aria-labelledby={`tone-tab-${activeTab}`}
-          >
-            <p className="body whitespace-pre-line text-[var(--text)]">{tabs[activeTab].example}</p>
-          </div>
+          <div className="space-y-4">
+            <article className="rounded-[var(--radius)] bg-white p-6 ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)] md:p-7">
+              <h3 className="h3">Was hier steuerbar bleibt</h3>
+              <div className="mt-4 grid gap-3">
+                <div className="rounded-2xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                  <p className="text-sm font-semibold text-[var(--text)]">Tonalität & Länge</p>
+                  <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
+                    Formell, knapp oder wärmer formuliert wird nicht im Prompt versteckt, sondern über klare Stellschrauben gepflegt.
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                  <p className="text-sm font-semibold text-[var(--text)]">Guardrails & No-Gos</p>
+                  <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
+                    Unerwünschte Formulierungen und feste Vorgaben bleiben zusammen mit dem Stil an einer Stelle sichtbar.
+                  </p>
+                </div>
+              </div>
+            </article>
 
-          <p className="helper mt-4">Textbausteine können Sie jederzeit anpassen.</p>
+            <ProductStillFrame
+              label="Vorschau"
+              src="/marketing-screenshots/core/raw/tone-style-preview.png"
+              alt="Ton-und-Stil-Vorschau mit Zusammenfassung und Beispielantwort"
+              caption="Änderungen werden direkt an einer realen Antwortvorschau sichtbar."
+              aspectClassName="aspect-[16/11]"
+              frameTour="produkt-tone-secondary-frame"
+              stageTour="produkt-tone-secondary-shot"
+            />
+          </div>
         </div>
       </Container>
     </section>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Container from "@/components/marketing/Container";
+import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
 
 const guardrails = [
   "Nur wenn Follow-ups aktiv sind (global, pro Interessenten-Konversation und optional pro Objekt).",
@@ -77,7 +78,7 @@ export default function FollowUps() {
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
           <Link href="/signup" className="btn-primary">
-            Follow-ups im Test ansehen
+            {MARKETING_PRIMARY_CTA_LABEL}
           </Link>
           <Link href="/follow-up-logik" className="btn-secondary">
             Follow-up-Logik im Detail

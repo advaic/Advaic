@@ -106,9 +106,10 @@ function TextBlock({ title, text }: { title: string; text: string | null }) {
 export default async function AdminDecisionDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  const id = String(params?.id || "").trim();
+  const resolvedParams = await params;
+  const id = String(resolvedParams?.id || "").trim();
   const data = await getDecision(id);
 
   const item = data?.item || {};

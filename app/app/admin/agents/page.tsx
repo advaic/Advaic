@@ -34,9 +34,10 @@ async function getAgents(q?: string) {
 export default async function AdminAgentsPage({
   searchParams,
 }: {
-  searchParams?: { q?: string };
+  searchParams?: Promise<{ q?: string }>;
 }) {
-  const q = searchParams?.q || "";
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const q = resolvedSearchParams?.q || "";
   const agents = await getAgents(q);
 
   return (

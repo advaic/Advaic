@@ -3,8 +3,8 @@ import { CheckCircle2 } from "lucide-react";
 import Container from "./Container";
 
 const outcomes = [
-  "Klare Standardfälle werden automatisch beantwortet.",
-  "Unklare und risikobehaftete Fälle gehen in die Freigabe.",
+  "Wiederkehrende Erstantworten mit sauberem Objektbezug werden automatisch beantwortet.",
+  "Nachrichten mit fehlenden Angaben, Konfliktpotenzial oder Risikosignal gehen in die Freigabe.",
   "Jede Entscheidung bleibt mit Grund und Status nachvollziehbar.",
 ];
 
@@ -22,7 +22,8 @@ export default function Solution() {
               Automatischer Versand läuft nur bei klarer Datenlage und bestandenen Qualitätschecks.
             </p>
             <p className="body mt-4 text-[var(--muted)]">
-              Sobald Unsicherheit entsteht, geht der Fall automatisch an Sie zur Freigabe.
+              Sobald Angaben fehlen, Konfliktpotenzial auftaucht oder ein Check warnt, geht der Fall automatisch an Sie
+              zur Freigabe.
             </p>
             <div className="mt-6">
               <Link href="/produkt" className="btn-secondary">

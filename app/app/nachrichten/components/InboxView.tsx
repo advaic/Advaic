@@ -6,6 +6,7 @@ import type { Database } from "@/types/supabase";
 import { toast } from "sonner";
 import { Archive, CheckCircle2, X } from "lucide-react";
 
+import { ListRow, PrimaryActionBar } from "@/components/app-ui";
 import { Lead } from "@/types/lead";
 import InboxItem from "./InboxItem";
 import { SupabaseContext } from "@/app/ClientRootLayout";
@@ -38,9 +39,11 @@ type BulkAction = "archive" | "done";
 export default function InboxView({
   leads,
   userId,
+  onLeadOpen,
 }: {
   leads: Lead[];
   userId?: string;
+  onLeadOpen?: (lead: Lead, opts?: { focusApproval?: boolean }) => void;
 }) {
   const supabase = useSupabaseClient<Database>();
   const { session } = useContext(SupabaseContext);
@@ -221,40 +224,60 @@ export default function InboxView({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Bulk toolbar */}
-      {selectedCount > 0 && (
-        <div className="md:sticky md:top-[72px] z-20">
-          <div className="rounded-2xl border border-gray-200 bg-white px-3 py-2 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <span className="text-sm font-medium text-gray-900 truncate">
-                {selectedCount} ausgewählt
-              </span>
+      <div data-tour="messages-bulkbar">
+        <PrimaryActionBar
+          className={
+            "transition-all duration-200 " +
+            (selectedCount > 0
+              ? "border-[var(--status-brand-border)] bg-[var(--status-brand-surface-bg)] shadow-sm"
+              : "border-dashed border-[var(--app-border-soft)] bg-[var(--app-surface-panel)]")
+          }
+          leading={
+            selectedCount > 0 ? (
+              <>
+                <span
+                  className="text-sm font-medium text-gray-900 truncate"
+                  data-tour="messages-bulkbar-count"
+                >
+                  {selectedCount} ausgewählt
+                </span>
 
+                <button
+                  onClick={clearSelection}
+                  disabled={bulkBusy}
+                  className="inline-flex items-center gap-2 text-xs rounded-lg border border-gray-200 bg-white hover:bg-gray-50 px-2.5 py-1.5 disabled:opacity-60"
+                  title="Auswahl löschen"
+                  data-tour="messages-bulkbar-clear"
+                >
+                  <X className="h-4 w-4" />
+                  Auswahl löschen
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="text-sm font-medium text-gray-900">
+                  Auswahlmodus
+                </span>
+                <span className="text-xs text-gray-500">
+                  Wähle eine oder mehrere Zeilen für Sammelaktionen.
+                </span>
+              </>
+            )
+          }
+          trailing={
+            <>
               <button
-                onClick={clearSelection}
-                disabled={bulkBusy}
-                className="inline-flex items-center gap-2 text-xs rounded-lg border border-gray-200 bg-white hover:bg-gray-50 px-2.5 py-1.5 disabled:opacity-60"
-                title="Auswahl löschen"
+                onClick={selectAll}
+                disabled={bulkBusy || allIds.length === 0 || selectedCount === allIds.length}
+                className="text-xs rounded-lg border border-gray-200 bg-white hover:bg-gray-50 px-2.5 py-1.5 disabled:opacity-60"
+                data-tour="messages-bulkbar-select-all"
               >
-                <X className="h-4 w-4" />
-                Auswahl löschen
+                {selectedCount > 0 ? "Rest wählen" : "Alle wählen"}
               </button>
 
-              {selectedCount < allIds.length && (
-                <button
-                  onClick={selectAll}
-                  disabled={bulkBusy}
-                  className="text-xs rounded-lg border border-gray-200 bg-white hover:bg-gray-50 px-2.5 py-1.5 disabled:opacity-60"
-                >
-                  Alle wählen
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0 w-full md:w-auto">
               <button
                 onClick={() => applyBulk("done")}
-                disabled={bulkBusy}
+                disabled={bulkBusy || selectedCount === 0}
                 className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 disabled:opacity-60 flex-1 md:flex-none"
                 title="Als erledigt markieren"
               >
@@ -264,28 +287,33 @@ export default function InboxView({
 
               <button
                 onClick={() => applyBulk("archive")}
-                disabled={bulkBusy}
+                disabled={bulkBusy || selectedCount === 0}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 px-3 py-2 text-sm disabled:opacity-60 flex-1 md:flex-none"
                 title="Archivieren"
               >
                 <Archive className="h-4 w-4" />
                 Archivieren
               </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </>
+          }
+        />
+      </div>
 
-      <div className="flex flex-col gap-2">
-        {localLeads.map((lead) => (
-          <InboxItem
+      <div className="flex flex-col gap-2 md:gap-0 md:overflow-hidden md:rounded-3xl md:border md:border-[var(--app-border-soft)] md:bg-[var(--app-surface-card)]">
+        {localLeads.map((lead, index) => (
+          <ListRow
             key={lead.id}
-            lead={lead}
-            userId={effectiveUserId}
-            selected={selectedIds.has(lead.id)}
-            pendingApprovalCount={pendingApprovalCountByLead[lead.id] ?? 0}
-            onToggleSelect={() => toggleSelect(lead.id)}
-          />
+            className={index > 0 ? "md:border-t md:border-[var(--app-border-soft)]" : undefined}
+          >
+            <InboxItem
+              lead={lead}
+              userId={effectiveUserId}
+              selected={selectedIds.has(lead.id)}
+              pendingApprovalCount={pendingApprovalCountByLead[lead.id] ?? 0}
+              onToggleSelect={() => toggleSelect(lead.id)}
+              onOpen={onLeadOpen}
+            />
+          </ListRow>
         ))}
       </div>
     </div>

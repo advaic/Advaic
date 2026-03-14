@@ -37,8 +37,8 @@ const steps: TourStep[] = [
     body:
       "Die Anfrage wird anhand klarer Regeln in den passenden Pfad eingeordnet.",
     bullets: [
-      "Klare Standardfälle können automatisch laufen",
-      "Unklare oder heikle Fälle gehen zur Freigabe",
+      "Erstantworten mit sauberem Objektbezug können automatisch laufen",
+      "Beschwerden, fehlende Angaben oder sensible Aussagen gehen zur Freigabe",
     ],
     webm: "/loops/tour-rules.webm",
     mp4: "/loops/tour-rules.mp4",
@@ -51,7 +51,7 @@ const steps: TourStep[] = [
       "Vor dem Versand validiert Advaic Relevanz, Vollständigkeit, Risiko und Stil.",
     bullets: [
       "Ton und Lesbarkeit werden gegen Ihre Vorgaben geprüft",
-      "Bei Unsicherheit wird nicht automatisch gesendet",
+      "Bei fehlenden Angaben oder Risikosignalen wird nicht automatisch gesendet",
     ],
     webm: "/loops/tour-checks.webm",
     mp4: "/loops/tour-checks.mp4",
@@ -68,7 +68,7 @@ const steps: TourStep[] = [
     ],
     webm: "/loops/approve.webm",
     mp4: "/loops/approve.mp4",
-    poster: "/loops/tour-log.jpg",
+    poster: "/loops/approve.jpg",
   },
 ];
 

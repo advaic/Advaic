@@ -36,10 +36,12 @@ Der CRM-Bereich ist doppelt geschützt:
 
 Konfigurierbar über Env:
 
-- `ADVAIC_OWNER_USER_ID` (empfohlen)
-- Fallback: `ADMIN_DASHBOARD_USER_ID`
+- `ADVAIC_OWNER_USER_IDS` oder `ADVAIC_OWNER_USER_ID`
+- optional zusätzlich `ADMIN_DASHBOARD_USER_IDS` oder `ADMIN_DASHBOARD_USER_ID`
 
-Wenn nichts gesetzt ist, greift der hinterlegte Owner-Fallback auf deine User-ID.
+Es gibt keinen hart codierten Fallback im Runtime-Code. Zugriff entsteht nur über die konfigurierten Env-Variablen.
+
+Details zur internen Freischaltungslogik stehen in [internal-commercial-access.md](/Users/kilianziemann/Downloads/advaic-dashboard/docs/internal-commercial-access.md).
 
 ## Tester-First Prozess (ohne Kaufdruck)
 1. Zielmakler als `crm_prospects` anlegen.

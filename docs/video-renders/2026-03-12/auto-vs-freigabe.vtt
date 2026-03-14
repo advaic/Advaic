@@ -1,0 +1,31 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:12.000
+Die entscheidende Frage ist nicht, ob ein Modell eine E-Mail formulieren kann.
+
+00:00:12.000 --> 00:00:22.000
+Die entscheidende Frage ist, wann das System wirklich senden darf und wann es bewusst stoppen muss.
+
+00:00:22.000 --> 00:00:38.000
+Automatisch gesendet wird nur dann, wenn die Grundlage sauber ist.
+
+00:00:38.000 --> 00:00:50.000
+Freigabe, Eskalation und Priorität bleiben im Alltag mit einem Klick erreichbar.
+
+00:00:50.000 --> 00:01:08.000
+Typische Freigabegründe sind fehlende Angaben, ein unsauber prüfbarer Rückkanal oder sensibler Inhalt.
+
+00:01:08.000 --> 00:01:22.000
+Original, Vorschlag und Änderungen bleiben getrennt von der finalen Entscheidung.
+
+00:01:22.000 --> 00:01:38.000
+Vor jedem Auto-Versand laufen Qualitätschecks.
+
+00:01:38.000 --> 00:01:54.000
+Auto-Versand ist nicht an Vertrauen in ein Modell gebunden, sondern an Guardrails.
+
+00:01:54.000 --> 00:02:08.000
+Wichtig ist: Die Entscheidungslogik bleibt pro Fall sichtbar.
+
+00:02:08.000 --> 00:02:20.000
+Wenn Sie prüfen wollen, wie diese Regeln bei Ihrem Team aussehen würden, sehen Sie sich die Logik im Detail an.

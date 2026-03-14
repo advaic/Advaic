@@ -1,49 +1,53 @@
-import { ArrowRight, CheckCircle2, PlayCircle } from "lucide-react";
+import { ArrowRight, PlayCircle } from "lucide-react";
 import Container from "./Container";
-import LoopVideo from "./produkt/LoopVideo";
+import HeroStillVisual from "./HeroStillVisual";
 import TrackedLink from "./TrackedLink";
+import { MARKETING_PRIMARY_CTA_LABEL, MARKETING_PROOF_CTA_LABEL } from "./cta-copy";
 
-const microTrust = [
-  "Autopilot jederzeit pausierbar",
-  "Unklare Fälle → Freigabe",
-  "Qualitätschecks vor Auto-Versand",
-];
-
-const trialChecklist = [
-  "Welche Standardfälle automatisch beantwortet werden",
-  "Wann Fälle zwingend in die Freigabe gehen",
-  "Wie Tonalität, Antwortlänge und Follow-up-Logik zu Ihrem Alltag passen",
-];
-
-const quickAnchors = [
-  { href: "#how", label: "Ablauf ansehen" },
-  { href: "#rules", label: "Regeln prüfen" },
-  { href: "#pricing", label: "Starter verstehen" },
+const heroDecisionSignals = [
+  {
+    title: "Auto",
+    text: "Objekt, Empfänger und Angaben passen sauber zusammen.",
+  },
+  {
+    title: "Freigabe",
+    text: "Lücken, no-reply oder Risiko bleiben sichtbar bei Ihnen.",
+  },
+  {
+    title: "Checks",
+    text: "Vor jedem Versand laufen Relevanz-, Ton- und Vollständigkeitschecks.",
+  },
 ];
 
 export default function Hero() {
   return (
-    <section id="top" className="marketing-hero-bg py-20 md:py-28">
+    <section id="top" className="marketing-hero-bg py-12 sm:py-14 md:py-28">
       <Container>
-        <div className="grid grid-cols-12 gap-8 md:gap-12 lg:items-center">
-          <div className="col-span-12 lg:col-span-5">
-            <p className="label">Automatisierte Interessenten-Kommunikation</p>
-            <h1 className="h1 mt-4">Interessenten-Anfragen automatisch beantworten. Mit Guardrails.</h1>
-            <p className="body-lg mt-6 max-w-[54ch] text-[var(--muted)]">
-              Advaic beantwortet Interessenten-Anfragen per E-Mail in Ihrem Stil. Automatisch nur bei klaren
-              Standardfällen. Unklare oder riskante Fälle gehen in die Freigabe. Vor jedem Auto-Versand greifen
-              Qualitätschecks.
+        <div className="grid grid-cols-12 gap-6 md:gap-12 lg:gap-16 xl:gap-20 lg:items-center">
+          <div className="motion-enter col-span-12 lg:col-span-5 xl:col-span-4">
+            <p className="label">E-Mail-Antworten für Immobilienmakler</p>
+            <h1 className="h1 mt-3 max-w-[14ch] md:mt-4 md:max-w-[11ch]">
+              Immobilienanfragen automatisch beantworten.
+            </h1>
+            <p className="body-lg mt-4 max-w-[48ch] text-[var(--muted)] md:mt-6">
+              <span className="md:hidden">
+                Automatisch, wenn Objekt, Empfänger und Angaben sauber passen. Bei Lücken oder Risiko greift Ihre
+                Freigabe.
+              </span>
+              <span className="hidden md:inline">
+                Advaic beantwortet E-Mail-Anfragen automatisch, wenn Objektbezug, Empfänger und Angaben sauber
+                passen. Fehlen Informationen, ist der Rückkanal unsicher oder wird der Inhalt sensibel, greift Ihre
+                Freigabe.
+              </span>
             </p>
-            <ul className="mt-6 space-y-2">
-              {trialChecklist.map((item) => (
-                <li key={item} className="flex items-start gap-2 text-sm text-[var(--muted)]">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--gold)]" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
+          </div>
 
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <div className="motion-enter motion-delay-2 col-span-12 lg:col-span-7 xl:col-span-8 lg:row-span-2 lg:pl-6 xl:pl-10">
+            <HeroStillVisual />
+          </div>
+
+          <div className="motion-enter col-span-12 lg:col-span-5 xl:col-span-4">
+            <div className="mt-1 flex flex-col gap-3 sm:flex-row lg:mt-0">
               <TrackedLink
                 href="/signup"
                 className="btn-primary"
@@ -52,68 +56,64 @@ export default function Hero() {
                 pageGroup="marketing"
                 section="hero"
                 meta={{ section: "hero" }}
+                data-tour="marketing-hero-primary-cta"
               >
-                14 Tage kostenlos testen
+                {MARKETING_PRIMARY_CTA_LABEL}
                 <ArrowRight className="h-4 w-4" />
               </TrackedLink>
               <TrackedLink
-                href="/so-funktionierts"
+                href="/produkt"
                 className="btn-secondary"
                 event="marketing_hero_secondary_click"
                 source="website"
                 pageGroup="marketing"
                 section="hero"
-                meta={{ section: "hero", target: "so-funktionierts" }}
+                meta={{ section: "hero", target: "/produkt" }}
+                data-tour="marketing-hero-proof-cta"
               >
                 <PlayCircle className="h-4 w-4" />
-                So funktioniert's
+                {MARKETING_PROOF_CTA_LABEL}
               </TrackedLink>
             </div>
 
-            <p className="helper mt-3">14 Tage real testen. Danach läuft Starter monatlich weiter, jederzeit kündbar.</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {quickAnchors.map((anchor) => (
-                <a key={anchor.href} href={anchor.href} className="btn-secondary !min-h-9 !px-3 !py-2 !text-xs">
-                  {anchor.label}
+            <p className="helper mt-3 max-w-[46ch]">
+              Safe-Start zuerst, Auto-Versand danach Schritt für Schritt erweitern.
+            </p>
+
+            <article
+              className="mt-5 rounded-[26px] border border-[rgba(11,15,23,.08)] bg-white/95 p-4 shadow-[var(--shadow-sm)]"
+              data-tour="marketing-hero-proof-summary"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+                    Erster Prüfpfad
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[var(--text)]">
+                    In einem Blick sehen: Auto, Freigabe, Checks.
+                  </p>
+                </div>
+                <a href="#produkt-autoritaet" className="focus-ring text-sm font-medium text-[var(--text)] underline decoration-[var(--gold-soft)] underline-offset-4">
+                  Direkt im Produktfluss
                 </a>
-              ))}
-            </div>
-
-            <ul className="mt-8 grid gap-2 sm:grid-cols-2">
-              {microTrust.map((item) => (
-                <li
-                  key={item}
-                  className="flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm text-[var(--muted)] ring-1 ring-[var(--border)]"
-                >
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[var(--gold)]" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="col-span-12 lg:col-span-7">
-            <div className="card-base overflow-hidden p-2">
-              <div className="flex items-center gap-2 border-b border-[var(--border)] px-2 pb-3">
-                <span className="h-2.5 w-2.5 rounded-full bg-[#f87171]" />
-                <span className="h-2.5 w-2.5 rounded-full bg-[#fbbf24]" />
-                <span className="h-2.5 w-2.5 rounded-full bg-[#4ade80]" />
               </div>
 
-              <div className="mt-2 overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)]">
-                <LoopVideo
-                  webm="/loops/product-hero.webm"
-                  mp4="/loops/product-hero.mp4"
-                  poster="/loops/product-hero.jpg"
-                  priority
-                  className="aspect-video w-full bg-[var(--surface-2)] object-contain"
-                  ariaLabel="Advaic Produktvorschau: Eingang, Entscheidung und Versand"
-                  placeholderLabel="Produktvorschau"
-                />
+              <div className="mt-4 grid gap-2 lg:grid-cols-1" data-tour="marketing-hero-decision-list">
+                {heroDecisionSignals.map((item) => (
+                  <article
+                    key={item.title}
+                    className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-3"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="inline-flex min-w-12 items-center justify-center rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--gold)] ring-1 ring-[var(--gold-soft)]">
+                        {item.title}
+                      </span>
+                      <p className="text-sm leading-6 text-[var(--text)]">{item.text}</p>
+                    </div>
+                  </article>
+                ))}
               </div>
-
-              <p className="helper mt-3 text-center">Eingang → Entscheidung → Versand. Jeder Schritt im Verlauf sichtbar.</p>
-            </div>
+            </article>
           </div>
         </div>
       </Container>

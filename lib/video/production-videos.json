@@ -1,0 +1,476 @@
+{
+  "videos": [
+    {
+      "id": "tagesgeschaeft",
+      "title": "Wie Advaic im Tagesgeschäft arbeitet",
+      "slug": "tagesgeschaeft",
+      "eyebrow": "Video 1",
+      "summary": "Vom Eingang bis zur Freigabe zeigt dieses Video, wie Advaic aus einem Posteingang eine sichtbare Arbeitsqueue macht.",
+      "primaryCta": "14 Tage testen",
+      "secondaryCta": "Produkt ansehen",
+      "posterSource": "/marketing-screenshots/core/raw/messages-inbox.png",
+      "voice": "Anna",
+      "rate": 178,
+      "briefPath": "docs/video-briefs/01-tagesgeschaeft.md",
+      "scenes": [
+        {
+          "id": "hook",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/messages-inbox.png",
+          "durationMs": 12000,
+          "chapter": "Kapitel 1 · Einordnung",
+          "title": "Eingang statt Mail-Rauschen",
+          "body": "Neue Anfragen, Rückfragen und Systemmails kommen im Alltag unsortiert an.",
+          "bullets": [
+            "Nicht jede Mail ist sofort arbeitbar.",
+            "Zeit geht zuerst für Einordnung verloren."
+          ],
+          "subtitle": "Neue Immobilienanfragen kommen im Alltag nicht sauber sortiert an."
+        },
+        {
+          "id": "flow",
+          "type": "loop",
+          "src": "/loops/product-hero.mp4",
+          "poster": "/loops/product-hero.jpg",
+          "durationMs": 10000,
+          "chapter": "Kapitel 1 · Einordnung",
+          "title": "Produktfluss sichtbar",
+          "body": "Eingang, Entscheidung, Versand und Verlauf bleiben in einer logischen Reihenfolge.",
+          "bullets": [
+            "Inbox",
+            "Entscheidung",
+            "Versand"
+          ],
+          "subtitle": "Advaic macht aus dem Posteingang einen sichtbaren Produktfluss."
+        },
+        {
+          "id": "queue",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/messages-inbox.png",
+          "durationMs": 15000,
+          "chapter": "Kapitel 2 · Arbeitsqueue",
+          "title": "Freigaben, aktive Fälle, Eskalationen",
+          "body": "Die Oberfläche priorisiert offene Arbeit statt nur ungelesene E-Mails zu zählen.",
+          "bullets": [
+            "Freigabe sichtbar",
+            "Priorität sichtbar"
+          ],
+          "subtitle": "Statt nur neue E-Mails zu zeigen, priorisiert Advaic Freigaben, aktive Fälle und Eskalationen."
+        },
+        {
+          "id": "motion-inbox",
+          "type": "loop",
+          "src": "/loops/inbox.mp4",
+          "poster": "/loops/inbox.jpg",
+          "durationMs": 14000,
+          "chapter": "Kapitel 2 · Arbeitsqueue",
+          "title": "Eingang in Bewegung",
+          "body": "Relevante Interessentenanfragen werden von irrelevanten Mails getrennt.",
+          "bullets": [
+            "Interessent statt Rauschen",
+            "Kontext vor Geschwindigkeit"
+          ],
+          "subtitle": "Die Inbox trennt relevante Anfragen von irrelevanten Systemmails."
+        },
+        {
+          "id": "thread",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/conversation-thread.png",
+          "durationMs": 16000,
+          "chapter": "Kapitel 3 · Produktionsfläche",
+          "title": "Antwortarbeit bleibt ruhig",
+          "body": "Der Thread bleibt im Mittelpunkt, statt zwischen Postfach und CRM zu springen.",
+          "bullets": [
+            "Thread zentriert",
+            "Antwortarbeit ohne UI-Lärm"
+          ],
+          "subtitle": "Öffnet man einen Fall, bleibt die eigentliche Antwortarbeit in einer ruhigen Produktionsfläche."
+        },
+        {
+          "id": "context",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/conversation-context.png",
+          "durationMs": 15000,
+          "chapter": "Kapitel 3 · Produktionsfläche",
+          "title": "Kontext bleibt neben dem Thread",
+          "body": "Objektbezug, Regeln und Follow-ups sitzen direkt neben der Antwort.",
+          "bullets": [
+            "Objekt sichtbar",
+            "Regeln sichtbar"
+          ],
+          "subtitle": "Objektbezug, Entscheidungslogik und Follow-ups bleiben neben der E-Mail sichtbar."
+        },
+        {
+          "id": "review-order",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/approval-review-flow.png",
+          "durationMs": 16000,
+          "chapter": "Kapitel 4 · Freigabe",
+          "title": "Freigabe folgt einer festen Reihenfolge",
+          "body": "Original, Vorschlag, Änderungen und Entscheidung bleiben klar getrennt.",
+          "bullets": [
+            "Original",
+            "Vorschlag",
+            "Entscheidung"
+          ],
+          "subtitle": "Wenn ein Fall nicht sicher automatisch laufen darf, landet er in der Freigabe."
+        },
+        {
+          "id": "decision",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/approval-decision.png",
+          "durationMs": 18000,
+          "chapter": "Kapitel 4 · Freigabe",
+          "title": "Senden, bearbeiten oder ablehnen",
+          "body": "Die Entscheidung sitzt bewusst am Ende und nicht mitten im Text.",
+          "bullets": [
+            "Nachvollziehbar",
+            "Dokumentiert"
+          ],
+          "subtitle": "So bleibt nachvollziehbar, warum etwas gesendet, bearbeitet oder bewusst nicht rausgeht."
+        },
+        {
+          "id": "start",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/dashboard-startmodul.png",
+          "durationMs": 14000,
+          "chapter": "Kapitel 5 · Kontrollierter Start",
+          "title": "Safe-Start statt Vollautomatik",
+          "body": "Der Einstieg beginnt bewusst eng und wächst Schritt für Schritt.",
+          "bullets": [
+            "Safe-Start",
+            "Erste Freigaben",
+            "Sichtbarer Systemstatus"
+          ],
+          "subtitle": "Der Einstieg beginnt absichtlich eng und wächst Schritt für Schritt."
+        },
+        {
+          "id": "systemstatus",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/dashboard-systemstatus.png",
+          "durationMs": 12000,
+          "chapter": "Kapitel 5 · Kontrollierter Start",
+          "title": "Versand und Lernkurve bleiben sichtbar",
+          "body": "Automatisierung wird nicht verborgen, sondern als Betriebszustand geführt.",
+          "bullets": [
+            "Versandstatus",
+            "Deliverability",
+            "Lernkurve"
+          ],
+          "subtitle": "Versand, Deliverability und Lernkurve bleiben im Betrieb sichtbar."
+        }
+      ]
+    },
+    {
+      "id": "auto-vs-freigabe",
+      "title": "Wann automatisch gesendet wird und wann nicht",
+      "slug": "auto-vs-freigabe",
+      "eyebrow": "Video 2",
+      "summary": "Dieses Video zeigt die konkrete Entscheidungslogik zwischen Auto-Versand und Freigabe.",
+      "primaryCta": "Regeln im Detail ansehen",
+      "secondaryCta": "14 Tage testen",
+      "posterSource": "/marketing-screenshots/core/raw/approval-decision.png",
+      "voice": "Anna",
+      "rate": 176,
+      "briefPath": "docs/video-briefs/02-auto-vs-freigabe.md",
+      "scenes": [
+        {
+          "id": "question",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/dashboard-automation.png",
+          "durationMs": 12000,
+          "chapter": "Kapitel 1 · Kauffrage",
+          "title": "Nicht: Kann KI antworten?",
+          "body": "Die eigentliche Frage lautet, wann ein System wirklich senden darf.",
+          "bullets": [
+            "Auto nur mit Regeln",
+            "Nicht per Bauchgefühl"
+          ],
+          "subtitle": "Die entscheidende Frage ist nicht, ob ein Modell eine E-Mail formulieren kann."
+        },
+        {
+          "id": "send-question",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/approval-decision.png",
+          "durationMs": 10000,
+          "chapter": "Kapitel 1 · Kauffrage",
+          "title": "Die Frage ist: Wann darf gesendet werden?",
+          "body": "Freigabe und Versand müssen sichtbar voneinander getrennt sein.",
+          "bullets": [
+            "Regeln vor Versand",
+            "Entscheidung sichtbar"
+          ],
+          "subtitle": "Die entscheidende Frage ist, wann das System wirklich senden darf und wann es bewusst stoppen muss."
+        },
+        {
+          "id": "rules-loop",
+          "type": "loop",
+          "src": "/loops/rules.mp4",
+          "poster": "/loops/rules.jpg",
+          "durationMs": 16000,
+          "chapter": "Kapitel 2 · Auto-Versand",
+          "title": "Auto nur bei sauberer Grundlage",
+          "body": "Objektbezug, Empfänger und Angaben müssen innerhalb der freigegebenen Regeln liegen.",
+          "bullets": [
+            "Objektbezug",
+            "Empfänger",
+            "Angaben"
+          ],
+          "subtitle": "Automatisch gesendet wird nur dann, wenn die Grundlage sauber ist."
+        },
+        {
+          "id": "filters",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/messages-filters.png",
+          "durationMs": 12000,
+          "chapter": "Kapitel 2 · Auto-Versand",
+          "title": "Freigabe, Eskalation und Priorität bleiben sichtbar",
+          "body": "Auch im Alltag ist erkennbar, welche Fälle wo gelandet sind.",
+          "bullets": [
+            "Ein-Klick-Filter",
+            "Alltagsnah sichtbar"
+          ],
+          "subtitle": "Freigabe, Eskalation und Priorität bleiben im Alltag mit einem Klick erreichbar."
+        },
+        {
+          "id": "review-reasons",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/approval-review-flow.png",
+          "durationMs": 18000,
+          "chapter": "Kapitel 3 · Freigabe",
+          "title": "Freigabe bei fehlenden Informationen oder Risiko",
+          "body": "Fehlende Angaben, unsauberer Rückkanal oder sensibler Inhalt stoppen Auto bewusst.",
+          "bullets": [
+            "Fehlende Angaben",
+            "Unsicherer Rückkanal",
+            "Sensibler Inhalt"
+          ],
+          "subtitle": "Typische Freigabegründe sind fehlende Angaben, ein unsauber prüfbarer Rückkanal oder sensibler Inhalt."
+        },
+        {
+          "id": "decision-separate",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/approval-decision.png",
+          "durationMs": 14000,
+          "chapter": "Kapitel 3 · Freigabe",
+          "title": "Entscheidung bewusst getrennt",
+          "body": "Original, Vorschlag und Entscheidung werden nicht vermischt.",
+          "bullets": [
+            "Senden",
+            "Bearbeiten",
+            "Ablehnen"
+          ],
+          "subtitle": "Original, Vorschlag und Änderungen bleiben getrennt von der finalen Entscheidung."
+        },
+        {
+          "id": "checks",
+          "type": "loop",
+          "src": "/loops/checks.mp4",
+          "poster": "/loops/checks.jpg",
+          "durationMs": 16000,
+          "chapter": "Kapitel 4 · Qualitätslogik",
+          "title": "Vor jedem Versand laufen Prüfungen",
+          "body": "Relevanz, Vollständigkeit, Ton und Risiko werden vor dem Versand geprüft.",
+          "bullets": [
+            "Relevanz",
+            "Vollständigkeit",
+            "Ton",
+            "Risiko"
+          ],
+          "subtitle": "Vor jedem Auto-Versand laufen Qualitätschecks."
+        },
+        {
+          "id": "guardrails",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/dashboard-automation.png",
+          "durationMs": 16000,
+          "chapter": "Kapitel 4 · Qualitätslogik",
+          "title": "Guardrails steuern den Rollout",
+          "body": "Auto-Versand ist an sichtbare Regeln gebunden und wächst kontrolliert.",
+          "bullets": [
+            "Rollout statt Schalter",
+            "Regeln statt Blackbox"
+          ],
+          "subtitle": "Auto-Versand ist nicht an Vertrauen in ein Modell gebunden, sondern an Guardrails."
+        },
+        {
+          "id": "context-proof",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/conversation-context.png",
+          "durationMs": 14000,
+          "chapter": "Kapitel 5 · Nachweis",
+          "title": "Entscheidungslogik bleibt pro Fall sichtbar",
+          "body": "Der rechte Rail-Bereich zeigt, warum ein Fall automatisch läuft oder gestoppt wird.",
+          "bullets": [
+            "Regeln im Kontext",
+            "Fallbezogen sichtbar"
+          ],
+          "subtitle": "Wichtig ist: Die Entscheidungslogik bleibt pro Fall sichtbar."
+        },
+        {
+          "id": "cta",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/approval-decision.png",
+          "durationMs": 12000,
+          "chapter": "Kapitel 5 · Abschluss",
+          "title": "Regeln im Detail ansehen",
+          "body": "Wer die Logik prüfen will, sollte die Regeln am Produktzustand sehen, nicht in Werbesprache.",
+          "bullets": [
+            "Regeln prüfen",
+            "14 Tage testen"
+          ],
+          "subtitle": "Wenn Sie prüfen wollen, wie diese Regeln bei Ihrem Team aussehen würden, sehen Sie sich die Logik im Detail an."
+        }
+      ]
+    },
+    {
+      "id": "qualitaetschecks-followups",
+      "title": "Qualitätschecks und Follow-ups im Live-Betrieb",
+      "slug": "qualitaetschecks-followups",
+      "eyebrow": "Video 3",
+      "summary": "Dieses Video zeigt, wie Stil, Qualitätsprüfung und Follow-ups im Alltag zusammenwirken.",
+      "primaryCta": "Produkt ansehen",
+      "secondaryCta": "14 Tage testen",
+      "posterSource": "/marketing-screenshots/core/raw/tone-style-preview.png",
+      "voice": "Anna",
+      "rate": 176,
+      "briefPath": "docs/video-briefs/03-qualitaetschecks-followups.md",
+      "scenes": [
+        {
+          "id": "quality-hook",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/tone-style-preview.png",
+          "durationMs": 12000,
+          "chapter": "Kapitel 1 · Risiko",
+          "title": "Qualität ist die eigentliche Hürde",
+          "body": "Automatisierung scheitert im Alltag an Ton, Inhalt und falschem Nachfassen.",
+          "bullets": [
+            "Nicht nur Tempo zählt",
+            "Antwortqualität bleibt entscheidend"
+          ],
+          "subtitle": "Automatisierung scheitert im Alltag selten am Schreiben, sondern an Qualität und Nachfassen."
+        },
+        {
+          "id": "setup",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/tone-style-setup.png",
+          "durationMs": 15000,
+          "chapter": "Kapitel 2 · Setup",
+          "title": "Ton, Länge und Guardrails werden gepflegt",
+          "body": "Antwortstil ist ein Setup mit klaren Leitplanken und nicht nur ein Textfeld.",
+          "bullets": [
+            "Stil",
+            "Länge",
+            "Guardrails"
+          ],
+          "subtitle": "Darum beginnt Advaic bei einem gepflegten Setup aus Tonalität, Länge und Guardrails."
+        },
+        {
+          "id": "preview",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/tone-style-preview.png",
+          "durationMs": 14000,
+          "chapter": "Kapitel 2 · Setup",
+          "title": "Änderungen werden sofort sichtbar",
+          "body": "Vorschau und Beispielantwort zeigen direkt, wie sich das Setup auswirkt.",
+          "bullets": [
+            "Vorschau sofort",
+            "Keine abstrakten Regeln"
+          ],
+          "subtitle": "Änderungen bleiben nicht abstrakt, sondern werden direkt an einer Vorschau sichtbar."
+        },
+        {
+          "id": "checks-loop",
+          "type": "loop",
+          "src": "/loops/checks.mp4",
+          "poster": "/loops/checks.jpg",
+          "durationMs": 16000,
+          "chapter": "Kapitel 3 · Checks",
+          "title": "Qualitätschecks vor Versand",
+          "body": "Stil allein reicht nicht. Relevanz, Vollständigkeit und Risiko werden mitgeprüft.",
+          "bullets": [
+            "Relevanz",
+            "Vollständigkeit",
+            "Lesbarkeit",
+            "Risiko"
+          ],
+          "subtitle": "Vor dem Versand laufen Prüfungen zu Relevanz, Vollständigkeit, Lesbarkeit und Risiko."
+        },
+        {
+          "id": "checks-context",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/conversation-context.png",
+          "durationMs": 15000,
+          "chapter": "Kapitel 3 · Checks",
+          "title": "Prüfstatus bleibt pro Fall sichtbar",
+          "body": "Die Qualitätslogik ist nicht versteckt, sondern im Fallkontext nachvollziehbar.",
+          "bullets": [
+            "Checks im Kontext",
+            "Keine Blackbox"
+          ],
+          "subtitle": "Der Prüfstatus bleibt pro Fall sichtbar und nicht nur in einem Hintergrundprozess."
+        },
+        {
+          "id": "followups",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/conversation-context.png",
+          "durationMs": 16000,
+          "chapter": "Kapitel 4 · Follow-ups",
+          "title": "Follow-ups laufen nicht blind weiter",
+          "body": "Reaktion, Unsicherheit oder bewusste Übernahme stoppen Nachfassketten.",
+          "bullets": [
+            "Stop bei Antwort",
+            "Stop bei Risiko",
+            "Stop bei manueller Übernahme"
+          ],
+          "subtitle": "Follow-ups dürfen nicht einfach weiterlaufen, wenn ein Kontakt reagiert oder ein Fall riskant wird."
+        },
+        {
+          "id": "log",
+          "type": "loop",
+          "src": "/loops/tour-log.mp4",
+          "poster": "/loops/tour-log.jpg",
+          "durationMs": 14000,
+          "chapter": "Kapitel 4 · Follow-ups",
+          "title": "Jeder Schritt bleibt dokumentiert",
+          "body": "Verlauf und Status machen sichtbar, was das System getan hat.",
+          "bullets": [
+            "Verlauf",
+            "Status",
+            "Dokumentation"
+          ],
+          "subtitle": "Jeder Schritt wird im Verlauf dokumentiert und bleibt nachvollziehbar."
+        },
+        {
+          "id": "systemstatus",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/dashboard-systemstatus.png",
+          "durationMs": 15000,
+          "chapter": "Kapitel 5 · Betrieb",
+          "title": "Qualität und Follow-ups bleiben sichtbar",
+          "body": "Auch im Dashboard bleibt erkennbar, wie stabil das System im Betrieb läuft.",
+          "bullets": [
+            "Systemstatus",
+            "Rollout sichtbar",
+            "Betriebsnah"
+          ],
+          "subtitle": "Qualität und Follow-up-Logik bleiben als Betriebszustand sichtbar."
+        },
+        {
+          "id": "cta",
+          "type": "still",
+          "src": "/marketing-screenshots/core/raw/tone-style-preview.png",
+          "durationMs": 12000,
+          "chapter": "Kapitel 5 · Abschluss",
+          "title": "Produkt ansehen oder 14 Tage testen",
+          "body": "Wer Stil, Checks und Nachfasslogik prüfen will, sollte das Produkt im Detail sehen.",
+          "bullets": [
+            "Produkt ansehen",
+            "14 Tage testen"
+          ],
+          "subtitle": "Wenn Sie sehen wollen, wie Stil, Qualitätsprüfung und Follow-up-Logik zusammenspielen, sehen Sie sich das Produkt im Detail an."
+        }
+      ]
+    }
+  ]
+}

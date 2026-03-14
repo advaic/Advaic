@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import TrackedLink from "./TrackedLink";
 import Container from "./Container";
 import { trackPublicEvent } from "@/lib/funnel/public-track";
+import { MARKETING_PRIMARY_CTA_LABEL } from "./cta-copy";
 
 type ScenarioKey = "normal" | "peak";
 
@@ -42,8 +43,8 @@ const SCENARIOS: Record<
         label: "Auto/Freigabe entscheiden",
         manualMin: 2.6,
         advaicMin: 0.8,
-        riskHint: "Unsichere Fälle werden leicht zu spät erkannt.",
-        trustHint: "Guardrails markieren unklare Fälle sofort.",
+        riskHint: "Fälle mit fehlenden Angaben oder Konfliktpotenzial werden leicht zu spät erkannt.",
+        trustHint: "Guardrails markieren fehlende Angaben, Konfliktpotenzial oder Qualitätswarnungen sofort.",
       },
       {
         key: "antwort",
@@ -81,7 +82,7 @@ const SCENARIOS: Record<
         manualMin: 3.5,
         advaicMin: 1.1,
         riskHint: "Mehr Fehlklassifizierung bei Eile.",
-        trustHint: "Im Zweifel immer Zur Freigabe.",
+        trustHint: "Fälle mit Warnsignal gehen direkt zur Freigabe.",
       },
       {
         key: "antwort",
@@ -250,7 +251,7 @@ export default function ProcessFlowComparison() {
               pageGroup="marketing"
               section="prozessvergleich"
             >
-              14 Tage testen
+              {MARKETING_PRIMARY_CTA_LABEL}
             </TrackedLink>
             <TrackedLink
               href="/produkt#ablauf"
@@ -268,4 +269,3 @@ export default function ProcessFlowComparison() {
     </section>
   );
 }
-

@@ -1,96 +1,44 @@
 import type { Metadata } from "next";
 import MarketingNavbar from "@/components/marketing/Navbar";
 import Hero from "@/components/marketing/Hero";
-import TrustStats from "@/components/marketing/TrustStats";
-import PublicEvidenceGap from "@/components/marketing/PublicEvidenceGap";
-import Problem from "@/components/marketing/Problem";
-import Solution from "@/components/marketing/Solution";
 import HowItWorks from "@/components/marketing/HowItWorks";
-import StickyTour from "@/components/marketing/StickyTour";
-import DecisionSimulator from "@/components/marketing/DecisionSimulator";
-import Rules from "@/components/marketing/Rules";
-import QualityChecks from "@/components/marketing/QualityChecks";
-import Control from "@/components/marketing/Control";
-import Guarantee from "@/components/marketing/Guarantee";
-import TransparencyBox from "@/components/marketing/TransparencyBox";
-import Security from "@/components/marketing/Security";
 import TrustByDesign from "@/components/marketing/TrustByDesign";
 import Pricing from "@/components/marketing/Pricing";
-import UseCasesTeaser from "@/components/marketing/UseCasesTeaser";
 import ROICalculator from "@/components/marketing/ROICalculator";
-import SearchIntentTeaser from "@/components/marketing/SearchIntentTeaser";
 import MarketingFAQ from "@/components/marketing/FAQ";
-import ObjectionHandling from "@/components/marketing/ObjectionHandling";
-import CTAExperiment from "@/components/marketing/CTAExperiment";
 import FinalCTA from "@/components/marketing/FinalCTA";
-import ProofLayer from "@/components/marketing/ProofLayer";
 import MarketingFooter from "@/components/marketing/Footer";
-import MessageArchitectureBand from "@/components/marketing/MessageArchitectureBand";
-import ConversionPathPanel from "@/components/marketing/ConversionPathPanel";
 import ProductVisualAuthority from "@/components/marketing/ProductVisualAuthority";
 import PublicClientWidgets from "@/components/marketing/PublicClientWidgets";
+import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
-export const metadata: Metadata = {
-  title: "Autopilot für Makler-E-Mails mit klaren Guardrails",
+export const metadata: Metadata = buildMarketingMetadata({
+  title: "Immobilienanfragen automatisch beantworten | Advaic",
+  ogTitle: "Advaic | Immobilienanfragen automatisch beantworten",
   description:
-    "Advaic beantwortet Interessenten-Anfragen automatisch in Ihrem Stil. Unklare Fälle gehen zur Freigabe, vor Auto-Versand greifen Qualitätschecks.",
-  alternates: {
-    canonical: "/",
-  },
-  openGraph: {
-    title: "Advaic | Autopilot für Makler-E-Mails mit klaren Guardrails",
-    description:
-      "Advaic beantwortet Interessenten-Anfragen automatisch in Ihrem Stil. Unklare Fälle gehen zur Freigabe, vor Auto-Versand greifen Qualitätschecks.",
-    url: "/",
-    images: ["/brand/advaic-icon.png"],
-  },
-  twitter: {
-    title: "Advaic | Autopilot für Makler-E-Mails mit klaren Guardrails",
-    description:
-      "Advaic beantwortet Interessenten-Anfragen automatisch in Ihrem Stil. Unklare Fälle gehen zur Freigabe, vor Auto-Versand greifen Qualitätschecks.",
-    images: ["/brand/advaic-icon.png"],
-  },
-};
+    "Advaic beantwortet neue Immobilienanfragen per E-Mail automatisch. Fehlen Angaben, ist der Absender nicht sauber prüfbar oder wird der Inhalt sensibel, greift die Freigabe.",
+  path: "/",
+  template: "home",
+  eyebrow: "Homepage",
+  proof: "Auto bei vollständigen Angaben. Freigabe bei fehlenden Informationen oder Risiko.",
+});
 
 export default function HomePage() {
   return (
     <main className="marketing-page-bg bg-[var(--bg)] text-[var(--text)]">
       <MarketingNavbar />
       <Hero />
-      <ConversionPathPanel className="pt-6 md:pt-8" />
       <ProductVisualAuthority
         id="produkt-autoritaet"
-        title="So sieht der Ablauf im Produkt aus"
-        description="Keine abstrakten Versprechen: Sie sehen die Mechanik direkt im Interface und im Verlauf."
+        title="Im Produkt sehen Sie, warum Advaic sendet oder stoppt"
+        description="Eingang, Regelprüfung, Freigabe und Qualitätschecks sind direkt im Interface sichtbar."
       />
-      <TrustStats />
-      <PublicEvidenceGap />
-      <Problem />
-      <Solution />
       <HowItWorks />
-      <StickyTour />
-      <DecisionSimulator />
-      <Rules />
-      <QualityChecks />
-      <Control />
-      <Guarantee />
-      <TransparencyBox />
-      <Security />
       <TrustByDesign />
-      <Pricing />
-      <UseCasesTeaser />
-      <SearchIntentTeaser />
       <ROICalculator />
+      <Pricing />
       <MarketingFAQ />
-      <ObjectionHandling />
-      <CTAExperiment />
       <FinalCTA />
-      <MessageArchitectureBand compact />
-      <section className="py-10 md:py-12">
-        <div className="mx-auto w-full max-w-[1120px] px-6 md:px-8">
-          <ProofLayer context="marketing" />
-        </div>
-      </section>
       <MarketingFooter />
       <PublicClientWidgets />
     </main>

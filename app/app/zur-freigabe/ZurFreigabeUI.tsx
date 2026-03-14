@@ -4,8 +4,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 // import { Database } from "@/types/supabase";
 import { supabase } from "@/lib/supabaseClient";
+import { AppButton, PageHeader, StatusBadge } from "@/components/app-ui";
 import { rejectMessage } from "../../actions/rejectMessage";
 import { trackFunnelEvent } from "@/lib/funnel/track";
+import { trackUiMetricEvent, useUiRouteMetric } from "@/lib/funnel/ui-metrics";
+import { uiActionCopy } from "@/lib/ui/action-copy";
 
 export type ApprovalMessage = {
   id: string;
@@ -611,6 +614,12 @@ export default function ZurFreigabeUI({
   messages: initialMessages,
 }: ZurFreigabeUIProps) {
   const router = useRouter();
+  const { markFirstAction: markApprovalFirstAction } = useUiRouteMetric({
+    routeKey: "approval_inbox",
+    source: "approval_inbox",
+    path: "/app/zur-freigabe",
+    viewMeta: { initial_count: initialMessages.length },
+  });
   const [messages, setMessages] = useState<ApprovalMessage[]>(initialMessages);
 
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -650,9 +659,12 @@ export default function ZurFreigabeUI({
   const [bulkRejectReason, setBulkRejectReason] = useState<string>("");
   const [bulkRejectNote, setBulkRejectNote] = useState<string>("");
   const [helpOpen, setHelpOpen] = useState(false);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+  const [mobileTriageOpen, setMobileTriageOpen] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const openedApprovalIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     void trackFunnelEvent({
@@ -746,6 +758,31 @@ export default function ZurFreigabeUI({
   );
 
   useEffect(() => {
+    if (!focusedId) return;
+    if (openedApprovalIdsRef.current.has(focusedId)) return;
+
+    const message = approvalMessages.find((entry) => entry.id === focusedId);
+    if (!message) return;
+
+    openedApprovalIdsRef.current.add(focusedId);
+    markApprovalFirstAction("open_approval_item", {
+      message_id: message.id,
+      lead_id: message.lead_id,
+    });
+    trackUiMetricEvent({
+      event: "approval_item_opened",
+      source: "approval_inbox",
+      path: "/app/zur-freigabe",
+      routeKey: "approval_inbox",
+      meta: {
+        message_id: message.id,
+        lead_id: message.lead_id,
+        pending_count: approvalIds.length,
+      },
+    });
+  }, [approvalIds.length, approvalMessages, focusedId, markApprovalFirstAction]);
+
+  useEffect(() => {
     setSelectedIds((prev) => {
       const next: Record<string, boolean> = {};
       for (const id of approvalIds) next[id] = !!prev[id];
@@ -824,6 +861,23 @@ export default function ZurFreigabeUI({
       avgQuality,
     };
   }, [approvalMessages]);
+
+  const sortLabel = useMemo(() => {
+    switch (sortKey) {
+      case "risk_desc":
+        return "Risiko zuerst";
+      case "confidence_asc":
+        return "Niedrige Confidence zuerst";
+      case "confidence_desc":
+        return "Hohe Confidence zuerst";
+      case "oldest":
+        return "Älteste zuerst";
+      case "newest":
+      case "default":
+      default:
+        return "Neueste zuerst";
+    }
+  }, [sortKey]);
 
   const toggleSelectAll = (v: boolean) => {
     setSelectAll(v);
@@ -1171,7 +1225,7 @@ export default function ZurFreigabeUI({
       }
     } catch (e: any) {
       console.error("❌ Approve failed", e);
-      setErr(id, e?.message ?? "Freigeben fehlgeschlagen.");
+      setErr(id, e?.message ?? `${uiActionCopy.sendApprove} fehlgeschlagen.`);
 
       // rollback optimistic removal
       setMessages((prev) => {
@@ -1423,7 +1477,7 @@ export default function ZurFreigabeUI({
       setErr(id, null);
     } catch (e: any) {
       console.error("❌ Save+Approve failed", e);
-      setErr(id, e?.message ?? "Speichern & Freigeben fehlgeschlagen.");
+      setErr(id, e?.message ?? `${uiActionCopy.saveAndSend} fehlgeschlagen.`);
 
       setMessages((prev) => {
         const exists = prev.some((m) => m.id === message.id);
@@ -1500,69 +1554,110 @@ export default function ZurFreigabeUI({
 
   return (
     <div
-      className="min-h-[calc(100vh-80px)] bg-[#f7f7f8] text-gray-900"
+      className="min-h-[calc(100vh-80px)] app-shell text-gray-900"
       data-tour="approval-page"
     >
-      <div className="max-w-6xl mx-auto px-4 md:px-6 py-6">
-        {/* Header */}
-        <div
-          className="sticky top-16 md:top-0 z-20 -mx-4 px-4 md:mx-0 md:px-0 pt-2 pb-4 mb-6 bg-[#f7f7f8]/95 backdrop-blur border-b border-gray-200 flex flex-col gap-4 md:flex-row md:items-start md:justify-between"
-          data-tour="approval-header"
-        >
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl md:text-3xl font-semibold">
-                Zur Freigabe
-              </h1>
-              <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-900 text-amber-200">
-                Advaic
-              </span>
-              <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800">
-                {approvalMessages.length} offen
-              </span>
+      <div className="max-w-6xl mx-auto px-4 md:px-6 app-page-section">
+        <PageHeader
+          dataTour="approval-header"
+          title={<h1 className="app-text-page-title">Zur Freigabe</h1>}
+          meta={
+            <>
+              <StatusBadge tone="brand">Advaic</StatusBadge>
+              <StatusBadge tone="warning">{approvalMessages.length} offen</StatusBadge>
+            </>
+          }
+          description="Hier siehst du alle Nachrichten, die zur Freigabe bereitstehen. Du kannst sie sofort senden, vorher bearbeiten oder ablehnen."
+          footer={
+            <div className="flex w-full md:justify-end">
+              <div className="w-full md:max-w-sm" data-tour="approval-search">
+                <div className="flex flex-col gap-2">
+                  <select
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value as ApprovalSortKey)}
+                    className="hidden w-full rounded-xl border app-field px-4 py-3 text-sm hover:bg-gray-50 md:block"
+                    title="Sortierung"
+                  >
+                    <option value="default">Sortierung: Neueste zuerst</option>
+                    <option value="risk_desc">
+                      Sortierung: Höchstes Risiko zuerst
+                    </option>
+                    <option value="confidence_asc">
+                      Sortierung: Niedrigste Confidence zuerst
+                    </option>
+                    <option value="confidence_desc">
+                      Sortierung: Höchste Confidence zuerst
+                    </option>
+                    <option value="newest">Sortierung: Neueste zuerst</option>
+                    <option value="oldest">Sortierung: Älteste zuerst</option>
+                  </select>
+
+                  <input
+                    ref={searchInputRef}
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Suche im Text…"
+                    className="w-full rounded-xl border app-field px-4 py-3 text-sm"
+                  />
+                </div>
+              </div>
             </div>
-            <p className="text-gray-700 mt-2 max-w-2xl">
-              Hier siehst du alle Nachrichten, die zur Freigabe bereitstehen. Du
-              kannst sie sofort senden, vorher bearbeiten oder ablehnen.
-            </p>
+          }
+          className="mb-6"
+        />
+
+        <div
+          className="mt-4 rounded-2xl border border-gray-200 bg-white p-4 md:hidden"
+          data-tour="approval-mobile-workbar"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="app-text-meta-label text-gray-800">
+                Mobile Arbeitsleiste
+              </div>
+              <div className="mt-1 text-sm text-gray-700">
+                {approvalMessages.length} offen · {selectedCount} ausgewählt
+              </div>
+              <div className="mt-1 text-xs text-gray-500">
+                Sortierung: {sortLabel}
+              </div>
+            </div>
+            <StatusBadge tone={selectedCount > 0 ? "brand" : "neutral"}>
+              {selectedCount > 0 ? `${selectedCount} markiert` : "Keine Auswahl"}
+            </StatusBadge>
           </div>
 
-          <div className="w-full md:max-w-sm" data-tour="approval-search">
-            <div className="flex flex-col gap-2">
-              <select
-                value={sortKey}
-                onChange={(e) => setSortKey(e.target.value as ApprovalSortKey)}
-                className="w-full px-4 py-3 rounded-xl text-sm bg-white border border-gray-200 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                title="Sortierung"
-              >
-                <option value="default">Sortierung: Neueste zuerst</option>
-                <option value="risk_desc">
-                  Sortierung: Höchstes Risiko zuerst
-                </option>
-                <option value="confidence_asc">
-                  Sortierung: Niedrigste Confidence zuerst
-                </option>
-                <option value="confidence_desc">
-                  Sortierung: Höchste Confidence zuerst
-                </option>
-                <option value="newest">Sortierung: Neueste zuerst</option>
-                <option value="oldest">Sortierung: Älteste zuerst</option>
-              </select>
-
-              <input
-                ref={searchInputRef}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Suche im Text…"
-                className="w-full px-4 py-3 rounded-xl text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-              />
-            </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <AppButton
+              type="button"
+              variant={mobileToolsOpen ? "utility" : "secondary"}
+              size="sm"
+              data-tour="approval-mobile-tools-toggle"
+              onClick={() => setMobileToolsOpen((value) => !value)}
+            >
+              {mobileToolsOpen ? "Werkzeuge schließen" : "Werkzeuge öffnen"}
+            </AppButton>
+            <AppButton
+              type="button"
+              variant={mobileTriageOpen ? "utility" : "secondary"}
+              size="sm"
+              data-tour="approval-mobile-priority-toggle"
+              onClick={() => {
+                const next = !mobileTriageOpen;
+                setMobileTriageOpen(next);
+                if (!next) setHelpOpen(false);
+              }}
+            >
+              {mobileTriageOpen ? "Priorisierung schließen" : "Priorisierung"}
+            </AppButton>
           </div>
         </div>
 
         {/* Bulk bar */}
         <div
-          className="mt-4 rounded-2xl border border-gray-200 bg-white p-4"
+          className={`mt-4 rounded-2xl border border-gray-200 bg-white p-4 ${
+            mobileToolsOpen ? "block" : "hidden md:block"
+          }`}
           data-tour="approval-bulk-actions"
         >
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1583,6 +1678,26 @@ export default function ZurFreigabeUI({
             </div>
 
             <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 xl:flex xl:w-auto xl:flex-wrap xl:items-center">
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as ApprovalSortKey)}
+                disabled={bulkRunning}
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 md:hidden"
+                title="Sortierung"
+              >
+                <option value="default">Sortierung: Neueste zuerst</option>
+                <option value="risk_desc">
+                  Sortierung: Höchstes Risiko zuerst
+                </option>
+                <option value="confidence_asc">
+                  Sortierung: Niedrigste Confidence zuerst
+                </option>
+                <option value="confidence_desc">
+                  Sortierung: Höchste Confidence zuerst
+                </option>
+                <option value="newest">Sortierung: Neueste zuerst</option>
+                <option value="oldest">Sortierung: Älteste zuerst</option>
+              </select>
               <button
                 type="button"
                 onClick={selectRecommendedForBulk}
@@ -1605,7 +1720,7 @@ export default function ZurFreigabeUI({
                 onClick={bulkApprove}
                 className="px-3 py-2 rounded-xl text-sm border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed w-full xl:w-auto"
               >
-                Bulk: Freigeben
+                {uiActionCopy.bulkApprove}
               </button>
               <select
                 value={bulkRejectReason}
@@ -1675,7 +1790,54 @@ export default function ZurFreigabeUI({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
+        <div
+          className="mt-4 rounded-2xl border border-gray-200 bg-white p-4 md:hidden"
+          data-tour="approval-mobile-triage"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="app-text-meta-label text-gray-800">
+                Heute priorisieren
+              </div>
+              <div className="mt-1 text-sm text-gray-700">
+                Prüfe zuerst Risiko, Confidence und Fehlversand.
+              </div>
+            </div>
+            <StatusBadge tone={triageStats.highRisk > 0 ? "warning" : "neutral"}>
+              {triageStats.highRisk > 0
+                ? `${triageStats.highRisk} kritisch`
+                : "Stabil"}
+            </StatusBadge>
+          </div>
+
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <div className="text-[11px] text-gray-500">Risiko</div>
+              <div className="mt-1 text-base font-semibold text-gray-900">
+                {triageStats.highRisk}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <div className="text-[11px] text-gray-500">Confidence</div>
+              <div className="mt-1 text-base font-semibold text-gray-900">
+                {triageStats.lowConfidence}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <div className="text-[11px] text-gray-500">Fehlversand</div>
+              <div className="mt-1 text-base font-semibold text-gray-900">
+                {triageStats.failed}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          className={`mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7 ${
+            mobileTriageOpen ? "grid" : "hidden md:grid"
+          }`}
+          data-tour="approval-triage-stats"
+        >
           <div className="rounded-2xl border border-gray-200 bg-white p-3">
             <div className="text-[11px] text-gray-500">Hohes Risiko</div>
             <div className="mt-1 text-lg font-semibold text-gray-900">
@@ -1738,7 +1900,7 @@ export default function ZurFreigabeUI({
                 Erst Fälle mit niedriger Confidence oder Konflikt-Signal prüfen.
               </li>
               <li>
-                Danach klare Standardfälle gesammelt per Bulk freigeben.
+                Danach klare Freigaben gesammelt per Bulk freigeben.
               </li>
               <li>
                 Fehlgeschlagene Sendungen zuerst neu prüfen, dann erneut senden.
@@ -1747,7 +1909,7 @@ export default function ZurFreigabeUI({
           </div>
         )}
 
-        <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-4">
+        <div className="mt-3 hidden rounded-2xl border border-gray-200 bg-white p-4 md:block">
           <div className="text-sm font-semibold text-gray-900">
             Prüfbarkeit & Verlauf
           </div>
@@ -1784,6 +1946,29 @@ export default function ZurFreigabeUI({
             const recommendation = recommendedAction(message);
             const qScore = qualityScore(message);
             const why = buildApprovalWhy(message);
+            const fullText = String(message.text ?? "");
+            const isTextOpen = !!expandedText[message.id];
+            const tooLong =
+              fullText.length > 260 || fullText.split("\n").length > 3;
+            const previewText =
+              fullText.length > 260
+                ? `${fullText.slice(0, 260)}…`
+                : fullText;
+            const reasonRows = buildReasonRows(message);
+            const isReasonOpen = !!reasonOpen[message.id];
+            const attachments = normalizeAttachments(message as any);
+            const attachmentsOpen = !!previewOpen[message.id];
+            const attachmentUrls = previewUrls[message.id] || {};
+            const diffRows = isEditing ? safeLineDiff(fullText, editedText) : [];
+            const changedRows = diffRows.filter((row) => row.changed);
+            const hasDecisionReason = !!decisionReasonById[message.id];
+            const hasBlockingError =
+              !!actionError[message.id] ||
+              !!(
+                message.send_status &&
+                String(message.send_status).toLowerCase() === "failed" &&
+                message.send_error
+              );
 
             return (
               <div
@@ -1803,8 +1988,8 @@ export default function ZurFreigabeUI({
                   isEditing || pending ? "opacity-95" : "hover:bg-[#fbfbfc]"
                 }`}
               >
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="min-w-0">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] xl:gap-5">
+                  <div className="min-w-0 space-y-4">
                     <div className="flex items-center gap-2 flex-wrap">
                       <label className="flex items-center gap-2 text-sm text-gray-700 select-none">
                         <input
@@ -1878,338 +2063,482 @@ export default function ZurFreigabeUI({
                       >
                         {qScore !== null ? `Qualität ${qScore}/100` : "Qualität offen"}
                       </div>
-
-                      {(() => {
-                        const open = !!reasonOpen[message.id];
-                        return (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setReasonOpen((prev) => ({
-                                ...prev,
-                                [message.id]: !open,
-                              }));
-                            }}
-                            className={`text-xs px-2 py-1 rounded-full border transition-colors ${
-                              open
-                                ? "border-amber-300 bg-amber-50 text-amber-900"
-                                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                            }`}
-                            title="Warum ist diese Nachricht zur Freigabe?"
-                          >
-                            Details
-                          </button>
-                        );
-                      })()}
                     </div>
 
-                    {(() => {
-                      const full = String(message.text ?? "");
-                      const isOpen = !!expandedText[message.id];
-                      const tooLong =
-                        full.length > 260 || full.split("\n").length > 3;
-                      const preview =
-                        full.length > 260 ? `${full.slice(0, 260)}…` : full;
-
-                      return (
-                        <div className="mt-2">
-                          <p
-                            className={`text-sm text-gray-700 ${isOpen ? "" : "line-clamp-2"}`}
-                          >
-                            {isOpen ? full : preview}
-                          </p>
-
-                          {tooLong && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setExpandedText((prev) => ({
-                                  ...prev,
-                                  [message.id]: !isOpen,
-                                }));
-                              }}
-                              className="mt-2 text-xs px-2 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                              title={
-                                isOpen ? "Text einklappen" : "Volltext anzeigen"
-                              }
-                            >
-                              {isOpen
-                                ? "Volltext ausblenden"
-                                : "Volltext anzeigen"}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    <div className={`mt-3 inline-flex items-start gap-2 rounded-xl border px-3 py-2 text-xs ${recommendation.cls}`}>
-                      <span className="font-semibold">{recommendation.label}:</span>
-                      <span>{recommendation.detail}</span>
-                    </div>
-
-                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2">
-                      <div className="text-[11px] font-semibold text-amber-900">
-                        Warum Freigabe?
-                      </div>
-                      <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-800">
-                        {why.reasons.map((reason, idx) => (
-                          <li key={`${message.id}-why-${idx}`}>{reason}</li>
-                        ))}
-                      </ul>
-                      <div className="mt-2 text-xs text-gray-800">
-                        <span className="font-semibold">Empfehlung:</span>{" "}
-                        {why.recommendation}
-                      </div>
-                    </div>
-
-                    {(() => {
-                      const rows = buildReasonRows(message);
-                      const open = !!reasonOpen[message.id];
-                      if (!open) return null;
-
-                      return (
+                    <div
+                      className="grid gap-2 rounded-2xl border app-surface-muted p-3 sm:grid-cols-2 xl:grid-cols-4"
+                      data-tour="approval-review-order"
+                    >
+                      {[
+                        {
+                          index: "1",
+                          title: "Original",
+                          detail: "Entwurf zuerst lesen",
+                        },
+                        {
+                          index: "2",
+                          title: "Vorschlag",
+                          detail: "Optional anpassen",
+                        },
+                        {
+                          index: "3",
+                          title: "Änderungen",
+                          detail: "Grund und Diff prüfen",
+                        },
+                        {
+                          index: "4",
+                          title: "Entscheiden",
+                          detail: "Senden oder ablehnen",
+                        },
+                      ].map((step) => (
                         <div
-                          className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/60 px-4 py-3"
-                          onClick={(e) => e.stopPropagation()}
+                          key={`${message.id}-${step.index}`}
+                          className="rounded-xl border border-gray-200 bg-white px-3 py-2"
                         >
-                          <div className="text-xs font-semibold text-amber-900 mb-2">
-                            Warum ist diese Nachricht zur Freigabe?
-                          </div>
-
-                          <div className="space-y-2">
-                            {rows.map((r, idx) => (
-                              <div key={idx} className="text-xs text-gray-900">
-                                <div className="font-medium text-gray-900">
-                                  {r.label}
-                                </div>
-                                <pre className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-gray-800">
-                                  {r.value}
-                                </pre>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-[11px] font-semibold text-gray-700">
+                              {step.index}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="app-text-meta-label text-gray-800">
+                                {step.title}
                               </div>
-                            ))}
-                          </div>
-
-                          <div className="mt-2 text-[11px] text-gray-600">
-                            Hinweis: Wenn Autosend deaktiviert ist oder
-                            Sicherheitsregeln greifen (z.B. no-reply, Billing,
-                            niedrige Confidence), landet die Nachricht hier zur
-                            Kontrolle.
+                              <div className="text-xs text-gray-600">
+                                {step.detail}
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      );
-                    })()}
-
-                    <div className="mt-3 rounded-xl border border-gray-200 bg-[#fbfbfc] px-3 py-3">
-                      <div className="text-[11px] font-semibold text-gray-700">
-                        Entscheidungsgrund
-                      </div>
-                      <div className="mt-1 text-[11px] text-gray-600">
-                        Bei „Speichern & Freigeben“ und „Ablehnen“ ist ein Grund
-                        verpflichtend. Bei direkter Freigabe optional.
-                      </div>
-                      <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-                        <select
-                          value={decisionReasonById[message.id] || ""}
-                          onChange={(e) =>
-                            setDecisionReasonById((prev) => ({
-                              ...prev,
-                              [message.id]: e.target.value,
-                            }))
-                          }
-                          className="w-full px-3 py-2 rounded-xl text-sm border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                        >
-                          <option value="">Grund wählen…</option>
-                          {APPROVAL_REASON_OPTIONS.map((opt) => (
-                            <option key={`${message.id}-${opt.value}`} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          value={decisionNoteById[message.id] || ""}
-                          onChange={(e) =>
-                            setDecisionNoteById((prev) => ({
-                              ...prev,
-                              [message.id]: e.target.value.slice(0, 240),
-                            }))
-                          }
-                          placeholder="Optionaler Hinweis"
-                          className="w-full px-3 py-2 rounded-xl text-sm border border-gray-200 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                        />
-                      </div>
+                      ))}
                     </div>
 
-                    {/* Attachments preview */}
-                    {(() => {
-                      const atts = normalizeAttachments(message as any);
-                      if (atts.length === 0) return null;
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)]">
+                      <div className="space-y-4">
+                        <section
+                          className="rounded-2xl border app-surface-panel p-4"
+                          data-tour="approval-original"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="app-text-meta-label">1. Original</div>
+                              <div className="app-text-helper mt-1">
+                                Das ist der automatisch erzeugte Entwurf vor deiner Freigabe.
+                              </div>
+                            </div>
+                            <div
+                              className={`inline-flex items-start gap-2 rounded-xl border px-3 py-2 text-xs ${recommendation.cls}`}
+                            >
+                              <span className="font-semibold">
+                                {recommendation.label}:
+                              </span>
+                              <span>{recommendation.detail}</span>
+                            </div>
+                          </div>
 
-                      const open = !!previewOpen[message.id];
-                      const map = previewUrls[message.id] || {};
+                          <div className="mt-3 rounded-xl border border-gray-200 app-surface-muted px-4 py-3">
+                            <p
+                              className={`text-sm leading-relaxed text-gray-800 ${isTextOpen ? "" : "line-clamp-4"}`}
+                            >
+                              {isTextOpen ? fullText : previewText}
+                            </p>
+                          </div>
 
-                      return (
-                        <div className="mt-3">
-                          <button
-                            type="button"
-                            data-tour="approval-attachments"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!open) ensurePreviews(message);
-                              else
-                                setPreviewOpen((prev) => ({
-                                  ...prev,
-                                  [message.id]: false,
-                                }));
-                            }}
-                            className="text-sm px-3 py-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50"
-                          >
-                            {open
-                              ? "Anhänge ausblenden"
-                              : `Anhänge anzeigen (${atts.length})`}
-                          </button>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            {tooLong && (
+                              <AppButton
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedText((prev) => ({
+                                    ...prev,
+                                    [message.id]: !isTextOpen,
+                                  }));
+                                }}
+                                title={
+                                  isTextOpen ? "Text einklappen" : "Volltext anzeigen"
+                                }
+                              >
+                                {isTextOpen
+                                  ? "Volltext ausblenden"
+                                  : "Volltext anzeigen"}
+                              </AppButton>
+                            )}
 
-                          {open && (
-                            <div className="mt-2 grid gap-2">
-                              {atts.map((a) => {
-                                const url = map[a.path];
+                            {attachments.length > 0 && (
+                              <AppButton
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                data-tour="approval-attachments"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!attachmentsOpen) ensurePreviews(message);
+                                  else
+                                    setPreviewOpen((prev) => ({
+                                      ...prev,
+                                      [message.id]: false,
+                                    }));
+                                }}
+                              >
+                                {attachmentsOpen
+                                  ? "Anhänge ausblenden"
+                                  : `Anhänge anzeigen (${attachments.length})`}
+                              </AppButton>
+                            )}
+                          </div>
+
+                          {attachmentsOpen && (
+                            <div className="mt-3 grid gap-2">
+                              {attachments.map((attachment) => {
+                                const url = attachmentUrls[attachment.path];
                                 const label =
-                                  a.name || a.path.split("/").pop() || "Anhang";
+                                  attachment.name ||
+                                  attachment.path.split("/").pop() ||
+                                  "Anhang";
+
                                 return (
                                   <div
-                                    key={a.path}
-                                    className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-[#fbfbfc] px-4 py-3"
+                                    key={attachment.path}
+                                    className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3"
                                   >
                                     <div className="min-w-0">
-                                      <div className="text-sm font-medium text-gray-900 truncate">
+                                      <div className="truncate text-sm font-medium text-gray-900">
                                         📎 {label}
                                       </div>
-                                      <div className="text-xs text-gray-600 mt-1">
-                                        {a.mime ? a.mime : "Datei"}{" "}
-                                        {a.size
-                                          ? `· ${formatBytes(a.size)}`
+                                      <div className="mt-1 text-xs text-gray-600">
+                                        {attachment.mime ? attachment.mime : "Datei"}
+                                        {attachment.size
+                                          ? ` · ${formatBytes(attachment.size)}`
                                           : ""}
                                       </div>
                                     </div>
-
-                                    <div className="flex items-center gap-2">
-                                      {url ? (
-                                        <a
-                                          href={url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          onClick={(e) => e.stopPropagation()}
-                                          className="px-3 py-2 rounded-xl text-sm border border-gray-200 bg-white hover:bg-gray-50"
-                                        >
-                                          Vorschau
-                                        </a>
-                                      ) : (
-                                        <span className="text-xs text-gray-500">
-                                          Vorschau nicht verfügbar
-                                        </span>
-                                      )}
-                                    </div>
+                                    {url ? (
+                                      <a
+                                        href={url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="app-focusable inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                                      >
+                                        Vorschau
+                                      </a>
+                                    ) : (
+                                      <span className="text-xs text-gray-500">
+                                        Vorschau nicht verfügbar
+                                      </span>
+                                    )}
                                   </div>
                                 );
                               })}
                               <div className="text-[11px] text-gray-500">
-                                Vorschau-Links sind kurz gültig (Sicherheit).
+                                Vorschau-Links sind aus Sicherheitsgründen nur kurz gültig.
                               </div>
                             </div>
                           )}
-                        </div>
-                      );
-                    })()}
+                        </section>
 
-                    {(actionError[message.id] ||
-                      (message.send_status &&
-                        String(message.send_status).toLowerCase() ===
-                          "failed" &&
-                        message.send_error)) && (
-                      <div className="mt-3 rounded-xl border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-sm">
-                        {actionError[message.id] || message.send_error}
+                        <section
+                          className="rounded-2xl border app-surface-panel p-4"
+                          data-tour="approval-changes"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="app-text-meta-label">3. Änderungen</div>
+                              <div className="app-text-helper mt-1">
+                                Prüfe Freigabegrund, wähle deinen Entscheidungsgrund und kontrolliere bei Bedarf das Diff.
+                              </div>
+                            </div>
+                            <AppButton
+                              type="button"
+                              variant={isReasonOpen ? "tertiary" : "secondary"}
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReasonOpen((prev) => ({
+                                  ...prev,
+                                  [message.id]: !isReasonOpen,
+                                }));
+                              }}
+                              title="Warum ist diese Nachricht zur Freigabe?"
+                            >
+                              {isReasonOpen ? "Details ausblenden" : "Details anzeigen"}
+                            </AppButton>
+                          </div>
+
+                          <div
+                            className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-3"
+                            data-tour="approval-reason-block"
+                          >
+                            <div className="text-[11px] font-semibold text-amber-900">
+                              Warum Freigabe?
+                            </div>
+                            <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-gray-800">
+                              {why.reasons.map((reason, idx) => (
+                                <li key={`${message.id}-why-${idx}`}>{reason}</li>
+                              ))}
+                            </ul>
+                            <div className="mt-2 text-xs text-gray-800">
+                              <span className="font-semibold">Empfehlung:</span>{" "}
+                              {why.recommendation}
+                            </div>
+                          </div>
+
+                          {isReasonOpen && (
+                            <div
+                              className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/60 px-4 py-3"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="mb-2 text-xs font-semibold text-amber-900">
+                                Warum ist diese Nachricht zur Freigabe?
+                              </div>
+
+                              <div className="space-y-2">
+                                {reasonRows.map((row, idx) => (
+                                  <div key={idx} className="text-xs text-gray-900">
+                                    <div className="font-medium text-gray-900">
+                                      {row.label}
+                                    </div>
+                                    <pre className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-gray-800">
+                                      {row.value}
+                                    </pre>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="mt-2 text-[11px] text-gray-600">
+                                Hinweis: Wenn Autosenden deaktiviert ist oder Sicherheitsregeln greifen, landet die Nachricht hier zur Kontrolle.
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="mt-3 rounded-xl border border-gray-200 app-surface-muted px-3 py-3">
+                            <div className="text-[11px] font-semibold text-gray-700">
+                              Entscheidungsgrund
+                            </div>
+                            <div className="mt-1 text-[11px] text-gray-600">
+                              Für „{uiActionCopy.saveAndSend}“ und „Ablehnen“ ist ein Grund verpflichtend. Für „{uiActionCopy.sendApprove}“ bleibt er optional.
+                            </div>
+                            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                              <select
+                                value={decisionReasonById[message.id] || ""}
+                                onChange={(e) =>
+                                  setDecisionReasonById((prev) => ({
+                                    ...prev,
+                                    [message.id]: e.target.value,
+                                  }))
+                                }
+                                className="app-field w-full rounded-xl border px-3 py-2 text-sm"
+                              >
+                                <option value="">Grund wählen…</option>
+                                {APPROVAL_REASON_OPTIONS.map((opt) => (
+                                  <option
+                                    key={`${message.id}-${opt.value}`}
+                                    value={opt.value}
+                                  >
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                value={decisionNoteById[message.id] || ""}
+                                onChange={(e) =>
+                                  setDecisionNoteById((prev) => ({
+                                    ...prev,
+                                    [message.id]: e.target.value.slice(0, 240),
+                                  }))
+                                }
+                                placeholder="Optionaler Hinweis"
+                                className="app-field w-full rounded-xl border px-3 py-2 text-sm"
+                              />
+                            </div>
+                          </div>
+
+                          {isEditing && (
+                            <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                  <div className="text-[11px] font-semibold text-gray-700">
+                                    Änderungen
+                                  </div>
+                                  <div className="mt-1 text-[11px] text-gray-600">
+                                    {changedRows.length > 0
+                                      ? `${changedRows.length} geänderte Zeilen im Vergleich zum Original`
+                                      : "Noch keine Änderung im Vergleich zum Original"}
+                                  </div>
+                                </div>
+                                <StatusBadge
+                                  tone={changedRows.length > 0 ? "brand" : "neutral"}
+                                >
+                                  {changedRows.length > 0
+                                    ? "Diff aktiv"
+                                    : "Noch unverändert"}
+                                </StatusBadge>
+                              </div>
+                              <div className="mt-3 space-y-1">
+                                {diffRows.map((row, idx) => (
+                                  <div
+                                    key={idx}
+                                    className={`grid grid-cols-1 gap-2 rounded-xl px-3 py-2 text-xs md:grid-cols-2 ${
+                                      row.changed
+                                        ? "border border-amber-200 bg-amber-50"
+                                        : "bg-[#fbfbfc]"
+                                    }`}
+                                  >
+                                    <div className="whitespace-pre-wrap text-gray-700">
+                                      {row.left || " "}
+                                    </div>
+                                    <div className="whitespace-pre-wrap font-medium text-gray-900">
+                                      {row.right || " "}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </section>
+                      </div>
+
+                      <div className="space-y-4">
+                        <section
+                          className="rounded-2xl border app-surface-panel p-4"
+                          data-tour="approval-proposal"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="app-text-meta-label">2. Vorschlag</div>
+                              <div className="app-text-helper mt-1">
+                                Das ist die Version, die du freigibst. Bearbeite nur, wenn Inhalt, Ton oder Guardrails angepasst werden müssen.
+                              </div>
+                            </div>
+                            <StatusBadge
+                              tone={isEditing && changedRows.length > 0 ? "brand" : "neutral"}
+                            >
+                              {isEditing
+                                ? changedRows.length > 0
+                                  ? "Bearbeitung aktiv"
+                                  : "Editor offen"
+                                : "Entspricht aktuell dem Original"}
+                            </StatusBadge>
+                          </div>
+
+                          {isEditing ? (
+                            <div
+                              className="mt-3"
+                              data-tour="approval-editor"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                              }}
+                            >
+                              <div className="rounded-xl border border-gray-200 bg-white p-4">
+                                <div className="mb-2 text-xs font-medium text-gray-600">
+                                  Vorschlag
+                                </div>
+                                <textarea
+                                  className="app-field w-full rounded-xl border px-4 py-3 text-sm"
+                                  rows={10}
+                                  value={editedText}
+                                  onChange={(e) => setEditedText(e.target.value)}
+                                />
+                              </div>
+
+                              <div className="mt-3 rounded-xl border border-gray-200 app-surface-muted px-3 py-3">
+                                <div className="text-[11px] font-semibold text-gray-700">
+                                  Bearbeitungsstatus
+                                </div>
+                                <div className="mt-1 text-sm text-gray-800">
+                                  {changedRows.length > 0
+                                    ? "Der Vorschlag wurde geändert und wird vor dem Freigeben gegen das Original geprüft."
+                                    : "Der Vorschlag ist noch unverändert. Du kannst direkt freigeben oder erst anpassen."}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-3 rounded-xl border border-gray-200 app-surface-muted px-4 py-4">
+                              <div className="text-sm font-medium text-gray-900">
+                                Aktueller Vorschlag
+                              </div>
+                              <div className="mt-1 text-sm text-gray-700">
+                                Dieser Versandvorschlag entspricht aktuell dem Original. Wenn du Ton, Fakten oder Risiko reduzieren willst, öffne zuerst die Bearbeitung.
+                              </div>
+                            </div>
+                          )}
+                        </section>
+
+                        {hasBlockingError && (
+                          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                            {actionError[message.id] || message.send_error}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <aside
+                    className="rounded-2xl border app-surface-panel p-4 xl:sticky xl:top-28 xl:h-fit"
+                    data-tour="approval-decision"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="app-text-meta-label">4. Entscheiden</div>
+                        <div className="app-text-helper mt-1">
+                          Entscheide jetzt, ob der Vorschlag direkt rausgeht, angepasst wird oder abgelehnt werden soll.
+                        </div>
+                      </div>
+                      <StatusBadge
+                        tone={
+                          String(message.send_status || "").toLowerCase() === "failed"
+                            ? "danger"
+                            : pending
+                              ? "warning"
+                              : "brand"
+                        }
+                      >
+                        {pending
+                          ? "Wird verarbeitet"
+                          : String(message.send_status || "").toLowerCase() ===
+                              "failed"
+                            ? "Erneut prüfen"
+                            : "Zum Senden bereit"}
+                      </StatusBadge>
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-gray-200 app-surface-muted px-3 py-3 text-sm text-gray-700">
+                      {isEditing
+                        ? "Die Bearbeitung ist offen. Prüfe jetzt den Grund und sende danach die aktualisierte Version."
+                        : "Direkte Freigabe ist möglich. Wenn du noch eingreifen willst, öffne zuerst den Vorschlag."}
+                    </div>
+
+                    {!hasDecisionReason && isEditing && (
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                        Für „{uiActionCopy.saveAndSend}“ brauchst du zuerst einen Entscheidungsgrund.
                       </div>
                     )}
 
-                    {/* Editor */}
-                    {isEditing && (
-                      <div
-                        className="mt-4"
-                        data-tour="approval-editor"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                        }}
-                      >
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div className="rounded-2xl border border-gray-200 bg-[#fbfbfc] p-4">
-                            <div className="text-xs font-medium text-gray-600 mb-2">
-                              Original
-                            </div>
-                            <pre className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">
-                              {String(message.text ?? "")}
-                            </pre>
-                          </div>
-
-                          <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                            <div className="text-xs font-medium text-gray-600 mb-2">
-                              Bearbeitet
-                            </div>
-                            <textarea
-                              className="w-full px-4 py-3 rounded-xl text-sm bg-white border border-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
-                              rows={6}
-                              value={editedText}
-                              onChange={(e) => setEditedText(e.target.value)}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-4">
-                          <div className="text-xs font-medium text-gray-600 mb-2">
-                            Diff (Zeilen)
-                          </div>
-                          <div className="space-y-1">
-                            {safeLineDiff(
-                              String(message.text ?? ""),
-                              editedText,
-                            ).map((r, idx) => (
-                              <div
-                                key={idx}
-                                className={`grid grid-cols-2 gap-3 rounded-xl px-3 py-2 text-xs ${
-                                  r.changed
-                                    ? "bg-amber-50 border border-amber-200"
-                                    : "bg-[#fbfbfc]"
-                                }`}
-                              >
-                                <div className="whitespace-pre-wrap text-gray-800">
-                                  {r.left || " "}
-                                </div>
-                                <div className="whitespace-pre-wrap text-gray-900 font-medium">
-                                  {r.right || " "}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="mt-2 flex items-center gap-2">
-                          {!decisionReasonById[message.id] && (
-                            <span className="text-xs rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-amber-900">
-                              Für „Speichern & Freigeben“ bitte Grund wählen.
-                            </span>
-                          )}
-                          <button
+                    <div
+                      className="mt-4 flex flex-wrap items-center gap-2 w-full"
+                      data-tour="approval-card-actions"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                      }}
+                    >
+                      {isEditing ? (
+                        <>
+                          <AppButton
                             disabled={pending}
                             data-tour="approval-editor-send"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleSaveEditedMessage(message.id);
                             }}
-                            className="px-4 py-2 rounded-xl text-sm font-medium bg-gray-900 border border-gray-900 text-amber-200 hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                            variant="primary"
+                            fullWidth
                           >
-                            {pending ? "Sende…" : "Speichern & Freigeben"}
-                          </button>
-                          <button
+                            {pending ? "Wird gesendet…" : uiActionCopy.saveAndSend}
+                          </AppButton>
+
+                          <AppButton
                             disabled={pending}
                             data-tour="approval-editor-cancel"
                             onClick={(e) => {
@@ -2218,73 +2547,75 @@ export default function ZurFreigabeUI({
                               setEditedText("");
                               setErr(message.id, null);
                             }}
-                            className="px-4 py-2 rounded-xl text-sm bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            variant="utility"
+                            fullWidth
                           >
-                            Abbrechen
-                          </button>
+                            {uiActionCopy.discardChanges}
+                          </AppButton>
+                        </>
+                      ) : (
+                        <AppButton
+                          disabled={pending}
+                          data-tour="approval-send"
+                          onClick={() => handleApprove(message.id)}
+                          variant="primary"
+                          fullWidth
+                          title={uiActionCopy.sendApprove}
+                        >
+                          {pending
+                            ? "Wird gesendet…"
+                            : String(message.send_status || "").toLowerCase() ===
+                                "failed"
+                              ? uiActionCopy.resend
+                              : uiActionCopy.sendApprove}
+                        </AppButton>
+                      )}
+
+                      <AppButton
+                        disabled={pending || isEditing}
+                        data-tour="approval-edit"
+                        onClick={() => {
+                          if (editingMessageId) return;
+                          handleEdit(message.id, fullText);
+                        }}
+                        variant="secondary"
+                        fullWidth
+                        title={uiActionCopy.editProposal}
+                      >
+                        {uiActionCopy.editProposal}
+                      </AppButton>
+
+                      <AppButton
+                        type="button"
+                        disabled={isEditing || pending}
+                        onClick={() =>
+                          router.push(`/app/nachrichten/${message.lead_id}`)
+                        }
+                        variant="tertiary"
+                        fullWidth
+                        title={uiActionCopy.conversationOpen}
+                      >
+                        {uiActionCopy.conversationOpen}
+                      </AppButton>
+
+                      <AppButton
+                        disabled={pending || isEditing}
+                        data-tour="approval-reject"
+                        onClick={() => handleReject(message.id)}
+                        variant="destructive"
+                        fullWidth
+                        title="Ablehnen"
+                      >
+                        Ablehnen
+                      </AppButton>
+
+                      {!isEditing && hasDecisionReason && (
+                        <div className="w-full rounded-xl border border-gray-200 app-surface-muted px-3 py-2 text-xs text-gray-700">
+                          Entscheidungsgrund gesetzt. Direkte Freigabe bleibt möglich, Ablehnen und Bearbeiten protokollieren den gewählten Grund verpflichtend.
                         </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div
-                    className="flex flex-wrap items-center gap-2 w-full xl:w-auto"
-                    data-tour="approval-card-actions"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                    }}
-                  >
-                    <button
-                      type="button"
-                      disabled={isEditing || pending}
-                      onClick={() =>
-                        router.push(`/app/nachrichten/${message.lead_id}`)
-                      }
-                      className="px-3 py-2 rounded-xl text-sm border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
-                      title="Konversation öffnen"
-                    >
-                      Konversation öffnen
-                    </button>
-
-                    <button
-                      disabled={pending || isEditing}
-                      data-tour="approval-send"
-                      onClick={() => handleApprove(message.id)}
-                      className="px-3 py-2 rounded-xl text-sm border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
-                      title="Senden"
-                    >
-                      {pending
-                        ? "…"
-                        : String(message.send_status || "").toLowerCase() ===
-                            "failed"
-                          ? "Erneut senden"
-                          : "Freigeben"}
-                    </button>
-
-                    <button
-                      disabled={pending || isEditing}
-                      data-tour="approval-edit"
-                      onClick={() => {
-                        if (editingMessageId) return;
-                        handleEdit(message.id, String(message.text ?? ""));
-                      }}
-                      className="px-3 py-2 rounded-xl text-sm border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
-                      title="Vor dem Senden bearbeiten"
-                    >
-                      Bearbeiten
-                    </button>
-
-                    <button
-                      disabled={pending || isEditing}
-                      data-tour="approval-reject"
-                      onClick={() => handleReject(message.id)}
-                      className="px-3 py-2 rounded-xl text-sm border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
-                      title="Ablehnen"
-                    >
-                      Ablehnen
-                    </button>
-                  </div>
+                      )}
+                    </div>
+                  </aside>
                 </div>
               </div>
             );
@@ -2304,6 +2635,21 @@ export default function ZurFreigabeUI({
               </div>
             </div>
           )}
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4 md:hidden">
+          <div className="text-sm font-semibold text-gray-900">
+            Prüfbarkeit & Verlauf
+          </div>
+          <div className="mt-1 text-xs text-gray-700">
+            Jede Entscheidung bleibt nachvollziehbar: Eingang, Qualitäts-Score,
+            Freigabe und Versandstatus mit Zeitstempel.
+          </div>
+          <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-gray-700">
+            <li>Freigabegründe sind pro Entwurf sichtbar.</li>
+            <li>Versandfehler bleiben erhalten und sind erneut prüfbar.</li>
+            <li>Im Konversationsverlauf siehst du den Trust-Log pro Fall.</li>
+          </ul>
         </div>
       </div>
     </div>

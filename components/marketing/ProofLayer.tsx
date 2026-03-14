@@ -18,7 +18,7 @@ export default function ProofLayer({
   className = "",
 }: ProofLayerProps) {
   const trustHref = context === "trust" ? "/sicherheit" : "/trust";
-  const trustLabel = context === "trust" ? "Sicherheitsseite" : "Trust Center";
+  const trustLabel = context === "trust" ? "Sicherheitsseite" : "Trust-Hub";
 
   return (
     <article className={`card-base ${compact ? "p-5" : "p-6 md:p-8"} ${className}`}>

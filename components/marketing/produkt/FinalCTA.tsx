@@ -1,17 +1,19 @@
 import Container from "@/components/marketing/Container";
 import TrackedLink from "@/components/marketing/TrackedLink";
+import { STARTER_PUBLIC_PRICE_LABEL } from "@/lib/billing/public-pricing";
+import { MARKETING_FAQ_CTA_LABEL, MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
 
 const micro = [
   "14 Tage Testphase",
-  "Danach Starter",
+  STARTER_PUBLIC_PRICE_LABEL,
   "Kündbar",
   "Autopilot pausierbar",
-  "Unklar → Freigabe",
+  "Freigabe bei fehlenden Angaben",
 ];
 
 const trustNotes = [
-  "Auto-Versand nur bei klarer Standardsituation",
-  "Unklare oder heikle Fälle landen in Ihrer Freigabe",
+  "Auto-Versand nur bei sauberem Objektbezug, vollständigen Angaben und prüfbarem Empfänger",
+  "Freigabe bei fehlenden Informationen, no-reply-Absendern oder sensiblen Inhalten",
   "Qualitätschecks laufen vor jedem Auto-Versand",
   "Verlauf zeigt Eingang, Entscheidung und Versand",
 ];
@@ -26,10 +28,11 @@ export default function FinalCTA() {
 
           <div className="relative grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-start">
             <div>
-              <h2 className="h2 text-balance">Testen Sie Advaic 14 Tage kostenlos</h2>
+              <h2 className="h2 text-balance">Prüfen Sie 14 Tage im echten Postfach, ob Advaic zu Ihrem Prozess passt.</h2>
               <p className="body mt-4 max-w-[62ch] text-[var(--muted)]">
-                Weniger Postfach, klarere Antworten und verlässliche Freigabelogik. Danach läuft Starter monatlich
-                weiter.
+                Testen Sie 14 Tage im echten Postfach. Danach läuft Starter für {STARTER_PUBLIC_PRICE_LABEL} weiter,
+                wenn Antworten schneller rausgehen und die Freigabe nur dort greift, wo Angaben fehlen oder der
+                Versand bewusst geprüft werden muss.
               </p>
 
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -42,7 +45,7 @@ export default function FinalCTA() {
                   section="produkt-final-cta"
                   meta={{ section: "produkt-final-cta" }}
                 >
-                  14 Tage kostenlos starten
+                  {MARKETING_PRIMARY_CTA_LABEL}
                 </TrackedLink>
                 <TrackedLink
                   href="/produkt#faq"
@@ -53,7 +56,7 @@ export default function FinalCTA() {
                   section="produkt-final-cta"
                   meta={{ section: "produkt-final-cta" }}
                 >
-                  Fragen stellen
+                  {MARKETING_FAQ_CTA_LABEL}
                 </TrackedLink>
               </div>
 

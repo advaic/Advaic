@@ -1,0 +1,11 @@
+Automatisierung scheitert im Alltag selten daran, dass eine erste Antwort formuliert werden kann. Sie scheitert daran, dass Ton, Inhalt und Nachfasslogik irgendwann nicht mehr sauber zusammenpassen.
+
+Darum beginnt Advaic nicht bei einer beliebigen Textausgabe, sondern bei einem gepflegten Setup. Tonalität, Länge, Guardrails und gewünschte Formulierungen werden bewusst eingestellt. Änderungen bleiben nicht abstrakt, sondern werden direkt an einer Vorschau sichtbar.
+
+Bevor etwas automatisch versendet wird, laufen Qualitätschecks. Dabei geht es nicht nur um Stil, sondern auch um Relevanz, Vollständigkeit, Lesbarkeit und Risiko. So wird verhindert, dass eine formal saubere, aber inhaltlich unpassende Nachricht trotzdem automatisch rausgeht.
+
+Genauso wichtig sind Follow-ups. Sie dürfen nicht einfach weiterlaufen, wenn ein Kontakt reagiert, ein Fall unklar wird oder ein Team bewusst übernehmen will. Deshalb bleiben Follow-up-Status und Entscheidungslogik im Kontext des Falls sichtbar. Und jeder Schritt wird im Verlauf dokumentiert.
+
+So entsteht ein System, das nicht nur schnell antwortet, sondern Qualität und Nachfassen im Live-Betrieb kontrollierbar hält.
+
+Wenn Sie sehen wollen, wie Stil, Qualitätsprüfung und Follow-up-Logik in Ihrem Prozess zusammenspielen, sehen Sie sich das Produkt im Detail an oder testen Sie Advaic direkt im echten Postfach.

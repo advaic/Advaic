@@ -1,3 +1,5 @@
+import { hasInternalPremiumAccess, isOwnerUserId } from "@/lib/auth/ownerAccess";
+
 const DEFAULT_TRIAL_DAYS = 14;
 const MIN_TRIAL_DAYS = 1;
 const MAX_TRIAL_DAYS = 90;
@@ -36,6 +38,9 @@ export type CommercialAccess = {
     status: string;
     entitled: boolean;
   };
+  internal_override?: boolean;
+  internal_override_reason?: "owner" | "internal_premium";
+  owner_override?: boolean;
 };
 
 function safeInt(v: unknown): number | null {
@@ -167,6 +172,41 @@ export function deriveCommercialAccess(args: {
   };
 }
 
+export function applyInternalCommercialAccessOverride(
+  agentId: string | null | undefined,
+  access: CommercialAccess,
+): CommercialAccess {
+  if (!agentId) return access;
+
+  const overrideReason = isOwnerUserId(agentId)
+    ? "owner"
+    : hasInternalPremiumAccess(agentId)
+      ? "internal_premium"
+      : null;
+
+  if (!overrideReason) return access;
+
+  return {
+    ...access,
+    state: "paid_active",
+    trial_day_number: access.trial_days_total,
+    trial_days_remaining: 0,
+    is_urgent: false,
+    upgrade_required: false,
+    billing: {
+      plan_key:
+        access.billing.plan_key && access.billing.plan_key !== "free"
+          ? access.billing.plan_key
+          : "starter_monthly",
+      status: "active",
+      entitled: true,
+    },
+    internal_override: true,
+    internal_override_reason: overrideReason,
+    owner_override: overrideReason === "owner",
+  };
+}
+
 export async function getCommercialAccess(args: {
   supabase: SupabaseLike;
   agentId: string;
@@ -193,12 +233,15 @@ export async function getCommercialAccess(args: {
     String(subErr?.code || "") === "42P01" ||
     String(subErr?.message || "").toLowerCase().includes("billing_subscriptions");
 
-  const access = deriveCommercialAccess({
-    agentCreatedAt: agent?.created_at ? String(agent.created_at) : null,
-    subscription: missingTable
-      ? null
-      : ((subscription || null) as SubscriptionSnapshot | null),
-  });
+  const access = applyInternalCommercialAccessOverride(
+    agentId,
+    deriveCommercialAccess({
+      agentCreatedAt: agent?.created_at ? String(agent.created_at) : null,
+      subscription: missingTable
+        ? null
+        : ((subscription || null) as SubscriptionSnapshot | null),
+    }),
+  );
 
   return {
     ok: !agentErr && (!subErr || missingTable),

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import {
+  applyInternalCommercialAccessOverride,
   deriveCommercialAccess,
   type CommercialAccess,
 } from "@/lib/billing/commercial-access";
@@ -394,18 +395,21 @@ async function run(req: NextRequest) {
     const agentId = String(row.id || "").trim();
     if (!agentId) continue;
 
-    const access = deriveCommercialAccess({
-      agentCreatedAt: row.created_at ? String(row.created_at) : null,
-      subscription: latestSubscriptionByAgent.get(agentId)
-        ? {
-            plan_key: latestSubscriptionByAgent.get(agentId)!.plan_key,
-            status: latestSubscriptionByAgent.get(agentId)!.status,
-            current_period_start: latestSubscriptionByAgent.get(agentId)!.current_period_start,
-            current_period_end: latestSubscriptionByAgent.get(agentId)!.current_period_end,
-            trial_end: latestSubscriptionByAgent.get(agentId)!.trial_end,
-          }
-        : null,
-    });
+    const access = applyInternalCommercialAccessOverride(
+      agentId,
+      deriveCommercialAccess({
+        agentCreatedAt: row.created_at ? String(row.created_at) : null,
+        subscription: latestSubscriptionByAgent.get(agentId)
+          ? {
+              plan_key: latestSubscriptionByAgent.get(agentId)!.plan_key,
+              status: latestSubscriptionByAgent.get(agentId)!.status,
+              current_period_start: latestSubscriptionByAgent.get(agentId)!.current_period_start,
+              current_period_end: latestSubscriptionByAgent.get(agentId)!.current_period_end,
+              trial_end: latestSubscriptionByAgent.get(agentId)!.trial_end,
+            }
+          : null,
+      }),
+    );
 
     if (access.state === "paid_active") continue;
 
