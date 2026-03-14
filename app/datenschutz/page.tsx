@@ -75,10 +75,10 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     id: "empfaenger-dienstleister",
     title: "5) Empfänger und Dienstleister",
     points: [
-      "Technische Infrastruktur- und Betriebsdienstleister (z. B. Hosting, Datenbank, Monitoring, Authentifizierung).",
-      "E-Mail- und Integrationsanbieter, die der Kunde aktiv verbindet (z. B. Gmail/Outlook/Portale).",
-      "KI-Dienstleister zur Klassifizierung, Entwurfserstellung und Qualitätsprüfung innerhalb der Produktlogik.",
-      "Zahlungsdienstleister für Abo-, Rechnungs- und Zahlungsabwicklung.",
+      "Technische Infrastruktur- und Betriebsdienstleister (z. B. Hosting, Datenbank, Monitoring, Authentifizierung); für steuerbare Infrastruktur werden bewusst europäische Serverregionen gewählt.",
+      "E-Mail- und Integrationsanbieter, die der Kunde aktiv verbindet (z. B. Gmail/Outlook/Portale); bei diesen Anbindungen bleibt die tatsächliche Region zusätzlich vom jeweiligen Tenant, Workspace oder Portal-Setup abhängig.",
+      "KI-Dienstleister zur Klassifizierung, Entwurfserstellung und Qualitätsprüfung innerhalb der Produktlogik; auch hier werden für Advaic bewusst europäische Betriebsregionen bevorzugt, soweit dies steuerbar ist.",
+      "Zahlungsdienstleister für Abo-, Rechnungs- und Zahlungsabwicklung; diese Dienste können trotz europäischer Grundkonfiguration globale Transferpfade enthalten.",
       "Eine Offenlegung gegenüber Behörden erfolgt ausschließlich bei gesetzlicher Verpflichtung.",
     ],
   },
@@ -86,6 +86,8 @@ const PRIVACY_SECTIONS: PrivacySection[] = [
     id: "drittland",
     title: "6) Drittlandübermittlungen",
     points: [
+      "Advaic wählt für steuerbare Dienste bewusst europäische Regionen und Setups, um unnötige Drittlandpfade nach Möglichkeit zu vermeiden.",
+      "Drittlandübermittlungen lassen sich dennoch nicht in jedem Fall vollständig ausschließen, insbesondere bei kundenseitig angebundenen Tenants/Workspaces oder globalen Zahlungsdiensten.",
       "Soweit Daten außerhalb der EU/des EWR verarbeitet werden, erfolgen Übermittlungen nur bei geeigneten Garantien.",
       "Als Garantien kommen insbesondere Angemessenheitsbeschlüsse und/oder Standardvertragsklauseln in Betracht.",
       "Ergänzende technische und organisatorische Schutzmaßnahmen werden risikobasiert berücksichtigt.",
