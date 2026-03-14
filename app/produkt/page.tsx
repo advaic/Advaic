@@ -6,6 +6,7 @@ import StickyTour from "@/components/marketing/produkt/StickyTour";
 import PolicyRules from "@/components/marketing/produkt/PolicyRules";
 import QualityChecks from "@/components/marketing/produkt/QualityChecks";
 import ApprovalInbox from "@/components/marketing/produkt/ApprovalInbox";
+import SystemOverview from "@/components/marketing/produkt/SystemOverview";
 import Setup from "@/components/marketing/produkt/Setup";
 import FAQ from "@/components/marketing/produkt/FAQ";
 import FinalCTA from "@/components/marketing/produkt/FinalCTA";
@@ -62,6 +63,7 @@ export default function ProduktPage() {
       <PolicyRules />
       <ApprovalInbox />
       <QualityChecks />
+      <SystemOverview />
       <Setup />
       <FAQ />
       <FinalCTA />

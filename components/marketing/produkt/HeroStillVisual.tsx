@@ -28,7 +28,7 @@ export default function HeroStillVisual() {
           ariaLabel="Produktvideo mit Inbox, Freigabe und Qualitätschecks"
           caption="Dieser Shot beantwortet eine Frage: sendet Advaic oder stoppt es bewusst?"
           captionClassName="hidden md:block"
-          mediaClassName="aspect-[4/3] object-[69%_14%] scale-[1.08] sm:aspect-video sm:scale-[1.1]"
+          mediaClassName="aspect-[4/3] object-[67%_13%] scale-[1.04] sm:aspect-video sm:scale-[1.06]"
           className="shadow-[0_24px_70px_rgba(15,23,42,0.12)]"
         />
       </div>

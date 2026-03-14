@@ -39,10 +39,14 @@ test.describe("marketing product", () => {
     await tour(page, "produkt-approval-visual").scrollIntoViewIfNeeded();
     await expect(tour(page, "produkt-approval-main-shot")).toBeVisible();
     await expect(tour(page, "produkt-approval-secondary-shot")).toBeVisible();
+    await tour(page, "produkt-system-overview").scrollIntoViewIfNeeded();
+    await expect(tour(page, "produkt-system-overview")).toBeVisible();
+    await expect(tour(page, "produkt-system-overview").locator('[data-tour="produkt-system-card"]')).toHaveCount(5);
+    await expect(tour(page, "produkt-system-pills")).toBeVisible();
     await tour(page, "produkt-trust-block").scrollIntoViewIfNeeded();
     await expect(tour(page, "produkt-trust-block")).toBeVisible();
     await expect(tour(page, "produkt-trust-artifacts")).toBeVisible();
-    await expect(tour(page, "produkt-trust-artifacts").locator('[data-tour="public-trust-artifact-card"]')).toHaveCount(4);
+    await expect(tour(page, "produkt-trust-artifacts").locator('[data-tour="public-trust-artifact-card"]')).toHaveCount(3);
     await expect(tour(page, "marketing-public-benchmark")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "FAQ" })).toBeVisible();
   });

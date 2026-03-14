@@ -23,7 +23,7 @@ export default function Setup() {
   return (
     <section id="setup" className="py-20 md:py-28">
       <Container>
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
           <div>
             <div className="max-w-[68ch]">
               <p className="section-kicker">Schritt 5 von 5</p>
@@ -73,6 +73,7 @@ export default function Setup() {
           >
             <PublicTrustArtifacts
               compact
+              rail
               framed={false}
               title="Vor dem Start öffentlich prüfen"
               description="Vor dem Go-live sollten Produktfluss, Sicherheitslogik, Unterlagen und Preis öffentlich prüfbar sein."
