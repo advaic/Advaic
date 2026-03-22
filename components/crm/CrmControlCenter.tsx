@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DraftClaimHighlight from "@/components/crm/DraftClaimHighlight";
 import OutboundEvidenceInspector, {
   type DraftEvidenceReview,
@@ -822,6 +822,7 @@ export default function CrmControlCenter({
   const [selectedProspectId, setSelectedProspectId] = useState<string | null>(
     initialData.prospects?.[0]?.id || null,
   );
+  const prospectWorkspaceRef = useRef<HTMLElement | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [notes, setNotes] = useState<ResearchNote[]>([]);
   const [messages, setMessages] = useState<OutreachMessage[]>([]);
@@ -1006,6 +1007,35 @@ export default function CrmControlCenter({
       setDetailLoading(false);
     }
   }, []);
+
+  const focusProspectWorkspace = useCallback(
+    async (
+      prospectId: string,
+      opts?: {
+        successMessage?: string | null;
+        pipelineQuery?: string | null;
+      },
+    ) => {
+      if (!prospectId) return;
+      setSelectedProspectId(prospectId);
+      if (typeof opts?.pipelineQuery === "string") {
+        setPipelineQuery(opts.pipelineQuery);
+      }
+      await loadProspectDetail(prospectId);
+      if (typeof window !== "undefined") {
+        window.requestAnimationFrame(() => {
+          prospectWorkspaceRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        });
+      }
+      if (opts?.successMessage) {
+        setSuccess(opts.successMessage);
+      }
+    },
+    [loadProspectDetail],
+  );
 
   useEffect(() => {
     if (!selectedProspectId && data.prospects?.[0]?.id) {
@@ -1468,6 +1498,14 @@ export default function CrmControlCenter({
     setNewDraftReview(item.review || null);
     setNewDraftReviewStale(false);
     setSuccess(`${item.company_name}: Draft in den Editor geladen.`);
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        prospectWorkspaceRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
   }
 
   async function logEvent(prospectId: string, eventType: string, label: string) {
@@ -1941,7 +1979,7 @@ export default function CrmControlCenter({
         `Research-Crawl fertig: ${pageCount} Seiten geprüft${secondaryCount > 0 ? `, ${secondaryCount} Zweitquellen verifiziert` : ""}.${researchSuffix}${contactSuffix}${changeSuffix}`,
       );
       await refresh();
-      await loadProspectDetail(prospectId);
+      await focusProspectWorkspace(prospectId);
     } catch (e: any) {
       setError(String(e?.message || "Enrichment fehlgeschlagen."));
     } finally {
@@ -1981,7 +2019,7 @@ export default function CrmControlCenter({
         : "";
       setSuccess(`${invalidatedPrefix}${json.summary}`);
       await refresh();
-      await loadProspectDetail(prospectId);
+      await focusProspectWorkspace(prospectId);
       return json;
     } catch (e: any) {
       setError(String(e?.message || "Kontakt-Reparatur fehlgeschlagen."));
@@ -2023,7 +2061,7 @@ export default function CrmControlCenter({
     }
 
     if (prospectId) {
-      setSelectedProspectId(prospectId);
+      await focusProspectWorkspace(prospectId);
     }
 
     if (code === "handle_reply_now") {
@@ -2951,9 +2989,10 @@ export default function CrmControlCenter({
                         <div className="flex flex-col gap-1.5">
                           <button
                             onClick={() => {
-                              setSelectedProspectId(item.prospect_id);
-                              setPipelineQuery(item.company_name);
-                              setSuccess(`Prospect ${item.company_name} im Fokus geöffnet.`);
+                              void focusProspectWorkspace(item.prospect_id, {
+                                pipelineQuery: item.company_name,
+                                successMessage: `Prospect ${item.company_name} im Fokus geöffnet.`,
+                              });
                             }}
                             className="rounded-lg border border-gray-200 px-2 py-1 text-xs hover:bg-gray-50"
                           >
@@ -3521,7 +3560,11 @@ export default function CrmControlCenter({
                       </Link>
                       <button
                         className="ml-2 text-xs text-gray-500 hover:underline"
-                        onClick={() => setSelectedProspectId(row.prospect_id)}
+                        onClick={() =>
+                          void focusProspectWorkspace(row.prospect_id, {
+                            successMessage: `${row.company_name} in der Schnellansicht geöffnet.`,
+                          })
+                        }
                       >
                         Schnellansicht
                       </button>
@@ -3779,7 +3822,11 @@ export default function CrmControlCenter({
                     </button>
                     <button
                       className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
-                      onClick={() => setSelectedProspectId(item.id)}
+                      onClick={() =>
+                        void focusProspectWorkspace(item.id, {
+                          successMessage: `${item.company_name} im Prospect-Bereich geöffnet.`,
+                        })
+                      }
                     >
                       Öffnen
                     </button>
@@ -3857,7 +3904,11 @@ export default function CrmControlCenter({
                     </button>
                     <button
                       className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
-                      onClick={() => setSelectedProspectId(prospect.id)}
+                      onClick={() =>
+                        void focusProspectWorkspace(prospect.id, {
+                          successMessage: `${prospect.company_name} im Prospect-Bereich geöffnet.`,
+                        })
+                      }
                     >
                       Öffnen
                     </button>
@@ -3940,7 +3991,11 @@ export default function CrmControlCenter({
                     </button>
                     <button
                       className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
-                      onClick={() => setSelectedProspectId(row.prospect_id)}
+                      onClick={() =>
+                        void focusProspectWorkspace(row.prospect_id, {
+                          successMessage: `${row.company_name} im Prospect-Bereich geöffnet.`,
+                        })
+                      }
                     >
                       Öffnen
                     </button>
@@ -4015,7 +4070,11 @@ export default function CrmControlCenter({
                   </button>
                   <button
                     className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
-                    onClick={() => setSelectedProspectId(item.prospect_id)}
+                    onClick={() =>
+                      void focusProspectWorkspace(item.prospect_id, {
+                        successMessage: `${item.company_name} im Prospect-Bereich geöffnet.`,
+                      })
+                    }
                   >
                     Prospect öffnen
                   </button>
@@ -4137,7 +4196,11 @@ export default function CrmControlCenter({
                       ) : null}
                       <button
                         className="text-gray-600 hover:underline"
-                        onClick={() => setSelectedProspectId(p.id)}
+                        onClick={() =>
+                          void focusProspectWorkspace(p.id, {
+                            successMessage: `${p.company_name} in der Schnellansicht geöffnet.`,
+                          })
+                        }
                       >
                         Schnellansicht
                       </button>
@@ -4247,7 +4310,7 @@ export default function CrmControlCenter({
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-12">
+      <section ref={prospectWorkspaceRef} className="grid gap-6 xl:grid-cols-12">
         <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm xl:col-span-4">
           <h3 className="text-base font-semibold text-gray-900">Prospect-Notizen</h3>
           <p className="mt-1 text-xs text-gray-600">

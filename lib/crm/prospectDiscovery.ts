@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import {
   buildResearchArtifactsFromCrawl,
   replaceResearchArtifacts,
@@ -35,6 +37,10 @@ const TOP_DISCOVERY_CITIES = [
   "Frankfurt am Main",
   "Duesseldorf",
 ];
+
+const execFileAsync = promisify(execFile);
+const DISCOVERY_SEARCH_USER_AGENT =
+  "Mozilla/5.0 (compatible; AdvaicCRMProspectDiscovery/1.0; +https://advaic.com)";
 
 type SearchResult = {
   title: string;
@@ -247,27 +253,58 @@ function parseDuckDuckGoResults(html: string, query: string, maxResults: number)
 }
 
 async function searchDuckDuckGo(query: string, maxResults: number, timeoutMs: number) {
+  const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=de-de`;
+  const html = await fetchSearchHtml(url, timeoutMs);
+  if (!html) return [];
+  return parseDuckDuckGoResults(html, query, maxResults);
+}
+
+async function fetchSearchHtml(url: string, timeoutMs: number) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=de-de`;
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; AdvaicCRMProspectDiscovery/1.0; +https://advaic.com)",
+        "User-Agent": DISCOVERY_SEARCH_USER_AGENT,
         "Accept-Language": "de-DE,de;q=0.9,en;q=0.7",
       },
       cache: "no-store",
     });
-    if (!res.ok) return [];
-    const html = await res.text();
-    if (!html) return [];
-    return parseDuckDuckGoResults(html, query, maxResults);
+    if (res.ok) {
+      const html = await res.text();
+      if (html) return html;
+    }
   } catch {
-    return [];
+    // Fall through to curl fallback below.
   } finally {
     clearTimeout(timeout);
+  }
+
+  try {
+    const maxTimeSeconds = String(Math.max(4, Math.ceil(timeoutMs / 1000)));
+    const { stdout } = await execFileAsync(
+      "curl",
+      [
+        "-L",
+        "--silent",
+        "--show-error",
+        "--max-time",
+        maxTimeSeconds,
+        "-A",
+        DISCOVERY_SEARCH_USER_AGENT,
+        "-H",
+        "Accept-Language: de-DE,de;q=0.9,en;q=0.7",
+        url,
+      ],
+      {
+        maxBuffer: 4 * 1024 * 1024,
+      },
+    );
+    const html = String(stdout || "");
+    return html || null;
+  } catch {
+    return null;
   }
 }
 
@@ -591,6 +628,13 @@ export async function runProspectDiscovery(args: {
           discovery_learning_reason: discoveryLearning.reason,
         });
       }
+    }
+
+    if (resultPool.length === 0) {
+      citySummary.failed += 1;
+      failed += 1;
+      byCity.push(citySummary);
+      continue;
     }
 
     resultPool.sort((a, b) => b.search_score - a.search_score || a.title.localeCompare(b.title));
