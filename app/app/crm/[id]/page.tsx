@@ -42,7 +42,7 @@ export default async function CrmProspectDetailPage({
 
   const admin = createSupabaseAdminClient();
 
-  const [prospectRes, nextActionRes, notesRes, messagesRes, eventsRes] = await Promise.all([
+  const [prospectRes, nextActionRes, notesRes, messagesRes, eventsRes, evidenceRes] = await Promise.all([
     (admin.from("crm_prospects") as any)
       .select(
         "id, company_name, contact_name, contact_email, contact_role, city, region, website_url, source_url, source_checked_at, linkedin_url, linkedin_search_url, linkedin_headline, linkedin_relevance_note, object_focus, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, object_types, price_band_main, region_focus_micro, response_promise_public, appointment_flow_public, docs_flow_public, owner_led, years_in_market, trust_signals, brand_tone, primary_objection, primary_pain_hypothesis, secondary_pain_hypothesis, automation_readiness, cta_preference_guess, personalization_evidence, hypothesis_confidence, personalization_hook, pain_point_hypothesis, fit_score, priority, stage, preferred_channel, next_action, next_action_at",
@@ -58,7 +58,7 @@ export default async function CrmProspectDetailPage({
       .eq("prospect_id", prospectId)
       .maybeSingle(),
     (admin.from("crm_research_notes") as any)
-      .select("id, source_type, source_url, note, confidence, is_key_insight, created_at")
+      .select("id, source_type, source_url, note, confidence, is_key_insight, metadata, created_at")
       .eq("agent_id", user.id)
       .eq("prospect_id", prospectId)
       .order("created_at", { ascending: false })
@@ -77,6 +77,13 @@ export default async function CrmProspectDetailPage({
       .eq("prospect_id", prospectId)
       .order("event_at", { ascending: false })
       .limit(200),
+    (admin.from("crm_research_evidence") as any)
+      .select("id, field_name, field_value, source_type, source_url, confidence, metadata, captured_at")
+      .eq("agent_id", user.id)
+      .eq("prospect_id", prospectId)
+      .order("confidence", { ascending: false })
+      .order("captured_at", { ascending: false })
+      .limit(120),
   ]);
 
   if (prospectRes.error || !prospectRes.data) {
@@ -93,6 +100,7 @@ export default async function CrmProspectDetailPage({
           initialNotes={((notesRes.data as any[]) || []) as any}
           initialMessages={((messagesRes.data as any[]) || []) as any}
           initialEvents={((eventsRes.data as any[]) || []) as any}
+          initialEvidence={((evidenceRes.data as any[]) || []) as any}
         />
       </div>
     </div>

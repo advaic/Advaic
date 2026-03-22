@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { loadCrmAutomationSettings } from "@/lib/crm/automationSettings";
 import { createSupabaseAdminClient } from "@/lib/supabase/routeAuth";
 import {
   enrichProspectSignals,
@@ -22,9 +23,19 @@ function isStale(prospect: ProspectRow, staleDays: number) {
   return diffMs > staleDays * 24 * 60 * 60 * 1000;
 }
 
+function needsChangeWatch(prospect: ProspectRow, changeWatchDays: number) {
+  const stage = String((prospect as any).stage || "").trim().toLowerCase();
+  const trackedStage = ["new", "researching", "contacted", "nurture"].includes(stage);
+  const nextActionTs = parseIso((prospect as any).next_action_at);
+  const hasUpcomingAction = nextActionTs !== null && nextActionTs <= Date.now() + 7 * 24 * 60 * 60 * 1000;
+  if (!trackedStage && !hasUpcomingAction) return false;
+  return isStale(prospect, changeWatchDays);
+}
+
 function needsEnrichment(prospect: ProspectRow, staleDays: number) {
   return (
     isStale(prospect, staleDays) ||
+    needsChangeWatch(prospect, Math.min(staleDays, 10)) ||
     !String(prospect.contact_email || "").trim() ||
     !String(prospect.linkedin_url || "").trim() ||
     !String(prospect.linkedin_search_url || "").trim() ||
@@ -58,15 +69,45 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const supabase = createSupabaseAdminClient();
+  const automation = await loadCrmAutomationSettings(supabase, agentId);
+  if (!automation.enrichment_automation_enabled) {
+    const nowIso = new Date().toISOString();
+    await (supabase.from("crm_enrichment_runs") as any).insert({
+      agent_id: agentId,
+      trigger_type: "pipeline",
+      scanned_count: 0,
+      selected_count: 0,
+      enriched_count: 0,
+      failed_count: 0,
+      skipped_count: 0,
+      stale_days: Math.max(3, Math.min(90, Number(body?.stale_days || 21))),
+      force_mode: false,
+      started_at: nowIso,
+      finished_at: nowIso,
+      metadata: {
+        source: "crm_enrich_nightly",
+        skipped_reason: "crm_enrichment_automation_paused",
+        crm_automation_reason: automation.reason,
+      },
+    });
+    return NextResponse.json({
+      ok: true,
+      skipped: "crm_enrichment_automation_paused",
+      reason:
+        automation.reason ||
+        "CRM-Nightly-Enrichment ist pausiert und wurde deshalb nicht ausgefuehrt.",
+      settings: automation,
+    });
+  }
+
   const limit = Math.max(1, Math.min(250, Number(body?.limit || 80)));
   const staleDays = Math.max(3, Math.min(90, Number(body?.stale_days || 21)));
-
-  const supabase = createSupabaseAdminClient();
   const startedAt = new Date().toISOString();
 
   const { data: prospects, error } = await (supabase.from("crm_prospects") as any)
     .select(
-      "id, company_name, contact_name, contact_email, city, website_url, source_url, source_checked_at, object_focus, active_listings_count, object_types, trust_signals, brand_tone, automation_readiness, response_promise_public, appointment_flow_public, docs_flow_public, linkedin_url, linkedin_search_url, personalization_hook, personalization_evidence, target_group, process_hint, primary_pain_hypothesis, pain_point_hypothesis",
+      "id, company_name, contact_name, contact_email, city, website_url, source_url, source_checked_at, object_focus, active_listings_count, object_types, trust_signals, brand_tone, automation_readiness, response_promise_public, appointment_flow_public, docs_flow_public, linkedin_url, linkedin_search_url, personalization_hook, personalization_evidence, target_group, process_hint, primary_pain_hypothesis, pain_point_hypothesis, stage, next_action_at",
     )
     .eq("agent_id", agentId)
     .order("updated_at", { ascending: false })

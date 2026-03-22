@@ -31,6 +31,48 @@ export type OutboundQualityReview = {
   blockers: string[];
   warnings: string[];
   strengths: string[];
+  grounding?: {
+    score: number;
+    supported_claim_count: number;
+    unsupported_claim_count: number;
+    supported_claims: string[];
+    unsupported_claims: string[];
+    summary: string;
+  };
+  novelty?: {
+    score: number;
+    max_similarity: number;
+    compared_message_count: number;
+    similar_message_ids: string[];
+    summary: string;
+  };
+  goldset?: {
+    score: number;
+    approved_example_count: number;
+    rejected_example_count: number;
+    approved_similarity: number;
+    rejected_similarity: number;
+    similar_approved_message_ids: string[];
+    similar_rejected_message_ids: string[];
+    matched_reason_tags: string[];
+    summary: string;
+  };
+  evidence_alignment?: {
+    score: number;
+    cited_claim_count: number;
+    weak_claim_count: number;
+    unsupported_claim_count: number;
+    cited_claims: Array<{
+      claim: string;
+      evidence: string;
+      field_name: string | null;
+      source_type: string | null;
+      source_url: string | null;
+    }>;
+    weak_claims: string[];
+    unsupported_claims: string[];
+    summary: string;
+  };
   metrics: {
     word_count: number;
     sentence_count: number;

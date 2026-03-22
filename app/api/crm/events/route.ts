@@ -52,6 +52,24 @@ function mapEventToAcq(eventType: string) {
   }
 }
 
+function resolveReplyOutcome(metadata: Record<string, any>) {
+  const direct = String(metadata?.reply_outcome || "").trim().toLowerCase();
+  if (direct === "positive" || direct === "neutral" || direct === "negative") return direct;
+
+  const signal = String(metadata?.reply_signal || "").trim().toLowerCase();
+  if (["meeting_ready", "pilot_interest", "info_request"].includes(signal)) return "positive";
+  if (["hard_opt_out", "soft_rejection", "wrong_contact_dead_end"].includes(signal)) return "negative";
+  if (["timing_deferral", "pricing_objection", "compliance_objection", "control_objection", "quality_objection", "capacity_objection", "wrong_contact_referral"].includes(signal)) {
+    return "neutral";
+  }
+
+  const intent = String(metadata?.reply_intent || "").trim().toLowerCase();
+  if (intent === "interesse") return "positive";
+  if (intent === "opt_out") return "negative";
+  if (intent === "falscher_kontakt") return "negative";
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   const auth = await requireOwnerApiUser(req);
   if (!auth.ok) return auth.response;
@@ -107,7 +125,9 @@ export async function POST(req: NextRequest) {
         ? safeChannel
         : "sonstiges";
 
-    const negative = isNegativeOutcome(acqMapping.action_type, acqMapping.outcome);
+    const resolvedOutcome =
+      eventType === "reply_received" ? resolveReplyOutcome(metadata) || acqMapping.outcome : acqMapping.outcome;
+    const negative = isNegativeOutcome(acqMapping.action_type, resolvedOutcome);
     await (supabase.from("crm_acq_activity_log") as any).insert({
       agent_id: auth.user.id,
       prospect_id: prospectId,
@@ -116,12 +136,12 @@ export async function POST(req: NextRequest) {
       action_type: acqMapping.action_type,
       segment_key: inferred.segment_key,
       playbook_key: inferred.playbook_key,
-      outcome: acqMapping.outcome,
+      outcome: resolvedOutcome,
       template_variant:
         String((metadata as any)?.template_variant || (metadata as any)?.recommended_code || "").trim() || null,
       quality_objective_score: computeObjectiveQualityScore({
         action_type: acqMapping.action_type,
-        outcome: acqMapping.outcome,
+        outcome: resolvedOutcome,
         response_time_hours:
           Number.isFinite(Number((metadata as any)?.response_time_hours))
             ? Number((metadata as any)?.response_time_hours)
@@ -137,11 +157,11 @@ export async function POST(req: NextRequest) {
         has_postmortem: negative,
       }),
       failure_reason:
-        acqMapping.outcome === "negative"
+        resolvedOutcome === "negative"
           ? (String((metadata as any)?.reason || details || "").trim() || null)
           : null,
       winning_signal:
-        acqMapping.outcome === "positive"
+        resolvedOutcome === "positive"
           ? (String((metadata as any)?.reason || details || "").trim() || null)
           : null,
       analysis_note: details,

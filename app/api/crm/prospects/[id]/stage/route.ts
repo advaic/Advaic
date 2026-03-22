@@ -37,11 +37,13 @@ export async function PATCH(
   }
 
   const updates: Record<string, any> = { stage };
-  if (typeof body?.next_action === "string") {
-    updates.next_action = body.next_action.trim() || null;
+  if (body && Object.prototype.hasOwnProperty.call(body, "next_action")) {
+    updates.next_action =
+      typeof body?.next_action === "string" ? body.next_action.trim() || null : null;
   }
-  if (typeof body?.next_action_at === "string") {
-    updates.next_action_at = body.next_action_at.trim() || null;
+  if (body && Object.prototype.hasOwnProperty.call(body, "next_action_at")) {
+    updates.next_action_at =
+      typeof body?.next_action_at === "string" ? body.next_action_at.trim() || null : null;
   }
 
   const supabase = createSupabaseAdminClient();

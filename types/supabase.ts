@@ -107,6 +107,10 @@ export type Database = {
           reply_mode: "approval" | "auto" | string;
           auto_send_min_confidence: number | null;
           autosend_enabled: boolean | null;
+          crm_sequence_automation_enabled: boolean | null;
+          crm_enrichment_automation_enabled: boolean | null;
+          crm_automation_reason: string | null;
+          crm_automation_updated_at: string | null;
         };
         Insert: {
           id?: string;
@@ -122,6 +126,10 @@ export type Database = {
           reply_mode?: "approval" | "auto" | string;
           auto_send_min_confidence?: number | null;
           autosend_enabled?: boolean | null;
+          crm_sequence_automation_enabled?: boolean | null;
+          crm_enrichment_automation_enabled?: boolean | null;
+          crm_automation_reason?: string | null;
+          crm_automation_updated_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["agent_settings"]["Insert"]>;
       };

@@ -4,19 +4,28 @@ import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
 import {
   applySequenceVariantTone,
   chooseSequenceVariant,
+  listSequenceVariants,
   loadActiveRolloutWinners,
   type SequenceMessageKind,
 } from "@/lib/crm/sequenceExperiments";
 import { inferSegmentAndPlaybook } from "@/lib/crm/acqIntelligence";
+import { loadCrmAutomationSettings } from "@/lib/crm/automationSettings";
 import {
   collectTriggerEvidence,
   deriveAbFields,
   evaluateFirstTouchGuardrails,
 } from "@/lib/crm/cadenceRules";
+import { getVariantLearningBias, loadCurrentLearningSnapshot } from "@/lib/crm/learningLoop";
 import {
   assessResearchReadiness,
-  evaluateOutboundMessageQuality,
 } from "@/lib/crm/outboundQuality";
+import {
+  evaluateGroundedOutboundMessageQuality,
+  loadGroundedReviewContext,
+  persistQualityReview,
+} from "@/lib/crm/qualityReviewEngine";
+import { ensureProspectStrategyDecision } from "@/lib/crm/strategyEngine";
+import { evaluateSendTiming } from "@/lib/crm/timingPolicy";
 
 export const runtime = "nodejs";
 
@@ -186,9 +195,24 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({} as any));
   const onlyProspectId = normalizeLine(body?.only_prospect_id || "", 80);
   const dryRun = Boolean(body?.dry_run);
+  const overridePause = Boolean(body?.override_pause);
   const limit = Math.max(1, Math.min(100, Number(body?.limit || 40)));
 
   const supabase = createSupabaseAdminClient();
+  const automation = await loadCrmAutomationSettings(supabase, String(auth.user.id));
+  if (!automation.sequence_automation_enabled && !overridePause) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "crm_sequence_automation_paused",
+        details:
+          automation.reason ||
+          "CRM-Sequenz-Automation ist pausiert. Entweder erst fortsetzen oder bewusst einmalig uebersteuern.",
+        settings: automation,
+      },
+      { status: 409 },
+    );
+  }
   let query = (supabase.from("crm_next_actions") as any)
     .select(
       "prospect_id, company_name, contact_name, contact_email, city, region, object_focus, preferred_channel, personalization_hook, pain_point_hypothesis, target_group, process_hint, share_miete_percent, share_kauf_percent, active_listings_count, recommended_code, recommended_action, recommended_reason, recommended_at, priority, fit_score",
@@ -279,6 +303,7 @@ export async function POST(req: NextRequest) {
   const actions: any[] = [];
   const createdByVariant: Record<string, number> = {};
   const activeWinners = await loadActiveRolloutWinners(supabase, String(auth.user.id));
+  const learningSnapshot = await loadCurrentLearningSnapshot(supabase, String(auth.user.id)).catch(() => null);
   const dueProspectIds = [
     ...new Set(rows.map((row) => String(row?.prospect_id || "").trim()).filter(Boolean)),
   ];
@@ -416,7 +441,54 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const channelRaw = normalizeLine(row?.preferred_channel || "email", 40).toLowerCase();
+    const strategyResult = await ensureProspectStrategyDecision(supabase, {
+      agentId: String(auth.user.id),
+      prospectId: String(row.prospect_id),
+    });
+    if (!strategyResult.ok) {
+      const strategyError = strategyResult as Extract<
+        typeof strategyResult,
+        { ok: false }
+      >;
+      skippedInvalid += 1;
+      actions.push({
+        prospect_id: row.prospect_id,
+        company_name: row.company_name,
+        recommended_code: recommendedCode,
+        result: "strategy_required",
+        reason: strategyError.details,
+      });
+      continue;
+    }
+    if (strategyResult.strategy.strategy_status === "rejected") {
+      skippedInvalid += 1;
+      actions.push({
+        prospect_id: row.prospect_id,
+        company_name: row.company_name,
+        recommended_code: recommendedCode,
+        result: "strategy_review_required",
+        reason: "Strategie wurde manuell als zu schwach markiert.",
+      });
+      continue;
+    }
+
+    const strategy = strategyResult.strategy;
+    const rankedContacts = strategyResult.rankedContacts || [];
+    const selectedContact =
+      rankedContacts.find((contact) => {
+        if (strategy.chosen_contact_candidate_id && contact.id === strategy.chosen_contact_candidate_id) {
+          return true;
+        }
+        return (
+          strategy.chosen_contact_channel === contact.channel_type &&
+          strategy.chosen_contact_value === contact.channel_value
+        );
+      }) || rankedContacts[0] || null;
+
+    const channelRaw = normalizeLine(
+      strategy.chosen_channel || selectedContact?.channel_type || row?.preferred_channel || "email",
+      40,
+    ).toLowerCase();
     const channel =
       channelRaw === "email" ||
       channelRaw === "telefon" ||
@@ -426,11 +498,55 @@ export async function POST(req: NextRequest) {
         ? channelRaw
         : "email";
     const prospectContext = prospectContextById.get(String(row.prospect_id)) || {};
+    const timingPolicy = evaluateSendTiming({
+      channel,
+      prospect: {
+        ...row,
+        ...prospectContext,
+        preferred_channel: channel,
+      },
+      learningSnapshot,
+      timezone: "Europe/Berlin",
+    });
+    const resolvedContactEmail =
+      channel === "email"
+        ? (
+            normalizeLine(
+              selectedContact?.channel_type === "email"
+                ? selectedContact.channel_value
+                : strategy.chosen_contact_channel === "email"
+                  ? strategy.chosen_contact_value || ""
+                  : prospectContext.contact_email || row.contact_email || "",
+              240,
+            ).toLowerCase() || null
+          )
+        : null;
+    if (!timingPolicy.allow_now) {
+      if (!dryRun) {
+        await (supabase.from("crm_prospects") as any)
+          .update({
+            next_action: `${channel} im besseren Zeitfenster vorbereiten`,
+            next_action_at: timingPolicy.suggested_send_at,
+          })
+          .eq("id", String(row.prospect_id))
+          .eq("agent_id", auth.user.id);
+      }
+      skippedInvalid += 1;
+      actions.push({
+        prospect_id: row.prospect_id,
+        company_name: row.company_name,
+        recommended_code: recommendedCode,
+        result: "timing_window_wait",
+        suggested_send_at: timingPolicy.suggested_send_at,
+        reason: timingPolicy.reason,
+      });
+      continue;
+    }
     const researchReadiness = assessResearchReadiness({
       preferredChannel: channel,
-      contactEmail:
-        normalizeLine(prospectContext.contact_email || row.contact_email || "", 240) || null,
-      personalizationHook: normalizeText(row.personalization_hook || "", 220) || null,
+      contactEmail: resolvedContactEmail,
+      personalizationHook:
+        normalizeText(strategy.chosen_trigger || row.personalization_hook || "", 220) || null,
       personalizationEvidence:
         normalizeText(prospectContext.personalization_evidence || "", 240) || null,
       sourceCheckedAt: normalizeLine(prospectContext.source_checked_at || "", 40) || null,
@@ -505,9 +621,12 @@ export async function POST(req: NextRequest) {
     const draft = buildSequenceDraft({
       code: recommendedCode,
       companyName: normalizeLine(row.company_name || "", 160),
-      contactName: normalizeLine(row.contact_name || "", 120) || null,
-      hook: normalizeText(row.personalization_hook || "", 320) || null,
-      painPoint: normalizeText(row.pain_point_hypothesis || "", 320) || null,
+      contactName:
+        normalizeLine(selectedContact?.contact_name || row.contact_name || "", 120) || null,
+      hook:
+        normalizeText(strategy.chosen_trigger || row.personalization_hook || "", 320) || null,
+      painPoint:
+        normalizeText(strategy.chosen_angle || row.pain_point_hypothesis || "", 320) || null,
     });
     const cadenceStep = cadenceStepFromCode(recommendedCode);
     const triggerEvidence = collectTriggerEvidence({
@@ -543,7 +662,7 @@ export async function POST(req: NextRequest) {
     });
 
     let selectedVariant:
-      | { variant: string; source: "winner" | "hash"; reason: string }
+      | { variant: string; source: "winner" | "hash" | "learning"; reason: string }
       | null = null;
     let templateVariant = `${messageKind}__manual_v1`;
     let variantBody = draft.body;
@@ -558,6 +677,22 @@ export async function POST(req: NextRequest) {
         segmentKey: inferred.segment_key,
         activeWinners,
       });
+      if (selectedVariant.source === "hash" && learningSnapshot) {
+        const bestLearned = listSequenceVariants(messageKind as SequenceMessageKind)
+          .map((variant) => ({
+            variant,
+            bias: getVariantLearningBias(learningSnapshot, messageKind, variant),
+          }))
+          .filter((item) => item.bias && item.bias.sample_size >= 4)
+          .sort((a, b) => Number(b.bias?.score_adjustment || 0) - Number(a.bias?.score_adjustment || 0))[0];
+        if (bestLearned?.bias && bestLearned.bias.score_adjustment >= 4) {
+          selectedVariant = {
+            variant: bestLearned.variant,
+            source: "learning",
+            reason: bestLearned.bias.reason,
+          };
+        }
+      }
       templateVariant = `${messageKind}__${selectedVariant.variant}`;
       variantBody = applySequenceVariantTone({
         kind: messageKind as SequenceMessageKind,
@@ -577,7 +712,15 @@ export async function POST(req: NextRequest) {
             triggerEvidenceCount: triggerEvidence.length,
           })
         : null;
-    const outboundReview = evaluateOutboundMessageQuality({
+    const groundedContext = await loadGroundedReviewContext(supabase, {
+      agentId: String(auth.user.id),
+      prospectId: String(row.prospect_id),
+      channel,
+      messageKind,
+      segmentKey: strategy.segment_key || null,
+      playbookKey: strategy.playbook_key || null,
+    });
+    const outboundReview = evaluateGroundedOutboundMessageQuality({
       body: variantBody,
       subject: draft.subject || cadenceSubjectFromCode(recommendedCode),
       channel,
@@ -587,6 +730,24 @@ export async function POST(req: NextRequest) {
       personalizationHook: normalizeText(row.personalization_hook || "", 220) || null,
       triggerEvidenceCount: triggerEvidence.length,
       researchReadiness,
+      prospect: {
+        company_name: normalizeLine(row.company_name || "", 160) || null,
+        city: normalizeLine(row.city || "", 120) || null,
+        preferred_channel: channel,
+        contact_email: resolvedContactEmail,
+        personalization_hook:
+          normalizeText(strategy.chosen_trigger || row.personalization_hook || "", 220) || null,
+        personalization_evidence: null,
+        source_checked_at: null,
+        target_group: normalizeText(row.target_group || "", 220) || null,
+        process_hint: normalizeText(row.process_hint || "", 220) || null,
+        active_listings_count: Number.isFinite(Number(row.active_listings_count))
+          ? Number(row.active_listings_count)
+          : null,
+        automation_readiness: normalizeLine(row.automation_readiness || "", 24) || null,
+      },
+      context: groundedContext,
+      supportHints: [...triggerEvidence, ...(strategy.trigger_evidence || [])],
     });
     if (messageKind === "first_touch" && firstTouchGuardrail && !firstTouchGuardrail.pass) {
       skippedInvalid += 1;
@@ -612,8 +773,7 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const toEmail = normalizeLine(row.contact_email || "", 240).toLowerCase();
-    if (channel === "email" && !toEmail) {
+    if (channel === "email" && !resolvedContactEmail) {
       skippedInvalid += 1;
       actions.push({
         prospect_id: row.prospect_id,
@@ -668,6 +828,24 @@ export async function POST(req: NextRequest) {
         ab_trigger_variant: ab.ab_trigger_variant,
         ab_cta_variant: ab.ab_cta_variant,
         ab_subject_variant: ab.ab_subject_variant,
+        strategy_decision_id: strategy.id,
+        strategy_version: strategy.version,
+        strategy_channel: strategy.chosen_channel,
+        strategy_cta: strategy.chosen_cta,
+        strategy_angle: strategy.chosen_angle,
+        strategy_trigger: strategy.chosen_trigger,
+        strategy_contact_channel: selectedContact?.channel_type || strategy.chosen_contact_channel,
+        strategy_contact_value: selectedContact?.channel_value || strategy.chosen_contact_value,
+        strategy_contact_candidate_id: selectedContact?.id || strategy.chosen_contact_candidate_id,
+        automation_override: overridePause || null,
+        automation_settings_snapshot: {
+          sequence_automation_enabled: automation.sequence_automation_enabled,
+          enrichment_automation_enabled: automation.enrichment_automation_enabled,
+          reason: automation.reason,
+          updated_at: automation.updated_at,
+        },
+        timing_policy: timingPolicy,
+        scheduled_for: timingPolicy.suggested_send_at,
         trigger_evidence: triggerEvidence,
         trigger_evidence_count: triggerEvidence.length,
         first_touch_guardrail: firstTouchGuardrail,
@@ -722,6 +900,24 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
+    try {
+      await persistQualityReview(supabase, {
+        agentId: String(auth.user.id),
+        prospectId: String(row.prospect_id),
+        messageId: String(createdDraft.id),
+        reviewScope: "sequence_draft",
+        channel,
+        messageKind,
+        review: outboundReview,
+        metadata: {
+          source: "sequence_run",
+          strategy_decision_id: strategy.id,
+        },
+      });
+    } catch {
+      // Fail-open during sequence generation.
+    }
+
     await ((supabase as any).rpc("crm_register_outreach_event", {
       p_prospect_id: String(row.prospect_id),
       p_agent_id: auth.user.id,
@@ -740,6 +936,9 @@ export async function POST(req: NextRequest) {
         ab_trigger_variant: ab.ab_trigger_variant,
         ab_cta_variant: ab.ab_cta_variant,
         ab_subject_variant: ab.ab_subject_variant,
+        automation_override: overridePause || null,
+        timing_policy: timingPolicy,
+        scheduled_for: timingPolicy.suggested_send_at,
       },
     }) as any);
 
@@ -754,6 +953,8 @@ export async function POST(req: NextRequest) {
       template_variant: templateVariant,
       experiment_source: selectedVariant?.source || "manual",
       cadence_step: cadenceStep,
+      scheduled_for: timingPolicy.suggested_send_at,
+      automation_override: overridePause,
       draft_id: createdDraft.id,
       result: "draft_created",
     });
@@ -763,6 +964,7 @@ export async function POST(req: NextRequest) {
     ok: true,
     dry_run: dryRun,
     scanned: rows.length,
+    automation_override: overridePause,
     created,
     skipped_existing: skippedExisting,
     skipped_invalid: skippedInvalid,

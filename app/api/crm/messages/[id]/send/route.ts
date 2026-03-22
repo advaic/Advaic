@@ -16,8 +16,15 @@ import {
 } from "@/lib/crm/cadenceRules";
 import {
   assessResearchReadiness,
-  evaluateOutboundMessageQuality,
 } from "@/lib/crm/outboundQuality";
+import {
+  evaluateGroundedOutboundMessageQuality,
+  loadGroundedReviewContext,
+  persistQualityReview,
+} from "@/lib/crm/qualityReviewEngine";
+import { updateContactCandidateStatus } from "@/lib/crm/contactResolutionEngine";
+import { loadCurrentLearningSnapshot } from "@/lib/crm/learningLoop";
+import { evaluateSendTiming } from "@/lib/crm/timingPolicy";
 
 export const runtime = "nodejs";
 
@@ -446,6 +453,7 @@ export async function POST(
       ? (message.metadata as Record<string, any>)
       : {};
   const inferred = inferSegmentAndPlaybook(prospect || null);
+  const learningSnapshot = await loadCurrentLearningSnapshot(supabase, String(auth.user.id)).catch(() => null);
   const templateVariant =
     String(
       (oldMeta as any)?.template_variant ||
@@ -453,7 +461,19 @@ export async function POST(
         message.message_kind ||
         "",
     ).trim() || null;
-  const toEmail = explicitTo || normalizeLine(prospect.contact_email || "", 320).toLowerCase();
+  if (normalizeLine(message.channel || "", 24).toLowerCase() !== "email") {
+    return jsonError(
+      400,
+      "crm_non_email_send_unsupported",
+      "Dieser Draft ist kein E-Mail-Touch. Bitte außerhalb des E-Mail-Senders umsetzen oder manuell als gesendet markieren.",
+    );
+  }
+  const strategyContactChannel = normalizeLine((oldMeta as any)?.strategy_contact_channel || "", 24).toLowerCase();
+  const strategyContactValue = normalizeLine((oldMeta as any)?.strategy_contact_value || "", 320);
+  const toEmail =
+    explicitTo ||
+    (strategyContactChannel === "email" ? strategyContactValue.toLowerCase() : "") ||
+    normalizeLine(prospect.contact_email || "", 320).toLowerCase();
   if (!toEmail || !isValidEmail(toEmail)) {
     return jsonError(
       400,
@@ -510,11 +530,20 @@ export async function POST(
         : null,
       automationReadiness: normalizeLine((prospect as any).automation_readiness, 24) || null,
     });
-    const outboundReview = evaluateOutboundMessageQuality({
+    const groundedContext = await loadGroundedReviewContext(supabase, {
+      agentId: String(auth.user.id),
+      prospectId: String(message.prospect_id),
+      messageId,
+      channel: String(message.channel || ""),
+      messageKind: String(message.message_kind || ""),
+      segmentKey: String((meta as any)?.segment_key || "").trim() || inferred.segment_key,
+      playbookKey: String((meta as any)?.playbook_key || "").trim() || inferred.playbook_key,
+    });
+    const outboundReview = evaluateGroundedOutboundMessageQuality({
       body: messageBody,
       subject,
-      channel: message.channel,
-      messageKind: message.message_kind,
+      channel: String(message.channel || ""),
+      messageKind: String(message.message_kind || ""),
       companyName: normalizeLine(prospect.company_name, 160) || null,
       city: normalizeLine((prospect as any).city, 120) || null,
       personalizationHook: normalizeText((prospect as any).personalization_hook, 220) || null,
@@ -523,6 +552,26 @@ export async function POST(
         triggerEvidence.length,
       ),
       researchReadiness,
+      prospect: {
+        company_name: normalizeLine(prospect.company_name, 160) || null,
+        city: normalizeLine((prospect as any).city, 120) || null,
+        preferred_channel: normalizeLine((prospect as any).preferred_channel, 40) || "email",
+        contact_email: toEmail,
+        personalization_hook: normalizeText((prospect as any).personalization_hook, 220) || null,
+        personalization_evidence: normalizeText((prospect as any).personalization_evidence, 260) || null,
+        source_checked_at: normalizeLine((prospect as any).source_checked_at, 40) || null,
+        target_group: normalizeText((prospect as any).target_group, 220) || null,
+        process_hint: normalizeText((prospect as any).process_hint, 220) || null,
+        response_promise_public: normalizeText((prospect as any).response_promise_public, 180) || null,
+        appointment_flow_public: normalizeText((prospect as any).appointment_flow_public, 180) || null,
+        docs_flow_public: normalizeText((prospect as any).docs_flow_public, 180) || null,
+        active_listings_count: Number.isFinite(Number(prospect.active_listings_count))
+          ? Number(prospect.active_listings_count)
+          : null,
+        automation_readiness: normalizeLine((prospect as any).automation_readiness, 24) || null,
+      },
+      context: groundedContext,
+      supportHints: triggerEvidence,
     });
     const guardrail = evaluateFirstTouchGuardrails({
       body: messageBody,
@@ -578,6 +627,22 @@ export async function POST(
         { status: 422 },
       );
     }
+    try {
+      await persistQualityReview(supabase, {
+        agentId: String(auth.user.id),
+        prospectId: String(message.prospect_id),
+        messageId,
+        reviewScope: "send_gate",
+        channel: String(message.channel || ""),
+        messageKind: String(message.message_kind || ""),
+        review: outboundReview,
+        metadata: {
+          mode: "provider_send",
+        },
+      });
+    } catch {
+      // Fail-open during send.
+    }
   }
 
   const providerResolved = await resolveProvider({
@@ -590,6 +655,16 @@ export async function POST(
   }
 
   const nowIso = new Date().toISOString();
+  const timingPolicy = evaluateSendTiming({
+    channel: String(message.channel || "email"),
+    prospect: {
+      ...prospect,
+      preferred_channel: String(message.channel || "email"),
+    },
+    learningSnapshot,
+    startAt: nowIso,
+    timezone: "Europe/Berlin",
+  });
   let sendResult: ProviderSendSuccess | ProviderSendError;
 
   if (providerResolved.provider === "gmail") {
@@ -621,6 +696,7 @@ export async function POST(
           last_send_attempt_at: nowIso,
           provider: providerResolved.provider,
           to_email: toEmail,
+          timing_policy: timingPolicy,
         },
       })
       .eq("id", messageId)
@@ -636,6 +712,8 @@ export async function POST(
         source: "crm_send",
         provider: providerResolved.provider,
         error: sendResult.error,
+        timing_policy: timingPolicy,
+        scheduled_for: normalizeLine((oldMeta as any)?.scheduled_for, 80) || null,
       },
     }) as any);
 
@@ -670,6 +748,35 @@ export async function POST(
         error: sendResult.error,
         segment_key: inferred.segment_key,
         playbook_key: inferred.playbook_key,
+        scheduled_for: normalizeLine((oldMeta as any)?.scheduled_for, 80) || null,
+        message_id: messageId,
+        review_status: normalizeLine((oldMeta as any)?.outbound_review?.status, 40) || null,
+        review_score:
+          Number.isFinite(Number((oldMeta as any)?.outbound_review?.score))
+            ? Number((oldMeta as any)?.outbound_review?.score)
+            : null,
+        unsupported_claim_count:
+          Number((oldMeta as any)?.outbound_review?.evidence_alignment?.unsupported_claim_count || 0) || 0,
+        weak_claim_count:
+          Number((oldMeta as any)?.outbound_review?.evidence_alignment?.weak_claim_count || 0) || 0,
+        research_status: normalizeLine((oldMeta as any)?.research_readiness?.status, 40) || null,
+        research_score:
+          Number.isFinite(Number((oldMeta as any)?.research_readiness?.score))
+            ? Number((oldMeta as any)?.research_readiness?.score)
+            : null,
+        strategy_contact_channel: normalizeLine((oldMeta as any)?.strategy_contact_channel, 40) || null,
+        strategy_contact_value: normalizeLine((oldMeta as any)?.strategy_contact_value, 220) || null,
+        strategy_contact_confidence:
+          Number.isFinite(Number((oldMeta as any)?.strategy_contact_confidence))
+            ? Number((oldMeta as any)?.strategy_contact_confidence)
+            : null,
+        strategy_risk_level: normalizeLine((oldMeta as any)?.strategy_risk_level, 40) || null,
+        office_profile: timingPolicy.office_profile,
+        timing_override: timingPolicy.timing_override,
+        timing_score: timingPolicy.timing_score,
+        timing_weekday: timingPolicy.weekday,
+        timing_hour_bucket: timingPolicy.hour_bucket,
+        timing_reason: timingPolicy.reason,
       },
     });
 
@@ -686,6 +793,7 @@ export async function POST(
     last_send_attempt_at: nowIso,
     last_send_error: null,
     last_send_error_details: null,
+    timing_policy: timingPolicy,
   };
 
   const { data: updated, error: updateErr } = await (supabase.from("crm_outreach_messages") as any)
@@ -706,6 +814,24 @@ export async function POST(
     return jsonError(500, "crm_message_update_failed", updateErr.message);
   }
 
+  if ((oldMeta as any)?.strategy_contact_candidate_id) {
+    try {
+      await updateContactCandidateStatus(supabase, {
+        agentId: auth.user.id,
+        prospectId: String(message.prospect_id),
+        contactCandidateId: normalizeLine((oldMeta as any)?.strategy_contact_candidate_id, 120) || null,
+        validationStatus: "used",
+        metadataPatch: {
+          last_used_at: nowIso,
+          last_used_message_id: messageId,
+          last_used_provider: sendResult.provider,
+        },
+      });
+    } catch {
+      // Fail-open during send.
+    }
+  }
+
   await ((supabase as any).rpc("crm_register_outreach_event", {
     p_prospect_id: String(message.prospect_id),
     p_agent_id: auth.user.id,
@@ -717,6 +843,8 @@ export async function POST(
       provider: sendResult.provider,
       provider_message_id: sendResult.providerMessageId,
       provider_thread_id: sendResult.providerThreadId,
+      timing_policy: timingPolicy,
+      scheduled_for: normalizeLine((oldMeta as any)?.scheduled_for, 80) || null,
     },
   }) as any);
 
@@ -754,6 +882,35 @@ export async function POST(
       provider_message_id: sendResult.providerMessageId,
       segment_key: inferred.segment_key,
       playbook_key: inferred.playbook_key,
+      scheduled_for: normalizeLine((oldMeta as any)?.scheduled_for, 80) || null,
+      message_id: messageId,
+      review_status: normalizeLine((oldMeta as any)?.outbound_review?.status, 40) || null,
+      review_score:
+        Number.isFinite(Number((oldMeta as any)?.outbound_review?.score))
+          ? Number((oldMeta as any)?.outbound_review?.score)
+          : null,
+      unsupported_claim_count:
+        Number((oldMeta as any)?.outbound_review?.evidence_alignment?.unsupported_claim_count || 0) || 0,
+      weak_claim_count:
+        Number((oldMeta as any)?.outbound_review?.evidence_alignment?.weak_claim_count || 0) || 0,
+      research_status: normalizeLine((oldMeta as any)?.research_readiness?.status, 40) || null,
+      research_score:
+        Number.isFinite(Number((oldMeta as any)?.research_readiness?.score))
+          ? Number((oldMeta as any)?.research_readiness?.score)
+          : null,
+      strategy_contact_channel: normalizeLine((oldMeta as any)?.strategy_contact_channel, 40) || null,
+      strategy_contact_value: normalizeLine((oldMeta as any)?.strategy_contact_value, 220) || null,
+      strategy_contact_confidence:
+        Number.isFinite(Number((oldMeta as any)?.strategy_contact_confidence))
+          ? Number((oldMeta as any)?.strategy_contact_confidence)
+          : null,
+      strategy_risk_level: normalizeLine((oldMeta as any)?.strategy_risk_level, 40) || null,
+      office_profile: timingPolicy.office_profile,
+      timing_override: timingPolicy.timing_override,
+      timing_score: timingPolicy.timing_score,
+      timing_weekday: timingPolicy.weekday,
+      timing_hour_bucket: timingPolicy.hour_bucket,
+      timing_reason: timingPolicy.reason,
     },
   });
 

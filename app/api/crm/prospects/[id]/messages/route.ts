@@ -9,8 +9,13 @@ import {
 import { inferSegmentAndPlaybook } from "@/lib/crm/acqIntelligence";
 import {
   assessResearchReadiness,
-  evaluateOutboundMessageQuality,
 } from "@/lib/crm/outboundQuality";
+import { ensureProspectStrategyDecision } from "@/lib/crm/strategyEngine";
+import {
+  evaluateGroundedOutboundMessageQuality,
+  loadGroundedReviewContext,
+  persistQualityReview,
+} from "@/lib/crm/qualityReviewEngine";
 
 export const runtime = "nodejs";
 
@@ -192,6 +197,15 @@ export async function POST(
       : null,
     automation_readiness: normalizeLine(prospectSignals.automation_readiness, 24) || null,
   });
+  const strategyResult = await ensureProspectStrategyDecision(supabase, {
+    agentId: String(auth.user.id),
+    prospectId,
+  });
+  const strategy = strategyResult.ok ? strategyResult.strategy : null;
+  const resolvedSegmentKey =
+    normalizeLine(metadataInput.segment_key, 80) || strategy?.segment_key || inferred.segment_key;
+  const resolvedPlaybookKey =
+    normalizeLine(metadataInput.playbook_key, 120) || strategy?.playbook_key || inferred.playbook_key;
 
   const cadenceStep =
     parseCadenceStep(metadataInput.cadence_step) ??
@@ -240,7 +254,15 @@ export async function POST(
     linkedinUrl: normalizeLine(prospectSignals.linkedin_url, 320) || null,
     linkedinSearchUrl: normalizeLine(prospectSignals.linkedin_search_url, 320) || null,
   });
-  const outboundReview = evaluateOutboundMessageQuality({
+  const groundedContext = await loadGroundedReviewContext(supabase, {
+    agentId: String(auth.user.id),
+    prospectId,
+    channel: safeChannel,
+    messageKind: safeKind,
+    segmentKey: resolvedSegmentKey,
+    playbookKey: resolvedPlaybookKey,
+  });
+  const outboundReview = evaluateGroundedOutboundMessageQuality({
     body: messageBody,
     subject: normalizeLine(body?.subject, 240) || null,
     channel: safeChannel,
@@ -250,6 +272,28 @@ export async function POST(
     personalizationHook: normalizeText(prospectSignals.personalization_hook, 220) || null,
     triggerEvidenceCount,
     researchReadiness,
+    prospect: {
+      company_name: normalizeLine(prospectSignals.company_name, 160) || null,
+      city: normalizeLine(prospectSignals.city, 120) || null,
+      preferred_channel: safeChannel,
+      contact_email: normalizeLine(prospectSignals.contact_email, 240) || null,
+      personalization_hook: normalizeText(prospectSignals.personalization_hook, 220) || null,
+      personalization_evidence: normalizeText(prospectSignals.personalization_evidence, 240) || null,
+      source_checked_at: normalizeLine(prospectSignals.source_checked_at, 40) || null,
+      target_group: normalizeText(prospectSignals.target_group, 180) || null,
+      process_hint: normalizeText(prospectSignals.process_hint, 220) || null,
+      response_promise_public: normalizeText(prospectSignals.response_promise_public, 180) || null,
+      appointment_flow_public: normalizeText(prospectSignals.appointment_flow_public, 180) || null,
+      docs_flow_public: normalizeText(prospectSignals.docs_flow_public, 180) || null,
+      active_listings_count: Number.isFinite(Number(prospectSignals.active_listings_count))
+        ? Number(prospectSignals.active_listings_count)
+        : null,
+      automation_readiness: normalizeLine(prospectSignals.automation_readiness, 24) || null,
+      linkedin_url: normalizeLine(prospectSignals.linkedin_url, 320) || null,
+      linkedin_search_url: normalizeLine(prospectSignals.linkedin_search_url, 320) || null,
+    },
+    context: groundedContext,
+    supportHints: triggerEvidence,
   });
 
   if (safeKind === "first_touch" && safeStatus === "ready" && firstTouchGuardrail && !firstTouchGuardrail.pass) {
@@ -287,8 +331,29 @@ export async function POST(
     ab_trigger_variant: normalizeLine(metadataInput.ab_trigger_variant, 80) || ab.ab_trigger_variant,
     ab_cta_variant: normalizeLine(metadataInput.ab_cta_variant, 80) || ab.ab_cta_variant,
     ab_subject_variant: normalizeLine(metadataInput.ab_subject_variant, 80) || ab.ab_subject_variant,
-    segment_key: normalizeLine(metadataInput.segment_key, 80) || inferred.segment_key,
-    playbook_key: normalizeLine(metadataInput.playbook_key, 120) || inferred.playbook_key,
+    segment_key: resolvedSegmentKey,
+    playbook_key: resolvedPlaybookKey,
+    strategy_decision_id:
+      normalizeLine(metadataInput.strategy_decision_id, 120) || strategy?.id || null,
+    strategy_version:
+      Number.isFinite(Number(metadataInput.strategy_version))
+        ? Number(metadataInput.strategy_version)
+        : strategy?.version || null,
+    strategy_channel: normalizeLine(metadataInput.strategy_channel, 40) || strategy?.chosen_channel || null,
+    strategy_cta: normalizeLine(metadataInput.strategy_cta, 80) || strategy?.chosen_cta || null,
+    strategy_angle: normalizeText(metadataInput.strategy_angle, 280) || strategy?.chosen_angle || null,
+    strategy_trigger: normalizeText(metadataInput.strategy_trigger, 280) || strategy?.chosen_trigger || null,
+    strategy_contact_channel:
+      normalizeLine(metadataInput.strategy_contact_channel, 40) || strategy?.chosen_contact_channel || null,
+    strategy_contact_value:
+      normalizeText(metadataInput.strategy_contact_value, 320) || strategy?.chosen_contact_value || null,
+    strategy_contact_candidate_id:
+      normalizeLine(metadataInput.strategy_contact_candidate_id, 120) || strategy?.chosen_contact_candidate_id || null,
+    strategy_contact_confidence:
+      Number.isFinite(Number(metadataInput.strategy_contact_confidence))
+        ? Number(metadataInput.strategy_contact_confidence)
+        : strategy?.chosen_contact_confidence || null,
+    strategy_risk_level: normalizeLine(metadataInput.strategy_risk_level, 40) || strategy?.risk_level || null,
     trigger_evidence: triggerEvidence,
     trigger_evidence_count: triggerEvidenceCount,
     first_touch_guardrail: firstTouchGuardrail,
@@ -352,6 +417,24 @@ export async function POST(
       { ok: false, error: "crm_message_create_failed", details: error.message },
       { status: 500 },
     );
+  }
+
+  try {
+    await persistQualityReview(supabase, {
+      agentId: String(auth.user.id),
+      prospectId,
+      messageId: String(data?.id || ""),
+      reviewScope: "draft_save",
+      channel: safeChannel,
+      messageKind: safeKind,
+      review: outboundReview,
+      metadata: {
+        strategy_decision_id: mergedMetadata.strategy_decision_id || null,
+        generated_from: mergedMetadata.source || null,
+      },
+    });
+  } catch {
+    // Fail-open: draft saving should not depend on review persistence.
   }
 
   const { error: logErr } = await ((supabase as any).rpc("crm_register_outreach_event", {

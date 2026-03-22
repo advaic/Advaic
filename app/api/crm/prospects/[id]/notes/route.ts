@@ -19,7 +19,7 @@ export async function GET(
 
   const supabase = createSupabaseAdminClient();
   const { data, error } = await (supabase.from("crm_research_notes") as any)
-    .select("id, source_type, source_url, note, confidence, is_key_insight, created_at")
+    .select("id, source_type, source_url, note, confidence, is_key_insight, metadata, created_at")
     .eq("agent_id", auth.user.id)
     .eq("prospect_id", prospectId)
     .order("created_at", { ascending: false })
@@ -82,7 +82,7 @@ export async function POST(
       is_key_insight: !!body?.is_key_insight,
       metadata: body?.metadata && typeof body.metadata === "object" ? body.metadata : {},
     })
-    .select("id, source_type, source_url, note, confidence, is_key_insight, created_at")
+    .select("id, source_type, source_url, note, confidence, is_key_insight, metadata, created_at")
     .single();
 
   if (error) {

@@ -24,6 +24,80 @@ function parseIsoOrNull(value: unknown) {
   return d.toISOString();
 }
 
+function plusDays(days: number | null | undefined) {
+  if (!Number.isFinite(Number(days))) return null;
+  return new Date(Date.now() + Number(days) * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function buildReplyFollowupPlan(replyIntent: ReturnType<typeof classifyReplyIntent>) {
+  if (replyIntent.signal === "hard_opt_out") {
+    return {
+      stage: "lost",
+      next_action: "Do-Not-Contact setzen und keine weiteren Touches mehr ausloesen.",
+      next_action_at: null as string | null,
+    };
+  }
+
+  if (replyIntent.signal === "wrong_contact_referral" || replyIntent.signal === "wrong_contact_dead_end") {
+    return {
+      stage: replyIntent.signal === "wrong_contact_referral" ? "replied" : "nurture",
+      next_action: replyIntent.contactHint
+        ? `Kontakt-Reparatur: bei ${replyIntent.contactHint} weitermachen.`
+        : "Kontakt-Reparatur: neuen Ansprechpartner oder neuen Kanal finden.",
+      next_action_at: new Date().toISOString(),
+    };
+  }
+
+  if (replyIntent.signal === "timing_deferral") {
+    return {
+      stage: "nurture",
+      next_action: replyIntent.recommendation,
+      next_action_at: plusDays(replyIntent.timelineHintDays || 21),
+    };
+  }
+
+  if (replyIntent.signal === "meeting_ready") {
+    return {
+      stage: "pilot_invited",
+      next_action: "Sofort kurzen Termin oder kleinen Pilot-Vorschlag senden.",
+      next_action_at: new Date().toISOString(),
+    };
+  }
+
+  if (replyIntent.signal === "info_request") {
+    return {
+      stage: "replied",
+      next_action: "Kurzbeispiel, Unterlagen oder knappen Proof schicken.",
+      next_action_at: new Date().toISOString(),
+    };
+  }
+
+  if (replyIntent.signal === "pilot_interest") {
+    return {
+      stage: "replied",
+      next_action: "Mit Micro-CTA antworten: kurzer Termin, Pilot oder gezielte Rueckfrage.",
+      next_action_at: new Date().toISOString(),
+    };
+  }
+
+  if (replyIntent.signal === "soft_rejection") {
+    return {
+      stage: "lost",
+      next_action: "Nicht weiter druecken. Spaeter nur mit neuer Relevanz erneut pruefen.",
+      next_action_at: null as string | null,
+    };
+  }
+
+  return {
+    stage: replyIntent.stageSuggestion,
+    next_action: replyIntent.recommendation,
+    next_action_at:
+      replyIntent.stageSuggestion === "nurture"
+        ? plusDays(replyIntent.timelineHintDays || 14)
+        : new Date().toISOString(),
+  };
+}
+
 export async function POST(req: NextRequest) {
   const auth = await requireOwnerApiUser(req);
   if (!auth.ok) return auth.response;
@@ -196,6 +270,7 @@ export async function POST(req: NextRequest) {
       inboundText: String(matchedReply.text || ""),
       inboundSnippet: String(matchedReply.snippet || ""),
     });
+    const replyPlan = buildReplyFollowupPlan(replyIntent);
     const templateVariant =
       normalizeLine(
         meta.template_variant || meta.variant || meta.recommended_code || msg?.message_kind || "",
@@ -223,9 +298,18 @@ export async function POST(req: NextRequest) {
         inbound_snippet: normalizeLine(matchedReply.snippet || matchedReply.text || "", 280),
         inbound_timestamp: inboundTsIso,
         reply_intent: replyIntent.label,
+        reply_signal: replyIntent.signal,
+        reply_outcome: replyIntent.outcome,
+        reply_strength: replyIntent.strength,
         reply_intent_confidence: replyIntent.confidence,
         reply_intent_reason: replyIntent.reason,
         reply_intent_recommendation: replyIntent.recommendation,
+        objection_topics: replyIntent.objectionTopics,
+        timeline_hint_days: replyIntent.timelineHintDays,
+        contact_resolution_needed: replyIntent.contactResolutionNeeded,
+        contact_hint: replyIntent.contactHint,
+        stop_automation: replyIntent.stopAutomation,
+        stage_suggestion: replyIntent.stageSuggestion,
         response_time_hours: responseTimeHours,
         template_variant: templateVariant,
       },
@@ -246,33 +330,24 @@ export async function POST(req: NextRequest) {
         },
       }) as any);
     } else if (replyIntent.stageSuggestion === "nurture") {
-      await (supabase.from("crm_prospects") as any)
-        .update({
-          stage: "nurture",
-          next_action: replyIntent.recommendation,
-          next_action_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        })
-        .eq("id", prospectId)
-        .eq("agent_id", agentId);
-    } else if (replyIntent.stageSuggestion === "pilot_invited") {
-      await (supabase.from("crm_prospects") as any)
-        .update({
-          next_action: "Pilot-Einladung senden oder 15-Minuten-Termin vorschlagen",
-          next_action_at: new Date().toISOString(),
-        })
-        .eq("id", prospectId)
-        .eq("agent_id", agentId);
-    } else {
-      await (supabase.from("crm_prospects") as any)
-        .update({
-          next_action: replyIntent.recommendation,
-          next_action_at: new Date().toISOString(),
-        })
-        .eq("id", prospectId)
-        .eq("agent_id", agentId);
+      // handled by generic plan below
     }
 
     const prospectSignals = prospectById.get(prospectId) || null;
+    const currentStage = normalizeLine(prospectSignals?.stage || "", 40).toLowerCase();
+    const lockedStages = new Set(["pilot_active", "pilot_finished", "won", "lost"]);
+    const prospectUpdate: Record<string, any> = {
+      next_action: replyPlan.next_action,
+      next_action_at: replyPlan.next_action_at,
+    };
+    if (!lockedStages.has(currentStage)) {
+      prospectUpdate.stage = replyPlan.stage;
+    }
+    await (supabase.from("crm_prospects") as any)
+      .update(prospectUpdate)
+      .eq("id", prospectId)
+      .eq("agent_id", agentId);
+
     const inferred = inferSegmentAndPlaybook(prospectSignals);
     const channelRaw = normalizeLine(msg?.channel || "", 40).toLowerCase();
     const safeChannel =
@@ -284,12 +359,7 @@ export async function POST(req: NextRequest) {
       channelRaw === "whatsapp"
         ? channelRaw
         : "sonstiges";
-    const outcome =
-      replyIntent.label === "interesse"
-        ? "positive"
-        : replyIntent.label === "opt_out" || replyIntent.label === "falscher_kontakt"
-          ? "negative"
-          : "neutral";
+    const outcome = replyIntent.outcome;
     await (supabase.from("crm_acq_activity_log") as any).insert({
       agent_id: agentId,
       prospect_id: prospectId,
@@ -328,7 +398,15 @@ export async function POST(req: NextRequest) {
         inbound_message_id: String(matchedReply.id || ""),
         inbound_snippet: normalizeLine(matchedReply.snippet || matchedReply.text || "", 280),
         reply_intent: replyIntent.label,
-        confidence: replyIntent.confidence,
+        reply_signal: replyIntent.signal,
+        reply_outcome: replyIntent.outcome,
+        reply_strength: replyIntent.strength,
+        reply_confidence: replyIntent.confidence,
+        objection_topics: replyIntent.objectionTopics,
+        timeline_hint_days: replyIntent.timelineHintDays,
+        contact_resolution_needed: replyIntent.contactResolutionNeeded,
+        contact_hint: replyIntent.contactHint,
+        stop_automation: replyIntent.stopAutomation,
         recommendation: replyIntent.recommendation,
       },
     });

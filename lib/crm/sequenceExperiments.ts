@@ -7,7 +7,7 @@ export type SequenceMessageKind =
 export type SequenceVariant = {
   kind: SequenceMessageKind;
   variant: string;
-  source: "winner" | "hash";
+  source: "winner" | "hash" | "learning";
   reason: string;
 };
 
@@ -30,6 +30,10 @@ const VARIANTS_BY_KIND: Record<SequenceMessageKind, string[]> = {
   follow_up_2: ["risk_reversal_v1", "pilot_next_step_v1"],
   follow_up_3: ["last_call_respectful_v1", "checkpoint_later_v1"],
 };
+
+export function listSequenceVariants(kind: SequenceMessageKind) {
+  return [...(VARIANTS_BY_KIND[kind] || [])];
+}
 
 const OUTBOUND_ACTIONS = new Set(["outbound_sent", "outbound_manual", "followup_sent"]);
 const POSITIVE_ACTIONS = new Set(["reply_received", "pilot_started", "pilot_won"]);

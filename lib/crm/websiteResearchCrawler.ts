@@ -17,6 +17,26 @@ export type WebsiteResearchPage = {
   snippets: string[];
 };
 
+export type WebsiteResearchNamedContact = {
+  full_name: string;
+  role: string | null;
+  email: string | null;
+  phone: string | null;
+  linkedin_url: string | null;
+  page_url: string;
+  page_kind: PageKind;
+  source_type: "website" | "linkedin";
+  decision_maker: boolean;
+  confidence: number;
+};
+
+export type WebsiteResearchSecondarySource = {
+  source_type: "linkedin" | "portal" | "sonstiges";
+  label: string;
+  url: string;
+  confidence: number;
+};
+
 export type WebsiteResearchResult = {
   start_url: string;
   pages: WebsiteResearchPage[];
@@ -45,7 +65,11 @@ export type WebsiteResearchResult = {
   active_listings_estimate: number | null;
   inferred_contact_email: string | null;
   inferred_linkedin_url: string | null;
+  inferred_contact_name: string | null;
+  inferred_contact_role: string | null;
   team_headline: string | null;
+  named_contacts: WebsiteResearchNamedContact[];
+  secondary_sources: WebsiteResearchSecondarySource[];
 };
 
 function cleanLine(value: unknown, max = 260) {
@@ -62,6 +86,21 @@ function cleanText(value: unknown, max = 6000) {
 
 function unique(values: Array<string | null | undefined>, max = 20) {
   return [...new Set(values.map((value) => cleanLine(value, 220)).filter(Boolean))].slice(0, max);
+}
+
+function decodeHtmlEntities(value: string) {
+  return value
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&uuml;/gi, "ue")
+    .replace(/&ouml;/gi, "oe")
+    .replace(/&auml;/gi, "ae")
+    .replace(/&Uuml;/g, "Ue")
+    .replace(/&Ouml;/g, "Oe")
+    .replace(/&Auml;/g, "Ae")
+    .replace(/&szlig;/gi, "ss");
 }
 
 function stripHtml(html: string) {
@@ -153,6 +192,56 @@ function extractLinks(html: string, baseUrl: string, maxItems = 120) {
   return unique(links, maxItems);
 }
 
+type AnchorRecord = {
+  text: string;
+  href: string;
+  type: "http" | "mailto" | "tel";
+  url: string | null;
+};
+
+function extractAnchors(html: string, baseUrl: string, maxItems = 160) {
+  const anchors: AnchorRecord[] = [];
+  const regex = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null = null;
+  while ((match = regex.exec(html))) {
+    const href = cleanLine(decodeHtmlEntities(match[1] || ""), 500);
+    const text = cleanLine(stripHtml(decodeHtmlEntities(match[2] || "")), 180);
+    if (!href) continue;
+
+    if (/^mailto:/i.test(href)) {
+      anchors.push({
+        text,
+        href,
+        type: "mailto",
+        url: null,
+      });
+    } else if (/^tel:/i.test(href)) {
+      anchors.push({
+        text,
+        href,
+        type: "tel",
+        url: null,
+      });
+    } else {
+      try {
+        const url = new URL(href, baseUrl);
+        if (!/^https?:$/i.test(url.protocol)) continue;
+        anchors.push({
+          text,
+          href,
+          type: "http",
+          url: url.toString(),
+        });
+      } catch {
+        // Ignore malformed links.
+      }
+    }
+
+    if (anchors.length >= maxItems) break;
+  }
+  return anchors;
+}
+
 function scoreLink(url: string) {
   const value = url.toLowerCase();
   if (/\/(ueber-uns|über-uns|about|team|ansprechpartner)(?:\/|$)/.test(value)) return 120;
@@ -241,6 +330,363 @@ function extractSpecialLinks(links: string[]) {
   const linkedinUrls = unique(links.filter((link) => /linkedin\.com/i.test(link)), 6);
   const whatsappUrls = unique(links.filter((link) => /wa\.me|whatsapp/i.test(link)), 4);
   return { linkedinUrls, whatsappUrls };
+}
+
+function canonicalizeRole(role: string | null | undefined) {
+  const safe = cleanLine(role, 140);
+  if (!safe) return null;
+  if (/inhaber|owner|gruender|gründer/i.test(safe)) return "Inhaber";
+  if (/geschaeftsfuehrer|geschäftsführer|geschaeftsleitung|geschäftsleitung/i.test(safe)) {
+    return "Geschaeftsfuehrer";
+  }
+  if (/vertrieb/i.test(safe)) return "Vertriebsleitung";
+  if (/vermiet/i.test(safe)) return "Vermietung";
+  if (/verkauf/i.test(safe)) return "Verkauf";
+  if (/makler|berater|agent/i.test(safe)) return "Makler";
+  if (/assistenz|bueroleitung|büroleitung|office/i.test(safe)) return "Assistenz";
+  return safe;
+}
+
+function roleSignalScore(role: string | null | undefined) {
+  const safe = cleanLine(role, 140).toLowerCase();
+  if (!safe) return 0;
+  if (/inhaber|owner|gruender|gründer|geschaeftsfuehrer|geschäftsführer|geschaeftsleitung|geschäftsleitung/i.test(safe)) {
+    return 10;
+  }
+  if (/leitung|head|vertrieb|makler|berater|agent/i.test(safe)) return 6;
+  if (/assistenz|bueroleitung|büroleitung|office/i.test(safe)) return 3;
+  return 0;
+}
+
+function isDecisionMakerRole(role: string | null | undefined) {
+  return roleSignalScore(role) >= 10;
+}
+
+function isLikelyPersonName(value: string | null | undefined) {
+  const safe = cleanLine(value, 120);
+  if (!safe) return false;
+  if (safe.length < 6 || safe.length > 60) return false;
+  if (/\d/.test(safe)) return false;
+  if (/(immobilien|makler|gmbh|kg|team|kontakt|impressum|büro|buero|verkauf|vermietung|service|office|anfrage)/i.test(safe)) {
+    return false;
+  }
+  const parts = safe.split(/\s+/).filter(Boolean);
+  if (parts.length < 2 || parts.length > 3) return false;
+  const blockedParts = new Set([
+    "best",
+    "property",
+    "agent",
+    "group",
+    "realty",
+    "estate",
+    "partner",
+    "service",
+    "beratung",
+    "management",
+  ]);
+  if (parts.some((part) => blockedParts.has(part.toLowerCase()))) return false;
+  return parts.every((part) => /^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß.'-]{1,24}$/.test(part));
+}
+
+function inferNameFromEmail(email: string | null | undefined) {
+  const safe = cleanLine(email, 200).toLowerCase();
+  if (!safe || !safe.includes("@")) return null;
+  const local = safe.split("@")[0] || "";
+  if (!local || /^(info|kontakt|office|team|hello|mail|post|service|verwaltung)$/.test(local)) return null;
+  const parts = local
+    .split(/[._-]+/)
+    .map((part) => part.trim())
+    .filter((part) => /^[a-z]{2,24}$/.test(part));
+  if (parts.length < 2 || parts.length > 3) return null;
+  const name = parts.map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`).join(" ");
+  return isLikelyPersonName(name) ? name : null;
+}
+
+function inferNameFromLinkedInUrl(url: string | null | undefined) {
+  const safe = cleanLine(url, 500);
+  if (!safe || !/linkedin\.com\/in\//i.test(safe)) return null;
+  try {
+    const parsed = new URL(safe);
+    const slug = parsed.pathname.split("/").filter(Boolean).slice(-1)[0] || "";
+    const parts = slug
+      .split(/[-_]+/)
+      .map((part) => part.trim())
+      .filter((part) => /^[a-z]{2,24}$/i.test(part));
+    if (parts.length < 2 || parts.length > 3) return null;
+    const name = parts.map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`).join(" ");
+    return isLikelyPersonName(name) ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+function tokensForName(value: string | null | undefined) {
+  return cleanLine(value, 120)
+    .toLowerCase()
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 2);
+}
+
+function scoreEmailForName(email: string, name: string | null | undefined) {
+  const local = cleanLine(email, 200).toLowerCase().split("@")[0] || "";
+  if (!local) return 0;
+  const nameTokens = tokensForName(name);
+  if (nameTokens.length === 0) return 0;
+  let score = 0;
+  for (const token of nameTokens) {
+    if (local.includes(token)) score += 1;
+  }
+  return score;
+}
+
+function findBestEmailForName(emails: string[], name: string | null | undefined) {
+  const ranked = emails
+    .map((email) => ({
+      email,
+      score: scoreEmailForName(email, name),
+    }))
+    .sort((a, b) => b.score - a.score || a.email.localeCompare(b.email));
+  return ranked[0]?.score > 0 ? ranked[0].email : null;
+}
+
+function findBestLinkedInForName(urls: string[], name: string | null | undefined) {
+  const targetName = cleanLine(name, 120).toLowerCase();
+  const ranked = urls
+    .map((url) => {
+      const inferred = cleanLine(inferNameFromLinkedInUrl(url), 120).toLowerCase();
+      const score = targetName && inferred === targetName ? 2 : targetName && inferred.includes(targetName.split(" ")[0] || "") ? 1 : 0;
+      return { url, score };
+    })
+    .sort((a, b) => b.score - a.score || a.url.localeCompare(b.url));
+  return ranked[0]?.score > 0 ? ranked[0].url : null;
+}
+
+function findRoleForName(name: string, snippets: string[]) {
+  const safeName = cleanLine(name, 120);
+  if (!safeName) return null;
+  for (const snippet of snippets) {
+    if (!snippet.includes(safeName)) continue;
+    const roleMatch = snippet.match(
+      /\b(Inhaber(?:in)?|Owner|Gruender(?:in)?|Gründer(?:in)?|Geschaeftsfuehrer(?:in)?|Geschäftsführer(?:in)?|Geschaeftsleitung|Geschäftsleitung|Leitung Vertrieb|Vertriebsleitung|Verkauf|Vermietung|Immobilienmakler(?:in)?|Makler(?:in)?|Immobilienberater(?:in)?|Berater(?:in)?|Assistenz|Teamassistenz|Bueroleitung|Büroleitung|Office Manager(?:in)?)\b/i,
+    );
+    if (roleMatch?.[1]) return canonicalizeRole(roleMatch[1]);
+  }
+  return null;
+}
+
+function buildNamedContactConfidence(args: {
+  role: string | null;
+  pageKind: PageKind;
+  email: string | null;
+  linkedinUrl: string | null;
+  decisionMaker: boolean;
+}) {
+  let score = 0.55;
+  if (args.pageKind === "team") score += 0.12;
+  else if (args.pageKind === "about" || args.pageKind === "contact" || args.pageKind === "imprint") score += 0.07;
+  if (args.role) score += 0.07;
+  if (args.decisionMaker) score += 0.08;
+  if (args.email) score += 0.08;
+  if (args.linkedinUrl) score += 0.05;
+  return Math.max(0.45, Math.min(0.97, Math.round(score * 1000) / 1000));
+}
+
+type InternalNamedContact = WebsiteResearchNamedContact;
+
+function extractNamedContactsFromPages(args: {
+  pages: Array<{
+    url: string;
+    page_kind: PageKind;
+    snippets: string[];
+    emails: string[];
+    phones: string[];
+    anchors: AnchorRecord[];
+  }>;
+  linkedinUrls: string[];
+}) {
+  const map = new Map<string, InternalNamedContact>();
+  const push = (row: InternalNamedContact) => {
+    const key = cleanLine(row.full_name, 120).toLowerCase();
+    const current = map.get(key);
+    if (!current) {
+      map.set(key, row);
+      return;
+    }
+    map.set(key, {
+      ...current,
+      role:
+        roleSignalScore(row.role) > roleSignalScore(current.role)
+          ? row.role
+          : current.role || row.role,
+      email: current.email || row.email,
+      phone: current.phone || row.phone,
+      linkedin_url: current.linkedin_url || row.linkedin_url,
+      decision_maker: current.decision_maker || row.decision_maker,
+      confidence: Math.max(current.confidence, row.confidence),
+      page_url: current.confidence >= row.confidence ? current.page_url : row.page_url,
+      page_kind: current.confidence >= row.confidence ? current.page_kind : row.page_kind,
+      source_type:
+        current.source_type === "linkedin" || row.source_type === "linkedin" ? "linkedin" : "website",
+    });
+  };
+
+  for (const page of args.pages) {
+    if (!["team", "about", "contact", "imprint"].includes(page.page_kind)) continue;
+
+    for (const anchor of page.anchors) {
+      const anchorName =
+        isLikelyPersonName(anchor.text)
+          ? cleanLine(anchor.text, 120)
+          : anchor.type === "mailto"
+            ? inferNameFromEmail(anchor.href.replace(/^mailto:/i, "").split("?")[0] || "")
+            : anchor.type === "http"
+              ? inferNameFromLinkedInUrl(anchor.url)
+              : null;
+      if (!anchorName || !isLikelyPersonName(anchorName)) continue;
+
+      const role = findRoleForName(anchorName, page.snippets);
+      const linkedinUrl =
+        anchor.type === "http" && anchor.url && /linkedin\.com/i.test(anchor.url)
+          ? anchor.url
+          : findBestLinkedInForName(args.linkedinUrls, anchorName);
+      const email =
+        anchor.type === "mailto"
+          ? cleanLine((anchor.href.replace(/^mailto:/i, "").split("?")[0] || ""), 200).toLowerCase()
+          : findBestEmailForName(page.emails, anchorName);
+      const phone = page.phones[0] || null;
+      const decisionMaker = isDecisionMakerRole(role);
+      push({
+        full_name: anchorName,
+        role,
+        email,
+        phone,
+        linkedin_url: linkedinUrl,
+        page_url: page.url,
+        page_kind: page.page_kind,
+        source_type: linkedinUrl && /linkedin\.com/i.test(linkedinUrl) ? "linkedin" : "website",
+        decision_maker: decisionMaker,
+        confidence: buildNamedContactConfidence({
+          role,
+          pageKind: page.page_kind,
+          email,
+          linkedinUrl,
+          decisionMaker,
+        }),
+      });
+    }
+
+    for (const snippet of page.snippets) {
+      for (const match of snippet.matchAll(
+        /\b([A-ZÄÖÜ][A-Za-zÄÖÜäöüß.'-]{1,24}(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöüß.'-]{1,24}){1,2})\s*(?:[–—\-|,·]|\s+)\s*(Inhaber(?:in)?|Owner|Gruender(?:in)?|Gründer(?:in)?|Geschaeftsfuehrer(?:in)?|Geschäftsführer(?:in)?|Geschaeftsleitung|Geschäftsleitung|Leitung Vertrieb|Vertriebsleitung|Verkauf|Vermietung|Immobilienmakler(?:in)?|Makler(?:in)?|Immobilienberater(?:in)?|Berater(?:in)?|Assistenz|Teamassistenz|Bueroleitung|Büroleitung|Office Manager(?:in)?)\b/g,
+      )) {
+        const fullName = cleanLine(match[1], 120);
+        const role = canonicalizeRole(match[2]);
+        if (!isLikelyPersonName(fullName)) continue;
+        const email = findBestEmailForName(page.emails, fullName);
+        const linkedinUrl = findBestLinkedInForName(args.linkedinUrls, fullName);
+        const phone = page.phones[0] || null;
+        const decisionMaker = isDecisionMakerRole(role);
+        push({
+          full_name: fullName,
+          role,
+          email,
+          phone,
+          linkedin_url: linkedinUrl,
+          page_url: page.url,
+          page_kind: page.page_kind,
+          source_type: linkedinUrl ? "linkedin" : "website",
+          decision_maker: decisionMaker,
+          confidence: buildNamedContactConfidence({
+            role,
+            pageKind: page.page_kind,
+            email,
+            linkedinUrl,
+            decisionMaker,
+          }),
+        });
+      }
+
+      for (const match of snippet.matchAll(
+        /\b(Inhaber(?:in)?|Owner|Gruender(?:in)?|Gründer(?:in)?|Geschaeftsfuehrer(?:in)?|Geschäftsführer(?:in)?|Geschaeftsleitung|Geschäftsleitung|Leitung Vertrieb|Vertriebsleitung|Verkauf|Vermietung|Immobilienmakler(?:in)?|Makler(?:in)?|Immobilienberater(?:in)?|Berater(?:in)?|Assistenz|Teamassistenz|Bueroleitung|Büroleitung|Office Manager(?:in)?)\s*[:,-]?\s*([A-ZÄÖÜ][A-Za-zÄÖÜäöüß.'-]{1,24}(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöüß.'-]{1,24}){1,2})\b/g,
+      )) {
+        const role = canonicalizeRole(match[1]);
+        const fullName = cleanLine(match[2], 120);
+        if (!isLikelyPersonName(fullName)) continue;
+        const email = findBestEmailForName(page.emails, fullName);
+        const linkedinUrl = findBestLinkedInForName(args.linkedinUrls, fullName);
+        const phone = page.phones[0] || null;
+        const decisionMaker = isDecisionMakerRole(role);
+        push({
+          full_name: fullName,
+          role,
+          email,
+          phone,
+          linkedin_url: linkedinUrl,
+          page_url: page.url,
+          page_kind: page.page_kind,
+          source_type: linkedinUrl ? "linkedin" : "website",
+          decision_maker: decisionMaker,
+          confidence: buildNamedContactConfidence({
+            role,
+            pageKind: page.page_kind,
+            email,
+            linkedinUrl,
+            decisionMaker,
+          }),
+        });
+      }
+    }
+  }
+
+  return [...map.values()]
+    .sort((a, b) => {
+      const decisionDiff = Number(b.decision_maker) - Number(a.decision_maker);
+      if (decisionDiff) return decisionDiff;
+      const roleDiff = roleSignalScore(b.role) - roleSignalScore(a.role);
+      if (roleDiff) return roleDiff;
+      return b.confidence - a.confidence || a.full_name.localeCompare(b.full_name);
+    })
+    .slice(0, 8);
+}
+
+function collectSecondarySources(links: string[]) {
+  const sources: WebsiteResearchSecondarySource[] = [];
+  const push = (
+    sourceType: WebsiteResearchSecondarySource["source_type"],
+    label: string,
+    url: string,
+    confidence: number,
+  ) => {
+    const safeUrl = cleanLine(url, 500);
+    if (!safeUrl) return;
+    if (sources.some((item) => item.url === safeUrl)) return;
+    sources.push({
+      source_type: sourceType,
+      label: cleanLine(label, 120) || sourceType,
+      url: safeUrl,
+      confidence: Math.max(0, Math.min(1, Math.round(confidence * 1000) / 1000)),
+    });
+  };
+
+  for (const link of links) {
+    const safe = cleanLine(link, 500);
+    if (!safe) continue;
+    if (/linkedin\.com/i.test(safe)) {
+      push("linkedin", /\/in\//i.test(safe) ? "LinkedIn-Profil" : "LinkedIn-Seite", safe, /\/in\//i.test(safe) ? 0.84 : 0.74);
+    } else if (/immobilienscout24|immoscout24|immowelt|immonet/i.test(safe)) {
+      push("portal", "Immobilienportal", safe, 0.71);
+    } else if (/facebook\.com|instagram\.com|google\.[^/]+\/maps|provenexpert/i.test(safe)) {
+      push("sonstiges", "Oeffentliche Zweitquelle", safe, 0.58);
+    }
+    if (sources.length >= 10) break;
+  }
+
+  return sources;
 }
 
 function pickSignal(snippets: string[], patterns: RegExp[]) {
@@ -487,6 +933,7 @@ export async function crawlWebsiteResearch(args: {
     const text = stripHtml(page.html);
     const title = extractTitle(page.html);
     const description = extractMetaDescription(page.html);
+    const anchors = extractAnchors(page.html, page.url);
     return {
       url: page.url,
       page_kind: pageKindFor(page.url, title),
@@ -496,6 +943,7 @@ export async function crawlWebsiteResearch(args: {
       snippets: extractSnippets(text, 24),
       emails: extractEmails(page.html, text, start.hostname),
       phones: extractPhones(page.html, text),
+      anchors,
     };
   });
 
@@ -555,6 +1003,29 @@ export async function crawlWebsiteResearch(args: {
     listingEstimate: activeListingsEstimate,
   });
   const teamHeadline = inferTeamHeadline(snippets);
+  const namedContacts = extractNamedContactsFromPages({
+    pages: pages.map((page) => ({
+      url: page.url,
+      page_kind: page.page_kind,
+      snippets: page.snippets,
+      emails: page.emails,
+      phones: page.phones,
+      anchors: page.anchors,
+    })),
+    linkedinUrls,
+  });
+  const secondarySources = collectSecondarySources(allLinks);
+  const bestNamedContact = namedContacts[0] || null;
+  const inferredContactEmail =
+    bestNamedContact?.email ||
+    contactEmails.find((email) => scoreEmailForName(email, bestNamedContact?.full_name) > 0) ||
+    contactEmails[0] ||
+    null;
+  const inferredLinkedInUrl =
+    bestNamedContact?.linkedin_url ||
+    linkedinUrls.find((url) => /\/in\//i.test(url)) ||
+    linkedinUrls[0] ||
+    null;
 
   return {
     start_url: start.toString(),
@@ -588,8 +1059,12 @@ export async function crawlWebsiteResearch(args: {
     primary_pain_hypothesis: pains.primary,
     secondary_pain_hypothesis: pains.secondary,
     active_listings_estimate: activeListingsEstimate,
-    inferred_contact_email: contactEmails[0] || null,
-    inferred_linkedin_url: linkedinUrls[0] || null,
+    inferred_contact_email: inferredContactEmail,
+    inferred_linkedin_url: inferredLinkedInUrl,
+    inferred_contact_name: bestNamedContact?.full_name || null,
+    inferred_contact_role: bestNamedContact?.role || null,
     team_headline: cleanLine(teamHeadline, 180) || null,
+    named_contacts: namedContacts,
+    secondary_sources: secondarySources,
   } satisfies WebsiteResearchResult;
 }

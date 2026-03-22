@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/routeAuth";
 import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
+import { runContactRepair } from "@/lib/crm/contactResolutionEngine";
 
 export const runtime = "nodejs";
 
@@ -214,6 +215,17 @@ export async function POST(req: NextRequest) {
       .eq("id", prospectId)
       .eq("agent_id", agentId);
 
+    try {
+      await runContactRepair(supabase, {
+        agentId,
+        prospectId,
+        triggerType: "bounce",
+        messageId: crmMessageId,
+      });
+    } catch {
+      // Fail-open: bounce detection should still complete even if repair logging fails.
+    }
+
     bounceDetected += 1;
     alreadyBounced.add(crmMessageId);
   }
@@ -225,4 +237,3 @@ export async function POST(req: NextRequest) {
     skipped,
   });
 }
-

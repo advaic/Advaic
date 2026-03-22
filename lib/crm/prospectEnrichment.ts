@@ -1,4 +1,17 @@
 import { assessResearchReadiness } from "@/lib/crm/outboundQuality";
+import {
+  detectResearchChanges,
+  shouldOpenChangeReviewTask,
+  type ResearchChangeSummary,
+} from "@/lib/crm/researchChangeDetection";
+import {
+  buildResearchArtifactsFromCrawl,
+  buildResearchArtifactsFromSecondarySources,
+  type ContactRow,
+  type EvidenceRow,
+  replaceResearchArtifacts,
+} from "@/lib/crm/researchArtifacts";
+import { crawlSecondarySourceResearch } from "@/lib/crm/secondarySourceResearch";
 import { crawlWebsiteResearch } from "@/lib/crm/websiteResearchCrawler";
 
 export type ProspectRow = {
@@ -36,11 +49,15 @@ export type ProspectRow = {
   secondary_pain_hypothesis: string | null;
   pain_point_hypothesis: string | null;
   hypothesis_confidence: number | null;
+  stage?: string | null;
+  next_action?: string | null;
+  next_action_at?: string | null;
 };
 
 export type EnrichmentResult = {
   crawl_url: string | null;
   pages_crawled: string[];
+  secondary_sources_crawled: string[];
   inferred: {
     object_focus: "miete" | "kauf" | "neubau" | "gemischt";
     brand_tone: "professionell" | "freundlich" | "kurz_direkt" | "gemischt";
@@ -51,6 +68,7 @@ export type EnrichmentResult = {
     score: number;
     summary: string;
   };
+  change_summary: ResearchChangeSummary;
   applied_updates: Record<string, any>;
   note_saved: boolean;
 };
@@ -65,6 +83,57 @@ function normalizeLine(value: unknown, max = 260) {
 
 function normalizeText(value: unknown, max = 1200) {
   return String(value ?? "").replace(/\r/g, "").trim().slice(0, max);
+}
+
+function uniqueLines(values: Array<string | null | undefined>, max = 12) {
+  return [...new Set(values.map((value) => normalizeLine(value, 220)).filter(Boolean))].slice(0, max);
+}
+
+function dedupeEvidenceRows(rows: EvidenceRow[]) {
+  const map = new Map<string, EvidenceRow>();
+  for (const row of rows) {
+    const key = [
+      normalizeLine(row.field_name, 80).toLowerCase(),
+      normalizeLine(row.field_value, 260).toLowerCase(),
+      normalizeLine(row.source_type || "", 24).toLowerCase(),
+      normalizeLine(row.source_url || "", 500).toLowerCase(),
+    ].join("::");
+    const current = map.get(key);
+    if (!current || Number(row.confidence || 0) > Number(current.confidence || 0)) {
+      map.set(key, row);
+    }
+  }
+  return [...map.values()];
+}
+
+function dedupeContactRows(rows: ContactRow[]) {
+  const map = new Map<string, ContactRow>();
+  for (const row of rows) {
+    const key = [
+      normalizeLine(row.channel_type, 24).toLowerCase(),
+      normalizeLine(row.channel_value, 320).toLowerCase(),
+    ].join("::");
+    const current = map.get(key);
+    if (!current) {
+      map.set(key, row);
+      continue;
+    }
+    const nextConfidence = Number(row.confidence || 0);
+    const currentConfidence = Number(current.confidence || 0);
+    map.set(key, {
+      ...current,
+      ...row,
+      contact_name: current.contact_name || row.contact_name || null,
+      contact_role: current.contact_role || row.contact_role || null,
+      is_primary: Boolean(current.is_primary || row.is_primary),
+      confidence: Math.max(currentConfidence, nextConfidence),
+      metadata: {
+        ...(current.metadata && typeof current.metadata === "object" ? current.metadata : {}),
+        ...(row.metadata && typeof row.metadata === "object" ? row.metadata : {}),
+      },
+    });
+  }
+  return [...map.values()];
 }
 
 function extractTitle(html: string) {
@@ -324,7 +393,7 @@ function buildPersonalizationHook(args: {
 export async function loadProspectForEnrichment(supabase: any, args: { prospectId: string; agentId: string }) {
   const { data: prospect, error } = await (supabase.from("crm_prospects") as any)
     .select(
-      "id, company_name, contact_name, contact_email, contact_role, city, region, website_url, source_url, source_checked_at, object_focus, active_listings_count, object_types, price_band_main, region_focus_micro, owner_led, years_in_market, trust_signals, brand_tone, automation_readiness, response_promise_public, appointment_flow_public, docs_flow_public, linkedin_url, linkedin_search_url, linkedin_headline, personalization_hook, personalization_evidence, target_group, process_hint, primary_pain_hypothesis, secondary_pain_hypothesis, pain_point_hypothesis, hypothesis_confidence",
+      "id, company_name, contact_name, contact_email, contact_role, city, region, website_url, source_url, source_checked_at, object_focus, active_listings_count, object_types, price_band_main, region_focus_micro, owner_led, years_in_market, trust_signals, brand_tone, automation_readiness, response_promise_public, appointment_flow_public, docs_flow_public, linkedin_url, linkedin_search_url, linkedin_headline, personalization_hook, personalization_evidence, target_group, process_hint, primary_pain_hypothesis, secondary_pain_hypothesis, pain_point_hypothesis, hypothesis_confidence, stage, next_action, next_action_at",
     )
     .eq("id", args.prospectId)
     .eq("agent_id", args.agentId)
@@ -358,7 +427,38 @@ export async function enrichProspectSignals(
         city: prospect.city,
       })
     : null;
-  const snippets = crawl?.snippets || [];
+  const secondarySources = crawl?.secondary_sources || [];
+  const extraLinkedInUrl = normalizeLine(prospect.linkedin_url, 500) || null;
+  const secondaryResearch =
+    secondarySources.length > 0 || extraLinkedInUrl
+      ? await crawlSecondarySourceResearch({
+          sources: secondarySources,
+          companyName: prospect.company_name,
+          city: prospect.city,
+          extraLinkedInUrl,
+          maxSources: 3,
+        })
+      : null;
+  const snippets = uniqueLines([
+    ...(crawl?.snippets || []),
+    ...((secondaryResearch?.pages || []).flatMap((page) => page.snippets) || []),
+  ], 80);
+  const mergedObjectTypes = uniqueLines([
+    ...(crawl?.object_types || []),
+    ...(secondaryResearch?.object_types || []),
+  ], 6);
+  const mergedRegions = uniqueLines([
+    ...(crawl?.region_focus_micro || []),
+    ...(secondaryResearch?.region_focus_micro || []),
+  ], 4);
+  const mergedTrustSignals = uniqueLines([
+    ...(crawl?.trust_signals || []),
+    ...(secondaryResearch?.trust_signals || []),
+  ], 8);
+  const mergedTargetGroup =
+    normalizeLine(crawl?.target_group, 160) || normalizeLine(secondaryResearch?.target_group, 160) || null;
+  const mergedProcessHint =
+    normalizeLine(crawl?.process_hint, 220) || normalizeLine(secondaryResearch?.process_hint, 220) || null;
 
   const inferredFocus = inferObjectFocus(snippets);
   const inferredTone = inferTone(snippets);
@@ -372,11 +472,16 @@ export async function enrichProspectSignals(
   );
 
   const topSnippet = snippets[0] || "";
-  const title = normalizeLine(crawl?.titles?.[0] || "", 180);
-  const description = normalizeLine(crawl?.descriptions?.[0] || "", 260);
+  const title =
+    normalizeLine(crawl?.titles?.[0] || "", 180) ||
+    normalizeLine(secondaryResearch?.pages?.[0]?.title || "", 180);
+  const description =
+    normalizeLine(crawl?.descriptions?.[0] || "", 260) ||
+    normalizeLine(secondaryResearch?.pages?.[0]?.description || "", 260);
 
   const responsePromise =
     normalizeLine(crawl?.response_promise_public, 180) ||
+    normalizeLine(secondaryResearch?.response_promise_public, 180) ||
     pickSignal(snippets, [/24h|24 h|schnell|zeitnah|umgehend|innerhalb/i]);
   const appointmentFlow =
     normalizeLine(crawl?.appointment_flow_public, 180) ||
@@ -399,6 +504,7 @@ export async function enrichProspectSignals(
     normalizeLine(appointmentFlow, 160),
     normalizeLine(serviceSignal, 160),
     normalizeLine(teamSignal, 160),
+    ...(secondaryResearch?.personalization_evidence || []).map((value) => normalizeLine(value, 160)),
     ...(crawl?.personalization_evidence || []).map((value) => normalizeLine(value, 160)),
     topSnippet,
   ]
@@ -407,6 +513,7 @@ export async function enrichProspectSignals(
     .slice(0, 420);
   const autoHook =
     normalizeLine(crawl?.personalization_hook, 220) ||
+    normalizeLine(secondaryResearch?.corroborated_hook, 220) ||
     buildPersonalizationHook({
       companyName: prospect.company_name,
       city: prospect.city,
@@ -420,8 +527,24 @@ export async function enrichProspectSignals(
     normalizeLine(responsePromise, 150) ||
     normalizeLine(appointmentFlow, 150) ||
     normalizeLine(docsFlow, 150) ||
+    normalizeLine(secondaryResearch?.process_hint, 150) ||
     normalizeLine(serviceSignal, 150) ||
     "";
+  const bestNamedContact = crawl?.named_contacts?.[0] || secondaryResearch?.named_contacts?.[0] || null;
+  const combinedContactEmails = uniqueLines(
+    [
+      ...(crawl?.contact_emails || []),
+      crawl?.inferred_contact_email || null,
+      ...(secondaryResearch?.contact_emails || []),
+      bestNamedContact?.email || null,
+    ].map((value) => normalizeLine(value, 320)?.toLowerCase() || null),
+    8,
+  );
+  const combinedNamedContacts = [
+    ...(crawl?.named_contacts || []),
+    ...(secondaryResearch?.named_contacts || []),
+  ];
+  const secondaryVerificationStrength = Number(secondaryResearch?.verification_strength || 0);
 
   const force = Boolean(args.force);
   const updates: Record<string, any> = {};
@@ -465,30 +588,39 @@ export async function enrichProspectSignals(
     if (autoHook) updates.personalization_hook = autoHook;
   }
   if (force || !prospect.process_hint) {
-    if (crawl?.process_hint) updates.process_hint = normalizeLine(crawl.process_hint, 220);
+    if (mergedProcessHint) updates.process_hint = normalizeLine(mergedProcessHint, 220);
   }
   if (force || !prospect.target_group) {
-    if (crawl?.target_group) updates.target_group = normalizeLine(crawl.target_group, 160);
+    if (mergedTargetGroup) updates.target_group = normalizeLine(mergedTargetGroup, 160);
   }
-  if ((force || !prospect.object_types || prospect.object_types.length === 0) && crawl?.object_types?.length) {
-    updates.object_types = crawl.object_types.slice(0, 6);
+  if ((force || !prospect.object_types || prospect.object_types.length === 0) && mergedObjectTypes.length > 0) {
+    updates.object_types = mergedObjectTypes.slice(0, 6);
   }
   if (force || !prospect.price_band_main) {
     if (crawl?.price_band_main) updates.price_band_main = normalizeLine(crawl.price_band_main, 120);
   }
   if (force || !prospect.region_focus_micro) {
-    if (crawl?.region_focus_micro?.length) {
-      updates.region_focus_micro = normalizeLine(crawl.region_focus_micro.join(" · "), 180);
+    if (mergedRegions.length > 0) {
+      updates.region_focus_micro = normalizeLine(mergedRegions.join(" · "), 180);
     }
   }
-  if ((force || !prospect.trust_signals || prospect.trust_signals.length === 0) && crawl?.trust_signals?.length) {
-    updates.trust_signals = crawl.trust_signals.slice(0, 8);
+  if ((force || !prospect.trust_signals || prospect.trust_signals.length === 0) && mergedTrustSignals.length > 0) {
+    updates.trust_signals = mergedTrustSignals.slice(0, 8);
   }
-  if ((force || prospect.owner_led === null) && crawl?.owner_led !== null && crawl?.owner_led !== undefined) {
-    updates.owner_led = crawl.owner_led;
+  if (
+    (force || prospect.owner_led === null) &&
+    [crawl?.owner_led, secondaryResearch?.owner_led].some((value) => value !== null && value !== undefined)
+  ) {
+    updates.owner_led =
+      crawl?.owner_led !== null && crawl?.owner_led !== undefined
+        ? crawl.owner_led
+        : secondaryResearch?.owner_led ?? null;
   }
   if (force || !prospect.years_in_market) {
     if (typeof crawl?.years_in_market === "number") updates.years_in_market = crawl.years_in_market;
+    else if (typeof secondaryResearch?.years_in_market === "number") {
+      updates.years_in_market = secondaryResearch.years_in_market;
+    }
   }
   if (force || !prospect.linkedin_headline) {
     if (crawl?.team_headline) updates.linkedin_headline = normalizeLine(crawl.team_headline, 180);
@@ -496,17 +628,42 @@ export async function enrichProspectSignals(
   if (
     force ||
     ((!prospect.linkedin_url || String(prospect.linkedin_url).trim() === "") &&
-      normalizeLine(crawl?.inferred_linkedin_url, 320))
+      (normalizeLine(crawl?.inferred_linkedin_url, 320) || normalizeLine(secondaryResearch?.linkedin_urls?.[0], 320)))
   ) {
-    if (crawl?.inferred_linkedin_url) updates.linkedin_url = normalizeLine(crawl.inferred_linkedin_url, 320);
+    const linkedinUrl =
+      normalizeLine(crawl?.inferred_linkedin_url, 320) || normalizeLine(secondaryResearch?.linkedin_urls?.[0], 320);
+    if (linkedinUrl) updates.linkedin_url = linkedinUrl;
   }
   if (
     force ||
     ((!prospect.contact_email || String(prospect.contact_email).trim() === "") &&
-      normalizeLine(crawl?.inferred_contact_email, 320))
+      (normalizeLine(crawl?.inferred_contact_email, 320) ||
+        normalizeLine(secondaryResearch?.contact_emails?.[0], 320)))
   ) {
-    if (crawl?.inferred_contact_email) {
-      updates.contact_email = normalizeLine(crawl.inferred_contact_email, 320).toLowerCase();
+    const contactEmail =
+      normalizeLine(crawl?.inferred_contact_email, 320) ||
+      normalizeLine(bestNamedContact?.email, 320) ||
+      normalizeLine(secondaryResearch?.contact_emails?.[0], 320);
+    if (contactEmail) {
+      updates.contact_email = contactEmail.toLowerCase();
+    }
+  }
+  if (
+    force ||
+    ((!prospect.contact_name || String(prospect.contact_name).trim() === "") &&
+      normalizeLine(bestNamedContact?.full_name, 160))
+  ) {
+    if (bestNamedContact?.full_name) {
+      updates.contact_name = normalizeLine(bestNamedContact.full_name, 160);
+    }
+  }
+  if (
+    force ||
+    ((!prospect.contact_role || String(prospect.contact_role).trim() === "") &&
+      normalizeLine(bestNamedContact?.role, 120))
+  ) {
+    if (bestNamedContact?.role) {
+      updates.contact_role = normalizeLine(bestNamedContact.role, 120);
     }
   }
   if (force || !prospect.active_listings_count) {
@@ -532,16 +689,117 @@ export async function enrichProspectSignals(
   if (force || !prospect.secondary_pain_hypothesis) {
     if (crawl?.secondary_pain_hypothesis) {
       updates.secondary_pain_hypothesis = normalizeLine(crawl.secondary_pain_hypothesis, 220);
+    } else if (secondaryResearch?.process_hint) {
+      updates.secondary_pain_hypothesis = normalizeLine(secondaryResearch.process_hint, 220);
     }
   }
   if (force || !prospect.hypothesis_confidence) {
+    const hasStrongSecondarySignal = Boolean(
+      secondaryResearch?.pages?.length &&
+        secondaryVerificationStrength >= 0.76 &&
+        mergedTrustSignals.length >= 2 &&
+        autoHook,
+    );
+    const hasRichWebsiteEvidence = Boolean(
+      crawl?.personalization_evidence && crawl.personalization_evidence.length >= 4,
+    );
+    const hasModerateEvidence = Boolean(
+      (crawl?.personalization_evidence && crawl.personalization_evidence.length >= 2) ||
+        (secondaryResearch?.personalization_evidence &&
+          secondaryResearch.personalization_evidence.length >= 2),
+    );
     const confidence =
-      crawl?.personalization_evidence && crawl.personalization_evidence.length >= 4
-        ? 0.78
-        : crawl?.personalization_evidence && crawl.personalization_evidence.length >= 2
-          ? 0.66
-          : null;
+      hasStrongSecondarySignal
+        ? 0.84
+        : hasRichWebsiteEvidence
+          ? 0.78
+          : hasModerateEvidence
+            ? 0.66
+            : null;
     if (confidence !== null) updates.hypothesis_confidence = confidence;
+  }
+
+  const projectedProspect = {
+    contact_name:
+      normalizeLine(updates.contact_name, 160) || normalizeLine(prospect.contact_name, 160) || null,
+    contact_email:
+      normalizeLine(updates.contact_email, 320) || normalizeLine(prospect.contact_email, 320) || null,
+    contact_role:
+      normalizeLine(updates.contact_role, 120) || normalizeLine(prospect.contact_role, 120) || null,
+    linkedin_url: normalizeLine(updates.linkedin_url, 320) || normalizeLine(prospect.linkedin_url, 320) || null,
+    active_listings_count:
+      typeof updates.active_listings_count === "number"
+        ? updates.active_listings_count
+        : typeof prospect.active_listings_count === "number"
+          ? prospect.active_listings_count
+          : null,
+    object_types:
+      Array.isArray(updates.object_types) && updates.object_types.length > 0
+        ? updates.object_types
+        : prospect.object_types || null,
+    region_focus_micro:
+      normalizeLine(updates.region_focus_micro, 180) || normalizeLine(prospect.region_focus_micro, 180) || null,
+    trust_signals:
+      Array.isArray(updates.trust_signals) && updates.trust_signals.length > 0
+        ? updates.trust_signals
+        : prospect.trust_signals || null,
+    target_group: normalizeLine(updates.target_group, 160) || normalizeLine(prospect.target_group, 160) || null,
+    process_hint: normalizeLine(updates.process_hint, 220) || normalizeLine(prospect.process_hint, 220) || null,
+    response_promise_public:
+      normalizeLine(updates.response_promise_public, 180) ||
+      normalizeLine(prospect.response_promise_public, 180) ||
+      null,
+    appointment_flow_public:
+      normalizeLine(updates.appointment_flow_public, 180) ||
+      normalizeLine(prospect.appointment_flow_public, 180) ||
+      null,
+    docs_flow_public:
+      normalizeLine(updates.docs_flow_public, 180) || normalizeLine(prospect.docs_flow_public, 180) || null,
+    personalization_hook:
+      normalizeLine(updates.personalization_hook, 220) || normalizeLine(prospect.personalization_hook, 220) || null,
+    owner_led:
+      typeof updates.owner_led === "boolean"
+        ? updates.owner_led
+        : prospect.owner_led === null || prospect.owner_led === undefined
+          ? null
+          : Boolean(prospect.owner_led),
+    years_in_market:
+      typeof updates.years_in_market === "number"
+        ? updates.years_in_market
+        : typeof prospect.years_in_market === "number"
+          ? prospect.years_in_market
+          : null,
+    stage: normalizeLine(prospect.stage, 40) || null,
+    next_action: normalizeLine(prospect.next_action, 180) || null,
+    next_action_at: normalizeLine(prospect.next_action_at, 80) || null,
+  };
+  const changeSummary = detectResearchChanges({
+    before: {
+      contact_name: prospect.contact_name,
+      contact_email: prospect.contact_email,
+      contact_role: prospect.contact_role,
+      linkedin_url: prospect.linkedin_url,
+      active_listings_count: prospect.active_listings_count,
+      object_types: prospect.object_types,
+      region_focus_micro: prospect.region_focus_micro,
+      trust_signals: prospect.trust_signals,
+      target_group: prospect.target_group,
+      process_hint: prospect.process_hint,
+      response_promise_public: prospect.response_promise_public,
+      appointment_flow_public: prospect.appointment_flow_public,
+      docs_flow_public: prospect.docs_flow_public,
+      personalization_hook: prospect.personalization_hook,
+      owner_led: prospect.owner_led,
+      years_in_market: prospect.years_in_market,
+      stage: prospect.stage,
+      next_action: prospect.next_action,
+      next_action_at: prospect.next_action_at,
+    },
+    after: projectedProspect,
+  });
+  if (shouldOpenChangeReviewTask({ prospect, summary: changeSummary })) {
+    updates.next_action = `Account-Aenderung pruefen: ${changeSummary.items[0]?.label || "Signale neu bewerten"}`;
+    updates.next_action_at = new Date().toISOString();
   }
 
   const research = assessResearchReadiness({
@@ -553,9 +811,11 @@ export async function enrichProspectSignals(
     personalizationEvidence:
       normalizeLine(updates.personalization_evidence, 320) ||
       normalizeLine(prospect.personalization_evidence, 320),
-    researchInsights: Array.isArray(crawl?.personalization_evidence)
-      ? crawl.personalization_evidence.slice(0, 4).map((value) => normalizeLine(value, 140)).filter(Boolean).join(" | ") || null
-      : null,
+    researchInsights:
+      uniqueLines([
+        ...((crawl?.personalization_evidence || []).map((value) => normalizeLine(value, 140)) || []),
+        ...((secondaryResearch?.personalization_evidence || []).map((value) => normalizeLine(value, 140)) || []),
+      ], 6).join(" | ") || null,
     sourceCheckedAt:
       normalizeLine(updates.source_checked_at, 40) || normalizeLine(prospect.source_checked_at, 40),
     targetGroup:
@@ -583,6 +843,23 @@ export async function enrichProspectSignals(
       normalizeLine(updates.linkedin_search_url, 500) || normalizeLine(prospect.linkedin_search_url, 500),
   });
 
+  const websiteArtifacts = buildResearchArtifactsFromCrawl({
+    crawl,
+    sourceUrl: crawlUrl || null,
+    contactRole: normalizeLine(prospect.contact_role, 120) || null,
+  });
+  const secondaryArtifacts = buildResearchArtifactsFromSecondarySources({
+    research: secondaryResearch,
+    contactRole: normalizeLine(prospect.contact_role, 120) || null,
+  });
+
+  await replaceResearchArtifacts(supabase, {
+    agentId: args.agentId,
+    prospectId: args.prospectId,
+    evidence: dedupeEvidenceRows([...(websiteArtifacts.evidence || []), ...(secondaryArtifacts.evidence || [])]),
+    contacts: dedupeContactRows([...(websiteArtifacts.contacts || []), ...(secondaryArtifacts.contacts || [])]),
+  });
+
   if (Object.keys(updates).length > 0) {
     const { error: updateErr } = await (supabase.from("crm_prospects") as any)
       .update(updates)
@@ -598,13 +875,41 @@ export async function enrichProspectSignals(
     title ? `Title: ${title}` : "",
     description ? `Meta: ${description}` : "",
     crawl?.inferred_contact_email ? `Kontakt-Mail: ${normalizeLine(crawl.inferred_contact_email, 120)}` : "",
-    crawl?.object_types?.length ? `Objekttypen: ${crawl.object_types.join(", ")}` : "",
-    crawl?.region_focus_micro?.length ? `Regionen: ${crawl.region_focus_micro.join(", ")}` : "",
-    crawl?.trust_signals?.length ? `Trust: ${crawl.trust_signals.join(", ")}` : "",
+    bestNamedContact
+      ? `Ansprechpartner: ${normalizeLine(bestNamedContact.full_name, 120)}${bestNamedContact.role ? ` (${normalizeLine(bestNamedContact.role, 80)})` : ""}`
+      : "",
+    mergedObjectTypes.length ? `Objekttypen: ${mergedObjectTypes.join(", ")}` : "",
+    mergedRegions.length ? `Regionen: ${mergedRegions.join(", ")}` : "",
+    mergedTrustSignals.length ? `Trust: ${mergedTrustSignals.join(", ")}` : "",
+    secondarySources.length
+      ? `Zweitquellen: ${secondarySources
+          .slice(0, 3)
+          .map((source) => normalizeLine(source.label, 60))
+          .join(", ")}`
+      : "",
+    secondaryResearch?.pages?.length
+      ? `Extern geprueft: ${secondaryResearch.pages
+          .slice(0, 3)
+          .map((page) => `${normalizeLine(page.label, 50)} (${normalizeLine(page.source_type, 20)})`)
+          .join(", ")}`
+      : "",
+    secondaryResearch?.verified_source_kinds?.length
+      ? `Verifiziert: ${secondaryResearch.verified_source_kinds.join(", ")}`
+      : "",
+    secondaryResearch?.pages?.[0]?.verification_summary
+      ? `Quellencheck: ${normalizeLine(secondaryResearch.pages[0].verification_summary, 160)}`
+      : "",
+    secondaryResearch?.trust_signals?.length
+      ? `Externes Trust: ${secondaryResearch.trust_signals.join(", ")}`
+      : "",
+    secondaryResearch?.named_contacts?.[0]
+      ? `Extern Kontakt: ${normalizeLine(secondaryResearch.named_contacts[0].full_name, 120)}${secondaryResearch.named_contacts[0].role ? ` (${normalizeLine(secondaryResearch.named_contacts[0].role, 80)})` : ""}`
+      : "",
     responsePromise ? `Reaktionssignal: ${normalizeLine(responsePromise, 120)}` : "",
     appointmentFlow ? `Termin-Signal: ${normalizeLine(appointmentFlow, 120)}` : "",
     docsFlow ? `Unterlagen-Signal: ${normalizeLine(docsFlow, 120)}` : "",
     autoHook ? `Hook: ${normalizeLine(autoHook, 140)}` : "",
+    changeSummary.detected ? `Aenderungen: ${changeSummary.summary}` : "",
   ].filter(Boolean);
 
   let noteSaved = false;
@@ -625,10 +930,21 @@ export async function enrichProspectSignals(
         research_status: research.status,
         research_score: research.score,
         pages_crawled: crawl?.pages?.map((page) => page.url) || [],
-        trust_signals: crawl?.trust_signals || [],
-        object_types: crawl?.object_types || [],
-        contact_emails: crawl?.contact_emails || [],
-        region_focus_micro: crawl?.region_focus_micro || [],
+        secondary_verification_strength: secondaryVerificationStrength,
+        verified_source_kinds: secondaryResearch?.verified_source_kinds || [],
+        verified_review_sources: secondaryResearch?.verified_review_sources || [],
+        verified_listing_sources: secondaryResearch?.verified_listing_sources || [],
+        verified_contact_surfaces: secondaryResearch?.verified_contact_surfaces || [],
+        trust_signals: mergedTrustSignals,
+        object_types: mergedObjectTypes,
+        contact_emails: combinedContactEmails,
+        named_contacts: combinedNamedContacts,
+        secondary_sources: secondarySources,
+        secondary_sources_crawled: secondaryResearch?.pages?.map((page) => page.url) || [],
+        secondary_named_contacts: secondaryResearch?.named_contacts || [],
+        secondary_trust_signals: secondaryResearch?.trust_signals || [],
+        region_focus_micro: mergedRegions,
+        change_summary: changeSummary,
       },
     });
     noteSaved = !noteErr;
@@ -639,6 +955,7 @@ export async function enrichProspectSignals(
     result: {
       crawl_url: crawlUrl || null,
       pages_crawled: crawl?.pages?.map((page) => page.url) || [],
+      secondary_sources_crawled: secondaryResearch?.pages?.map((page) => page.url) || [],
       inferred: {
         object_focus: inferredFocus,
         brand_tone: inferredTone,
@@ -649,6 +966,7 @@ export async function enrichProspectSignals(
         score: research.score,
         summary: research.summary,
       },
+      change_summary: changeSummary,
       applied_updates: updates,
       note_saved: noteSaved,
     },

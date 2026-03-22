@@ -23,9 +23,19 @@ function isStale(prospect: ProspectRow, staleDays: number) {
   return diffMs > staleDays * 24 * 60 * 60 * 1000;
 }
 
+function needsChangeWatch(prospect: ProspectRow, changeWatchDays: number) {
+  const stage = String((prospect as any).stage || "").trim().toLowerCase();
+  const trackedStage = ["new", "researching", "contacted", "nurture"].includes(stage);
+  const nextActionTs = parseIso((prospect as any).next_action_at);
+  const hasUpcomingAction = nextActionTs !== null && nextActionTs <= Date.now() + 7 * 24 * 60 * 60 * 1000;
+  if (!trackedStage && !hasUpcomingAction) return false;
+  return isStale(prospect, changeWatchDays);
+}
+
 function needsEnrichment(prospect: ProspectRow, staleDays: number) {
   return (
     isStale(prospect, staleDays) ||
+    needsChangeWatch(prospect, Math.min(staleDays, 10)) ||
     !String(prospect.contact_email || "").trim() ||
     !String(prospect.linkedin_url || "").trim() ||
     !String(prospect.linkedin_search_url || "").trim() ||
@@ -59,7 +69,7 @@ export async function POST(req: NextRequest) {
 
   const { data: prospects, error } = await (supabase.from("crm_prospects") as any)
     .select(
-      "id, company_name, contact_name, contact_email, city, website_url, source_url, source_checked_at, object_focus, active_listings_count, object_types, trust_signals, brand_tone, automation_readiness, response_promise_public, appointment_flow_public, docs_flow_public, linkedin_url, linkedin_search_url, personalization_hook, personalization_evidence, target_group, process_hint, primary_pain_hypothesis, pain_point_hypothesis",
+      "id, company_name, contact_name, contact_email, city, website_url, source_url, source_checked_at, object_focus, active_listings_count, object_types, trust_signals, brand_tone, automation_readiness, response_promise_public, appointment_flow_public, docs_flow_public, linkedin_url, linkedin_search_url, personalization_hook, personalization_evidence, target_group, process_hint, primary_pain_hypothesis, pain_point_hypothesis, stage, next_action_at",
     )
     .eq("agent_id", agentId)
     .order("updated_at", { ascending: false })
@@ -89,6 +99,7 @@ export async function POST(req: NextRequest) {
     status: "enriched" | "failed" | "skipped";
     error?: string;
     updates?: string[];
+    changes?: string[];
   }> = [];
 
   for (const prospect of selected) {
@@ -139,12 +150,16 @@ export async function POST(req: NextRequest) {
     }
 
     runSummary.enriched += 1;
-    details.push({
-      prospect_id: String(prospect.id),
-      company_name: prospect.company_name,
-      status: "enriched",
-      updates: updateKeys,
-    });
+      details.push({
+        prospect_id: String(prospect.id),
+        company_name: prospect.company_name,
+        status: "enriched",
+        updates: updateKeys,
+        changes:
+          enriched.result.change_summary?.detected
+            ? enriched.result.change_summary.items.map((item) => item.label)
+            : [],
+      });
   }
 
   const finishedAt = new Date().toISOString();

@@ -163,10 +163,24 @@ export async function GET(req: NextRequest) {
       reply_intent_confidence: Number.isFinite(Number(meta.reply_intent_confidence))
         ? Math.max(0, Math.min(1, Number(meta.reply_intent_confidence)))
         : null,
+      reply_signal: normalizeLine(meta.reply_signal || "", 80) || null,
+      reply_strength: normalizeLine(meta.reply_strength || "", 40) || null,
       reply_intent_reason: normalizeText(meta.reply_intent_reason || "", 240) || null,
       recommendation:
         normalizeText(meta.reply_intent_recommendation || meta.recommendation || event?.details || "", 280) ||
         null,
+      objection_topics: Array.isArray(meta.objection_topics)
+        ? meta.objection_topics
+            .map((value: unknown) => normalizeLine(value, 40))
+            .filter(Boolean)
+            .slice(0, 4)
+        : [],
+      timeline_hint_days: Number.isFinite(Number(meta.timeline_hint_days))
+        ? Math.max(0, Math.min(365, Number(meta.timeline_hint_days)))
+        : null,
+      contact_resolution_needed: Boolean(meta.contact_resolution_needed),
+      contact_hint: normalizeText(meta.contact_hint || "", 160) || null,
+      stop_automation: Boolean(meta.stop_automation),
       response_time_hours: Number.isFinite(Number(meta.response_time_hours))
         ? Number(meta.response_time_hours)
         : null,

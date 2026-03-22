@@ -6,8 +6,12 @@ import { routeObjection } from "@/lib/crm/objectionLibrary";
 import { collectTriggerEvidence, evaluateFirstTouchGuardrails } from "@/lib/crm/cadenceRules";
 import {
   assessResearchReadiness,
-  evaluateOutboundMessageQuality,
 } from "@/lib/crm/outboundQuality";
+import { ensureProspectStrategyDecision } from "@/lib/crm/strategyEngine";
+import {
+  evaluateGroundedOutboundMessageQuality,
+  loadGroundedReviewContext,
+} from "@/lib/crm/qualityReviewEngine";
 
 export const runtime = "nodejs";
 
@@ -382,17 +386,33 @@ export async function GET(
     .map((n: any) => normalizeMultiline(n?.note, 180))
     .filter(Boolean)
     .join(" ");
+  const strategyResult = await ensureProspectStrategyDecision(supabase, {
+    agentId: String(auth.user.id),
+    prospectId,
+    prospect,
+  });
+  const strategy = strategyResult.ok ? strategyResult.strategy : null;
 
   const mix = `Miete ${typeof prospect.share_miete_percent === "number" ? prospect.share_miete_percent : "?"}% / Kauf ${typeof prospect.share_kauf_percent === "number" ? prospect.share_kauf_percent : "?"}%`;
   const args = {
     companyName: normalizeLine(prospect.company_name, 160),
     contactName: normalizeLine(prospect.contact_name, 120) || null,
-    contactEmail: normalizeLine((prospect as any).contact_email, 240) || null,
+    contactEmail:
+      normalizeLine((prospect as any).contact_email, 240) ||
+      (strategy?.chosen_contact_channel === "email"
+        ? normalizeLine(strategy.chosen_contact_value, 240) || null
+        : null),
     city: normalizeLine(prospect.city, 120) || null,
     region: normalizeLine(prospect.region, 120) || null,
     objectFocus: normalizeLine(prospect.object_focus, 40) || "gemischt",
-    hook: sanitizeOutreachSnippet(prospect.personalization_hook, 280) || null,
-    pain: sanitizeOutreachSnippet(prospect.pain_point_hypothesis, 280) || null,
+    hook:
+      sanitizeOutreachSnippet(strategy?.chosen_trigger, 280) ||
+      sanitizeOutreachSnippet(prospect.personalization_hook, 280) ||
+      null,
+    pain:
+      sanitizeOutreachSnippet(strategy?.chosen_angle, 280) ||
+      sanitizeOutreachSnippet(prospect.pain_point_hypothesis, 280) ||
+      null,
     objection: sanitizeOutreachSnippet(prospect.primary_objection, 240) || null,
     activeListingsCount:
       typeof prospect.active_listings_count === "number" ? prospect.active_listings_count : null,
@@ -423,14 +443,15 @@ export async function GET(
     );
   }
 
-  const segmentKey = inferSegmentFromProspect({
+  const inferredSegmentKey = inferSegmentFromProspect({
     object_focus: args.objectFocus,
     share_miete_percent: prospect.share_miete_percent,
     share_kauf_percent: prospect.share_kauf_percent,
     active_listings_count: args.activeListingsCount,
     automation_readiness: null,
   });
-  const playbook = getPlaybookForSegment(segmentKey);
+  const segmentKey = strategy?.segment_key || inferredSegmentKey;
+  const playbook = getPlaybookForSegment(segmentKey as any);
   const valueNarrative =
     segmentKey === "solo_miete_volumen"
       ? "weniger Zeitverlust bei Standardanfragen und schnellere Reaktionszeiten"
@@ -482,22 +503,51 @@ export async function GET(
     personalizationEvidence: args.evidence || null,
     sourceCheckedAt: normalizeLine(prospect.source_checked_at, 40) || null,
   }).length;
-  const research = assessResearchReadiness({
-    preferredChannel: "email",
-    contactEmail: args.contactEmail,
-    personalizationHook: args.hook,
-    personalizationEvidence: args.evidence || null,
-    researchInsights: args.researchInsights || null,
-    sourceCheckedAt: normalizeLine(prospect.source_checked_at, 40) || null,
-    targetGroup: normalizeMultiline(prospect.target_group, 220) || null,
-    processHint: normalizeMultiline(prospect.process_hint, 220) || null,
-    activeListingsCount: args.activeListingsCount,
-    linkedinSearchUrl: null,
-  });
+  const research =
+    strategyResult.ok && strategyResult.research
+      ? strategyResult.research
+      : assessResearchReadiness({
+          preferredChannel: "email",
+          contactEmail: args.contactEmail,
+          personalizationHook: args.hook,
+          personalizationEvidence: args.evidence || null,
+          researchInsights: args.researchInsights || null,
+          sourceCheckedAt: normalizeLine(prospect.source_checked_at, 40) || null,
+          targetGroup: normalizeMultiline(prospect.target_group, 220) || null,
+          processHint: normalizeMultiline(prospect.process_hint, 220) || null,
+          activeListingsCount: args.activeListingsCount,
+          linkedinSearchUrl: null,
+        });
+  const groundedContexts = {
+    email: await loadGroundedReviewContext(supabase, {
+      agentId: String(auth.user.id),
+      prospectId,
+      channel: "email",
+      messageKind: "first_touch",
+      segmentKey,
+      playbookKey: playbook?.key || strategy?.playbook_key || null,
+    }),
+    linkedin: await loadGroundedReviewContext(supabase, {
+      agentId: String(auth.user.id),
+      prospectId,
+      channel: "linkedin",
+      messageKind: "first_touch",
+      segmentKey,
+      playbookKey: playbook?.key || strategy?.playbook_key || null,
+    }),
+    telefon: await loadGroundedReviewContext(supabase, {
+      agentId: String(auth.user.id),
+      prospectId,
+      channel: "telefon",
+      messageKind: "custom",
+      segmentKey,
+      playbookKey: playbook?.key || strategy?.playbook_key || null,
+    }),
+  } as const;
 
   const reviewPackMessages = (rows: PackMessage[]) =>
     rows.map((message) => {
-      const review = evaluateOutboundMessageQuality({
+      const review = evaluateGroundedOutboundMessageQuality({
         body: message.body,
         subject: message.subject,
         channel: message.channel,
@@ -507,6 +557,25 @@ export async function GET(
         personalizationHook: args.hook,
         triggerEvidenceCount,
         researchReadiness: research,
+        prospect: {
+          company_name: args.companyName,
+          city: args.city,
+          preferred_channel: message.channel,
+          contact_email: args.contactEmail,
+          personalization_hook: args.hook,
+          personalization_evidence: args.evidence || null,
+          source_checked_at: normalizeLine(prospect.source_checked_at, 40) || null,
+          target_group: normalizeMultiline(prospect.target_group, 220) || null,
+          process_hint: normalizeMultiline(prospect.process_hint, 220) || null,
+          active_listings_count: args.activeListingsCount,
+        },
+        context: groundedContexts[message.channel],
+        supportHints: [
+          args.hook,
+          args.pain,
+          args.evidence,
+          args.researchInsights,
+        ].filter(Boolean) as string[],
       });
       return {
         ...message,
@@ -517,7 +586,7 @@ export async function GET(
   const packSummary = (
     rows: Array<
       PackMessage & {
-        review: ReturnType<typeof evaluateOutboundMessageQuality>;
+        review: ReturnType<typeof evaluateGroundedOutboundMessageQuality>;
       }
     >,
   ) => {
@@ -582,6 +651,34 @@ export async function GET(
     recommendation_reason: reason,
     research,
     pack_review: summary,
+    strategy: strategy
+      ? {
+          id: strategy.id,
+          version: strategy.version,
+          strategy_status: strategy.strategy_status,
+          segment_key: strategy.segment_key,
+          playbook_key: strategy.playbook_key,
+          playbook_title: strategy.playbook_title,
+          chosen_channel: strategy.chosen_channel,
+          channel_plan: strategy.channel_plan,
+          chosen_contact_confidence: strategy.chosen_contact_confidence,
+          chosen_contact_candidate_id: strategy.chosen_contact_candidate_id,
+          chosen_cta: strategy.chosen_cta,
+          chosen_angle: strategy.chosen_angle,
+          chosen_trigger: strategy.chosen_trigger,
+          trigger_evidence: strategy.trigger_evidence,
+          research_status: strategy.research_status,
+          research_score: strategy.research_score,
+          risk_level: strategy.risk_level,
+          strategy_score: strategy.strategy_score,
+          rationale: strategy.rationale,
+          fallback_plan: strategy.fallback_plan,
+          research_gaps: strategy.research_gaps,
+          metadata: strategy.metadata || {},
+          chosen_contact_channel: strategy.chosen_contact_channel,
+          chosen_contact_value: strategy.chosen_contact_value,
+        }
+      : null,
     messages: messages.map((message) => ({
       channel: message.channel,
       variant: message.variant,

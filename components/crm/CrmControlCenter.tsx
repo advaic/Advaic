@@ -2,6 +2,16 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import DraftClaimHighlight from "@/components/crm/DraftClaimHighlight";
+import OutboundEvidenceInspector, {
+  type DraftEvidenceReview,
+} from "@/components/crm/OutboundEvidenceInspector";
+import ResearchChangeDiff from "@/components/crm/ResearchChangeDiff";
+import {
+  assessContactSafety,
+  contactSafetyBadgeClass,
+  contactSafetyLabel,
+} from "@/lib/crm/contactSafety";
 import {
   assessResearchReadiness,
   outboundQualityStatusLabel,
@@ -35,6 +45,81 @@ type Prospect = {
   primary_objection?: string | null;
   automation_readiness?: string | null;
   cta_preference_guess?: string | null;
+  updated_at?: string | null;
+};
+
+type ProspectCandidate = {
+  id: string;
+  company_name: string;
+  contact_email: string | null;
+  contact_role: string | null;
+  city: string | null;
+  website_url: string | null;
+  source_url: string | null;
+  linkedin_url?: string | null;
+  linkedin_search_url?: string | null;
+  object_focus: "miete" | "kauf" | "neubau" | "gemischt";
+  preferred_channel: string;
+  priority: "A" | "B" | "C";
+  fit_score: number;
+  automation_readiness?: string | null;
+  active_listings_count?: number | null;
+  personalization_hook?: string | null;
+  target_group?: string | null;
+  process_hint?: string | null;
+  source_checked_at?: string | null;
+  metadata?: Record<string, any> | null;
+  learned_fit_score?: number | null;
+  discovery_learning_score?: number | null;
+  discovery_learning_reason?: string | null;
+  created_at?: string | null;
+  review_status: "new" | "promoted" | "rejected" | "duplicate";
+};
+
+type AccountChangeQueueItem = {
+  id: string;
+  company_name: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  city: string | null;
+  priority: "A" | "B" | "C";
+  fit_score: number;
+  stage: string;
+  next_action: string | null;
+  next_action_at: string | null;
+  source_checked_at?: string | null;
+  personalization_hook?: string | null;
+  updated_at?: string | null;
+  change_summary?: string | null;
+  change_count?: number | null;
+  change_detected_at?: string | null;
+  latest_change_note?: string | null;
+  change_items?: Array<{
+    field?: string;
+    label?: string;
+    severity?: "high" | "medium";
+    previous?: string | null;
+    current?: string | null;
+    summary?: string | null;
+  }>;
+};
+
+type BlockedDraftQueueItem = {
+  id: string;
+  prospect_id: string;
+  company_name: string;
+  city: string | null;
+  stage: string | null;
+  priority: "A" | "B" | "C" | null;
+  fit_score: number | null;
+  channel: string;
+  message_kind: string;
+  subject: string | null;
+  body: string;
+  body_preview: string;
+  status: string;
+  review: DraftReview | null;
+  created_at?: string | null;
   updated_at?: string | null;
 };
 
@@ -100,15 +185,28 @@ type Overview = {
   lost_total: number;
 };
 
+type CrmAutomationSettings = {
+  sequence_automation_enabled: boolean;
+  enrichment_automation_enabled: boolean;
+  reason: string | null;
+  updated_at: string | null;
+  source: "table" | "default";
+  schema_missing?: boolean;
+};
+
 type OverviewResponse = {
   ok: boolean;
   summary: Overview;
   followup_due: FollowupDue[];
   prospects: Prospect[];
+  candidate_queue: ProspectCandidate[];
+  account_change_queue: AccountChangeQueueItem[];
+  blocked_draft_queue: BlockedDraftQueueItem[];
   open_feedback: {
     total: number;
     by_severity: { critical: number; high: number; medium: number; low: number };
   };
+  automation: CrmAutomationSettings;
   error?: string;
   details?: string;
 };
@@ -120,6 +218,7 @@ type ResearchNote = {
   note: string;
   confidence: number | null;
   is_key_insight: boolean;
+  metadata?: Record<string, any> | null;
   created_at: string;
 };
 
@@ -137,13 +236,7 @@ type OutreachMessage = {
   updated_at: string;
 };
 
-type DraftReview = {
-  status: "pass" | "needs_review" | "blocked";
-  score: number;
-  summary: string;
-  blockers?: string[];
-  warnings?: string[];
-};
+type DraftReview = DraftEvidenceReview;
 
 type OutreachEvent = {
   id: string;
@@ -290,8 +383,15 @@ type ReplyInboxItem = {
   template_variant: string;
   reply_intent: "interesse" | "objection" | "nicht_jetzt" | "opt_out" | "falscher_kontakt" | "neutral";
   reply_intent_confidence: number | null;
+  reply_signal?: string | null;
+  reply_strength?: string | null;
   reply_intent_reason: string | null;
   recommendation: string | null;
+  objection_topics?: string[];
+  timeline_hint_days?: number | null;
+  contact_resolution_needed?: boolean;
+  contact_hint?: string | null;
+  stop_automation?: boolean;
   response_time_hours: number | null;
 };
 
@@ -326,6 +426,159 @@ type PublicChatLogsResponse = {
   total: number;
   logs: PublicChatLogItem[];
   note?: string;
+  error?: string;
+  details?: string;
+};
+
+type ProspectDiscoveryResponse = {
+  ok: boolean;
+  run_id?: string | null;
+  cities: string[];
+  selected: number;
+  created: number;
+  skipped_existing: number;
+  skipped_irrelevant: number;
+  failed: number;
+  candidates: Array<{
+    id: string;
+    company_name: string;
+    city: string | null;
+    website_url: string | null;
+    source_url: string | null;
+    fit_score: number;
+  }>;
+  by_city: Array<{
+    city: string;
+    created: number;
+    skipped_existing: number;
+    skipped_irrelevant: number;
+    failed: number;
+  }>;
+  error?: string;
+  details?: string;
+};
+
+type CandidateReviewResponse = {
+  ok: boolean;
+  status: "promoted" | "rejected" | "duplicate";
+  already_processed?: boolean;
+  candidate_id: string;
+  prospect_id?: string | null;
+  prospect?: {
+    id: string;
+    company_name: string;
+  } | null;
+  reason?: string | null;
+  error?: string;
+  details?: string;
+};
+
+type ContactRepairResponse = {
+  ok: boolean;
+  status: "resolved" | "manual_review" | "no_candidate" | "skipped";
+  summary: string;
+  strategy?: {
+    id: string;
+    version: number;
+    chosen_channel: string | null;
+    chosen_contact_value: string | null;
+  } | null;
+  selected_contact?: {
+    id: string | null;
+    channel_type: string;
+    channel_value: string;
+  } | null;
+  invalidated_contact?: {
+    id: string | null;
+    channel_type: string;
+    channel_value: string;
+  } | null;
+  error?: string;
+  details?: string;
+};
+
+type LearningSnapshotResponse = {
+  ok: boolean;
+  snapshot?: {
+    id: string;
+    lookback_days: number;
+    computed_at: string;
+    summary: {
+      outbound_attempts: number;
+      positive_outcomes: number;
+      negative_outcomes: number;
+      positive_rate: number;
+      negative_rate: number;
+      candidate_accept_rate: number;
+      draft_approve_rate: number;
+      draft_needs_work_rate: number;
+      quality_pass_rate: number;
+      wrong_contact_count: number;
+      reply_rate: number;
+      positive_reply_rate: number;
+      pilot_rate: number;
+      bounce_rate: number;
+      avg_response_hours: number | null;
+      manual_override_rate: number;
+    };
+    insights: {
+      channel_biases: Array<{
+        channel: string;
+        score_adjustment: number;
+        sample_size: number;
+        positive_rate: number;
+        negative_rate: number;
+        reason: string;
+      }>;
+      segment_channel_biases: Array<{
+        segment_key: string;
+        channel: string;
+        score_adjustment: number;
+        sample_size: number;
+        reason: string;
+      }>;
+      variant_biases: Array<{
+        message_kind: string;
+        variant: string;
+        score_adjustment: number;
+        sample_size: number;
+        reason: string;
+      }>;
+      discovery_biases: Array<{
+        city: string;
+        discovery_source: string;
+        query_pattern: string;
+        score_adjustment: number;
+        sample_size: number;
+        accept_rate: number;
+        positive_rate: number;
+        negative_rate: number;
+        reason: string;
+      }>;
+      timing_biases: Array<{
+        channel: string;
+        weekday: string;
+        hour_bucket: string;
+        score_adjustment: number;
+        sample_size: number;
+        positive_rate: number;
+        negative_rate: number;
+        reason: string;
+      }>;
+      quality_hotspots: Array<{
+        label: string;
+        type: "blocker" | "warning";
+        count: number;
+      }>;
+      failure_postmortems: Array<{
+        code: string;
+        label: string;
+        count: number;
+        share: number;
+        reason: string;
+      }>;
+    };
+  } | null;
   error?: string;
   details?: string;
 };
@@ -419,6 +672,23 @@ const REPLY_INTENT_LABELS: Record<string, string> = {
   neutral: "Neutral",
 };
 
+const REPLY_SIGNAL_LABELS: Record<string, string> = {
+  meeting_ready: "Terminbereit",
+  pilot_interest: "Interesse",
+  info_request: "Info-Request",
+  timing_deferral: "Timing",
+  pricing_objection: "Preis",
+  compliance_objection: "DSGVO",
+  control_objection: "Kontrolle",
+  quality_objection: "Qualitaet",
+  capacity_objection: "Aufwand",
+  wrong_contact_referral: "Kontakt-Hinweis",
+  wrong_contact_dead_end: "Falscher Kontakt",
+  hard_opt_out: "Stop",
+  soft_rejection: "Absage",
+  neutral: "Neutral",
+};
+
 function formatDate(iso: string | null | undefined) {
   if (!iso) return "–";
   const d = new Date(iso);
@@ -442,6 +712,10 @@ function buildLinkedInSearchUrl(companyName: string, contactName: string, city: 
   const q = [contactName, companyName, city, "LinkedIn Immobilien"].filter(Boolean).join(" ");
   if (!q.trim()) return "";
   return `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(q)}`;
+}
+
+function parseDiscoveryCitiesInput(value: string) {
+  return [...new Set(value.split(",").map((part) => part.trim()).filter(Boolean))].slice(0, 10);
 }
 
 function stageBadgeClass(stage: string) {
@@ -470,6 +744,21 @@ function reviewBadgeClass(status: string | null | undefined) {
   if (status === "pass") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
   if (status === "needs_review") return "bg-amber-50 text-amber-800 ring-amber-200";
   return "bg-rose-50 text-rose-700 ring-rose-200";
+}
+
+function learningBiasBadgeClass(score: number | null | undefined) {
+  const value = Number(score || 0);
+  if (value >= 5) return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (value > 0) return "bg-blue-50 text-blue-700 ring-blue-200";
+  if (value <= -5) return "bg-rose-50 text-rose-700 ring-rose-200";
+  if (value < 0) return "bg-amber-50 text-amber-800 ring-amber-200";
+  return "bg-gray-50 text-gray-700 ring-gray-200";
+}
+
+function crmAutomationBadgeClass(active: boolean) {
+  return active
+    ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+    : "bg-rose-50 text-rose-700 ring-rose-200";
 }
 
 const defaultForm: NewProspectForm = {
@@ -543,6 +832,8 @@ export default function CrmControlCenter({
   const [newDraftBody, setNewDraftBody] = useState("");
   const [newDraftKind, setNewDraftKind] = useState("first_touch");
   const [newDraftChannel, setNewDraftChannel] = useState("email");
+  const [newDraftReview, setNewDraftReview] = useState<DraftReview | null>(null);
+  const [newDraftReviewStale, setNewDraftReviewStale] = useState(false);
   const [sendProvider, setSendProvider] = useState<"auto" | "gmail" | "outlook">("auto");
   const [noteBusy, setNoteBusy] = useState(false);
   const [draftBusy, setDraftBusy] = useState(false);
@@ -555,8 +846,16 @@ export default function CrmControlCenter({
   const [replyPendingOnly, setReplyPendingOnly] = useState(true);
   const [publicChatLogs, setPublicChatLogs] = useState<PublicChatLogsResponse | null>(null);
   const [publicChatLogsLoading, setPublicChatLogsLoading] = useState(false);
+  const [learningSnapshot, setLearningSnapshot] = useState<LearningSnapshotResponse["snapshot"] | null>(null);
+  const [learningLoading, setLearningLoading] = useState(false);
   const [enrichingAll, setEnrichingAll] = useState(false);
   const [recomputingExperiments, setRecomputingExperiments] = useState(false);
+  const [discoveringProspects, setDiscoveringProspects] = useState(false);
+  const [automationBusy, setAutomationBusy] = useState(false);
+  const [automationNote, setAutomationNote] = useState(initialData.automation?.reason || "");
+  const [candidateBusyId, setCandidateBusyId] = useState<string | null>(null);
+  const [discoveryCitiesInput, setDiscoveryCitiesInput] = useState("Berlin, Hamburg, München");
+  const [discoveryPerCityLimit, setDiscoveryPerCityLimit] = useState(3);
 
   const loadNextAction = useCallback(async () => {
     try {
@@ -625,6 +924,22 @@ export default function CrmControlCenter({
     }
   }, []);
 
+  const loadLearningSnapshot = useCallback(async () => {
+    setLearningLoading(true);
+    try {
+      const res = await fetch("/api/crm/learning", { cache: "no-store" });
+      const json = (await res.json().catch(() => ({}))) as LearningSnapshotResponse;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Learning-Snapshot konnte nicht geladen werden.");
+      }
+      setLearningSnapshot(json.snapshot || null);
+    } catch {
+      setLearningSnapshot(null);
+    } finally {
+      setLearningLoading(false);
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -641,6 +956,7 @@ export default function CrmControlCenter({
       await loadPerformance();
       await loadReplyInbox();
       await loadPublicChatLogs();
+      await loadLearningSnapshot();
       if (!selectedProspectId && json.prospects?.[0]?.id) {
         setSelectedProspectId(json.prospects[0].id);
       }
@@ -649,7 +965,14 @@ export default function CrmControlCenter({
     } finally {
       setLoading(false);
     }
-  }, [loadNextAction, loadPerformance, loadPublicChatLogs, loadReplyInbox, selectedProspectId]);
+  }, [
+    loadLearningSnapshot,
+    loadNextAction,
+    loadPerformance,
+    loadPublicChatLogs,
+    loadReplyInbox,
+    selectedProspectId,
+  ]);
 
   const loadProspectDetail = useCallback(async (prospectId: string) => {
     setDetailLoading(true);
@@ -691,26 +1014,98 @@ export default function CrmControlCenter({
   }, [data.prospects, selectedProspectId]);
 
   useEffect(() => {
+    setAutomationNote(data.automation?.reason || "");
+  }, [data.automation?.reason, data.automation?.updated_at]);
+
+  useEffect(() => {
     void loadNextAction();
     void loadPerformance();
     void loadReplyInbox();
     void loadPublicChatLogs();
-  }, [loadNextAction, loadPerformance, loadPublicChatLogs, loadReplyInbox]);
+    void loadLearningSnapshot();
+  }, [loadLearningSnapshot, loadNextAction, loadPerformance, loadPublicChatLogs, loadReplyInbox]);
 
   useEffect(() => {
     if (!selectedProspectId) {
       setNotes([]);
       setMessages([]);
       setEvents([]);
+      setNewDraftReview(null);
+      setNewDraftReviewStale(false);
       return;
     }
     void loadProspectDetail(selectedProspectId);
   }, [loadProspectDetail, selectedProspectId]);
 
+  useEffect(() => {
+    setNewDraftReview(null);
+    setNewDraftReviewStale(false);
+  }, [selectedProspectId]);
+
   const selectedProspect = useMemo(
     () => data.prospects.find((p) => p.id === selectedProspectId) || null,
     [data.prospects, selectedProspectId],
   );
+  const selectedChangeSummary = useMemo(() => {
+    for (const note of notes) {
+      const metadata = note?.metadata && typeof note.metadata === "object" ? note.metadata : {};
+      const summary =
+        metadata?.change_summary && typeof metadata.change_summary === "object"
+          ? metadata.change_summary
+          : null;
+      if (summary?.detected || Number(summary?.count || 0) > 0) {
+        return summary;
+      }
+    }
+    return null;
+  }, [notes]);
+  const selectedContactSafety = useMemo(() => {
+    if (!selectedProspect) return null;
+    const value =
+      newDraftChannel === "email"
+        ? selectedProspect.contact_email
+        : newDraftChannel === "linkedin"
+          ? selectedProspect.linkedin_url || selectedProspect.linkedin_search_url
+          : selectedProspect.source_url;
+    return assessContactSafety({
+      preferredChannel: newDraftChannel || selectedProspect.preferred_channel,
+      contact: {
+        channel_type: newDraftChannel || selectedProspect.preferred_channel,
+        channel_value: value || null,
+        contact_name: selectedProspect.contact_name,
+        source_type:
+          newDraftChannel === "linkedin"
+            ? selectedProspect.linkedin_url
+              ? "linkedin-profil"
+              : "linkedin-search"
+            : newDraftChannel === "kontaktformular"
+              ? "website"
+              : "prospect",
+        confidence:
+          newDraftChannel === "email" && selectedProspect.contact_email
+            ? 0.62
+            : newDraftChannel === "linkedin" && (selectedProspect.linkedin_url || selectedProspect.linkedin_search_url)
+              ? 0.58
+              : 0.4,
+        validation_status: "new",
+        is_primary: true,
+      },
+    });
+  }, [newDraftChannel, selectedProspect]);
+  const automation = data.automation || {
+    sequence_automation_enabled: true,
+    enrichment_automation_enabled: true,
+    reason: null,
+    updated_at: null,
+    source: "default" as const,
+  };
+  const allCrmAutomationActive =
+    automation.sequence_automation_enabled && automation.enrichment_automation_enabled;
+  const crmAutomationStatusLabel = allCrmAutomationActive
+    ? "Aktiv"
+    : !automation.sequence_automation_enabled && !automation.enrichment_automation_enabled
+      ? "Pausiert"
+      : "Teilweise pausiert";
   const prospectResearchById = useMemo(() => {
     const map = new Map<
       string,
@@ -802,6 +1197,50 @@ export default function CrmControlCenter({
       }).length,
     [data.prospects],
   );
+  const researchGapProspects = useMemo(() => {
+    return [...(data.prospects || [])]
+      .map((prospect) => ({
+        prospect,
+        research: prospectResearchById.get(prospect.id),
+      }))
+      .filter(
+        (item) =>
+          item.research &&
+          item.research.status !== "ready" &&
+          !["won", "lost", "pilot_finished", "pilot_active"].includes(item.prospect.stage),
+      )
+      .sort((a, b) => {
+        const scoreDiff = Number(a.research?.score || 0) - Number(b.research?.score || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        return Number(b.prospect.fit_score || 0) - Number(a.prospect.fit_score || 0);
+      })
+      .slice(0, 12);
+  }, [data.prospects, prospectResearchById]);
+  const accountChangeQueue = useMemo(() => {
+    return [...(data.account_change_queue || [])]
+      .filter((item) => !["won", "lost", "pilot_finished"].includes(String(item.stage || "")))
+      .sort((a, b) => {
+        const aTs = a.change_detected_at ? new Date(a.change_detected_at).getTime() : Number.POSITIVE_INFINITY;
+        const bTs = b.change_detected_at ? new Date(b.change_detected_at).getTime() : Number.POSITIVE_INFINITY;
+        if (aTs !== bTs) return aTs - bTs;
+        return Number(b.fit_score || 0) - Number(a.fit_score || 0);
+      })
+      .slice(0, 12);
+  }, [data.account_change_queue]);
+  const contactRepairQueue = useMemo(() => {
+    return (data.followup_due || [])
+      .filter((row) =>
+        ["fill_contact_channel", "switch_channel_after_bounce"].includes(
+          String(row.recommended_code || ""),
+        ),
+      )
+      .map((row) => ({
+        row,
+        prospect: data.prospects.find((prospect) => prospect.id === row.prospect_id) || null,
+        research: prospectResearchById.get(row.prospect_id) || null,
+      }))
+      .slice(0, 12);
+  }, [data.followup_due, data.prospects, prospectResearchById]);
 
   const conversionRates = useMemo(() => {
     const s = data.summary;
@@ -867,6 +1306,107 @@ export default function CrmControlCenter({
     }
   }
 
+  async function runProspectDiscovery(opts?: { preset?: "top_cities" }) {
+    const cities = opts?.preset === "top_cities" ? [] : parseDiscoveryCitiesInput(discoveryCitiesInput);
+    if (opts?.preset !== "top_cities" && cities.length === 0) {
+      setError("Bitte mindestens eine Stadt für die Prospect-Suche angeben.");
+      return;
+    }
+
+    setDiscoveringProspects(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch("/api/crm/discover/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preset: opts?.preset || null,
+          cities,
+          per_city_limit: discoveryPerCityLimit,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as ProspectDiscoveryResponse;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Prospect-Discovery fehlgeschlagen.");
+      }
+
+      const citySummary = (Array.isArray(json.by_city) ? json.by_city : [])
+        .filter((row) => Number(row.created || 0) > 0)
+        .map((row) => `${row.city}: ${row.created}`)
+        .join(" · ");
+
+      setSuccess(
+        `Discovery-Run: ${Number(json.created || 0)} neue Kandidaten, ${Number(json.skipped_existing || 0)} bereits vorhanden, ${Number(json.skipped_irrelevant || 0)} verworfen, ${Number(json.failed || 0)} Fehler bei ${Number(json.selected || 0)} geprüften Websites.${citySummary ? ` ${citySummary}` : ""}`,
+      );
+      await refresh();
+    } catch (e: any) {
+      setError(String(e?.message || "Prospect-Discovery fehlgeschlagen."));
+    } finally {
+      setDiscoveringProspects(false);
+    }
+  }
+
+  async function acceptCandidate(candidateId: string) {
+    setCandidateBusyId(candidateId);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/crm/candidates/${candidateId}/accept`, {
+        method: "POST",
+      });
+      const json = (await res.json().catch(() => ({}))) as CandidateReviewResponse;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Kandidat konnte nicht übernommen werden.");
+      }
+
+      await refresh();
+      const prospectId = String(json.prospect_id || "").trim();
+      if (prospectId) {
+        setSelectedProspectId(prospectId);
+        await loadProspectDetail(prospectId);
+      }
+
+      if (json.status === "duplicate") {
+        setSuccess(
+          `Kandidat war bereits vorhanden und wurde als Duplikat markiert${json?.prospect?.company_name ? `: ${json.prospect.company_name}` : ""}.`,
+        );
+        return;
+      }
+
+      setSuccess(
+        `Kandidat übernommen${json?.prospect?.company_name ? `: ${json.prospect.company_name}` : ""}.`,
+      );
+    } catch (e: any) {
+      setError(String(e?.message || "Kandidat konnte nicht übernommen werden."));
+    } finally {
+      setCandidateBusyId(null);
+    }
+  }
+
+  async function rejectCandidate(candidateId: string, reason = "Nicht passend für unsere Akquise.") {
+    setCandidateBusyId(candidateId);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/crm/candidates/${candidateId}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      const json = (await res.json().catch(() => ({}))) as CandidateReviewResponse;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Kandidat konnte nicht verworfen werden.");
+      }
+      await refresh();
+      setSuccess("Kandidat verworfen.");
+    } catch (e: any) {
+      setError(String(e?.message || "Kandidat konnte nicht verworfen werden."));
+    } finally {
+      setCandidateBusyId(null);
+    }
+  }
+
   async function updateStage(prospectId: string, stage: string) {
     setSaving(prospectId);
     setError(null);
@@ -889,6 +1429,45 @@ export default function CrmControlCenter({
     } finally {
       setSaving(null);
     }
+  }
+
+  async function markAccountChangeReviewed(item: AccountChangeQueueItem) {
+    setSaving(item.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/crm/prospects/${item.id}/stage`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          stage: item.stage,
+          next_action: null,
+          next_action_at: null,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Account-Aenderung konnte nicht abgeschlossen werden.");
+      }
+      setSuccess(`${item.company_name}: Account-Aenderung als geprüft markiert.`);
+      await refresh();
+      if (selectedProspectId) await loadProspectDetail(selectedProspectId);
+    } catch (e: any) {
+      setError(String(e?.message || "Account-Aenderung konnte nicht abgeschlossen werden."));
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  function rescueBlockedDraft(item: BlockedDraftQueueItem) {
+    setSelectedProspectId(item.prospect_id);
+    setNewDraftKind(item.message_kind || "custom");
+    setNewDraftChannel(item.channel || "email");
+    setNewDraftSubject(item.subject || "");
+    setNewDraftBody(item.body || "");
+    setNewDraftReview(item.review || null);
+    setNewDraftReviewStale(false);
+    setSuccess(`${item.company_name}: Draft in den Editor geladen.`);
   }
 
   async function logEvent(prospectId: string, eventType: string, label: string) {
@@ -998,6 +1577,8 @@ export default function CrmControlCenter({
         throw new Error(json?.details || json?.error || "Draft konnte nicht gespeichert werden.");
       }
       const review = (json?.review || null) as DraftReview | null;
+      setNewDraftReview(review);
+      setNewDraftReviewStale(false);
       setSuccess(
         review
           ? `Nachrichtendraft gespeichert. ${outboundQualityStatusLabel(review.status)} · ${review.score}/100.`
@@ -1027,6 +1608,8 @@ export default function CrmControlCenter({
       setNewDraftSubject(String(json?.template?.subject || "").trim());
       setNewDraftBody(String(json?.template?.body || "").trim());
       const review = (json?.template_review || null) as DraftReview | null;
+      setNewDraftReview(review);
+      setNewDraftReviewStale(false);
       setSuccess(
         review
           ? `Tester-Einladung übernommen. ${outboundQualityStatusLabel(review.status)} · ${review.score}/100.`
@@ -1212,7 +1795,67 @@ export default function CrmControlCenter({
     }
   }
 
-  async function runSequence(onlyProspectId?: string) {
+  async function recomputeLearningSnapshotNow() {
+    setLearningLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch("/api/crm/learning", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lookback_days: 120,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as LearningSnapshotResponse;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Learning-Snapshot konnte nicht berechnet werden.");
+      }
+      setLearningSnapshot(json.snapshot || null);
+      setSuccess("Learning-Snapshot neu berechnet.");
+    } catch (e: any) {
+      setError(String(e?.message || "Learning-Snapshot konnte nicht berechnet werden."));
+    } finally {
+      setLearningLoading(false);
+    }
+  }
+
+  async function saveAutomationSettings(args: {
+    sequence_automation_enabled?: boolean;
+    enrichment_automation_enabled?: boolean;
+    reason?: string | null;
+    successMessage: string;
+  }) {
+    setAutomationBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch("/api/crm/settings/automation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sequence_automation_enabled: args.sequence_automation_enabled,
+          enrichment_automation_enabled: args.enrichment_automation_enabled,
+          reason: args.reason,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "CRM-Automation konnte nicht gespeichert werden.");
+      }
+      setData((prev) => ({
+        ...prev,
+        automation: json.settings as CrmAutomationSettings,
+      }));
+      setSuccess(args.successMessage);
+    } catch (e: any) {
+      setError(String(e?.message || "CRM-Automation konnte nicht gespeichert werden."));
+    } finally {
+      setAutomationBusy(false);
+    }
+  }
+
+  async function runSequence(onlyProspectId?: string, overridePause = false) {
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -1223,6 +1866,7 @@ export default function CrmControlCenter({
         body: JSON.stringify({
           only_prospect_id: onlyProspectId || null,
           dry_run: false,
+          override_pause: overridePause,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -1238,8 +1882,11 @@ export default function CrmControlCenter({
       const guardrailBlocks = actionRows.filter(
         (row) => String(row?.result || "") === "guardrail_blocked",
       ).length;
+      const timingWaits = actionRows.filter(
+        (row) => String(row?.result || "") === "timing_window_wait",
+      ).length;
       setSuccess(
-        `Sequenzlauf fertig: ${Number(json?.created || 0)} Drafts erstellt, ${Number(json?.skipped_existing || 0)} bereits vorhanden, ${hardStops} per Stop-Regel pausiert, ${guardrailBlocks} durch First-Touch-Guardrails blockiert.`,
+        `Sequenzlauf fertig: ${Number(json?.created || 0)} Drafts erstellt, ${Number(json?.skipped_existing || 0)} bereits vorhanden, ${hardStops} per Stop-Regel pausiert, ${guardrailBlocks} durch First-Touch-Guardrails blockiert, ${timingWaits} ins bessere Zeitfenster verschoben${overridePause ? ", manuell uebersteuert" : ""}.`,
       );
       await refresh();
       if (selectedProspectId) await loadProspectDetail(selectedProspectId);
@@ -1275,6 +1922,9 @@ export default function CrmControlCenter({
       }
 
       const pageCount = Array.isArray(json?.pages_crawled) ? json.pages_crawled.length : 0;
+      const secondaryCount = Array.isArray(json?.secondary_sources_crawled)
+        ? json.secondary_sources_crawled.length
+        : 0;
       const researchSuffix = json?.research?.status
         ? ` ${researchStatusLabel(json.research.status)} · ${Number(json?.research?.score || 0)}/100.`
         : "";
@@ -1282,12 +1932,60 @@ export default function CrmControlCenter({
         opts?.expectContactChannel && !json?.applied_updates?.contact_email && !json?.applied_updates?.linkedin_url
           ? " Kein neuer Kontaktkanal gefunden, Prospect ist jetzt für manuelle Ergänzung geöffnet."
           : "";
+      const changeSuffix =
+        Number(json?.change_summary?.count || 0) > 0
+          ? ` ${String(json?.change_summary?.summary || "").trim()}`
+          : "";
 
-      setSuccess(`Research-Crawl fertig: ${pageCount} Seiten geprüft.${researchSuffix}${contactSuffix}`);
+      setSuccess(
+        `Research-Crawl fertig: ${pageCount} Seiten geprüft${secondaryCount > 0 ? `, ${secondaryCount} Zweitquellen verifiziert` : ""}.${researchSuffix}${contactSuffix}${changeSuffix}`,
+      );
       await refresh();
       await loadProspectDetail(prospectId);
     } catch (e: any) {
       setError(String(e?.message || "Enrichment fehlgeschlagen."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function runContactRepair(
+    prospectId: string,
+    triggerType: "missing_contact" | "bounce" | "wrong_contact" | "manual" = "manual",
+    opts?: {
+      contactCandidateId?: string | null;
+      messageId?: string | null;
+    },
+  ) {
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    setSelectedProspectId(prospectId);
+    try {
+      const res = await fetch(`/api/crm/prospects/${prospectId}/contact-repair`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trigger_type: triggerType,
+          contact_candidate_id: opts?.contactCandidateId || null,
+          message_id: opts?.messageId || null,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as ContactRepairResponse;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Kontakt-Reparatur fehlgeschlagen.");
+      }
+
+      const invalidatedPrefix = json?.invalidated_contact?.channel_value
+        ? `Vorheriger Pfad verworfen: ${json.invalidated_contact.channel_value}. `
+        : "";
+      setSuccess(`${invalidatedPrefix}${json.summary}`);
+      await refresh();
+      await loadProspectDetail(prospectId);
+      return json;
+    } catch (e: any) {
+      setError(String(e?.message || "Kontakt-Reparatur fehlgeschlagen."));
+      return null;
     } finally {
       setLoading(false);
     }
@@ -1313,10 +2011,14 @@ export default function CrmControlCenter({
     }
 
     if (prospectId && code === "fill_contact_channel") {
-      await runProspectEnrichment(prospectId, {
-        force: true,
-        expectContactChannel: true,
-      });
+      const repair = await runContactRepair(prospectId, "missing_contact");
+      if (!repair || repair.status === "no_candidate") {
+        await runProspectEnrichment(prospectId, {
+          force: true,
+          expectContactChannel: true,
+        });
+        await runContactRepair(prospectId, "missing_contact");
+      }
       return;
     }
 
@@ -1341,9 +2043,7 @@ export default function CrmControlCenter({
     }
 
     if (code === "switch_channel_after_bounce") {
-      setSuccess(
-        "Kanalwechsel empfohlen. Prospect wurde markiert. Nächster Schritt: Telefon, LinkedIn oder Kontaktformular.",
-      );
+      await runContactRepair(prospectId, "bounce");
       return;
     }
 
@@ -1382,7 +2082,7 @@ export default function CrmControlCenter({
             <button
               onClick={() => void runSequence()}
               className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
-              disabled={loading}
+              disabled={loading || !automation.sequence_automation_enabled}
             >
               Sequenz ausführen
             </button>
@@ -1414,6 +2114,120 @@ export default function CrmControlCenter({
             >
               {recomputingExperiments ? "Berechne…" : "A/B Winner berechnen"}
             </button>
+          </div>
+        </div>
+        <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-gray-900">CRM-Automation</div>
+              <div className="mt-1 text-xs text-gray-600">
+                Sequenzlauf und Nightly-Enrichment lassen sich hier hart pausieren, ohne manuelle Arbeit zu blockieren.
+              </div>
+            </div>
+            <span
+              className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ring-1 ${crmAutomationBadgeClass(allCrmAutomationActive)}`}
+            >
+              {crmAutomationStatusLabel}
+            </span>
+          </div>
+          <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto]">
+            <div className="rounded-xl border border-gray-200 bg-white p-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                <span
+                  className={`inline-flex rounded-full px-2 py-1 ring-1 ${crmAutomationBadgeClass(automation.sequence_automation_enabled)}`}
+                >
+                  Sequenz {automation.sequence_automation_enabled ? "aktiv" : "pausiert"}
+                </span>
+                <span
+                  className={`inline-flex rounded-full px-2 py-1 ring-1 ${crmAutomationBadgeClass(automation.enrichment_automation_enabled)}`}
+                >
+                  Nightly-Enrichment {automation.enrichment_automation_enabled ? "aktiv" : "pausiert"}
+                </span>
+                {automation.updated_at ? <span>Letzte Aenderung: {formatDate(automation.updated_at)}</span> : null}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <input
+                  className="min-w-[240px] flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm"
+                  placeholder="Pause-Grund oder Betriebsnotiz"
+                  value={automationNote}
+                  onChange={(e) => setAutomationNote(e.target.value)}
+                />
+                <button
+                  onClick={() =>
+                    void saveAutomationSettings({
+                      reason: automationNote,
+                      successMessage: "CRM-Automationsnotiz gespeichert.",
+                    })
+                  }
+                  disabled={automationBusy}
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
+                >
+                  {automationBusy ? "Speichere…" : "Notiz speichern"}
+                </button>
+              </div>
+              {automation.reason ? (
+                <div className="mt-2 text-xs text-gray-600">Aktuelle Notiz: {automation.reason}</div>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-start gap-2">
+              <button
+                onClick={() =>
+                  void saveAutomationSettings({
+                    sequence_automation_enabled: !automation.sequence_automation_enabled,
+                    reason: automationNote,
+                    successMessage: automation.sequence_automation_enabled
+                      ? "Sequenz-Automation pausiert."
+                      : "Sequenz-Automation fortgesetzt.",
+                  })
+                }
+                disabled={automationBusy}
+                className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
+              >
+                {automation.sequence_automation_enabled ? "Sequenz pausieren" : "Sequenz fortsetzen"}
+              </button>
+              <button
+                onClick={() =>
+                  void saveAutomationSettings({
+                    enrichment_automation_enabled: !automation.enrichment_automation_enabled,
+                    reason: automationNote,
+                    successMessage: automation.enrichment_automation_enabled
+                      ? "Nightly-Enrichment pausiert."
+                      : "Nightly-Enrichment fortgesetzt.",
+                  })
+                }
+                disabled={automationBusy}
+                className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
+              >
+                {automation.enrichment_automation_enabled ? "Nightly pausieren" : "Nightly fortsetzen"}
+              </button>
+            </div>
+            <div className="flex flex-wrap items-start gap-2">
+              {!allCrmAutomationActive ? (
+                <button
+                  onClick={() =>
+                    void saveAutomationSettings({
+                      sequence_automation_enabled: true,
+                      enrichment_automation_enabled: true,
+                      reason: automationNote,
+                      successMessage: "CRM-Automation vollstaendig fortgesetzt.",
+                    })
+                  }
+                  disabled={automationBusy}
+                  className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                >
+                  Alles fortsetzen
+                </button>
+              ) : null}
+              {!automation.sequence_automation_enabled ? (
+                <button
+                  onClick={() => void runSequence(undefined, true)}
+                  disabled={loading}
+                  className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                >
+                  Sequenz einmalig uebersteuern
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
         {error ? (
@@ -1449,6 +2263,246 @@ export default function CrmControlCenter({
           <div className="text-xs font-medium text-emerald-700">Ready jetzt</div>
           <div className="mt-2 text-2xl font-semibold text-emerald-900">{readinessHotCount}</div>
         </div>
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Learning Loop</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Verdichtet Outcomes, Qualitätsreviews und manuelles Feedback zu echten Kanal- und Varianten-Signalen.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-600">
+              {learningSnapshot?.computed_at ? `Stand: ${formatDate(learningSnapshot.computed_at)}` : "Noch kein Snapshot"}
+            </div>
+            <button
+              onClick={() => void recomputeLearningSnapshotNow()}
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
+              disabled={learningLoading}
+            >
+              {learningLoading ? "Berechne…" : "Learning neu berechnen"}
+            </button>
+          </div>
+        </div>
+
+        {!learningSnapshot ? (
+          <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-500">
+            {learningLoading
+              ? "Learning-Snapshot wird geladen…"
+              : "Noch kein Learning-Snapshot vorhanden. Einmal berechnen, dann fließen die Signale in die Strategie zurück."}
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-4 xl:grid-cols-8">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Outcome-Basis</div>
+              <div className="mt-2 text-sm text-gray-900">
+                {learningSnapshot.summary.outbound_attempts} Touches · {Math.round(learningSnapshot.summary.positive_rate * 100)}% positiv
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                Negativrate {Math.round(learningSnapshot.summary.negative_rate * 100)}% · Wrong Contact {learningSnapshot.summary.wrong_contact_count}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Operator-Feedback</div>
+              <div className="mt-2 text-sm text-gray-900">
+                Kandidaten-Akzeptanz {Math.round(learningSnapshot.summary.candidate_accept_rate * 100)}%
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                Draft ok {Math.round(learningSnapshot.summary.draft_approve_rate * 100)}% · Rework {Math.round(learningSnapshot.summary.draft_needs_work_rate * 100)}%
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">QA-Passrate</div>
+              <div className="mt-2 text-sm text-gray-900">
+                {Math.round(learningSnapshot.summary.quality_pass_rate * 100)}% ohne direkten Rework-Bedarf
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                Lookback {learningSnapshot.lookback_days} Tage
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Send-Eval</div>
+              <div className="mt-2 text-sm text-gray-900">
+                Reply {Math.round(learningSnapshot.summary.reply_rate * 100)}% · Positiv {Math.round(learningSnapshot.summary.positive_reply_rate * 100)}%
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                Pilot {Math.round(learningSnapshot.summary.pilot_rate * 100)}% · Bounce {Math.round(learningSnapshot.summary.bounce_rate * 100)}%
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Timing-Disziplin</div>
+              <div className="mt-2 text-sm text-gray-900">
+                Override {Math.round(learningSnapshot.summary.manual_override_rate * 100)}%
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                Ø erste Reaktion {learningSnapshot.summary.avg_response_hours === null ? "–" : `${learningSnapshot.summary.avg_response_hours}h`}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Top-Kanal</div>
+              <div className="mt-2 text-sm text-gray-900">
+                {learningSnapshot.insights.channel_biases[0]?.channel || "–"}
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                {learningSnapshot.insights.channel_biases[0]
+                  ? `Bias ${learningSnapshot.insights.channel_biases[0].score_adjustment >= 0 ? "+" : ""}${learningSnapshot.insights.channel_biases[0].score_adjustment}`
+                  : "Noch keine belastbare Präferenz"}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Top-Discovery</div>
+              <div className="mt-2 text-sm text-gray-900">
+                {learningSnapshot.insights.discovery_biases[0]
+                  ? `${learningSnapshot.insights.discovery_biases[0].city} · ${learningSnapshot.insights.discovery_biases[0].query_pattern}`
+                  : "–"}
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                {learningSnapshot.insights.discovery_biases[0]
+                  ? `Bias ${learningSnapshot.insights.discovery_biases[0].score_adjustment >= 0 ? "+" : ""}${learningSnapshot.insights.discovery_biases[0].score_adjustment}`
+                  : "Noch keine Discovery-Learnings"}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Top-Postmortem</div>
+              <div className="mt-2 text-sm text-gray-900">
+                {learningSnapshot.insights.failure_postmortems[0]?.label || "–"}
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                {learningSnapshot.insights.failure_postmortems[0]
+                  ? `${Math.round(learningSnapshot.insights.failure_postmortems[0].share * 100)}% der negativen Outcomes`
+                  : "Noch keine belastbaren Fehlermuster"}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {learningSnapshot ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-7">
+            <div className="rounded-xl border border-gray-200 p-3">
+              <div className="text-sm font-medium text-gray-900">Kanal-Bias</div>
+              <div className="mt-3 space-y-2">
+                {learningSnapshot.insights.channel_biases.slice(0, 4).map((item) => (
+                  <div key={`channel-${item.channel}`} className="rounded-lg bg-gray-50 px-3 py-2">
+                    <div className="text-sm text-gray-900">
+                      {item.channel} · Bias {item.score_adjustment >= 0 ? "+" : ""}{item.score_adjustment}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-600">
+                      {item.reason} · Samples {item.sample_size}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 p-3">
+              <div className="text-sm font-medium text-gray-900">Segment-Signale</div>
+              <div className="mt-3 space-y-2">
+                {learningSnapshot.insights.segment_channel_biases.slice(0, 4).map((item) => (
+                  <div key={`segment-${item.segment_key}-${item.channel}`} className="rounded-lg bg-gray-50 px-3 py-2">
+                    <div className="text-sm text-gray-900">
+                      {item.segment_key} → {item.channel}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-600">
+                      Bias {item.score_adjustment >= 0 ? "+" : ""}{item.score_adjustment} · {item.reason}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 p-3">
+              <div className="text-sm font-medium text-gray-900">Varianten-Bias</div>
+              <div className="mt-3 space-y-2">
+                {learningSnapshot.insights.variant_biases.slice(0, 4).map((item) => (
+                  <div key={`${item.message_kind}-${item.variant}`} className="rounded-lg bg-gray-50 px-3 py-2">
+                    <div className="text-sm text-gray-900">
+                      {item.message_kind} → {item.variant}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-600">
+                      Bias {item.score_adjustment >= 0 ? "+" : ""}{item.score_adjustment} · {item.reason}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 p-3">
+              <div className="text-sm font-medium text-gray-900">Discovery-Bias</div>
+              <div className="mt-3 space-y-2">
+                {learningSnapshot.insights.discovery_biases.slice(0, 4).map((item) => (
+                  <div
+                    key={`discovery-${item.city}-${item.discovery_source}-${item.query_pattern}`}
+                    className="rounded-lg bg-gray-50 px-3 py-2"
+                  >
+                    <div className="text-sm text-gray-900">
+                      {item.city} · {item.query_pattern}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-600">
+                      Bias {item.score_adjustment >= 0 ? "+" : ""}{item.score_adjustment} · {item.reason}
+                    </div>
+                  </div>
+                ))}
+                {learningSnapshot.insights.discovery_biases.length === 0 ? (
+                  <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                    Noch keine belastbaren Discovery-Signale vorhanden.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 p-3">
+              <div className="text-sm font-medium text-gray-900">Timing-Slots</div>
+              <div className="mt-3 space-y-2">
+                {learningSnapshot.insights.timing_biases.slice(0, 4).map((item) => (
+                  <div key={`${item.channel}-${item.weekday}-${item.hour_bucket}`} className="rounded-lg bg-gray-50 px-3 py-2">
+                    <div className="text-sm text-gray-900">
+                      {item.channel} · {item.weekday} · {item.hour_bucket}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-600">
+                      Bias {item.score_adjustment >= 0 ? "+" : ""}{item.score_adjustment} · {item.reason}
+                    </div>
+                  </div>
+                ))}
+                {learningSnapshot.insights.timing_biases.length === 0 ? (
+                  <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                    Noch keine belastbaren Timing-Signale vorhanden.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 p-3">
+              <div className="text-sm font-medium text-gray-900">Qualitäts-Hotspots</div>
+              <div className="mt-3 space-y-2">
+                {learningSnapshot.insights.quality_hotspots.slice(0, 4).map((item) => (
+                  <div key={`${item.type}-${item.label}`} className="rounded-lg bg-gray-50 px-3 py-2">
+                    <div className="text-sm text-gray-900">
+                      {item.type === "blocker" ? "Blocker" : "Warnung"} · {item.count}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-600">{item.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 p-3">
+              <div className="text-sm font-medium text-gray-900">Failure-Postmortems</div>
+              <div className="mt-3 space-y-2">
+                {learningSnapshot.insights.failure_postmortems.slice(0, 4).map((item) => (
+                  <div key={item.code} className="rounded-lg bg-gray-50 px-3 py-2">
+                    <div className="text-sm text-gray-900">
+                      {item.label} · {item.count}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-600">
+                      {Math.round(item.share * 100)}% · {item.reason}
+                    </div>
+                  </div>
+                ))}
+                {learningSnapshot.insights.failure_postmortems.length === 0 ? (
+                  <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                    Noch keine negativen Outcomes mit belastbarer Root-Cause-Zuordnung vorhanden.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -1861,11 +2915,20 @@ export default function CrmControlCenter({
                             ? `Confidence ${Math.round((item.reply_intent_confidence || 0) * 100)}%`
                             : "Confidence n/a"}
                         </div>
+                        {item.reply_signal ? (
+                          <div className="mt-1 text-xs text-gray-500">
+                            {REPLY_SIGNAL_LABELS[item.reply_signal] || item.reply_signal}
+                            {item.reply_strength ? ` · ${item.reply_strength}` : ""}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-3 py-2 text-gray-700">
                         <div>{item.recommendation || "Keine Empfehlung vorhanden."}</div>
                         {item.reply_intent_reason ? (
                           <div className="mt-1 text-xs text-gray-500">{item.reply_intent_reason}</div>
+                        ) : null}
+                        {item.contact_hint ? (
+                          <div className="mt-1 text-xs text-gray-500">Kontakt-Hinweis: {item.contact_hint}</div>
                         ) : null}
                       </td>
                       <td className="px-3 py-2 text-xs text-gray-600">
@@ -1875,6 +2938,13 @@ export default function CrmControlCenter({
                           Reaktionszeit:{" "}
                           {item.response_time_hours === null ? "–" : `${item.response_time_hours}h`}
                         </div>
+                        {item.timeline_hint_days !== null && item.timeline_hint_days !== undefined ? (
+                          <div>Wiedervorlage: ca. {item.timeline_hint_days} Tage</div>
+                        ) : null}
+                        {Array.isArray(item.objection_topics) && item.objection_topics.length > 0 ? (
+                          <div>Themen: {item.objection_topics.join(", ")}</div>
+                        ) : null}
+                        {item.stop_automation ? <div>Sequenz stoppen: Ja</div> : null}
                         <div>Offen: {item.handled ? "Nein" : "Ja"}</div>
                       </td>
                       <td className="px-3 py-2">
@@ -1895,6 +2965,14 @@ export default function CrmControlCenter({
                           >
                             Als bearbeitet
                           </button>
+                          {item.contact_resolution_needed ? (
+                            <button
+                              onClick={() => void runContactRepair(item.prospect_id, "wrong_contact")}
+                              className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800 hover:bg-amber-100"
+                            >
+                              Kontakt reparieren
+                            </button>
+                          ) : null}
                           {item.reply_intent === "interesse" ? (
                             <button
                               onClick={() => void logEvent(item.prospect_id, "pilot_invited", "Pilot eingeladen")}
@@ -2012,10 +3090,59 @@ export default function CrmControlCenter({
 
       <section className="grid gap-6 xl:grid-cols-5">
         <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm xl:col-span-2">
-          <h2 className="text-lg font-semibold text-gray-900">Neuen Tester-Kandidaten anlegen</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Prospect manuell anlegen</h2>
           <p className="mt-1 text-sm text-gray-600">
             Fokus auf persönliche Relevanz: valide Quellen, Angebotsmix, Objection und Hook sauber eintragen.
           </p>
+          <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-sky-900">Neue Kandidaten automatisch finden</div>
+                <p className="mt-1 text-xs text-sky-800">
+                  Sucht nach Makler-Websites pro Stadt, filtert Portale raus und legt nur reviewbare Kandidaten an, bevor sie in die echte Prospect-Pipeline kommen.
+                </p>
+              </div>
+              <div className="rounded-lg border border-sky-200 bg-white px-2 py-1 text-xs text-sky-700">
+                pro Stadt max. {discoveryPerCityLimit}
+              </div>
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_120px]">
+              <input
+                className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm"
+                placeholder="Städte, kommagetrennt (z. B. Berlin, Hamburg, München)"
+                value={discoveryCitiesInput}
+                onChange={(e) => setDiscoveryCitiesInput(e.target.value)}
+              />
+              <input
+                className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm"
+                type="number"
+                min={1}
+                max={5}
+                value={discoveryPerCityLimit}
+                onChange={(e) =>
+                  setDiscoveryPerCityLimit(
+                    Math.max(1, Math.min(5, Number(e.target.value || 3) || 3)),
+                  )
+                }
+              />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={() => void runProspectDiscovery()}
+                className="rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm text-sky-900 hover:bg-sky-100 disabled:opacity-60"
+                disabled={discoveringProspects}
+              >
+                {discoveringProspects ? "Suche läuft…" : "Städte scannen"}
+              </button>
+              <button
+                onClick={() => void runProspectDiscovery({ preset: "top_cities" })}
+                className="rounded-xl border border-sky-300 bg-sky-900 px-3 py-2 text-sm text-white hover:bg-sky-950 disabled:opacity-60"
+                disabled={discoveringProspects}
+              >
+                {discoveringProspects ? "Suche läuft…" : "Top-Städte scannen"}
+              </button>
+            </div>
+          </div>
           <div className="mt-4 grid gap-3">
             <input
               className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
@@ -2434,6 +3561,476 @@ export default function CrmControlCenter({
         </article>
       </section>
 
+      <section className="grid gap-6 xl:grid-cols-4">
+        <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Discovery-Kandidaten</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Neue Website-Funde erst prüfen, dann bewusst in die Prospect-Pipeline übernehmen.
+              </p>
+            </div>
+            <div className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-xs text-sky-800">
+              Offen: {(data.candidate_queue || []).length}
+            </div>
+          </div>
+          <div className="mt-4 space-y-3">
+            {(data.candidate_queue || []).map((candidate) => {
+              const learnedFitScore = Number.isFinite(Number(candidate.learned_fit_score))
+                ? Number(candidate.learned_fit_score)
+                : null;
+              const discoveryLearningScore = Number.isFinite(Number(candidate.discovery_learning_score))
+                ? Number(candidate.discovery_learning_score)
+                : 0;
+              return (
+                <div key={candidate.id} className="rounded-xl border border-gray-200 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-gray-900">
+                        {candidate.company_name}
+                        {candidate.city ? ` · ${candidate.city}` : ""}
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500">
+                        Fit {candidate.fit_score}
+                        {learnedFitScore !== null ? ` → Learned ${learnedFitScore}` : ""}
+                        {" · "}
+                        {candidate.priority} · {candidate.preferred_channel}
+                        {typeof candidate.active_listings_count === "number"
+                          ? ` · ${candidate.active_listings_count} Inserate`
+                          : ""}
+                        {candidate.created_at ? ` · gefunden ${formatDate(candidate.created_at)}` : ""}
+                      </div>
+                      <div className="mt-2 text-sm text-gray-700">
+                        {candidate.personalization_hook ||
+                          candidate.process_hint ||
+                          candidate.target_group ||
+                          "Noch kein belastbarer Hook gespeichert."}
+                      </div>
+                      {candidate.discovery_learning_reason ? (
+                        <div className="mt-2 text-xs text-gray-600">
+                          Discovery-Learning: {candidate.discovery_learning_reason}
+                        </div>
+                      ) : null}
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <span
+                          className={`rounded-full px-2 py-0.5 ring-1 ${learningBiasBadgeClass(discoveryLearningScore)}`}
+                        >
+                          Discovery-Bias {discoveryLearningScore >= 0 ? "+" : ""}
+                          {discoveryLearningScore}
+                        </span>
+                        {candidate.contact_email ? (
+                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700 ring-1 ring-emerald-200">
+                            {candidate.contact_email}
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-800 ring-1 ring-amber-200">
+                            Kein E-Mail-Kontakt
+                          </span>
+                        )}
+                        {candidate.automation_readiness ? (
+                          <span className="rounded-full bg-gray-50 px-2 py-0.5 text-gray-700 ring-1 ring-gray-200">
+                            Auto: {candidate.automation_readiness}
+                          </span>
+                        ) : null}
+                        {candidate.source_checked_at ? (
+                          <span className="rounded-full bg-gray-50 px-2 py-0.5 text-gray-700 ring-1 ring-gray-200">
+                            Quelle geprüft: {candidate.source_checked_at}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                        {candidate.website_url ? (
+                          <a
+                            className="text-blue-700 hover:underline"
+                            href={candidate.website_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Website
+                          </a>
+                        ) : null}
+                        {!candidate.website_url && candidate.source_url ? (
+                          <a
+                            className="text-blue-700 hover:underline"
+                            href={candidate.source_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Quelle
+                          </a>
+                        ) : null}
+                        {candidate.linkedin_url ? (
+                          <a
+                            className="text-blue-700 hover:underline"
+                            href={candidate.linkedin_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            LinkedIn
+                          </a>
+                        ) : null}
+                        {!candidate.linkedin_url && candidate.linkedin_search_url ? (
+                          <a
+                            className="text-blue-700 hover:underline"
+                            href={candidate.linkedin_search_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            LinkedIn suchen
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                        disabled={candidateBusyId === candidate.id}
+                        onClick={() => void acceptCandidate(candidate.id)}
+                      >
+                        {candidateBusyId === candidate.id ? "Übernehme…" : "Übernehmen"}
+                      </button>
+                      <button
+                        className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
+                        disabled={candidateBusyId === candidate.id}
+                        onClick={() => void rejectCandidate(candidate.id)}
+                      >
+                        Verwerfen
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {(data.candidate_queue || []).length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-500">
+                Keine offenen Discovery-Kandidaten. Starte oben einen Städte-Scan oder lege Prospects manuell an.
+              </div>
+            ) : null}
+          </div>
+        </article>
+
+        <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Account geaendert</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Diese Prospects haben neue Website-, Kontakt- oder Prozesssignale, die Hook oder Strategie veraendern koennten.
+              </p>
+            </div>
+            <div className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-xs text-sky-800">
+              Offen: {accountChangeQueue.length}
+            </div>
+          </div>
+          <div className="mt-4 space-y-3">
+            {accountChangeQueue.map((item) => (
+              <div key={`change-${item.id}`} className="rounded-xl border border-gray-200 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-gray-900">
+                      {item.company_name}
+                      {item.city ? ` · ${item.city}` : ""}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                      <span className="rounded-full bg-sky-50 px-2 py-0.5 text-sky-800 ring-1 ring-sky-200">
+                        {item.change_count ? `${item.change_count} Signal${item.change_count === 1 ? "" : "e"}` : "Neue Signale"}
+                      </span>
+                      <span className="rounded-full bg-gray-50 px-2 py-0.5 text-gray-700 ring-1 ring-gray-200">
+                        Fit {item.fit_score}
+                      </span>
+                      <span className="rounded-full bg-gray-50 px-2 py-0.5 text-gray-700 ring-1 ring-gray-200">
+                        {item.priority} · {STAGE_LABELS[item.stage] || item.stage}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-sm text-gray-700">
+                      {item.change_summary || item.next_action || "Neue Signale pruefen und Hook neu bewerten."}
+                    </div>
+                    {item.latest_change_note ? (
+                      <div className="mt-2 text-xs text-gray-500 line-clamp-3">{item.latest_change_note}</div>
+                    ) : item.personalization_hook ? (
+                      <div className="mt-2 text-xs text-gray-500">Bisheriger Hook: {item.personalization_hook}</div>
+                    ) : null}
+                    {item.change_items && item.change_items.length > 0 ? (
+                      <ResearchChangeDiff
+                        className="mt-2"
+                        compact
+                        summary={item.change_summary || null}
+                        items={item.change_items}
+                      />
+                    ) : null}
+                    <div className="mt-2 text-xs text-gray-500">
+                      Erkannt: {formatDate(item.change_detected_at || item.next_action_at || item.updated_at || null)}
+                      {item.source_checked_at ? ` · zuletzt geprüft ${formatDate(item.source_checked_at)}` : ""}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                      disabled={saving === item.id}
+                      onClick={() => void markAccountChangeReviewed(item)}
+                    >
+                      Als geprüft markieren
+                    </button>
+                    <button
+                      className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 hover:bg-blue-100 disabled:opacity-60"
+                      disabled={loading}
+                      onClick={() => void runProspectEnrichment(item.id, { force: true })}
+                    >
+                      Neu prüfen
+                    </button>
+                    <button
+                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+                      onClick={() => setSelectedProspectId(item.id)}
+                    >
+                      Öffnen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {accountChangeQueue.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-500">
+                Keine frischen Account-Aenderungen offen. Change-Watch bleibt im Hintergrund aktiv.
+              </div>
+            ) : null}
+          </div>
+        </article>
+
+        <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Research-Lücken</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Diese Prospects sind noch nicht belastbar genug für automatisierten Outreach.
+              </p>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+              Offen: {researchGapProspects.length}
+            </div>
+          </div>
+          <div className="mt-4 space-y-3">
+            {researchGapProspects.map(({ prospect, research }) => (
+              <div key={prospect.id} className="rounded-xl border border-gray-200 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-gray-900">
+                      {prospect.company_name}
+                      {prospect.city ? ` · ${prospect.city}` : ""}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 ring-1 ${researchBadgeClass(
+                          research?.status,
+                        )}`}
+                      >
+                        {researchStatusLabel(research?.status || "needs_research")}
+                      </span>
+                      <span className="rounded-full bg-gray-50 px-2 py-0.5 text-gray-700 ring-1 ring-gray-200">
+                        {research?.score || 0}/100
+                      </span>
+                      <span className="rounded-full bg-gray-50 px-2 py-0.5 text-gray-700 ring-1 ring-gray-200">
+                        Fit {prospect.fit_score}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-sm text-gray-700">{research?.summary || "Research fehlt."}</div>
+                    {(research?.blockers?.[0] || research?.warnings?.[0]) ? (
+                      <div className="mt-2 text-xs text-gray-500">
+                        {research?.blockers?.[0] || research?.warnings?.[0]}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 hover:bg-blue-100 disabled:opacity-60"
+                      disabled={loading}
+                      onClick={() =>
+                        void runProspectEnrichment(prospect.id, {
+                          force: research?.status === "refresh_research" || research?.status === "missing_contact",
+                          expectContactChannel: research?.status === "missing_contact",
+                        })
+                      }
+                    >
+                      {research?.status === "missing_contact"
+                        ? "Kontakt finden"
+                        : research?.status === "refresh_research"
+                          ? "Research auffrischen"
+                          : "Research schärfen"}
+                    </button>
+                    <button
+                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+                      onClick={() => setSelectedProspectId(prospect.id)}
+                    >
+                      Öffnen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {researchGapProspects.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-500">
+                Keine akuten Research-Lücken. Die wichtigsten Prospects sind sendbar oder bereits in späten Stages.
+              </div>
+            ) : null}
+          </div>
+        </article>
+
+        <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Kontakt-Reparatur</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Wenn ein Kanal fehlt oder gebounced ist, wird hier der nächste sinnvolle Kontaktpfad gezogen.
+              </p>
+            </div>
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">
+              Offen: {contactRepairQueue.length}
+            </div>
+          </div>
+          <div className="mt-4 space-y-3">
+            {contactRepairQueue.map(({ row, prospect, research }) => (
+              <div key={`repair-${row.prospect_id}`} className="rounded-xl border border-gray-200 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-gray-900">
+                      {row.company_name}
+                      {prospect?.city ? ` · ${prospect.city}` : ""}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                      <span className="rounded-full bg-gray-50 px-2 py-0.5 text-gray-700 ring-1 ring-gray-200">
+                        {row.recommended_code === "switch_channel_after_bounce" ? "Bounce-Fallback" : "Kontakt ergänzen"}
+                      </span>
+                      {research ? (
+                        <span
+                          className={`rounded-full px-2 py-0.5 ring-1 ${researchBadgeClass(
+                            research.status,
+                          )}`}
+                        >
+                          {researchStatusLabel(research.status)}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 text-sm text-gray-700">
+                      {row.recommended_reason || "Kontaktpfad prüfen und neu priorisieren."}
+                    </div>
+                    {prospect?.contact_email ? (
+                      <div className="mt-2 text-xs text-gray-500">Aktuell: {prospect.contact_email}</div>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                      disabled={loading}
+                      onClick={async () => {
+                        if (row.recommended_code === "fill_contact_channel") {
+                          const repair = await runContactRepair(row.prospect_id, "missing_contact");
+                          if (!repair || repair.status === "no_candidate") {
+                            await runProspectEnrichment(row.prospect_id, {
+                              force: true,
+                              expectContactChannel: true,
+                            });
+                            await runContactRepair(row.prospect_id, "missing_contact");
+                          }
+                          return;
+                        }
+                        await runContactRepair(row.prospect_id, "bounce");
+                      }}
+                    >
+                      {row.recommended_code === "switch_channel_after_bounce"
+                        ? "Fallback ziehen"
+                        : "Kontakt reparieren"}
+                    </button>
+                    <button
+                      className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+                      onClick={() => setSelectedProspectId(row.prospect_id)}
+                    >
+                      Öffnen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {contactRepairQueue.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-500">
+                Keine offenen Kontakt-Reparaturen. Fehlende oder gebouncte Kanäle werden hier gesammelt.
+              </div>
+            ) : null}
+          </div>
+        </article>
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Blocked-Draft-Queue</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              Diese Drafts sind aktuell die besten Kandidaten für manuelle Rettung, weil QA oder Evidenz sie noch blockiert.
+            </p>
+          </div>
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">
+            Offen: {(data.blocked_draft_queue || []).length}
+          </div>
+        </div>
+        <div className="mt-4 space-y-3">
+          {(data.blocked_draft_queue || []).map((item) => (
+            <div key={`blocked-${item.id}`} className="rounded-xl border border-gray-200 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-gray-900">
+                    {item.company_name}
+                    {item.city ? ` · ${item.city}` : ""}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="rounded-full bg-gray-50 px-2 py-0.5 text-gray-700 ring-1 ring-gray-200">
+                      {item.message_kind} · {item.channel}
+                    </span>
+                    {item.review ? (
+                      <span
+                        className={`rounded-full px-2 py-0.5 ring-1 ${reviewBadgeClass(item.review.status)}`}
+                      >
+                        {outboundQualityStatusLabel(item.review.status)} · {item.review.score}/100
+                      </span>
+                    ) : null}
+                    {item.priority ? (
+                      <span className="rounded-full bg-gray-50 px-2 py-0.5 text-gray-700 ring-1 ring-gray-200">
+                        {item.priority} · Fit {item.fit_score || 0}
+                      </span>
+                    ) : null}
+                  </div>
+                  {item.subject ? <div className="mt-2 text-sm font-medium text-gray-900">{item.subject}</div> : null}
+                  <div className="mt-1 text-sm text-gray-700 line-clamp-3">{item.body_preview}</div>
+                  {item.review ? (
+                    <OutboundEvidenceInspector
+                      review={item.review}
+                      compact
+                      defaultOpen={Number(item.review.evidence_alignment?.unsupported_claim_count || 0) > 0}
+                      className="mt-2"
+                    />
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 hover:bg-blue-100"
+                    onClick={() => rescueBlockedDraft(item)}
+                  >
+                    Im Editor öffnen
+                  </button>
+                  <button
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm hover:bg-gray-50"
+                    onClick={() => setSelectedProspectId(item.prospect_id)}
+                  >
+                    Prospect öffnen
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {(data.blocked_draft_queue || []).length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-500">
+              Keine geblockten oder review-bedürftigen Drafts offen. Gute Nachricht.
+            </div>
+          ) : null}
+        </div>
+      </section>
+
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -2641,7 +4238,7 @@ export default function CrmControlCenter({
               {sortedProspects.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-6 text-sm text-gray-500">
-                    Keine Treffer. Passe Suche/Stage an oder lege oben einen neuen Tester-Kandidaten an.
+                    Keine Treffer. Passe Suche/Stage an, prüfe Discovery-Kandidaten oder lege oben einen Prospect manuell an.
                   </td>
                 </tr>
               ) : null}
@@ -2729,6 +4326,13 @@ export default function CrmControlCenter({
             </button>
           </div>
           <div className="mt-4 space-y-2">
+            {selectedChangeSummary ? (
+              <ResearchChangeDiff
+                summary={String(selectedChangeSummary.summary || "")}
+                items={Array.isArray(selectedChangeSummary.items) ? selectedChangeSummary.items : []}
+                compact
+              />
+            ) : null}
             {detailLoading ? <div className="text-sm text-gray-500">Lade Notizen…</div> : null}
             {!detailLoading && notes.length === 0 ? (
               <div className="text-sm text-gray-500">Noch keine Notizen vorhanden.</div>
@@ -2739,6 +4343,14 @@ export default function CrmControlCenter({
                   {n.source_type} · {formatDate(n.created_at)}
                 </div>
                 <div className="mt-1 text-sm text-gray-800">{n.note}</div>
+                {n.metadata?.change_summary?.items ? (
+                  <ResearchChangeDiff
+                    className="mt-2"
+                    compact
+                    summary={String(n.metadata?.change_summary?.summary || "")}
+                    items={Array.isArray(n.metadata?.change_summary?.items) ? n.metadata.change_summary.items : []}
+                  />
+                ) : null}
               </div>
             ))}
           </div>
@@ -2777,7 +4389,10 @@ export default function CrmControlCenter({
               <select
                 className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
                 value={newDraftKind}
-                onChange={(e) => setNewDraftKind(e.target.value)}
+                onChange={(e) => {
+                  setNewDraftKind(e.target.value);
+                  if (newDraftReview) setNewDraftReviewStale(true);
+                }}
               >
                 <option value="first_touch">Erstkontakt</option>
                 <option value="follow_up_1">Follow-up 1</option>
@@ -2788,7 +4403,10 @@ export default function CrmControlCenter({
               <select
                 className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
                 value={newDraftChannel}
-                onChange={(e) => setNewDraftChannel(e.target.value)}
+                onChange={(e) => {
+                  setNewDraftChannel(e.target.value);
+                  if (newDraftReview) setNewDraftReviewStale(true);
+                }}
               >
                 <option value="email">E-Mail</option>
                 <option value="telefon">Telefon</option>
@@ -2800,14 +4418,51 @@ export default function CrmControlCenter({
               className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
               placeholder="Betreff (optional)"
               value={newDraftSubject}
-              onChange={(e) => setNewDraftSubject(e.target.value)}
+              onChange={(e) => {
+                setNewDraftSubject(e.target.value);
+                if (newDraftReview) setNewDraftReviewStale(true);
+              }}
             />
             <textarea
               className="min-h-[130px] rounded-xl border border-gray-200 px-3 py-2 text-sm"
               placeholder="Nachrichtentext"
               value={newDraftBody}
-              onChange={(e) => setNewDraftBody(e.target.value)}
+              onChange={(e) => {
+                setNewDraftBody(e.target.value);
+                if (newDraftReview) setNewDraftReviewStale(true);
+              }}
             />
+            {selectedContactSafety ? (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full border px-2 py-0.5 ${contactSafetyBadgeClass(selectedContactSafety.level)}`}
+                  >
+                    Kontakt {contactSafetyLabel(selectedContactSafety.level)} · {selectedContactSafety.score}/100
+                  </span>
+                </div>
+                <div className="mt-1">{selectedContactSafety.summary}</div>
+                {selectedContactSafety.reasons[0] ? (
+                  <div className="mt-1 text-[11px] text-gray-500">{selectedContactSafety.reasons[0]}</div>
+                ) : null}
+              </div>
+            ) : null}
+            {newDraftReview ? (
+              <OutboundEvidenceInspector
+                review={newDraftReview}
+                defaultOpen={
+                  newDraftReview.status !== "pass" ||
+                  Number(newDraftReview.evidence_alignment?.unsupported_claim_count || 0) > 0
+                }
+              />
+            ) : null}
+            {newDraftReview ? (
+              <DraftClaimHighlight
+                body={newDraftBody}
+                review={newDraftReview}
+                stale={newDraftReviewStale}
+              />
+            ) : null}
             <button
               onClick={() => void createDraft()}
               disabled={!selectedProspectId || draftBusy}
@@ -2873,7 +4528,12 @@ export default function CrmControlCenter({
                 {m.subject ? <div className="mt-1 text-sm font-medium text-gray-900">{m.subject}</div> : null}
                 <div className="mt-1 whitespace-pre-line text-sm text-gray-700">{m.body}</div>
                 {review ? (
-                  <div className="mt-2 text-xs text-gray-600">{review.summary}</div>
+                  <OutboundEvidenceInspector
+                    review={review}
+                    compact
+                    defaultOpen={Number(review.evidence_alignment?.unsupported_claim_count || 0) > 0}
+                    className="mt-2"
+                  />
                 ) : null}
               </div>
                 );

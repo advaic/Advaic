@@ -11,12 +11,24 @@ import {
 } from "@/lib/crm/cadenceRules";
 import {
   assessResearchReadiness,
-  evaluateOutboundMessageQuality,
 } from "@/lib/crm/outboundQuality";
+import {
+  evaluateGroundedOutboundMessageQuality,
+  loadGroundedReviewContext,
+  persistQualityReview,
+} from "@/lib/crm/qualityReviewEngine";
 
 export const runtime = "nodejs";
 
 const ALLOWED_STATUS = new Set(["draft", "ready", "sent", "failed", "archived"]);
+
+function normalizeLine(value: unknown, max = 240) {
+  return String(value ?? "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -61,6 +73,7 @@ export async function PATCH(
       .eq("id", String(message.prospect_id))
       .eq("agent_id", auth.user.id)
       .maybeSingle();
+    const inferred = inferSegmentAndPlaybook(prospect || null);
     const triggerEvidence = collectTriggerEvidence({
       companyName: String((prospect as any)?.company_name || "").trim(),
       city: String((prospect as any)?.city || "").trim() || null,
@@ -103,7 +116,16 @@ export async function PATCH(
         : null,
       automationReadiness: String((prospect as any)?.automation_readiness || "").trim() || null,
     });
-    const outboundReview = evaluateOutboundMessageQuality({
+    const groundedContext = await loadGroundedReviewContext(supabase, {
+      agentId: String(auth.user.id),
+      prospectId: String(message.prospect_id),
+      messageId,
+      channel: String((message as any)?.channel || "email"),
+      messageKind: String(message.message_kind || ""),
+      segmentKey: String(meta.segment_key || "").trim() || inferred.segment_key,
+      playbookKey: String(meta.playbook_key || "").trim() || inferred.playbook_key,
+    });
+    const outboundReview = evaluateGroundedOutboundMessageQuality({
       body: String(message.body || ""),
       subject: null,
       channel: String((message as any)?.channel || "email"),
@@ -116,6 +138,24 @@ export async function PATCH(
         triggerEvidence.length,
       ),
       researchReadiness,
+      prospect: {
+        company_name: String((prospect as any)?.company_name || "").trim() || null,
+        city: String((prospect as any)?.city || "").trim() || null,
+        preferred_channel: String((message as any)?.channel || "email"),
+        contact_email: String((prospect as any)?.contact_email || "").trim() || null,
+        personalization_hook: String((prospect as any)?.personalization_hook || "").trim() || null,
+        personalization_evidence:
+          String((prospect as any)?.personalization_evidence || "").trim() || null,
+        source_checked_at: String((prospect as any)?.source_checked_at || "").trim() || null,
+        target_group: String((prospect as any)?.target_group || "").trim() || null,
+        process_hint: String((prospect as any)?.process_hint || "").trim() || null,
+        active_listings_count: Number.isFinite(Number((prospect as any)?.active_listings_count))
+          ? Number((prospect as any)?.active_listings_count)
+          : null,
+        automation_readiness: String((prospect as any)?.automation_readiness || "").trim() || null,
+      },
+      context: groundedContext,
+      supportHints: triggerEvidence,
     });
     const guardrail = evaluateFirstTouchGuardrails({
       body: String(message.body || ""),
@@ -147,6 +187,22 @@ export async function PATCH(
         },
         { status: 422 },
       );
+    }
+    try {
+      await persistQualityReview(supabase, {
+        agentId: String(auth.user.id),
+        prospectId: String(message.prospect_id),
+        messageId,
+        reviewScope: "send_gate",
+        channel: String((message as any)?.channel || "email"),
+        messageKind: String(message.message_kind || ""),
+        review: outboundReview,
+        metadata: {
+          mode: "manual_status_sent",
+        },
+      });
+    } catch {
+      // Fail-open for manual status updates.
     }
   }
 
@@ -221,6 +277,28 @@ export async function PATCH(
         source: "crm_status_update",
         segment_key: inferred.segment_key,
         playbook_key: inferred.playbook_key,
+        message_id: messageId,
+        review_status: normalizeLine((message as any)?.metadata?.outbound_review?.status, 40) || null,
+        review_score:
+          Number.isFinite(Number((message as any)?.metadata?.outbound_review?.score))
+            ? Number((message as any)?.metadata?.outbound_review?.score)
+            : null,
+        unsupported_claim_count:
+          Number((message as any)?.metadata?.outbound_review?.evidence_alignment?.unsupported_claim_count || 0) || 0,
+        weak_claim_count:
+          Number((message as any)?.metadata?.outbound_review?.evidence_alignment?.weak_claim_count || 0) || 0,
+        research_status: normalizeLine((message as any)?.metadata?.research_readiness?.status, 40) || null,
+        research_score:
+          Number.isFinite(Number((message as any)?.metadata?.research_readiness?.score))
+            ? Number((message as any)?.metadata?.research_readiness?.score)
+            : null,
+        strategy_contact_channel: normalizeLine((message as any)?.metadata?.strategy_contact_channel, 40) || null,
+        strategy_contact_value: normalizeLine((message as any)?.metadata?.strategy_contact_value, 220) || null,
+        strategy_contact_confidence:
+          Number.isFinite(Number((message as any)?.metadata?.strategy_contact_confidence))
+            ? Number((message as any)?.metadata?.strategy_contact_confidence)
+            : null,
+        strategy_risk_level: normalizeLine((message as any)?.metadata?.strategy_risk_level, 40) || null,
       },
     });
   }

@@ -10,6 +10,8 @@ import {
   type CadenceChannel,
   type CadenceMessageKind,
 } from "@/lib/crm/cadenceRules";
+import { loadCurrentLearningSnapshot } from "@/lib/crm/learningLoop";
+import { evaluateSendTiming } from "@/lib/crm/timingPolicy";
 
 export const runtime = "nodejs";
 
@@ -193,6 +195,7 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "prospect_not_found" }, { status: 404 });
   }
   const prospect = prospectRes.data as Record<string, any>;
+  const learningSnapshot = await loadCurrentLearningSnapshot(supabase, String(auth.user.id)).catch(() => null);
 
   const cadence = buildCadenceV1({
     objectFocus: normalizeLine(prospect.object_focus, 20) || null,
@@ -285,8 +288,18 @@ export async function POST(
   });
 
   for (const step of steps) {
-    const scheduled = new Date(startAt.getTime() + step.day_offset * 24 * 60 * 60 * 1000);
-    const scheduledIso = scheduled.toISOString();
+    const seedDate = new Date(startAt.getTime() + step.day_offset * 24 * 60 * 60 * 1000);
+    const timingPolicy = evaluateSendTiming({
+      channel: step.channel,
+      prospect: {
+        ...prospect,
+        preferred_channel: step.channel,
+      },
+      learningSnapshot,
+      startAt: seedDate,
+      timezone: "Europe/Berlin",
+    });
+    const scheduledIso = timingPolicy.suggested_send_at;
 
     const existingRes = await (supabase.from("crm_outreach_messages") as any)
       .select("id, status, metadata")
@@ -365,6 +378,7 @@ export async function POST(
       ab_subject_variant: step.subject_variant,
       trigger_evidence: triggerEvidence,
       trigger_evidence_count: triggerEvidence.length,
+      timing_policy: timingPolicy,
       first_touch_guardrail_pass:
         step.message_kind === "first_touch" ? Boolean(firstTouchGuardrail?.pass) : null,
       first_touch_guardrail: firstTouchGuardrail,
@@ -441,6 +455,8 @@ export async function POST(
         cadence_step: step.step_number,
         stop_rules: cadence.stop_rules,
         template_variant: templateVariant,
+        timing_policy: timingPolicy,
+        scheduled_for: scheduledIso,
       },
     }) as any);
   }

@@ -8,6 +8,11 @@ import {
   assessResearchReadiness,
   evaluateOutboundMessageQuality,
 } from "@/lib/crm/outboundQuality";
+import { ensureProspectStrategyDecision } from "@/lib/crm/strategyEngine";
+import {
+  evaluateGroundedOutboundMessageQuality,
+  loadGroundedReviewContext,
+} from "@/lib/crm/qualityReviewEngine";
 
 export const runtime = "nodejs";
 
@@ -612,18 +617,31 @@ export async function GET(
     .slice(0, 3);
   const firstKeyNote = keyNotes[0] || "";
   const mergedResearchInsights = keyNotes.join(" ");
+  const strategyResult = await ensureProspectStrategyDecision(supabase, {
+    agentId: String(auth.user.id),
+    prospectId,
+    prospect,
+  });
+  const strategy = strategyResult.ok ? strategyResult.strategy : null;
   const inviteContext: InviteContext = {
     companyName: String(prospect.company_name || "").trim(),
     contactName: String(prospect.contact_name || "").trim() || null,
-    contactEmail: String((prospect as any).contact_email || "").trim() || null,
+    contactEmail:
+      String((prospect as any).contact_email || "").trim() ||
+      (strategy?.chosen_contact_channel === "email" ? String(strategy.chosen_contact_value || "").trim() : "") ||
+      null,
     city: String(prospect.city || "").trim() || null,
     region: String(prospect.region || "").trim() || null,
     objectFocus: String(prospect.object_focus || "gemischt").trim(),
     hook:
+      sanitizeOutreachSnippet(String(strategy?.chosen_trigger || "").trim(), 220) ||
       sanitizeOutreachSnippet(firstKeyNote, 220) ||
       sanitizeOutreachSnippet(String(prospect.personalization_hook || "").trim(), 220) ||
       null,
-    painPoint: String(prospect.pain_point_hypothesis || "").trim() || null,
+    painPoint:
+      sanitizeOutreachSnippet(String(strategy?.chosen_angle || "").trim(), 260) ||
+      String(prospect.pain_point_hypothesis || "").trim() ||
+      null,
     primaryObjection: String(prospect.primary_objection || "").trim() || null,
     activeListingsCount:
       typeof prospect.active_listings_count === "number" ? prospect.active_listings_count : null,
@@ -683,17 +701,18 @@ export async function GET(
     );
   }
 
-  const segmentKey = inferSegmentFromProspect({
+  const inferredSegmentKey = inferSegmentFromProspect({
     object_focus: inviteContext.objectFocus,
     share_miete_percent: inviteContext.shareMietePercent,
     share_kauf_percent: inviteContext.shareKaufPercent,
     active_listings_count: inviteContext.activeListingsCount,
     automation_readiness: inviteContext.automationReadiness,
   });
-  const playbook = getPlaybookForSegment(segmentKey);
+  const segmentKey = strategy?.segment_key || inferredSegmentKey;
+  const playbook = getPlaybookForSegment(segmentKey as any);
   const objection = routeObjection(inviteContext.primaryObjection);
   inviteContext.segmentKey = segmentKey;
-  inviteContext.playbookTitle = playbook?.title || null;
+  inviteContext.playbookTitle = strategy?.playbook_title || playbook?.title || null;
   inviteContext.valueNarrative = valueNarrativeForSegment(segmentKey, inviteContext.objectFocus);
   inviteContext.objectionRouteKey = objection.key;
   inviteContext.objectionRouteLabel = objection.label;
@@ -715,20 +734,75 @@ export async function GET(
     personalizationHook: inviteContext.hook,
     personalizationEvidence: inviteContext.evidence,
     sourceCheckedAt: inviteContext.sourceCheckedAt,
-  }).length;
+  }).length || Number(strategy?.trigger_evidence?.length || 0);
 
   const invitePack = buildTesterInvite({
     ...inviteContext,
     triggerEvidenceCount,
   });
+  const groundedContext = await loadGroundedReviewContext(supabase, {
+    agentId: String(auth.user.id),
+    prospectId,
+    channel,
+    messageKind: "first_touch",
+    segmentKey,
+    playbookKey: playbook?.key || strategy?.playbook_key || null,
+  });
+  const reviewedVariants = invitePack.variants.map((variant) => {
+    const review = evaluateGroundedOutboundMessageQuality({
+      body: variant.body,
+      subject: variant.subject,
+      channel,
+      messageKind: "first_touch",
+      companyName: inviteContext.companyName,
+      city: inviteContext.city,
+      personalizationHook: inviteContext.hook,
+      triggerEvidenceCount,
+      researchReadiness: invitePack.research,
+      prospect: {
+        company_name: inviteContext.companyName,
+        city: inviteContext.city,
+        preferred_channel: channel,
+        contact_email: inviteContext.contactEmail,
+        personalization_hook: inviteContext.hook,
+        personalization_evidence: inviteContext.evidence,
+        source_checked_at: inviteContext.sourceCheckedAt,
+        target_group: inviteContext.targetGroup,
+        process_hint: inviteContext.processHint,
+        response_promise_public: inviteContext.responsePromisePublic,
+        appointment_flow_public: inviteContext.appointmentFlowPublic,
+        docs_flow_public: inviteContext.docsFlowPublic,
+        active_listings_count: inviteContext.activeListingsCount,
+        automation_readiness: inviteContext.automationReadiness,
+        linkedin_url: inviteContext.linkedinUrl,
+      },
+      context: groundedContext,
+      supportHints: [
+        inviteContext.hook,
+        inviteContext.evidence,
+        inviteContext.researchInsights,
+        inviteContext.processHint,
+      ].filter(Boolean) as string[],
+    });
+    return {
+      ...variant,
+      score: review.score,
+      review,
+    };
+  });
+  const qualityRank = (status: string) =>
+    status === "pass" ? 2 : status === "needs_review" ? 1 : 0;
+  const finalVariant = [...reviewedVariants].sort((a, b) => {
+    return qualityRank(b.review.status) - qualityRank(a.review.status) || b.score - a.score;
+  })[0];
   let tpl: { subject: string; body: string } = {
-    subject: invitePack.final.subject || "Anfragen",
-    body: invitePack.final.body,
+    subject: finalVariant.subject || "Anfragen",
+    body: finalVariant.body,
   };
-  let templateReview = invitePack.final.review;
+  let templateReview = finalVariant.review;
   let generatedWith: "ai" | "fallback" = "fallback";
   let aiCandidate: { subject: string; body: string } | null = null;
-  let aiCandidateReview: ReturnType<typeof evaluateOutboundMessageQuality> | null = null;
+  let aiCandidateReview: ReturnType<typeof evaluateGroundedOutboundMessageQuality> | null = null;
 
   try {
     const activePrompt = await maybeLoadPrompt(supabase);
@@ -742,7 +816,7 @@ export async function GET(
         subject: aiTemplate.subject || "Anfragen",
         body: aiTemplate.body,
       };
-      aiCandidateReview = evaluateOutboundMessageQuality({
+      aiCandidateReview = evaluateGroundedOutboundMessageQuality({
         body: aiTemplate.body,
         subject: aiTemplate.subject || "Anfragen",
         channel,
@@ -752,9 +826,35 @@ export async function GET(
         personalizationHook: inviteContext.hook,
         triggerEvidenceCount,
         researchReadiness: invitePack.research,
+        prospect: {
+          company_name: inviteContext.companyName,
+          city: inviteContext.city,
+          preferred_channel: channel,
+          contact_email: inviteContext.contactEmail,
+          personalization_hook: inviteContext.hook,
+          personalization_evidence: inviteContext.evidence,
+          source_checked_at: inviteContext.sourceCheckedAt,
+          target_group: inviteContext.targetGroup,
+          process_hint: inviteContext.processHint,
+          response_promise_public: inviteContext.responsePromisePublic,
+          appointment_flow_public: inviteContext.appointmentFlowPublic,
+          docs_flow_public: inviteContext.docsFlowPublic,
+          active_listings_count: inviteContext.activeListingsCount,
+          automation_readiness: inviteContext.automationReadiness,
+          linkedin_url: inviteContext.linkedinUrl,
+        },
+        context: groundedContext,
+        supportHints: [
+          inviteContext.hook,
+          inviteContext.evidence,
+          inviteContext.researchInsights,
+          inviteContext.processHint,
+        ].filter(Boolean) as string[],
       });
-      const candidateRank = aiCandidateReview.status === "pass" ? 2 : aiCandidateReview.status === "needs_review" ? 1 : 0;
-      const currentRank = templateReview.status === "pass" ? 2 : templateReview.status === "needs_review" ? 1 : 0;
+      const candidateRank =
+        aiCandidateReview.status === "pass" ? 2 : aiCandidateReview.status === "needs_review" ? 1 : 0;
+      const currentRank =
+        templateReview.status === "pass" ? 2 : templateReview.status === "needs_review" ? 1 : 0;
       if (
         candidateRank > currentRank ||
         (candidateRank === currentRank && aiCandidateReview.score > templateReview.score)
@@ -774,8 +874,36 @@ export async function GET(
     template: tpl,
     template_review: templateReview,
     research: invitePack.research,
-    final_variant: invitePack.final.key,
-    variants: invitePack.variants.map((variant) => ({
+    strategy: strategy
+      ? {
+          id: strategy.id,
+          version: strategy.version,
+          strategy_status: strategy.strategy_status,
+          segment_key: strategy.segment_key,
+          playbook_key: strategy.playbook_key,
+          playbook_title: strategy.playbook_title,
+          chosen_channel: strategy.chosen_channel,
+          channel_plan: strategy.channel_plan,
+          chosen_contact_confidence: strategy.chosen_contact_confidence,
+          chosen_contact_candidate_id: strategy.chosen_contact_candidate_id,
+          chosen_cta: strategy.chosen_cta,
+          chosen_angle: strategy.chosen_angle,
+          chosen_trigger: strategy.chosen_trigger,
+          trigger_evidence: strategy.trigger_evidence,
+          research_status: strategy.research_status,
+          research_score: strategy.research_score,
+          risk_level: strategy.risk_level,
+          strategy_score: strategy.strategy_score,
+          rationale: strategy.rationale,
+          fallback_plan: strategy.fallback_plan,
+          research_gaps: strategy.research_gaps,
+          metadata: strategy.metadata || {},
+          chosen_contact_channel: strategy.chosen_contact_channel,
+          chosen_contact_value: strategy.chosen_contact_value,
+        }
+      : null,
+    final_variant: finalVariant.key,
+    variants: reviewedVariants.map((variant) => ({
       key: variant.key,
       label: variant.label,
       subject: variant.subject || "",
