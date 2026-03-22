@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import {
+  assessResearchReadiness,
+  outboundQualityStatusLabel,
+  researchStatusLabel,
+} from "@/lib/crm/outboundQuality";
 
 type Prospect = {
   id: string;
@@ -65,6 +70,13 @@ type NextAction = {
   recommended_code: string | null;
   recommended_primary_label: string | null;
   recommended_at: string | null;
+  research?: {
+    status: "ready" | "refresh_research" | "needs_research" | "missing_contact";
+    score: number;
+    summary: string;
+    blockers: string[];
+    warnings: string[];
+  };
 };
 
 type ResearchNote = {
@@ -106,6 +118,17 @@ type MessagePackItem = {
   subject: string;
   body: string;
   why: string;
+  review_status?: "pass" | "needs_review" | "blocked";
+  review_score?: number;
+  review_summary?: string;
+};
+
+type DraftReview = {
+  status: "pass" | "needs_review" | "blocked";
+  score: number;
+  summary: string;
+  blockers?: string[];
+  warnings?: string[];
 };
 
 type SequenceStep = {
@@ -184,8 +207,35 @@ function stageBadgeClass(stage: string) {
   return "bg-gray-50 text-gray-700 ring-gray-200";
 }
 
+function researchBadgeClass(status: string | null | undefined) {
+  if (status === "ready") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (status === "refresh_research") return "bg-amber-50 text-amber-800 ring-amber-200";
+  if (status === "missing_contact") return "bg-rose-50 text-rose-700 ring-rose-200";
+  return "bg-blue-50 text-blue-700 ring-blue-200";
+}
+
+function reviewBadgeClass(status: string | null | undefined) {
+  if (status === "pass") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (status === "needs_review") return "bg-amber-50 text-amber-800 ring-amber-200";
+  return "bg-rose-50 text-rose-700 ring-rose-200";
+}
+
 function getRiskLevel(args: { prospect: Prospect; nextAction: NextAction | null }) {
   const reasons: string[] = [];
+  const research = assessResearchReadiness({
+    preferredChannel: args.prospect.preferred_channel,
+    contactEmail: args.prospect.contact_email,
+    personalizationHook: args.prospect.personalization_hook,
+    personalizationEvidence: args.prospect.personalization_evidence,
+    sourceCheckedAt: args.prospect.source_checked_at,
+    responsePromisePublic: args.prospect.response_promise_public,
+    appointmentFlowPublic: args.prospect.appointment_flow_public,
+    docsFlowPublic: args.prospect.docs_flow_public,
+    activeListingsCount: args.prospect.active_listings_count,
+    automationReadiness: args.prospect.automation_readiness,
+    linkedinUrl: args.prospect.linkedin_url,
+    linkedinSearchUrl: args.prospect.linkedin_search_url,
+  });
   if (
     String(args.prospect.preferred_channel || "").toLowerCase() === "email" &&
     !String(args.prospect.contact_email || "").trim()
@@ -200,6 +250,9 @@ function getRiskLevel(args: { prospect: Prospect; nextAction: NextAction | null 
   }
   if (String(args.nextAction?.recommended_code || "").includes("switch_channel_after_bounce")) {
     reasons.push("Kanalwechsel empfohlen (Bounce-/Zustellrisiko)");
+  }
+  if (research.status !== "ready") {
+    reasons.push(`Research nicht sendbereit (${researchStatusLabel(research.status)})`);
   }
   const score = Math.max(0, 100 - reasons.length * 20);
   if (score >= 80) return { label: "Niedrig", score, reasons };
@@ -280,7 +333,9 @@ export default function CrmProspectDetail({
   const [messagePack, setMessagePack] = useState<MessagePackItem[]>([]);
   const [messagePackReason, setMessagePackReason] = useState("");
   const [messagePackSource, setMessagePackSource] = useState<"ai" | "fallback" | null>(null);
+  const [messagePackReview, setMessagePackReview] = useState<DraftReview | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
+  const [draftReview, setDraftReview] = useState<DraftReview | null>(null);
   const [sequenceStartAt, setSequenceStartAt] = useState(
     toDateTimeLocalValue(new Date().toISOString()),
   );
@@ -325,6 +380,24 @@ export default function CrmProspectDetail({
   const risk = useMemo(
     () => getRiskLevel({ prospect, nextAction }),
     [prospect, nextAction],
+  );
+  const researchAssessment = useMemo(
+    () =>
+      assessResearchReadiness({
+        preferredChannel: prospect.preferred_channel,
+        contactEmail: prospect.contact_email,
+        personalizationHook: prospect.personalization_hook,
+        personalizationEvidence: prospect.personalization_evidence,
+        sourceCheckedAt: prospect.source_checked_at,
+        responsePromisePublic: prospect.response_promise_public,
+        appointmentFlowPublic: prospect.appointment_flow_public,
+        docsFlowPublic: prospect.docs_flow_public,
+        activeListingsCount: prospect.active_listings_count,
+        automationReadiness: prospect.automation_readiness,
+        linkedinUrl: prospect.linkedin_url,
+        linkedinSearchUrl: prospect.linkedin_search_url,
+      }),
+    [prospect],
   );
 
   const plannedMessages = useMemo(() => {
@@ -469,7 +542,12 @@ export default function CrmProspectDetail({
       }
       setDraftSubject(String(json?.template?.subject || "").trim());
       setDraftBody(String(json?.template?.body || "").trim());
-      setSuccess("Empfohlene Nachricht geladen. Du kannst sie jetzt anpassen.");
+      setDraftReview((json?.template_review || null) as DraftReview | null);
+      setSuccess(
+        json?.template_review
+          ? `Empfohlene Nachricht geladen. ${outboundQualityStatusLabel(json.template_review.status)} · ${json.template_review.score}/100.`
+          : "Empfohlene Nachricht geladen. Du kannst sie jetzt anpassen.",
+      );
     } catch (e: any) {
       setError(String(e?.message || "Empfohlene Nachricht konnte nicht erzeugt werden."));
     } finally {
@@ -497,14 +575,28 @@ export default function CrmProspectDetail({
           ? json.generated_with
           : null,
       );
+      setMessagePackReview((json?.pack_review || null) as DraftReview | null);
       if (rows.length > 0) {
         const first = rows[0];
         setSelectedVariant(first.variant);
         setDraftChannel(first.channel === "email" || first.channel === "linkedin" || first.channel === "telefon" ? first.channel : "email");
         setDraftSubject(first.subject || "");
         setDraftBody(first.body || "");
+        setDraftReview(
+          first.review_status && typeof first.review_score === "number"
+            ? {
+                status: first.review_status,
+                score: first.review_score,
+                summary: String(first.review_summary || "").trim(),
+              }
+            : null,
+        );
       }
-      setSuccess("KI-Nachrichtenpaket geladen.");
+      setSuccess(
+        json?.pack_review
+          ? `KI-Nachrichtenpaket geladen. ${outboundQualityStatusLabel(json.pack_review.status)} · ${json.pack_review.score}/100.`
+          : "KI-Nachrichtenpaket geladen.",
+      );
     } catch (e: any) {
       setError(String(e?.message || "Nachrichtenpaket konnte nicht erzeugt werden."));
     } finally {
@@ -517,6 +609,15 @@ export default function CrmProspectDetail({
     setDraftChannel(item.channel);
     setDraftSubject(item.subject || "");
     setDraftBody(item.body || "");
+    setDraftReview(
+      item.review_status && typeof item.review_score === "number"
+        ? {
+            status: item.review_status,
+            score: item.review_score,
+            summary: String(item.review_summary || "").trim(),
+          }
+        : null,
+    );
     setSuccess(`Variante ${item.variant} übernommen.`);
   }
 
@@ -562,6 +663,7 @@ export default function CrmProspectDetail({
       if (!createRes.ok || !createJson?.ok) {
         throw new Error(createJson?.details || createJson?.error || "Draft konnte nicht gespeichert werden.");
       }
+      setDraftReview((createJson?.review || null) as DraftReview | null);
 
       const messageId = String(createJson?.message?.id || "");
       const createdChannel = String(createJson?.message?.channel || draftChannel);
@@ -594,7 +696,12 @@ export default function CrmProspectDetail({
           );
         }
       } else {
-        setSuccess("Geplante Nachricht als ready-Draft gespeichert.");
+        const review = (createJson?.review || null) as DraftReview | null;
+        setSuccess(
+          review
+            ? `Geplante Nachricht als ready-Draft gespeichert. ${outboundQualityStatusLabel(review.status)} · ${review.score}/100.`
+            : "Geplante Nachricht als ready-Draft gespeichert.",
+        );
       }
 
       await refreshAll();
@@ -665,7 +772,11 @@ export default function CrmProspectDetail({
       if (Object.keys(updates).length > 0) {
         setProspect((prev) => ({ ...prev, ...updates }));
       }
-      setSuccess("LinkedIn-/Website-Signale wurden angereichert.");
+      setSuccess(
+        `Research-Crawl fertig: ${Array.isArray(json?.pages_crawled) ? json.pages_crawled.length : 0} Seiten geprüft.${
+          json?.research?.status ? ` ${researchStatusLabel(json.research.status)} · ${Number(json?.research?.score || 0)}/100.` : ""
+        }`,
+      );
       await refreshAll();
     } catch (e: any) {
       setError(String(e?.message || "Enrichment fehlgeschlagen."));
@@ -1030,6 +1141,19 @@ export default function CrmProspectDetail({
                 {prospect.primary_objection || "Nicht gepflegt"}
               </div>
             </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Research</div>
+              <div className="mt-1">
+                <span
+                  className={`inline-flex rounded-full px-2 py-0.5 text-xs ring-1 ${researchBadgeClass(
+                    researchAssessment.status,
+                  )}`}
+                >
+                  {researchStatusLabel(researchAssessment.status)} · {researchAssessment.score}/100
+                </span>
+              </div>
+              <div className="mt-1 text-xs text-gray-600">{researchAssessment.summary}</div>
+            </div>
           </div>
         </article>
       </section>
@@ -1054,6 +1178,17 @@ export default function CrmProspectDetail({
               {messagePackReason} {messagePackSource ? `(${messagePackSource === "ai" ? "KI" : "Fallback"})` : ""}
             </div>
           ) : null}
+          {messagePackReview ? (
+            <div className="mt-2">
+              <span
+                className={`inline-flex rounded-full px-2 py-0.5 text-xs ring-1 ${reviewBadgeClass(
+                  messagePackReview.status,
+                )}`}
+              >
+                {outboundQualityStatusLabel(messagePackReview.status)} · {messagePackReview.score}/100
+              </span>
+            </div>
+          ) : null}
           <div className="mt-3 space-y-2">
             {messagePack.length === 0 ? (
               <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
@@ -1066,16 +1201,30 @@ export default function CrmProspectDetail({
                     <div className="text-xs text-gray-500">
                       {item.channel} · {item.variant}
                     </div>
-                    <button
-                      className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs hover:bg-gray-50"
-                      onClick={() => applyPackVariant(item)}
-                    >
-                      In Editor übernehmen
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {item.review_status ? (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] ring-1 ${reviewBadgeClass(
+                            item.review_status,
+                          )}`}
+                        >
+                          {outboundQualityStatusLabel(item.review_status)} · {item.review_score || 0}/100
+                        </span>
+                      ) : null}
+                      <button
+                        className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs hover:bg-gray-50"
+                        onClick={() => applyPackVariant(item)}
+                      >
+                        In Editor übernehmen
+                      </button>
+                    </div>
                   </div>
                   {item.subject ? <div className="mt-1 text-sm font-medium text-gray-900">{item.subject}</div> : null}
                   <div className="mt-1 line-clamp-3 text-sm text-gray-700">{item.body}</div>
                   <div className="mt-2 text-xs text-gray-600">Warum: {item.why}</div>
+                  {item.review_summary ? (
+                    <div className="mt-1 text-xs text-gray-500">{item.review_summary}</div>
+                  ) : null}
                 </div>
               ))
             )}
@@ -1172,7 +1321,10 @@ export default function CrmProspectDetail({
               <select
                 className="rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-sm"
                 value={draftKind}
-                onChange={(e) => setDraftKind(e.target.value)}
+                onChange={(e) => {
+                  setDraftKind(e.target.value);
+                  setDraftReview(null);
+                }}
               >
                 <option value="first_touch">Erstkontakt</option>
                 <option value="follow_up_1">Follow-up 1</option>
@@ -1183,7 +1335,10 @@ export default function CrmProspectDetail({
               <select
                 className="rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-sm"
                 value={draftChannel}
-                onChange={(e) => setDraftChannel(e.target.value as any)}
+                onChange={(e) => {
+                  setDraftChannel(e.target.value as any);
+                  setDraftReview(null);
+                }}
               >
                 <option value="email">E-Mail</option>
                 <option value="linkedin">LinkedIn</option>
@@ -1204,13 +1359,19 @@ export default function CrmProspectDetail({
               className="rounded-xl border border-gray-200 px-3 py-2 text-sm"
               placeholder="Betreff"
               value={draftSubject}
-              onChange={(e) => setDraftSubject(e.target.value)}
+              onChange={(e) => {
+                setDraftSubject(e.target.value);
+                setDraftReview(null);
+              }}
             />
             <textarea
               className="min-h-[170px] rounded-xl border border-gray-200 px-3 py-2 text-sm"
               placeholder="Nachrichtentext"
               value={draftBody}
-              onChange={(e) => setDraftBody(e.target.value)}
+              onChange={(e) => {
+                setDraftBody(e.target.value);
+                setDraftReview(null);
+              }}
             />
             <div className="grid gap-2 md:grid-cols-3">
               <input
@@ -1239,6 +1400,18 @@ export default function CrmProspectDetail({
                 ? "E-Mail wird direkt über Gmail/Outlook versendet."
                 : "Für LinkedIn, Kontaktformular und Telefon wird die Nachricht als manuell gesendet dokumentiert."}
             </div>
+            {draftReview ? (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                <span
+                  className={`inline-flex rounded-full px-2 py-0.5 text-[11px] ring-1 ${reviewBadgeClass(
+                    draftReview.status,
+                  )}`}
+                >
+                  {outboundQualityStatusLabel(draftReview.status)} · {draftReview.score}/100
+                </span>
+                <div className="mt-1">{draftReview.summary}</div>
+              </div>
+            ) : null}
           </div>
         </article>
 
@@ -1257,6 +1430,7 @@ export default function CrmProspectDetail({
                 const scheduledFor = String(m?.metadata?.scheduled_for || "").trim();
                 const externalLink = buildExternalChannelLink(m.channel, prospect);
                 const templateVariant = String(m?.metadata?.template_variant || "").trim();
+                const review = (m?.metadata?.outbound_review || null) as DraftReview | null;
                 return (
                   <div key={m.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1264,6 +1438,15 @@ export default function CrmProspectDetail({
                         {m.message_kind} · {m.channel} · {m.status}
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5">
+                        {review ? (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] ring-1 ${reviewBadgeClass(
+                              review.status,
+                            )}`}
+                          >
+                            {outboundQualityStatusLabel(review.status)} · {review.score}/100
+                          </span>
+                        ) : null}
                         {externalLink ? (
                           <a
                             href={externalLink.href}
@@ -1313,6 +1496,7 @@ export default function CrmProspectDetail({
                         Variante: {templateVariant}
                       </div>
                     ) : null}
+                    {review ? <div className="mt-1 text-[11px] text-gray-500">{review.summary}</div> : null}
                   </div>
                 );
               })

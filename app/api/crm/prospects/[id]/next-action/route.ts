@@ -35,7 +35,7 @@ export async function GET(
   const [prospectRes, eventsRes, messagesRes] = await Promise.all([
     (supabase.from("crm_prospects") as any)
       .select(
-        "id, company_name, contact_name, contact_email, object_focus, preferred_channel, priority, fit_score, stage, next_action_at, updated_at, source_checked_at, personalization_hook",
+        "id, company_name, contact_name, contact_email, object_focus, preferred_channel, priority, fit_score, stage, next_action_at, updated_at, source_checked_at, personalization_hook, personalization_evidence, active_listings_count, automation_readiness",
       )
       .eq("agent_id", auth.user.id)
       .eq("id", prospectId)
@@ -99,4 +99,3 @@ export async function GET(
 
   return NextResponse.json({ ok: true, next_action: ranked[0] || null });
 }
-

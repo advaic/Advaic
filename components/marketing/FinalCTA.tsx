@@ -13,7 +13,7 @@ const micro = [
 ];
 const trustNotes = [
   "Auto-Senden nur bei sauberem Objektbezug und vollständigen Angaben",
-  "Freigabe bei fehlenden Informationen, Risiko oder no-reply-Absendern",
+  "Freigabe bei fehlenden Informationen, Risiko oder No-Reply-Adressen",
   "Qualitätschecks vor jedem Versand",
   "Verlauf mit Status und Zeitstempel",
 ];
@@ -24,13 +24,16 @@ export default function FinalCTA() {
       <Container>
         <div className="card-base relative overflow-hidden p-8 md:p-12">
           <span className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,rgba(11,15,23,0),rgba(201,162,39,0.6),rgba(11,15,23,0))]" />
-          <div className="absolute -right-16 -top-12 h-52 w-52 rounded-full bg-[var(--gold-soft)] blur-3xl" aria-hidden />
+          <div
+            className="absolute -right-6 -top-8 h-36 w-36 rounded-full bg-[var(--gold-soft)] blur-3xl md:-right-16 md:-top-12 md:h-52 md:w-52"
+            aria-hidden
+          />
 
           <div className="relative grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-start">
             <div>
               <h2 className="h2 text-balance">Prüfen Sie 14 Tage im echten Postfach, ob Advaic für Ihr Team passt.</h2>
               <p className="body mt-4 max-w-[62ch] text-[var(--muted)]">
-                Testen Sie Advaic 14 Tage im echten Postfach. Danach läuft Starter für {STARTER_PUBLIC_PRICE_LABEL}
+                Testen Sie Advaic 14 Tage im echten Postfach. Danach läuft Starter für {STARTER_PUBLIC_PRICE_LABEL}{" "}
                 weiter. Sie starten mit enger Freigabegrenze und geben Auto-Senden nur dort frei, wo Angaben,
                 Empfänger und Inhalt sauber prüfbar sind.
               </p>

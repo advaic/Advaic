@@ -1,3 +1,5 @@
+import { assessResearchReadiness } from "@/lib/crm/outboundQuality";
+
 type ProspectLike = {
   id: string;
   company_name: string | null;
@@ -12,6 +14,9 @@ type ProspectLike = {
   updated_at?: string | null;
   source_checked_at?: string | null;
   personalization_hook?: string | null;
+  personalization_evidence?: string | null;
+  active_listings_count?: number | null;
+  automation_readiness?: string | null;
 };
 
 type EventLike = {
@@ -59,6 +64,13 @@ export type ComputedNextAction = {
     open_reply: boolean;
     recent_bounce: boolean;
     has_ready_draft: boolean;
+  };
+  research: {
+    status: "ready" | "refresh_research" | "needs_research" | "missing_contact";
+    score: number;
+    summary: string;
+    blockers: string[];
+    warnings: string[];
   };
 };
 
@@ -159,6 +171,9 @@ function actionForCode(code: string) {
   if (code === "send_follow_up_2") return "Follow-up 2 senden";
   if (code === "send_follow_up_3") return "Follow-up 3 senden";
   if (code === "send_breakup_touch") return "Abschluss-Nachricht senden";
+  if (code === "enrich_research_before_outreach") return "Prospect zuerst recherchieren";
+  if (code === "refresh_research_before_outreach") return "Research vor Outreach aktualisieren";
+  if (code === "fill_contact_channel") return "Kontaktkanal ergaenzen";
   if (code === "switch_channel_after_bounce")
     return "Kanal wechseln und Nachricht außerhalb E-Mail senden";
   if (code === "handle_reply_now") return "Auf eingegangene Antwort reagieren";
@@ -172,6 +187,9 @@ function actionForCode(code: string) {
 function primaryLabelForCode(code: string | null) {
   if (!code) return null;
   if (code.startsWith("send_")) return "Sequenz ausführen";
+  if (code === "enrich_research_before_outreach" || code === "refresh_research_before_outreach")
+    return "Research schärfen";
+  if (code === "fill_contact_channel") return "Kontakt ergänzen";
   if (code === "handle_reply_now") return "Reply bearbeiten";
   if (code === "invite_pilot_after_reply") return "Pilot einladen";
   if (code === "schedule_pilot_call") return "Call planen";
@@ -222,6 +240,16 @@ export function computeNextActions(args: {
       source_checked_at: row.source_checked_at || null,
       preferred_channel: row.preferred_channel || null,
       contact_email: row.contact_email || null,
+    });
+    const research = assessResearchReadiness({
+      preferredChannel: row.preferred_channel || null,
+      contactEmail: row.contact_email || null,
+      personalizationHook: row.personalization_hook || null,
+      personalizationEvidence: row.personalization_evidence || null,
+      sourceCheckedAt: row.source_checked_at || null,
+      activeListingsCount:
+        Number.isFinite(Number(row.active_listings_count)) ? Number(row.active_listings_count) : null,
+      automationReadiness: row.automation_readiness || null,
     });
 
     const prospectEvents = (eventsByProspect.get(prospectId) || []).sort((a, b) => {
@@ -310,6 +338,19 @@ export function computeNextActions(args: {
       score -= 8;
       addFactor("Personalisierung", -8, "Personalisierungs-Hook fehlt");
     }
+    if (research.status === "ready") {
+      score += 10;
+      addFactor("Research", 10, `Research bereit (${research.score}/100)`);
+    } else if (research.status === "refresh_research") {
+      score -= 8;
+      addFactor("Research", -8, "Research sollte vor neuem Outreach aktualisiert werden");
+    } else if (research.status === "needs_research") {
+      score -= 18;
+      addFactor("Research", -18, "Research ist zu duenn fuer hochwertigen Outreach");
+    } else if (research.status === "missing_contact") {
+      score -= 24;
+      addFactor("Kontakt", -24, "Bevorzugter Kontaktkanal ist nicht sendbar");
+    }
 
     let code: string | null = null;
 
@@ -333,6 +374,18 @@ export function computeNextActions(args: {
       code = "schedule_pilot_call";
       score += 20;
       addFactor("Pilot aktiv", 20, "Pilot aktiv: Termin-/Close-Schritt priorisieren");
+    } else if (research.status === "missing_contact") {
+      code = "fill_contact_channel";
+      score += 12;
+      addFactor("Kontakt zuerst", 12, "Bevorzugter Kanal muss ergänzt werden");
+    } else if (research.status === "needs_research") {
+      code = "enrich_research_before_outreach";
+      score += 16;
+      addFactor("Research zuerst", 16, "Vor Outreach fehlen belastbare Signale");
+    } else if (research.status === "refresh_research" && sentCount === 0) {
+      code = "refresh_research_before_outreach";
+      score += 10;
+      addFactor("Research auffrischen", 10, "Quelle/Signale vor erstem Touch aktualisieren");
     } else if (hasReadyDraft) {
       code = "review_ready_draft";
       score += 16;
@@ -379,9 +432,15 @@ export function computeNextActions(args: {
         recent_bounce: recentBounce,
         has_ready_draft: hasReadyDraft,
       },
+      research: {
+        status: research.status,
+        score: research.score,
+        summary: research.summary,
+        blockers: research.blockers,
+        warnings: research.warnings,
+      },
     });
   }
 
   return out.sort((a, b) => b.recommended_score - a.recommended_score);
 }
-

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import MarketingJumpLink from "@/components/marketing/MarketingJumpLink";
+import ResponsiveComparisonTable from "@/components/marketing/ResponsiveComparisonTable";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
 import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
@@ -117,7 +118,7 @@ const sources = [
   {
     label: "HubSpot: CRM-Software für Immobilienmakler",
     href: "https://www.hubspot.de/products/crm/real-estate",
-    note: "Offizielle Herstellerseite für ein allgemeineres CRM mit Immobilien-Use-Case.",
+    note: "Offizielle Herstellerseite für ein allgemeineres CRM mit Einsatz im Immobilienbereich.",
   },
   {
     label: "Google: How to write reviews",
@@ -285,28 +286,16 @@ export default function MaklersoftwareVergleichPage() {
             </p>
           </div>
 
-          <div className="mt-8 overflow-x-auto rounded-[var(--radius)] bg-white ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
-            <table className="min-w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)]">
-                  <th className="px-4 py-3 font-semibold text-[var(--text)]">System</th>
-                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Fokus</th>
-                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Typischer Fit</th>
-                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Worauf Sie achten sollten</th>
-                </tr>
-              </thead>
-              <tbody>
-                {softwareRows.map((row) => (
-                  <tr key={row.system} className="border-b border-[var(--border)] align-top">
-                    <td className="px-4 py-4 font-medium text-[var(--text)]">{row.system}</td>
-                    <td className="px-4 py-4 text-[var(--muted)]">{row.focus}</td>
-                    <td className="px-4 py-4 text-[var(--muted)]">{row.fit}</td>
-                    <td className="px-4 py-4 text-[var(--muted)]">{row.watch}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ResponsiveComparisonTable
+            rows={softwareRows}
+            rowKey={(row) => row.system}
+            columns={[
+              { key: "system", label: "System", emphasize: true },
+              { key: "focus", label: "Fokus" },
+              { key: "fit", label: "Typischer Fit" },
+              { key: "watch", label: "Worauf Sie achten sollten" },
+            ]}
+          />
         </Container>
       </section>
 

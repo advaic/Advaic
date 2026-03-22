@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  assessResearchReadiness,
+  outboundQualityStatusLabel,
+  researchStatusLabel,
+} from "@/lib/crm/outboundQuality";
 
 type Prospect = {
   id: string;
@@ -76,6 +81,13 @@ type NextBestAction = {
     recent_bounce: boolean;
     has_ready_draft: boolean;
   };
+  research?: {
+    status: "ready" | "refresh_research" | "needs_research" | "missing_contact";
+    score: number;
+    summary: string;
+    blockers: string[];
+    warnings: string[];
+  };
 };
 
 type Overview = {
@@ -120,8 +132,17 @@ type OutreachMessage = {
   personalization_score: number | null;
   status: "draft" | "ready" | "sent" | "failed" | "archived";
   sent_at: string | null;
+  metadata?: Record<string, any> | null;
   created_at: string;
   updated_at: string;
+};
+
+type DraftReview = {
+  status: "pass" | "needs_review" | "blocked";
+  score: number;
+  summary: string;
+  blockers?: string[];
+  warnings?: string[];
 };
 
 type OutreachEvent = {
@@ -438,6 +459,19 @@ function readinessBadgeClass(score: number) {
   return "bg-gray-50 text-gray-700 ring-gray-200";
 }
 
+function researchBadgeClass(status: string | null | undefined) {
+  if (status === "ready") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (status === "refresh_research") return "bg-amber-50 text-amber-800 ring-amber-200";
+  if (status === "missing_contact") return "bg-rose-50 text-rose-700 ring-rose-200";
+  return "bg-blue-50 text-blue-700 ring-blue-200";
+}
+
+function reviewBadgeClass(status: string | null | undefined) {
+  if (status === "pass") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+  if (status === "needs_review") return "bg-amber-50 text-amber-800 ring-amber-200";
+  return "bg-rose-50 text-rose-700 ring-rose-200";
+}
+
 const defaultForm: NewProspectForm = {
   company_name: "",
   contact_name: "",
@@ -677,6 +711,31 @@ export default function CrmControlCenter({
     () => data.prospects.find((p) => p.id === selectedProspectId) || null,
     [data.prospects, selectedProspectId],
   );
+  const prospectResearchById = useMemo(() => {
+    const map = new Map<
+      string,
+      ReturnType<typeof assessResearchReadiness>
+    >();
+    for (const prospect of data.prospects || []) {
+      map.set(
+        prospect.id,
+        assessResearchReadiness({
+          preferredChannel: prospect.preferred_channel,
+          contactEmail: prospect.contact_email,
+          personalizationHook: prospect.personalization_hook,
+          sourceCheckedAt: prospect.source_checked_at,
+          activeListingsCount:
+            typeof prospect.active_listings_count === "number"
+              ? prospect.active_listings_count
+              : null,
+          automationReadiness: prospect.automation_readiness || null,
+          linkedinUrl: prospect.linkedin_url || null,
+          linkedinSearchUrl: prospect.linkedin_search_url || null,
+        }),
+      );
+    }
+    return map;
+  }, [data.prospects]);
   const filteredProspects = useMemo(() => {
     const q = pipelineQuery.trim().toLowerCase();
     return (data.prospects || []).filter((p) => {
@@ -938,7 +997,12 @@ export default function CrmControlCenter({
       if (!res.ok || !json?.ok) {
         throw new Error(json?.details || json?.error || "Draft konnte nicht gespeichert werden.");
       }
-      setSuccess("Nachrichtendraft gespeichert.");
+      const review = (json?.review || null) as DraftReview | null;
+      setSuccess(
+        review
+          ? `Nachrichtendraft gespeichert. ${outboundQualityStatusLabel(review.status)} · ${review.score}/100.`
+          : "Nachrichtendraft gespeichert.",
+      );
       await loadProspectDetail(selectedProspectId);
     } catch (e: any) {
       setError(String(e?.message || "Draft konnte nicht gespeichert werden."));
@@ -962,7 +1026,12 @@ export default function CrmControlCenter({
       }
       setNewDraftSubject(String(json?.template?.subject || "").trim());
       setNewDraftBody(String(json?.template?.body || "").trim());
-      setSuccess("Tester-Einladung übernommen. Du kannst sie jetzt anpassen.");
+      const review = (json?.template_review || null) as DraftReview | null;
+      setSuccess(
+        review
+          ? `Tester-Einladung übernommen. ${outboundQualityStatusLabel(review.status)} · ${review.score}/100.`
+          : "Tester-Einladung übernommen. Du kannst sie jetzt anpassen.",
+      );
     } catch (e: any) {
       setError(String(e?.message || "Template konnte nicht erzeugt werden."));
     } finally {
@@ -1104,7 +1173,7 @@ export default function CrmControlCenter({
         throw new Error(json?.details || json?.error || "Batch-Enrichment fehlgeschlagen.");
       }
       setSuccess(
-        `Enrichment-Lauf: ${Number(json?.enriched || 0)} angereichert, ${Number(json?.skipped || 0)} ohne Änderungen, ${Number(json?.failed || 0)} Fehler.`,
+        `Research-Lauf: ${Number(json?.enriched || 0)} angereichert, ${Number(json?.skipped || 0)} ohne Änderungen, ${Number(json?.failed || 0)} Fehler bei ${Number(json?.selected || 0)} geprüften Prospects.`,
       );
       await refresh();
       if (selectedProspectId) await loadProspectDetail(selectedProspectId);
@@ -1550,6 +1619,20 @@ export default function CrmControlCenter({
               <div className="mt-1 text-xs text-emerald-800">
                 Readiness {Number(nextAction.readiness_score || 0)} / 100
               </div>
+              {nextAction.research ? (
+                <div className="mt-2">
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-[11px] ring-1 ${researchBadgeClass(
+                      nextAction.research.status,
+                    )}`}
+                  >
+                    {researchStatusLabel(nextAction.research.status)} · {nextAction.research.score}/100
+                  </span>
+                  <div className="mt-1 text-[11px] text-emerald-900">
+                    {nextAction.research.summary}
+                  </div>
+                </div>
+              ) : null}
               {nextAction.guardrails ? (
                 <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
                   {nextAction.guardrails.open_reply ? (
@@ -2224,6 +2307,9 @@ export default function CrmControlCenter({
               </thead>
               <tbody>
                 {(data.followup_due || []).map((row) => (
+                  (() => {
+                    const research = prospectResearchById.get(row.prospect_id) || null;
+                    return (
                   <tr
                     key={row.prospect_id}
                     className={`border-t border-gray-100 ${selectedProspectId === row.prospect_id ? "bg-amber-50/40" : ""}`}
@@ -2241,6 +2327,17 @@ export default function CrmControlCenter({
                       >
                         Schnellansicht
                       </button>
+                      {research ? (
+                        <div className="mt-1">
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] ring-1 ${researchBadgeClass(
+                              research.status,
+                            )}`}
+                          >
+                            {researchStatusLabel(research.status)}
+                          </span>
+                        </div>
+                      ) : null}
                     </td>
                     <td className="py-2 pr-3 text-gray-700">{row.contact_name || "–"}</td>
                     <td className="py-2 pr-3 text-gray-700">{row.priority}</td>
@@ -2250,6 +2347,8 @@ export default function CrmControlCenter({
                     </td>
                     <td className="py-2 text-gray-600">{formatDate(row.recommended_at)}</td>
                   </tr>
+                    );
+                  })()
                 ))}
                 {(data.followup_due || []).length === 0 ? (
                   <tr>
@@ -2319,6 +2418,9 @@ export default function CrmControlCenter({
             </thead>
             <tbody>
               {sortedProspects.map((p) => (
+                (() => {
+                  const research = prospectResearchById.get(p.id) || null;
+                  return (
                 <tr key={p.id} className="border-t border-gray-100 align-top">
                   <td className="py-3 pr-3">
                     <Link
@@ -2392,6 +2494,17 @@ export default function CrmControlCenter({
                         ? Number(p.readiness_score)
                         : Number(p.fit_score || 0)}
                     </span>
+                    {research ? (
+                      <div className="mt-1">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] ring-1 ${researchBadgeClass(
+                            research.status,
+                          )}`}
+                        >
+                          {researchStatusLabel(research.status)}
+                        </span>
+                      </div>
+                    ) : null}
                   </td>
                   <td className="py-3 pr-3">
                     <div className="flex items-center gap-2">
@@ -2451,6 +2564,8 @@ export default function CrmControlCenter({
                     </div>
                   </td>
                 </tr>
+                  );
+                })()
               ))}
               {sortedProspects.length === 0 ? (
                 <tr>
@@ -2483,6 +2598,13 @@ export default function CrmControlCenter({
               <div className="mt-1">
                 Quelle geprüft: {selectedProspect.source_checked_at || "unbekannt"}
               </div>
+              {prospectResearchById.get(selectedProspect.id) ? (
+                <div className="mt-1">
+                  Research:{" "}
+                  {researchStatusLabel(prospectResearchById.get(selectedProspect.id)?.status || "needs_research")} ·{" "}
+                  {prospectResearchById.get(selectedProspect.id)?.score || 0}/100
+                </div>
+              ) : null}
               {selectedProspect.linkedin_relevance_note ? (
                 <div className="mt-1">LinkedIn-Hinweis: {selectedProspect.linkedin_relevance_note}</div>
               ) : null}
@@ -2629,6 +2751,9 @@ export default function CrmControlCenter({
               <div className="text-sm text-gray-500">Noch keine Drafts vorhanden.</div>
             ) : null}
             {messages.map((m) => (
+              (() => {
+                const review = (m.metadata?.outbound_review || null) as DraftReview | null;
+                return (
               <div key={m.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-gray-500">
@@ -2638,6 +2763,13 @@ export default function CrmControlCenter({
                     <span className="rounded-full bg-white px-2 py-0.5 text-xs ring-1 ring-gray-200">
                       {m.status}
                     </span>
+                    {review ? (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ring-1 ${reviewBadgeClass(review.status)}`}
+                      >
+                        {outboundQualityStatusLabel(review.status)} · {review.score}/100
+                      </span>
+                    ) : null}
                     {m.status !== "sent" ? (
                       <button
                         className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100 disabled:opacity-60"
@@ -2669,7 +2801,12 @@ export default function CrmControlCenter({
                 </div>
                 {m.subject ? <div className="mt-1 text-sm font-medium text-gray-900">{m.subject}</div> : null}
                 <div className="mt-1 whitespace-pre-line text-sm text-gray-700">{m.body}</div>
+                {review ? (
+                  <div className="mt-2 text-xs text-gray-600">{review.summary}</div>
+                ) : null}
               </div>
+                );
+              })()
             ))}
           </div>
         </article>

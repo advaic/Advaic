@@ -7,6 +7,10 @@ import {
   evaluateFirstTouchGuardrails,
 } from "@/lib/crm/cadenceRules";
 import { inferSegmentAndPlaybook } from "@/lib/crm/acqIntelligence";
+import {
+  assessResearchReadiness,
+  evaluateOutboundMessageQuality,
+} from "@/lib/crm/outboundQuality";
 
 export const runtime = "nodejs";
 
@@ -131,7 +135,7 @@ export async function POST(
 
   let prospectSignalsRes = await (supabase.from("crm_prospects") as any)
     .select(
-      "company_name, city, region, object_focus, target_group, process_hint, personalization_hook, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, personalization_evidence, source_checked_at, automation_readiness",
+      "company_name, contact_email, city, region, object_focus, target_group, process_hint, personalization_hook, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, personalization_evidence, source_checked_at, automation_readiness, response_promise_public, appointment_flow_public, docs_flow_public, linkedin_url, linkedin_search_url",
     )
     .eq("id", prospectId)
     .eq("agent_id", auth.user.id)
@@ -139,7 +143,7 @@ export async function POST(
 
   if (prospectSignalsRes.error && String((prospectSignalsRes.error as any).code || "") === "42703") {
     prospectSignalsRes = await (supabase.from("crm_prospects") as any)
-      .select("company_name, city, region, object_focus, target_group, process_hint, personalization_hook")
+      .select("company_name, contact_email, city, region, object_focus, target_group, process_hint, personalization_hook")
       .eq("id", prospectId)
       .eq("agent_id", auth.user.id)
       .maybeSingle();
@@ -218,6 +222,35 @@ export async function POST(
           triggerEvidenceCount,
         })
       : null;
+  const researchReadiness = assessResearchReadiness({
+    preferredChannel: safeChannel,
+    contactEmail: normalizeLine(prospectSignals.contact_email, 240) || null,
+    personalizationHook: normalizeText(prospectSignals.personalization_hook, 220) || null,
+    personalizationEvidence: normalizeText(prospectSignals.personalization_evidence, 240) || null,
+    sourceCheckedAt: normalizeLine(prospectSignals.source_checked_at, 40) || null,
+    targetGroup: normalizeText(prospectSignals.target_group, 180) || null,
+    processHint: normalizeText(prospectSignals.process_hint, 220) || null,
+    responsePromisePublic: normalizeText(prospectSignals.response_promise_public, 180) || null,
+    appointmentFlowPublic: normalizeText(prospectSignals.appointment_flow_public, 180) || null,
+    docsFlowPublic: normalizeText(prospectSignals.docs_flow_public, 180) || null,
+    activeListingsCount: Number.isFinite(Number(prospectSignals.active_listings_count))
+      ? Number(prospectSignals.active_listings_count)
+      : null,
+    automationReadiness: normalizeLine(prospectSignals.automation_readiness, 24) || null,
+    linkedinUrl: normalizeLine(prospectSignals.linkedin_url, 320) || null,
+    linkedinSearchUrl: normalizeLine(prospectSignals.linkedin_search_url, 320) || null,
+  });
+  const outboundReview = evaluateOutboundMessageQuality({
+    body: messageBody,
+    subject: normalizeLine(body?.subject, 240) || null,
+    channel: safeChannel,
+    messageKind: safeKind,
+    companyName: normalizeLine(prospectSignals.company_name, 160) || null,
+    city: normalizeLine(prospectSignals.city, 120) || null,
+    personalizationHook: normalizeText(prospectSignals.personalization_hook, 220) || null,
+    triggerEvidenceCount,
+    researchReadiness,
+  });
 
   if (safeKind === "first_touch" && safeStatus === "ready" && firstTouchGuardrail && !firstTouchGuardrail.pass) {
     return NextResponse.json(
@@ -226,6 +259,19 @@ export async function POST(
         error: "first_touch_guardrail_failed",
         details: "Erstkontakt blockiert: Bitte natürlicher, kürzer und mit klaren Triggern schreiben.",
         guardrail: firstTouchGuardrail,
+        review: outboundReview,
+      },
+      { status: 422 },
+    );
+  }
+  if (safeStatus === "ready" && outboundReview.status === "blocked") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "outbound_quality_blocked",
+        details: outboundReview.summary,
+        review: outboundReview,
+        research: researchReadiness,
       },
       { status: 422 },
     );
@@ -248,6 +294,8 @@ export async function POST(
     first_touch_guardrail: firstTouchGuardrail,
     first_touch_guardrail_pass:
       safeKind === "first_touch" ? Boolean(firstTouchGuardrail?.pass) : null,
+    research_readiness: researchReadiness,
+    outbound_review: outboundReview,
     generated_at: normalizeLine(metadataInput.generated_at, 60) || new Date().toISOString(),
   };
 
@@ -334,5 +382,7 @@ export async function POST(
     ok: true,
     message: data,
     guardrail: firstTouchGuardrail,
+    review: outboundReview,
+    research: researchReadiness,
   });
 }

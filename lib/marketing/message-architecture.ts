@@ -28,4 +28,4 @@ export const MESSAGE_ARCHITECTURE: MessageArchitectureItem[] = [
 ];
 
 export const POSITIONING_ONE_LINER =
-  "Advaic ist kein Chatbot, sondern ein kontrollierter E-Mail-Arbeitsablauf für Makler mit Guardrails, Freigaben und nachvollziehbaren Versandentscheidungen.";
+  "Advaic ist kein Chatbot, sondern ein kontrollierter E-Mail-Arbeitsablauf für Makler mit Schutzregeln, Freigaben und nachvollziehbaren Versandentscheidungen.";

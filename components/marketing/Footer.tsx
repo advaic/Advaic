@@ -26,7 +26,7 @@ const footerGroups = [
     links: [
       { label: "Manuell vs. Advaic", href: "/manuell-vs-advaic" },
       { label: "Advaic vs. CRM-Tools", href: "/advaic-vs-crm-tools" },
-      { label: "Best Software Immobilienanfragen", href: "/best-software-immobilienanfragen" },
+      { label: "Software für Immobilienanfragen", href: "/best-software-immobilienanfragen" },
       { label: "Branchen", href: "/branchen" },
     ],
   },
@@ -35,7 +35,7 @@ const footerGroups = [
     links: [
       { label: "Impressum", href: "/impressum" },
       { label: "Nutzungsbedingungen", href: "/nutzungsbedingungen" },
-      { label: "Cookie & Storage", href: "/cookie-und-storage" },
+      { label: "Cookies & Speicher", href: "/cookie-und-storage" },
       { label: "Unterauftragsverarbeiter", href: "/unterauftragsverarbeiter" },
     ],
   },
@@ -58,7 +58,7 @@ export default function MarketingFooter() {
                 advaic
               </Link>
               <p className="mt-3 max-w-[30ch] text-sm leading-7 text-[var(--muted)]">
-                E-Mail-Autopilot für Immobilienmakler mit Freigabe, Guardrails und Qualitätschecks vor dem Versand.
+                E-Mail-Autopilot für Immobilienmakler mit Freigabe, Schutzregeln und Qualitätschecks vor dem Versand.
               </p>
             </div>
 
@@ -67,7 +67,7 @@ export default function MarketingFooter() {
                 Support & Einstieg
               </p>
               <p className="mt-2 text-sm text-[var(--muted)]">
-                Fragen zur Einführung, zu Guardrails oder zur Testphase beantworten wir direkt.
+                Fragen zur Einführung, zu den Schutzregeln oder zur Testphase beantworten wir direkt.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <a href="mailto:support@advaic.com" className="btn-secondary">
@@ -110,7 +110,8 @@ export default function MarketingFooter() {
         <div className="mt-10 flex flex-col gap-3 border-t border-[var(--border)] pt-5 text-sm text-[var(--muted)] md:flex-row md:items-center md:justify-between">
           <p>© {new Date().getFullYear()} Advaic. Alle Rechte vorbehalten.</p>
           <p className="max-w-[56ch] md:text-right">
-            Weiterführende Detailseiten zu Branchen, Use Cases und Leitfäden bleiben über die kuratierten Hub-Seiten
+            Weiterführende Detailseiten zu Branchen, Praxisprofilen und Leitfäden bleiben über die kuratierten
+            Hub-Seiten
             erreichbar statt global als Linkliste im Footer verteilt.
           </p>
         </div>

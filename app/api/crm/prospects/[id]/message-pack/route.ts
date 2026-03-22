@@ -4,6 +4,10 @@ import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
 import { getPlaybookForSegment, inferSegmentFromProspect } from "@/lib/crm/salesIntelResearch";
 import { routeObjection } from "@/lib/crm/objectionLibrary";
 import { collectTriggerEvidence, evaluateFirstTouchGuardrails } from "@/lib/crm/cadenceRules";
+import {
+  assessResearchReadiness,
+  evaluateOutboundMessageQuality,
+} from "@/lib/crm/outboundQuality";
 
 export const runtime = "nodejs";
 
@@ -351,7 +355,7 @@ export async function GET(
   const supabase = createSupabaseAdminClient();
   const { data: prospect, error } = await (supabase.from("crm_prospects") as any)
     .select(
-      "id, company_name, contact_name, city, region, object_focus, personalization_hook, pain_point_hypothesis, primary_objection, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, personalization_evidence, target_group, process_hint, source_checked_at",
+      "id, company_name, contact_name, contact_email, city, region, object_focus, personalization_hook, pain_point_hypothesis, primary_objection, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, personalization_evidence, target_group, process_hint, source_checked_at",
     )
     .eq("id", prospectId)
     .eq("agent_id", auth.user.id)
@@ -383,6 +387,7 @@ export async function GET(
   const args = {
     companyName: normalizeLine(prospect.company_name, 160),
     contactName: normalizeLine(prospect.contact_name, 120) || null,
+    contactEmail: normalizeLine((prospect as any).contact_email, 240) || null,
     city: normalizeLine(prospect.city, 120) || null,
     region: normalizeLine(prospect.region, 120) || null,
     objectFocus: normalizeLine(prospect.object_focus, 40) || "gemischt",
@@ -477,6 +482,67 @@ export async function GET(
     personalizationEvidence: args.evidence || null,
     sourceCheckedAt: normalizeLine(prospect.source_checked_at, 40) || null,
   }).length;
+  const research = assessResearchReadiness({
+    preferredChannel: "email",
+    contactEmail: args.contactEmail,
+    personalizationHook: args.hook,
+    personalizationEvidence: args.evidence || null,
+    researchInsights: args.researchInsights || null,
+    sourceCheckedAt: normalizeLine(prospect.source_checked_at, 40) || null,
+    targetGroup: normalizeMultiline(prospect.target_group, 220) || null,
+    processHint: normalizeMultiline(prospect.process_hint, 220) || null,
+    activeListingsCount: args.activeListingsCount,
+    linkedinSearchUrl: null,
+  });
+
+  const reviewPackMessages = (rows: PackMessage[]) =>
+    rows.map((message) => {
+      const review = evaluateOutboundMessageQuality({
+        body: message.body,
+        subject: message.subject,
+        channel: message.channel,
+        messageKind: message.channel === "telefon" ? "custom" : "first_touch",
+        companyName: args.companyName,
+        city: args.city,
+        personalizationHook: args.hook,
+        triggerEvidenceCount,
+        researchReadiness: research,
+      });
+      return {
+        ...message,
+        review,
+      };
+    });
+
+  const packSummary = (
+    rows: Array<
+      PackMessage & {
+        review: ReturnType<typeof evaluateOutboundMessageQuality>;
+      }
+    >,
+  ) => {
+    const worst = [...rows].sort((a, b) => a.review.score - b.review.score)[0];
+    const status =
+      rows.some((row) => row.review.status === "blocked")
+        ? "blocked"
+        : rows.every((row) => row.review.status === "pass")
+          ? "pass"
+          : "needs_review";
+    const averageScore =
+      rows.length > 0
+        ? Math.round(rows.reduce((sum, row) => sum + row.review.score, 0) / rows.length)
+        : 0;
+    return {
+      status,
+      score: averageScore,
+      summary:
+        status === "pass"
+          ? "Das Paket ist sendbar."
+          : status === "blocked"
+            ? worst?.review.summary || "Mindestens eine Variante ist noch blockiert."
+            : worst?.review.summary || "Mindestens eine Variante sollte noch manuell geschaerft werden.",
+    };
+  };
 
   const fallback = fallbackPack({
     ...args,
@@ -484,26 +550,47 @@ export async function GET(
     playbookTitle: playbook?.title || null,
     valueNarrative,
   });
+  const reviewedFallback = reviewPackMessages(fallback.messages);
   let reason = fallback.reason;
-  let messages = fallback.messages;
+  let messages = reviewedFallback;
   let generatedWith: "ai" | "fallback" = "fallback";
 
   try {
     const prompt = await loadPrompt(supabase);
     const aiResult = await maybeGenerateWithAi({ prompt, vars, triggerEvidenceCount });
     if (aiResult?.messages?.length === 3) {
-      reason = aiResult.reason || reason;
-      messages = aiResult.messages;
-      generatedWith = "ai";
+      const reviewedAi = reviewPackMessages(aiResult.messages);
+      const aiEmailBlocked = reviewedAi.some(
+        (row) => row.channel === "email" && row.review.status === "blocked",
+      );
+      const aiScore = reviewedAi.reduce((sum, row) => sum + row.review.score, 0);
+      const fallbackScore = reviewedFallback.reduce((sum, row) => sum + row.review.score, 0);
+      if (!aiEmailBlocked && aiScore >= fallbackScore) {
+        reason = aiResult.reason || reason;
+        messages = reviewedAi;
+        generatedWith = "ai";
+      }
     }
   } catch {
     // Fail-open to deterministic fallback.
   }
 
+  const summary = packSummary(messages);
   return NextResponse.json({
     ok: true,
     generated_with: generatedWith,
     recommendation_reason: reason,
-    messages,
+    research,
+    pack_review: summary,
+    messages: messages.map((message) => ({
+      channel: message.channel,
+      variant: message.variant,
+      subject: message.subject,
+      body: message.body,
+      why: message.why,
+      review_status: message.review.status,
+      review_score: message.review.score,
+      review_summary: message.review.summary,
+    })),
   });
 }

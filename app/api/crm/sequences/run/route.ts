@@ -13,6 +13,10 @@ import {
   deriveAbFields,
   evaluateFirstTouchGuardrails,
 } from "@/lib/crm/cadenceRules";
+import {
+  assessResearchReadiness,
+  evaluateOutboundMessageQuality,
+} from "@/lib/crm/outboundQuality";
 
 export const runtime = "nodejs";
 
@@ -349,6 +353,20 @@ export async function POST(req: NextRequest) {
       }
     }
   }
+  const prospectContextById = new Map<string, Record<string, any>>();
+  if (dueProspectIds.length > 0) {
+    const { data: prospectContextRows } = await (supabase.from("crm_prospects") as any)
+      .select(
+        "id, contact_email, source_checked_at, personalization_evidence, response_promise_public, appointment_flow_public, docs_flow_public, automation_readiness, linkedin_url, linkedin_search_url",
+      )
+      .eq("agent_id", auth.user.id)
+      .in("id", dueProspectIds)
+      .limit(dueProspectIds.length);
+    for (const row of (prospectContextRows || []) as any[]) {
+      const prospectId = normalizeLine(row?.id || "", 80);
+      if (prospectId) prospectContextById.set(prospectId, row as Record<string, any>);
+    }
+  }
 
   for (const row of rows) {
     const recommendedCode = normalizeLine(row?.recommended_code || "", 60);
@@ -407,6 +425,56 @@ export async function POST(req: NextRequest) {
       channelRaw === "whatsapp"
         ? channelRaw
         : "email";
+    const prospectContext = prospectContextById.get(String(row.prospect_id)) || {};
+    const researchReadiness = assessResearchReadiness({
+      preferredChannel: channel,
+      contactEmail:
+        normalizeLine(prospectContext.contact_email || row.contact_email || "", 240) || null,
+      personalizationHook: normalizeText(row.personalization_hook || "", 220) || null,
+      personalizationEvidence:
+        normalizeText(prospectContext.personalization_evidence || "", 240) || null,
+      sourceCheckedAt: normalizeLine(prospectContext.source_checked_at || "", 40) || null,
+      targetGroup: normalizeText(row.target_group || "", 220) || null,
+      processHint: normalizeText(row.process_hint || "", 220) || null,
+      responsePromisePublic:
+        normalizeText(prospectContext.response_promise_public || "", 180) || null,
+      appointmentFlowPublic:
+        normalizeText(prospectContext.appointment_flow_public || "", 180) || null,
+      docsFlowPublic: normalizeText(prospectContext.docs_flow_public || "", 180) || null,
+      activeListingsCount: Number.isFinite(Number(row.active_listings_count))
+        ? Number(row.active_listings_count)
+        : null,
+      automationReadiness:
+        normalizeLine(prospectContext.automation_readiness || row.automation_readiness || "", 24) ||
+        null,
+      linkedinUrl: normalizeLine(prospectContext.linkedin_url || "", 320) || null,
+      linkedinSearchUrl: normalizeLine(prospectContext.linkedin_search_url || "", 320) || null,
+    });
+    if (researchReadiness.status === "missing_contact") {
+      skippedInvalid += 1;
+      actions.push({
+        prospect_id: row.prospect_id,
+        company_name: row.company_name,
+        recommended_code: recommendedCode,
+        result: "missing_contact_channel",
+        reason: researchReadiness.summary,
+      });
+      continue;
+    }
+    if (
+      researchReadiness.status === "needs_research" ||
+      (researchReadiness.status === "refresh_research" && messageKind === "first_touch")
+    ) {
+      skippedInvalid += 1;
+      actions.push({
+        prospect_id: row.prospect_id,
+        company_name: row.company_name,
+        recommended_code: recommendedCode,
+        result: "research_required",
+        reason: researchReadiness.summary,
+      });
+      continue;
+    }
 
     const existingDraftRes = await (supabase.from("crm_outreach_messages") as any)
       .select("id, status")
@@ -509,6 +577,17 @@ export async function POST(req: NextRequest) {
             triggerEvidenceCount: triggerEvidence.length,
           })
         : null;
+    const outboundReview = evaluateOutboundMessageQuality({
+      body: variantBody,
+      subject: draft.subject || cadenceSubjectFromCode(recommendedCode),
+      channel,
+      messageKind,
+      companyName: normalizeLine(row.company_name || "", 160),
+      city: normalizeLine(row.city || "", 120) || null,
+      personalizationHook: normalizeText(row.personalization_hook || "", 220) || null,
+      triggerEvidenceCount: triggerEvidence.length,
+      researchReadiness,
+    });
     if (messageKind === "first_touch" && firstTouchGuardrail && !firstTouchGuardrail.pass) {
       skippedInvalid += 1;
       actions.push({
@@ -517,6 +596,18 @@ export async function POST(req: NextRequest) {
         recommended_code: recommendedCode,
         result: "guardrail_blocked",
         guardrail_reasons: firstTouchGuardrail.reasons,
+      });
+      continue;
+    }
+    if (outboundReview.status === "blocked" || (messageKind === "first_touch" && outboundReview.status !== "pass")) {
+      skippedInvalid += 1;
+      actions.push({
+        prospect_id: row.prospect_id,
+        company_name: row.company_name,
+        recommended_code: recommendedCode,
+        result: "quality_review_required",
+        review_status: outboundReview.status,
+        review_summary: outboundReview.summary,
       });
       continue;
     }
@@ -567,6 +658,8 @@ export async function POST(req: NextRequest) {
         segment_key: inferred.segment_key,
         playbook_key: inferred.playbook_key,
         template_variant: templateVariant,
+        research_readiness: researchReadiness,
+        outbound_review: outboundReview,
         experiment_kind: messageKind !== "custom" ? messageKind : null,
         experiment_variant: selectedVariant?.variant || null,
         experiment_source: selectedVariant?.source || null,

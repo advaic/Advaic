@@ -4,12 +4,17 @@ import { requireOwnerApiUser } from "@/lib/auth/ownerRoute";
 import { getPlaybookForSegment, inferSegmentFromProspect } from "@/lib/crm/salesIntelResearch";
 import { routeObjection } from "@/lib/crm/objectionLibrary";
 import { collectTriggerEvidence, evaluateFirstTouchGuardrails } from "@/lib/crm/cadenceRules";
+import {
+  assessResearchReadiness,
+  evaluateOutboundMessageQuality,
+} from "@/lib/crm/outboundQuality";
 
 export const runtime = "nodejs";
 
 type InviteContext = {
   companyName: string;
   contactName: string | null;
+  contactEmail: string | null;
   city: string | null;
   region: string | null;
   objectFocus: string;
@@ -69,6 +74,7 @@ function applyVars(template: string, context: InviteContext) {
   return template
     .replaceAll("{{COMPANY_NAME}}", context.companyName)
     .replaceAll("{{CONTACT_NAME}}", context.contactName || "")
+    .replaceAll("{{CONTACT_EMAIL}}", context.contactEmail || "")
     .replaceAll("{{CITY}}", context.city || "")
     .replaceAll("{{REGION}}", context.region || "")
     .replaceAll("{{OBJECT_FOCUS}}", context.objectFocus || "gemischt")
@@ -393,6 +399,7 @@ HARTE TOUCH-1-REGELN (verbindlich, ohne Ausnahme):
 function buildTesterInvite(args: {
   companyName: string;
   contactName: string | null;
+  contactEmail: string | null;
   city: string | null;
   region: string | null;
   objectFocus: string;
@@ -427,6 +434,22 @@ function buildTesterInvite(args: {
   objectionNextQuestion: string;
   triggerEvidenceCount: number;
 }) {
+  const researchReadiness = assessResearchReadiness({
+    preferredChannel: args.channel,
+    contactEmail: args.contactEmail,
+    personalizationHook: args.hook,
+    personalizationEvidence: args.evidence,
+    researchInsights: args.researchInsights,
+    sourceCheckedAt: args.sourceCheckedAt,
+    targetGroup: args.targetGroup,
+    processHint: args.processHint,
+    responsePromisePublic: args.responsePromisePublic,
+    appointmentFlowPublic: args.appointmentFlowPublic,
+    docsFlowPublic: args.docsFlowPublic,
+    activeListingsCount: args.activeListingsCount,
+    automationReadiness: args.automationReadiness,
+    linkedinUrl: args.linkedinUrl,
+  });
   const salutation = args.contactName ? `Hallo ${args.contactName},` : `Hallo ${args.companyName}-Team,`;
   const intro = "ich bin Kilian, Gründer von Advaic.";
   const defaultTrigger = deriveHookFromSignals({
@@ -474,21 +497,6 @@ ${sentence3}
 
 ${sentence4}`);
 
-  const scoreTouch1 = (body: string) => {
-    const guard = evaluateFirstTouchGuardrails({
-      body,
-      triggerEvidenceCount: args.triggerEvidenceCount,
-    });
-    let score = guard.pass ? 100 : 60;
-    score -= guard.reasons.length * 8;
-    if (/crm|template|workflow|pipeline/i.test(body)) score -= 12;
-    if (/https?:\/\//i.test(body)) score -= 25;
-    if (/\b\d{2,}\b|%/.test(body)) score -= 14;
-    if (/qualitätscheck|qualitaetscheck|freigabe|automatisch/i.test(body)) score -= 16;
-    if (/ich bin kilian[^.!?\n]{0,120}\bweil\b/i.test(body)) score -= 18;
-    return { score, guard };
-  };
-
   const variants = [
     {
       key: "A",
@@ -523,12 +531,35 @@ ${sentence4}`);
   ] as const;
 
   const scored = variants.map((variant) => {
-    const rated = scoreTouch1(variant.body);
-    return { ...variant, score: rated.score, guard_reasons: rated.guard.reasons };
+    const guard = evaluateFirstTouchGuardrails({
+      body: variant.body,
+      triggerEvidenceCount: args.triggerEvidenceCount,
+    });
+    const review = evaluateOutboundMessageQuality({
+      body: variant.body,
+      subject: variant.subject,
+      channel: args.channel,
+      messageKind: "first_touch",
+      companyName: args.companyName,
+      city: args.city,
+      personalizationHook: args.hook,
+      triggerEvidenceCount: args.triggerEvidenceCount,
+      researchReadiness,
+    });
+    return {
+      ...variant,
+      score: review.score,
+      guard_reasons: guard.reasons,
+      review,
+    };
   });
 
-  const final = scored.sort((a, b) => b.score - a.score)[0];
-  return { final, variants: scored };
+  const qualityRank = (status: string) =>
+    status === "pass" ? 2 : status === "needs_review" ? 1 : 0;
+  const final = [...scored].sort((a, b) => {
+    return qualityRank(b.review.status) - qualityRank(a.review.status) || b.score - a.score;
+  })[0];
+  return { final, variants: scored, research: researchReadiness };
 }
 
 export async function GET(
@@ -551,7 +582,7 @@ export async function GET(
   const supabase = createSupabaseAdminClient();
   const { data: prospect, error: prospectErr } = await (supabase.from("crm_prospects") as any)
     .select(
-      "id, company_name, contact_name, city, region, object_focus, personalization_hook, pain_point_hypothesis, primary_objection, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, target_group, process_hint, response_promise_public, appointment_flow_public, docs_flow_public, trust_signals, automation_readiness, brand_tone, source_checked_at, linkedin_url, personalization_evidence",
+      "id, company_name, contact_name, contact_email, city, region, object_focus, personalization_hook, pain_point_hypothesis, primary_objection, active_listings_count, new_listings_30d, share_miete_percent, share_kauf_percent, target_group, process_hint, response_promise_public, appointment_flow_public, docs_flow_public, trust_signals, automation_readiness, brand_tone, source_checked_at, linkedin_url, personalization_evidence",
     )
     .eq("id", prospectId)
     .eq("agent_id", auth.user.id)
@@ -584,6 +615,7 @@ export async function GET(
   const inviteContext: InviteContext = {
     companyName: String(prospect.company_name || "").trim(),
     contactName: String(prospect.contact_name || "").trim() || null,
+    contactEmail: String((prospect as any).contact_email || "").trim() || null,
     city: String(prospect.city || "").trim() || null,
     region: String(prospect.region || "").trim() || null,
     objectFocus: String(prospect.object_focus || "gemischt").trim(),
@@ -689,11 +721,14 @@ export async function GET(
     ...inviteContext,
     triggerEvidenceCount,
   });
-  let tpl = {
+  let tpl: { subject: string; body: string } = {
     subject: invitePack.final.subject || "Anfragen",
     body: invitePack.final.body,
   };
+  let templateReview = invitePack.final.review;
+  let generatedWith: "ai" | "fallback" = "fallback";
   let aiCandidate: { subject: string; body: string } | null = null;
+  let aiCandidateReview: ReturnType<typeof evaluateOutboundMessageQuality> | null = null;
 
   try {
     const activePrompt = await maybeLoadPrompt(supabase);
@@ -707,6 +742,27 @@ export async function GET(
         subject: aiTemplate.subject || "Anfragen",
         body: aiTemplate.body,
       };
+      aiCandidateReview = evaluateOutboundMessageQuality({
+        body: aiTemplate.body,
+        subject: aiTemplate.subject || "Anfragen",
+        channel,
+        messageKind: "first_touch",
+        companyName: inviteContext.companyName,
+        city: inviteContext.city,
+        personalizationHook: inviteContext.hook,
+        triggerEvidenceCount,
+        researchReadiness: invitePack.research,
+      });
+      const candidateRank = aiCandidateReview.status === "pass" ? 2 : aiCandidateReview.status === "needs_review" ? 1 : 0;
+      const currentRank = templateReview.status === "pass" ? 2 : templateReview.status === "needs_review" ? 1 : 0;
+      if (
+        candidateRank > currentRank ||
+        (candidateRank === currentRank && aiCandidateReview.score > templateReview.score)
+      ) {
+        tpl = aiCandidate;
+        templateReview = aiCandidateReview;
+        generatedWith = "ai";
+      }
     }
   } catch {
     // deterministic fallback above stays active
@@ -714,8 +770,10 @@ export async function GET(
 
   return NextResponse.json({
     ok: true,
-    generated_with: "fallback",
+    generated_with: generatedWith,
     template: tpl,
+    template_review: templateReview,
+    research: invitePack.research,
     final_variant: invitePack.final.key,
     variants: invitePack.variants.map((variant) => ({
       key: variant.key,
@@ -724,7 +782,10 @@ export async function GET(
       body: variant.body,
       score: variant.score,
       guard_reasons: variant.guard_reasons,
+      review_status: variant.review.status,
+      review_summary: variant.review.summary,
     })),
     ai_candidate: aiCandidate,
+    ai_candidate_review: aiCandidateReview,
   });
 }

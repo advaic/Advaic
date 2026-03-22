@@ -26,7 +26,10 @@ export default function PageIntro({
       <Container>
         <div className="card-base relative overflow-hidden p-6 md:p-10">
           <span className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,rgba(11,15,23,0),rgba(201,162,39,0.55),rgba(11,15,23,0))]" />
-          <div className="absolute -right-20 -top-16 h-56 w-56 rounded-full bg-[var(--gold-soft)] blur-3xl" aria-hidden />
+          <div
+            className="absolute right-0 top-0 h-32 w-32 rounded-full bg-[var(--gold-soft)] blur-3xl md:-right-20 md:-top-16 md:h-56 md:w-56"
+            aria-hidden
+          />
           <div className="relative max-w-3xl">
             {kicker ? <p className="section-kicker">{kicker}</p> : null}
             <h1 className="h1 mt-4 text-balance">{title}</h1>

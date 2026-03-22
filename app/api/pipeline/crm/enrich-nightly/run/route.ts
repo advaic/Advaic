@@ -25,9 +25,17 @@ function isStale(prospect: ProspectRow, staleDays: number) {
 function needsEnrichment(prospect: ProspectRow, staleDays: number) {
   return (
     isStale(prospect, staleDays) ||
+    !String(prospect.contact_email || "").trim() ||
     !String(prospect.linkedin_url || "").trim() ||
     !String(prospect.linkedin_search_url || "").trim() ||
+    !String(prospect.personalization_hook || "").trim() ||
     !String(prospect.personalization_evidence || "").trim() ||
+    !String(prospect.target_group || "").trim() ||
+    !String(prospect.process_hint || "").trim() ||
+    !Array.isArray(prospect.object_types) ||
+    prospect.object_types.length === 0 ||
+    !Array.isArray(prospect.trust_signals) ||
+    prospect.trust_signals.length === 0 ||
     !String(prospect.primary_pain_hypothesis || prospect.pain_point_hypothesis || "").trim() ||
     !String(prospect.automation_readiness || "").trim() ||
     !String(prospect.brand_tone || "").trim()
@@ -58,7 +66,7 @@ export async function POST(req: NextRequest) {
 
   const { data: prospects, error } = await (supabase.from("crm_prospects") as any)
     .select(
-      "id, company_name, contact_name, city, website_url, source_url, source_checked_at, object_focus, active_listings_count, brand_tone, automation_readiness, response_promise_public, appointment_flow_public, docs_flow_public, linkedin_url, linkedin_search_url, personalization_evidence, primary_pain_hypothesis, pain_point_hypothesis",
+      "id, company_name, contact_name, contact_email, city, website_url, source_url, source_checked_at, object_focus, active_listings_count, object_types, trust_signals, brand_tone, automation_readiness, response_promise_public, appointment_flow_public, docs_flow_public, linkedin_url, linkedin_search_url, personalization_hook, personalization_evidence, target_group, process_hint, primary_pain_hypothesis, pain_point_hypothesis",
     )
     .eq("agent_id", agentId)
     .order("updated_at", { ascending: false })

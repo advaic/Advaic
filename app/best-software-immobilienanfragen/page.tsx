@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import MarketingJumpLink from "@/components/marketing/MarketingJumpLink";
+import ResponsiveComparisonTable from "@/components/marketing/ResponsiveComparisonTable";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
 import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
@@ -329,28 +330,16 @@ export default function BestSoftwareImmobilienanfragenPage() {
             </p>
           </div>
 
-          <div className="mt-8 overflow-x-auto rounded-[var(--radius)] bg-white ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
-            <table className="min-w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)]">
-                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Kategorie</th>
-                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Beispiele</th>
-                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Was sie löst</th>
-                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Worauf Sie achten sollten</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shortlist.map((item) => (
-                  <tr key={item.category} className="border-b border-[var(--border)] align-top">
-                    <td className="px-4 py-4 font-medium text-[var(--text)]">{item.category}</td>
-                    <td className="px-4 py-4 text-[var(--muted)]">{item.examples}</td>
-                    <td className="px-4 py-4 text-[var(--muted)]">{item.solves}</td>
-                    <td className="px-4 py-4 text-[var(--muted)]">{item.watch}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ResponsiveComparisonTable
+            rows={shortlist}
+            rowKey={(item) => item.category}
+            columns={[
+              { key: "category", label: "Kategorie", emphasize: true },
+              { key: "examples", label: "Beispiele" },
+              { key: "solves", label: "Was sie löst" },
+              { key: "watch", label: "Worauf Sie achten sollten" },
+            ]}
+          />
         </Container>
       </section>
 

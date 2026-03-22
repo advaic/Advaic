@@ -10,7 +10,7 @@ export const PROOF_SOURCES = [
   {
     id: "SRC-02",
     label: "NIST AI RMF",
-    detail: "Risikobewusste KI braucht klare Guardrails, Monitoring und dokumentierte Entscheidungen.",
+    detail: "Risikobewusste KI braucht klare Schutzregeln, Monitoring und dokumentierte Entscheidungen.",
     href: "https://www.nist.gov/itl/ai-risk-management-framework",
   },
   {
@@ -30,8 +30,8 @@ export const PROOF_METRICS = [
     sourceId: "SRC-01",
   },
   {
-    label: "Guardrails sind Standard für vertrauenswürdige KI",
-    value: "Governance + Monitoring + Fail-Safe",
+    label: "Klare Schutzregeln sind Standard für vertrauenswürdige KI",
+    value: "Governance + Monitoring + Stopp im Zweifel",
     explanation:
       "Systeme mit klaren Risiken brauchen dokumentierte Grenzen, Überwachung und bewusste Eingriffe.",
     sourceId: "SRC-02",

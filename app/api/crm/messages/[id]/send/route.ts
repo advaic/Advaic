@@ -14,6 +14,10 @@ import {
   collectTriggerEvidence,
   evaluateFirstTouchGuardrails,
 } from "@/lib/crm/cadenceRules";
+import {
+  assessResearchReadiness,
+  evaluateOutboundMessageQuality,
+} from "@/lib/crm/outboundQuality";
 
 export const runtime = "nodejs";
 
@@ -493,6 +497,33 @@ export async function POST(
       personalizationEvidence: normalizeText((prospect as any).personalization_evidence, 260) || null,
       sourceCheckedAt: normalizeLine((prospect as any).source_checked_at, 40) || null,
     });
+    const researchReadiness = assessResearchReadiness({
+      preferredChannel: normalizeLine((prospect as any).preferred_channel, 40) || "email",
+      contactEmail: toEmail,
+      personalizationHook: normalizeText((prospect as any).personalization_hook, 220) || null,
+      personalizationEvidence: normalizeText((prospect as any).personalization_evidence, 260) || null,
+      sourceCheckedAt: normalizeLine((prospect as any).source_checked_at, 40) || null,
+      targetGroup: normalizeText((prospect as any).target_group, 220) || null,
+      processHint: normalizeText((prospect as any).process_hint, 220) || null,
+      activeListingsCount: Number.isFinite(Number(prospect.active_listings_count))
+        ? Number(prospect.active_listings_count)
+        : null,
+      automationReadiness: normalizeLine((prospect as any).automation_readiness, 24) || null,
+    });
+    const outboundReview = evaluateOutboundMessageQuality({
+      body: messageBody,
+      subject,
+      channel: message.channel,
+      messageKind: message.message_kind,
+      companyName: normalizeLine(prospect.company_name, 160) || null,
+      city: normalizeLine((prospect as any).city, 120) || null,
+      personalizationHook: normalizeText((prospect as any).personalization_hook, 220) || null,
+      triggerEvidenceCount: Math.max(
+        Number((meta as any)?.trigger_evidence_count || 0),
+        triggerEvidence.length,
+      ),
+      researchReadiness,
+    });
     const guardrail = evaluateFirstTouchGuardrails({
       body: messageBody,
       triggerEvidenceCount: Math.max(
@@ -507,6 +538,8 @@ export async function POST(
             ...meta,
             send_guardrail_blocked_at: new Date().toISOString(),
             send_guardrail: guardrail,
+            research_readiness: researchReadiness,
+            outbound_review: outboundReview,
           },
         })
         .eq("id", messageId)
@@ -518,6 +551,29 @@ export async function POST(
           details:
             "Versand blockiert: Erstkontakt wirkt nicht natürlich genug oder enthält zu viel Roh-/Pitch-Sprache.",
           guardrail,
+        },
+        { status: 422 },
+      );
+    }
+    if (outboundReview.status === "blocked") {
+      await (supabase.from("crm_outreach_messages") as any)
+        .update({
+          metadata: {
+            ...meta,
+            send_quality_blocked_at: new Date().toISOString(),
+            research_readiness: researchReadiness,
+            outbound_review: outboundReview,
+          },
+        })
+        .eq("id", messageId)
+        .eq("agent_id", auth.user.id);
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "outbound_quality_blocked",
+          details: outboundReview.summary,
+          review: outboundReview,
+          research: researchReadiness,
         },
         { status: 422 },
       );

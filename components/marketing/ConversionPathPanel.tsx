@@ -22,17 +22,17 @@ const stageCopy: Record<
   bewertung: {
     title: "Bewertung",
     text: "Sie prüfen konkret, wann Auto, Freigabe oder Ignorieren in Ihrem Alltag greift.",
-    actionLabel: "Mit Guardrails testen",
+    actionLabel: "Mit Schutzregeln testen",
   },
   entscheidung: {
     title: "Entscheidung",
-    text: "Sie starten kontrolliert mit Safe-Start-Konfiguration und messbarer Wirkung.",
+    text: "Sie starten kontrolliert mit einem konservativen Startprofil und messbarer Wirkung.",
     actionLabel: "Jetzt starten",
   },
 };
 
 const stageReasonByFamily: Record<string, string> = {
-  home: "Sie sind in der Orientierung. Ziel: zuerst Mechanik und Guardrails verstehen, dann kontrolliert testen.",
+  home: "Sie sind in der Orientierung. Ziel: zuerst Mechanik und Schutzregeln verstehen, dann kontrolliert testen.",
   produkt:
     "Sie sind in der Bewertung. Ziel: klären, wann Auto sendet, wann Freigabe greift und wie der Alltag sicher bleibt.",
   preise:

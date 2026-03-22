@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
 import MarketingJumpLink from "@/components/marketing/MarketingJumpLink";
+import ResponsiveComparisonTable from "@/components/marketing/ResponsiveComparisonTable";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
 import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
@@ -332,26 +333,15 @@ export default function AntwortzeitImmobilienanfragenPage() {
             </p>
           </div>
 
-          <div className="mt-8 overflow-x-auto rounded-[var(--radius)] bg-white ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
-            <table className="min-w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)]">
-                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Niveau</th>
-                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Zeit</th>
-                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Einordnung</th>
-                </tr>
-              </thead>
-              <tbody>
-                {targetBands.map((item) => (
-                  <tr key={item.label} className="border-b border-[var(--border)] align-top">
-                    <td className="px-4 py-4 font-medium text-[var(--text)]">{item.label}</td>
-                    <td className="px-4 py-4 text-[var(--muted)]">{item.time}</td>
-                    <td className="px-4 py-4 text-[var(--muted)]">{item.meaning}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ResponsiveComparisonTable
+            rows={targetBands}
+            rowKey={(item) => item.label}
+            columns={[
+              { key: "label", label: "Niveau", emphasize: true },
+              { key: "time", label: "Zeit" },
+              { key: "meaning", label: "Einordnung" },
+            ]}
+          />
         </Container>
       </section>
 

@@ -9,6 +9,10 @@ import {
   collectTriggerEvidence,
   evaluateFirstTouchGuardrails,
 } from "@/lib/crm/cadenceRules";
+import {
+  assessResearchReadiness,
+  evaluateOutboundMessageQuality,
+} from "@/lib/crm/outboundQuality";
 
 export const runtime = "nodejs";
 
@@ -52,7 +56,7 @@ export async function PATCH(
   if (status === "sent" && String(message.message_kind || "").toLowerCase() === "first_touch") {
     const { data: prospect } = await (supabase.from("crm_prospects") as any)
       .select(
-        "company_name, city, region, object_focus, share_miete_percent, share_kauf_percent, active_listings_count, new_listings_30d, automation_readiness, target_group, process_hint, personalization_hook, personalization_evidence, source_checked_at",
+        "company_name, contact_email, city, region, object_focus, share_miete_percent, share_kauf_percent, active_listings_count, new_listings_30d, automation_readiness, target_group, process_hint, personalization_hook, personalization_evidence, source_checked_at",
       )
       .eq("id", String(message.prospect_id))
       .eq("agent_id", auth.user.id)
@@ -85,6 +89,34 @@ export async function PATCH(
       message.metadata && typeof message.metadata === "object"
         ? (message.metadata as Record<string, any>)
         : {};
+    const researchReadiness = assessResearchReadiness({
+      preferredChannel: String((message as any)?.channel || "email"),
+      contactEmail: String((prospect as any)?.contact_email || "").trim() || null,
+      personalizationHook: String((prospect as any)?.personalization_hook || "").trim() || null,
+      personalizationEvidence:
+        String((prospect as any)?.personalization_evidence || "").trim() || null,
+      sourceCheckedAt: String((prospect as any)?.source_checked_at || "").trim() || null,
+      targetGroup: String((prospect as any)?.target_group || "").trim() || null,
+      processHint: String((prospect as any)?.process_hint || "").trim() || null,
+      activeListingsCount: Number.isFinite(Number((prospect as any)?.active_listings_count))
+        ? Number((prospect as any)?.active_listings_count)
+        : null,
+      automationReadiness: String((prospect as any)?.automation_readiness || "").trim() || null,
+    });
+    const outboundReview = evaluateOutboundMessageQuality({
+      body: String(message.body || ""),
+      subject: null,
+      channel: String((message as any)?.channel || "email"),
+      messageKind: String(message.message_kind || ""),
+      companyName: String((prospect as any)?.company_name || "").trim() || null,
+      city: String((prospect as any)?.city || "").trim() || null,
+      personalizationHook: String((prospect as any)?.personalization_hook || "").trim() || null,
+      triggerEvidenceCount: Math.max(
+        Number((meta as any)?.trigger_evidence_count || 0),
+        triggerEvidence.length,
+      ),
+      researchReadiness,
+    });
     const guardrail = evaluateFirstTouchGuardrails({
       body: String(message.body || ""),
       triggerEvidenceCount: Math.max(
@@ -100,6 +132,18 @@ export async function PATCH(
           details:
             "Manuelles Senden blockiert: Erstkontakt wirkt nicht natürlich genug oder enthält zu viel Roh-/Pitch-Sprache.",
           guardrail,
+        },
+        { status: 422 },
+      );
+    }
+    if (outboundReview.status === "blocked") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "outbound_quality_blocked",
+          details: outboundReview.summary,
+          review: outboundReview,
+          research: researchReadiness,
         },
         { status: 422 },
       );

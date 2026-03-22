@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   const [prospectsRes, eventsRes, messagesRes] = await Promise.all([
     (supabase.from("crm_prospects") as any)
       .select(
-        "id, company_name, contact_name, contact_email, object_focus, preferred_channel, priority, fit_score, stage, next_action_at, updated_at, source_checked_at, personalization_hook",
+        "id, company_name, contact_name, contact_email, object_focus, preferred_channel, priority, fit_score, stage, next_action_at, updated_at, source_checked_at, personalization_hook, personalization_evidence, active_listings_count, automation_readiness",
       )
       .eq("agent_id", agentId)
       .limit(300),
@@ -89,4 +89,3 @@ export async function GET(req: NextRequest) {
     total_ranked: ranked.length,
   });
 }
-
