@@ -19,7 +19,7 @@ const systemCards: SystemCard[] = [
   },
   {
     title: "Nachrichten, Freigabe & Eskalationen",
-    body: "Ihr Team arbeitet mit Auto, Inbox, Konversation, Freigabe und Eskalationen. Gründe, Status und Verlauf bleiben dabei im selben Arbeitsfluss sichtbar.",
+    body: "Ihr Team arbeitet mit Auto-Senden, Inbox, Konversation, Freigabe und Eskalationen. Gründe, Status und Verlauf bleiben dabei im selben Arbeitsfluss sichtbar.",
     facts: ["Inbox, Freigabe und Sonderfälle", "Entscheidungen bleiben nachvollziehbar"],
     spanClassName: "xl:col-span-3",
     href: "/freigabe-inbox",

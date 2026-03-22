@@ -6,7 +6,7 @@ import { MARKETING_PRIMARY_CTA_LABEL, MARKETING_PROOF_CTA_LABEL } from "./cta-co
 
 const heroDecisionSignals = [
   {
-    title: "Auto",
+    title: "Auto-Senden",
     text: "Objekt, Empfänger und Angaben passen sauber zusammen.",
   },
   {
@@ -90,7 +90,7 @@ export default function Hero() {
                     Erster Prüfpfad
                   </p>
                   <p className="mt-1 text-sm font-semibold text-[var(--text)]">
-                    In einem Blick sehen: Auto, Freigabe, Checks.
+                    In einem Blick sehen: Auto-Senden, Freigabe, Checks.
                   </p>
                 </div>
                 <a href="#produkt-autoritaet" className="focus-ring text-sm font-medium text-[var(--text)] underline decoration-[var(--gold-soft)] underline-offset-4">

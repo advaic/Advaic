@@ -4,8 +4,8 @@ import PublicTrustArtifacts from "./PublicTrustArtifacts";
 
 const pillars = [
   {
-    tag: "Auto",
-    title: "Auto nur bei klaren Voraussetzungen",
+    tag: "Auto-Senden",
+    title: "Auto-Senden nur bei klaren Voraussetzungen",
     text: "Objektbezug, Empfänger, Kerndaten und Versandpfad müssen zusammenpassen, bevor Advaic überhaupt automatisch sendet.",
   },
   {
@@ -43,8 +43,8 @@ export default function TrustByDesign() {
           <p className="section-kicker">Trust-Kurzprüfung auf der Startseite</p>
           <h2 className="h2 mt-2">Die drei Dinge, die vor jedem Test klar sein sollten</h2>
           <p className="body mt-4 text-[var(--muted)]">
-            Bevor Sie tiefer lesen, sollte die Startseite genau drei Punkte leisten: zeigen, wann Auto erlaubt ist,
-            wann bewusst gestoppt wird und wo Sie danach tiefer prüfen können.
+            Bevor Sie tiefer lesen, sollte die Startseite genau drei Punkte leisten: zeigen, wann Auto-Senden
+            erlaubt ist, wann bewusst gestoppt wird und wo Sie danach tiefer prüfen können.
           </p>
         </div>
 
@@ -71,7 +71,7 @@ export default function TrustByDesign() {
 
         <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
           <article className="card-base p-6">
-            <h3 className="h3">Hier stoppt Auto bewusst</h3>
+            <h3 className="h3">Hier stoppt Auto-Senden bewusst</h3>
             <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
               {limits.map((item) => (
                 <li key={item} className="flex items-start gap-2" data-tour="marketing-trust-limit">
@@ -103,7 +103,7 @@ export default function TrustByDesign() {
             </div>
             <div className="mt-4 space-y-1.5 text-sm text-[var(--muted)]">
               <p>Trust-Hub = Routing und Einstieg.</p>
-              <p>Sicherheitsseite = Auto-Grenzen und Nachweise.</p>
+              <p>Sicherheitsseite = Auto-Senden-Grenzen und Nachweise.</p>
               <p>Datenschutz = Rollen und Speicherfristen.</p>
             </div>
           </article>

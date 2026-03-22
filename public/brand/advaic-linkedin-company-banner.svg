@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1128" height="191" viewBox="0 0 1128 191" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Advaic LinkedIn Company Banner</title>
+  <desc id="desc">LinkedIn company banner for Advaic in the exact company cover ratio.</desc>
+  <defs>
+    <linearGradient id="bg" x1="72" y1="16" x2="1088" y2="174" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF8"/>
+      <stop offset="0.5" stop-color="#FBF8EF"/>
+      <stop offset="1" stop-color="#F6F0DD"/>
+    </linearGradient>
+    <radialGradient id="goldGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(918 58) rotate(148.991) scale(308.532 118.526)">
+      <stop stop-color="#E4C65A" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#E4C65A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="coolGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(166 168) rotate(-18.4) scale(284.492 114.921)">
+      <stop stop-color="#EEF3FF" stop-opacity="0.64"/>
+      <stop offset="1" stop-color="#EEF3FF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wordmarkGold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F3D77B"/>
+      <stop offset="42%" stop-color="#E4C65A"/>
+      <stop offset="100%" stop-color="#B28A11"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="1128" height="191" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#0B0F17" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="1128" height="191" rx="22" fill="url(#bg)"/>
+  <rect width="1128" height="191" rx="22" fill="url(#goldGlow)"/>
+  <rect width="1128" height="191" rx="22" fill="url(#coolGlow)"/>
+
+  <g opacity="0.5">
+    <path d="M821 18C901 18 968 72 968 136C968 151 965 164 959 175" stroke="#C9A227" stroke-opacity="0.22" stroke-width="1.25"/>
+    <path d="M842 34C906 34 958 84 958 145C958 155 956 165 952 173" stroke="#C9A227" stroke-opacity="0.16" stroke-width="1.25"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="20" y="18" width="1088" height="155" rx="22" fill="#FFFFFF" fill-opacity="0.9"/>
+  </g>
+
+  <g transform="translate(58 45)">
+    <text x="0" y="24" fill="#0B0F17" font-family="Avenir Next, Aptos Display, Segoe UI, Arial, sans-serif" font-size="31" font-weight="780" letter-spacing="-0.038em">adv</text>
+    <text x="53" y="24" fill="url(#wordmarkGold)" font-family="Avenir Next, Aptos Display, Segoe UI, Arial, sans-serif" font-size="31" font-weight="780" letter-spacing="-0.038em">ai</text>
+    <text x="80" y="24" fill="#0B0F17" font-family="Avenir Next, Aptos Display, Segoe UI, Arial, sans-serif" font-size="31" font-weight="780" letter-spacing="-0.038em">c</text>
+
+    <text x="0" y="66" fill="#0B0F17" font-family="Avenir Next, Aptos, Segoe UI, Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="-0.035em">
+      E-Mail-Autopilot für Immobilienmakler
+    </text>
+    <text x="0" y="93" fill="#55606D" font-family="Aptos, Avenir Next, Segoe UI, Arial, sans-serif" font-size="14.5" font-weight="400">
+      Anfragen schneller bearbeiten, ohne sensible Fälle blind zu automatisieren.
+    </text>
+
+    <g transform="translate(0 112)">
+      <rect x="0" y="0" width="174" height="26" rx="13" fill="#FFFFFF" stroke="rgba(11,15,23,0.1)"/>
+      <text x="12" y="17" fill="#0B0F17" font-family="Aptos, Avenir Next, Segoe UI, Arial, sans-serif" font-size="11.5" font-weight="600">
+        Auto-Senden &amp; Freigabe
+      </text>
+
+      <rect x="182" y="0" width="104" height="26" rx="13" fill="#FFFFFF" stroke="rgba(11,15,23,0.1)"/>
+      <text x="194" y="17" fill="#0B0F17" font-family="Aptos, Avenir Next, Segoe UI, Arial, sans-serif" font-size="11.5" font-weight="600">
+        Follow-ups
+      </text>
+
+      <rect x="294" y="0" width="132" height="26" rx="13" fill="#FFFFFF" stroke="rgba(11,15,23,0.1)"/>
+      <text x="306" y="17" fill="#0B0F17" font-family="Aptos, Avenir Next, Segoe UI, Arial, sans-serif" font-size="11.5" font-weight="600">
+        Qualitätschecks
+      </text>
+    </g>
+  </g>
+
+  <g transform="translate(804 40)">
+    <rect x="0" y="0" width="250" height="110" rx="18" fill="#FFFEFB" stroke="rgba(11,15,23,0.08)"/>
+    <rect x="0" y="0" width="250" height="110" rx="18" fill="url(#goldGlow)" opacity="0.38"/>
+    <text x="18" y="24" fill="#55606D" font-family="Aptos, Avenir Next, Segoe UI, Arial, sans-serif" font-size="9.5" font-weight="700" letter-spacing="0.12em">
+      KLARER PRODUKTFLUSS
+    </text>
+    <text x="18" y="52" fill="#0B0F17" font-family="Avenir Next, Aptos, Segoe UI, Arial, sans-serif" font-size="17.5" font-weight="700" letter-spacing="-0.03em">
+      Weniger Inbox-Routine.
+    </text>
+    <text x="18" y="74" fill="#0B0F17" font-family="Avenir Next, Aptos, Segoe UI, Arial, sans-serif" font-size="17.5" font-weight="700" letter-spacing="-0.03em">
+      Mehr klare Prozesse.
+    </text>
+    <text x="18" y="93" fill="#55606D" font-family="Aptos, Avenir Next, Segoe UI, Arial, sans-serif" font-size="11">
+      Auto-Senden, Freigabe und
+    </text>
+    <text x="18" y="108" fill="#55606D" font-family="Aptos, Avenir Next, Segoe UI, Arial, sans-serif" font-size="11">
+      sichtbare Entscheidungen.
+    </text>
+  </g>
+</svg>

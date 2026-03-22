@@ -23,8 +23,13 @@ Kernlogik: Auto-Versand nur bei wiederkehrenden Erstantworten mit sauberem Objek
 
 ## Comparison & Buyer Intent
 - ${siteUrl}/manuell-vs-advaic (Prozessvergleich: manuell vs. Advaic)
+- ${siteUrl}/maklersoftware-vergleich (Vergleich klassischer Maklersoftware)
+- ${siteUrl}/crm-fuer-immobilienmakler (CRM-Auswahlhilfe und Abgrenzung)
 - ${siteUrl}/best-ai-tools-immobilienmakler (Auswahlrahmen für AI-Tools im Maklerkontext)
 - ${siteUrl}/best-software-immobilienanfragen (Auswahlkriterien für Anfrage-Software)
+- ${siteUrl}/anfragenmanagement-immobilienmakler (operativer Leitfaden für Anfrageprozesse)
+- ${siteUrl}/antwortzeit-immobilienanfragen (Benchmark und KPI für schnelle Erstreaktion)
+- ${siteUrl}/follow-up-emails-immobilienmakler (Leitfaden für hilfreiche Nachfassungen)
 - ${siteUrl}/advaic-vs-crm-tools (CRM vs. Anfrage-Autopilot)
 - ${siteUrl}/ki-fuer-immobilienmakler (Einstieg für KI-Strategie im Makleralltag)
 - ${siteUrl}/immobilienanfragen-automatisieren (operativer Automatisierungsleitfaden)

@@ -39,6 +39,7 @@ type AiDiscoveryPageTemplateProps = {
   children: ReactNode;
   sources: SourceItem[];
   sourcesTitle?: string;
+  sourcesCheckedLabel?: string;
   sourcesDescription?: string;
   afterSources?: ReactNode;
   withFinalCta?: boolean;
@@ -66,6 +67,7 @@ export default function AiDiscoveryPageTemplate({
   children,
   sources,
   sourcesTitle = "Quellen & Einordnung",
+  sourcesCheckedLabel = PROOF_LAST_CHECKED,
   sourcesDescription = "Die Quellen unterstützen die Einordnung und stehen bewusst am Seitenende für eine saubere Leseführung. Sie ersetzen keine individuelle Rechts-, Steuer- oder Unternehmensberatung.",
   afterSources,
   withFinalCta = true,
@@ -115,7 +117,7 @@ export default function AiDiscoveryPageTemplate({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="h3">{sourcesTitle}</h2>
               <span className="rounded-full bg-[var(--surface-2)] px-3 py-1 text-xs font-semibold text-[var(--muted)] ring-1 ring-[var(--border)]">
-                Quellenstand: {PROOF_LAST_CHECKED}
+                Quellenstand: {sourcesCheckedLabel}
               </span>
             </div>
             <p className="helper mt-3">{sourcesDescription}</p>

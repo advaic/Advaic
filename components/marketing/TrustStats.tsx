@@ -15,7 +15,7 @@ const evidenceStates = [
       "Der operative Startpunkt ist damit direkt im Produkt prüfbar.",
     ],
     proof:
-      "Sie sehen, dass Advaic schon vor Auto oder Freigabe sauber trennt, welche Nachricht überhaupt in den Maklerprozess gehört.",
+      "Sie sehen, dass Advaic schon vor Auto-Senden oder Freigabe sauber trennt, welche Nachricht überhaupt in den Maklerprozess gehört.",
   },
   {
     id: "approval",
@@ -43,7 +43,7 @@ const evidenceStates = [
       "Der Prüfstatus ist pro Nachricht sichtbar und konkret benannt.",
     ],
     proof:
-      "So erkennen Sie im Produkt selbst, dass Auto-Versand an konkrete Vorbedingungen gebunden ist und nicht auf blindem Vertrauen basiert.",
+      "So erkennen Sie im Produkt selbst, dass Auto-Senden an konkrete Vorbedingungen gebunden ist und nicht auf blindem Vertrauen basiert.",
   },
 ];
 
@@ -51,12 +51,12 @@ const productTruths = [
   {
     value: "3",
     title: "klare Entscheidungswege",
-    description: "Jede Nachricht landet in genau einem Pfad: Auto senden, Freigabe oder ignorieren.",
+    description: "Jede Nachricht landet in genau einem Pfad: Auto-Senden, Freigabe oder ignorieren.",
   },
   {
     value: "6",
     title: "sichtbare Qualitätschecks",
-    description: "Vor jedem Auto-Versand laufen mehrere Prüfungen, bevor die Nachricht rausgeht.",
+    description: "Vor jedem Auto-Senden laufen mehrere Prüfungen, bevor die Nachricht rausgeht.",
   },
   {
     value: "2",
@@ -114,7 +114,7 @@ export default function TrustStats() {
               Sie prüfen hier Systemverhalten, nicht Werbeaussagen
             </h3>
             <p className="helper mt-3">
-              Wenn Sie Auto-Versand im Makleralltag bewerten, müssen Sie drei Dinge sehen können: wie Eingang erkannt
+              Wenn Sie Auto-Senden im Makleralltag bewerten, müssen Sie drei Dinge sehen können: wie Eingang erkannt
               wird, warum Freigabe greift und welche Checks vor dem Versand tatsächlich laufen.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">

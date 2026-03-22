@@ -16,9 +16,9 @@ const exampleScenario = {
     "Heute liegt die Median-Erstreaktion bei rund 85 Minuten.",
   ],
   assumptions: [
-    "68 % der Anfragen sind wiederkehrende Erstantworten.",
-    "56 % davon könnten in einem engen Auto-Korridor laufen.",
-    "Beschwerden, fehlende Angaben und Sonderfälle bleiben in der Freigabe.",
+    "72 % der Anfragen sind wiederkehrende Erstantworten.",
+    "62 % davon könnten in einem engen Auto-Senden-Korridor laufen.",
+    "Beschwerden, fehlende Angaben und Sonderfälle bleiben in der Freigabe, sparen aber trotzdem bereits Zeit durch Vorqualifizierung und vorbereiteten Kontext.",
   ],
   readout: [
     "Der Rechner zeigt daraus zuerst gesparte Stunden pro Monat.",
@@ -30,11 +30,11 @@ const exampleScenario = {
 const methodRows = [
   {
     title: "Zeitmodell pro Anfrage",
-    text: "Wir trennen in wiederkehrende Erstantworten (potenziell Auto) und übrige Fälle (manuell/Freigabe). Auto-Fälle werden nicht mit null Minuten gerechnet, sondern mit Restaufwand plus QA-/Monitoring-Anteil.",
+    text: "Wir trennen in wiederkehrende Erstantworten (potenziell Auto-Senden) und übrige Fälle (Assistenz/Freigabe). Auto-Senden-Fälle werden nicht mit null Minuten gerechnet, Freigabe-Fälle aber auch nicht mehr als voll manuell bewertet, weil Sortierung, Kontext und Entwurf bereits Zeit sparen.",
   },
   {
     title: "Erstreaktionsmodell",
-    text: "Die Rechnung startet mit Ihrem eingegebenen Ist-Median. Es wird kein versteckter Zusatzpuffer addiert. Der Effekt ergibt sich aus der Auto-Quote unter Guardrails.",
+    text: "Die Rechnung startet mit Ihrem eingegebenen Ist-Median. Es wird kein versteckter Zusatzpuffer addiert. Der Effekt ergibt sich aus Auto-Senden plus schnellerer Vorqualifizierung und Freigabe unter Guardrails.",
   },
   {
     title: "SLA-Fenster innerhalb 60 Minuten",
@@ -43,6 +43,10 @@ const methodRows = [
   {
     title: "Monetäre Einordnung",
     text: "Gesparte Stunden werden mit Ihrem internen Stundensatz bewertet. So sehen Sie neben Zeit-KPI auch ein konservatives wirtschaftliches Potenzial pro Monat.",
+  },
+  {
+    title: "Optionales Conversion-Szenario",
+    text: "Zusätzlich können Sie ein offenes Szenario für Besichtigungsquote, relativen Uplift und Deckungsbeitrag pro Abschluss einblenden. Diese Ebene ist bewusst separat und kein verstecktes Umsatzversprechen.",
   },
 ];
 
@@ -60,32 +64,38 @@ const kpiInterpretation = [
     text: "Misst, wie stabil Ihr Team auf Anfrage-Spitzen reagiert, ohne bei Qualität oder Sicherheit einzubrechen.",
   },
   {
-    title: "Auto-Quote mit Guardrails",
-    text: "Nicht maximale Automatisierung, sondern sichere Automatisierung ist das Ziel. Eine gute Quote ist immer an Freigabe und QA gekoppelt.",
+    title: "Auto-Senden-Quote mit Guardrails",
+    text: "Nicht maximale Automatisierung, sondern sichere Automatisierung ist das Ziel. Eine gute Auto-Senden-Quote ist immer an Freigabe und QA gekoppelt.",
   },
   {
     title: "Monetäres Potenzial",
     text: "Zeigt den Gegenwert der freiwerdenden Zeit auf Basis Ihres Stundensatzes. Das ist eine Arbeitswert-Schätzung, keine Umsatzgarantie.",
+  },
+  {
+    title: "Optionales Umsatzszenario",
+    text: "Wenn Sie die Szenario-Ebene aktivieren, sehen Sie zusätzlich mögliche Mehrbesichtigungen, zusätzliche Abschlüsse und einen transparenten optionalen Umsatzhebel.",
   },
 ];
 
 const limits = [
   "Der Rechner bildet operativen Arbeitswert ab, nicht garantierten Mehrumsatz.",
   "Saisonale Volumenschwankungen, Teamwechsel und Objektmix können Abweichungen erzeugen.",
-  "Die tatsächliche Auto-Quote hängt von Ihrer Regelqualität und Datenlage ab.",
-  "Deshalb gilt: erst 14 Tage pilotieren, dann Regeln und Auto-Anteil stufenweise ausbauen.",
+  "Die tatsächliche Auto-Senden-Quote hängt von Ihrer Regelqualität und Datenlage ab.",
+  "Auch das optionale Conversion-Szenario bleibt nur eine Modellannahme und ersetzt keinen echten Pilot mit Live-Daten.",
+  "Deshalb gilt: erst 14 Tage pilotieren, dann Regeln und Auto-Senden-Anteil stufenweise ausbauen.",
 ];
 
 const rollout = [
   "Woche 1: konservativ starten, hohe Freigabequote aktiv.",
   "Woche 2: wiederkehrende Erstantworten schärfen, Ton- und Regelwerk nachziehen.",
-  "Woche 3: Auto-Anteil nur bei stabiler Qualität erhöhen.",
+  "Woche 3: Auto-Senden-Anteil nur bei stabiler Qualität erhöhen.",
   "Woche 4: Erstreaktionszeit, Freigabequote und QA-Verlauf gemeinsam prüfen.",
 ];
 
 const quickTake = [
-  "Der Rechner soll keine Umsatzfantasie verkaufen, sondern eine konservative Pilotentscheidung vorbereiten.",
-  "Wichtig sind gesparte Stunden, Reaktionszeit, 60-Minuten-Quote und die tatsächliche Auto-Quote unter Guardrails.",
+  "Der Rechner soll keine Umsatzfantasie verkaufen, sondern eine belastbare Pilotentscheidung vorbereiten.",
+  "Wichtig sind gesparte Stunden, Reaktionszeit, 60-Minuten-Quote und die tatsächliche Auto-Senden-Quote unter Guardrails.",
+  "Zusätzlich können Sie ein separates Conversion-Szenario einblenden, ohne den konservativen Arbeitswert künstlich aufzublähen.",
   "Wenn die Modellannahmen nicht zu Ihrem Anfragevolumen oder Teamprozess passen, ist die Rechnung nur eine grobe Orientierung.",
 ];
 
@@ -111,7 +121,7 @@ export const metadata: Metadata = buildMarketingMetadata({
   title: "ROI-Rechner für Makler: Zeitgewinn realistisch bewerten",
   ogTitle: "ROI-Rechner | Advaic",
   description:
-    "Interaktiver ROI-Rechner für Makler: Zeitersparnis, Erstreaktionszeit und Arbeitswert konservativ berechnen und die Modellgrenzen offen nachvollziehen.",
+    "Interaktiver ROI-Rechner für Makler: Zeitersparnis, Erstreaktionszeit und Arbeitswert über Auto-Senden, Freigabe und Vorqualifizierung nachvollziehbar berechnen.",
   path: "/roi-rechner",
   template: "pricing",
   eyebrow: "ROI-Rechner",
@@ -124,7 +134,7 @@ export default function ROIRechnerPage() {
       <PageIntro
         kicker="ROI-Rechner"
         title="Zeitgewinn und Reaktionsgeschwindigkeit realistisch berechnen"
-        description="Starten Sie am besten mit dem Beispielpfad eines kleinen Maklerteams. Danach passen Sie die Werte auf Ihr reales Anfragevolumen, Ihre Reaktionszeit und Ihren sicheren Auto-Korridor an."
+        description="Starten Sie am besten mit dem Beispielpfad eines kleinen Maklerteams. Danach passen Sie die Werte auf Ihr reales Anfragevolumen, Ihre Reaktionszeit und Ihren sicheren Auto-Senden-Korridor an."
         actions={
           <>
             <Link href="/produkt" className="btn-secondary">

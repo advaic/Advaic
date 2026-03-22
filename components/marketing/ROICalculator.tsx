@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Container from "./Container";
@@ -23,6 +23,29 @@ function formatCurrency(value: number) {
   }).format(Math.max(0, Math.round(value)));
 }
 
+function updateDraftValue(
+  rawValue: string,
+  setDraft: Dispatch<SetStateAction<string>>,
+  setCommitted: Dispatch<SetStateAction<number>>,
+) {
+  if (!/^\d*$/.test(rawValue)) return;
+  setDraft(rawValue);
+  if (rawValue === "") return;
+  setCommitted(Number(rawValue));
+}
+
+function commitDraftValue(
+  rawValue: string,
+  min: number,
+  max: number,
+  setDraft: Dispatch<SetStateAction<string>>,
+  setCommitted: Dispatch<SetStateAction<number>>,
+) {
+  const nextValue = clamp(rawValue === "" ? min : Number(rawValue), min, max);
+  setCommitted(nextValue);
+  setDraft(String(nextValue));
+}
+
 type PresetKey = "solo" | "team" | "volume";
 
 const PRESETS: Record<
@@ -38,31 +61,43 @@ const PRESETS: Record<
     autoAnteilBeiWiederkehrend: number;
     firstResponseHeuteMin: number;
     stundenSatzEur: number;
+    besichtigungsquoteHeute: number;
+    conversionUpliftPct: number;
+    besichtigungZuAbschlussQuote: number;
+    deckungsbeitragProAbschlussEur: number;
   }
 > = {
   solo: {
     label: "Solo-Makler",
     headline: "Wenig Leute, aber konstante Postfachlast",
     summary: "Gut, wenn ein einzelner Makler oder eine kleine Assistenz viel Zeit in wiederkehrende Erstantworten verliert.",
-    watch: "Wichtig ist hier vor allem, ob ein enger Auto-Korridor sofort spürbar Zeit für Besichtigungen und Rückrufe freimacht.",
+    watch: "Wichtig ist hier vor allem, ob ein enger Auto-Senden-Korridor sofort spürbar Zeit für Besichtigungen und Rückrufe freimacht.",
     anfragenProWoche: 32,
     minutenProAnfrage: 9,
-    wiederkehrendeQuote: 62,
-    autoAnteilBeiWiederkehrend: 45,
+    wiederkehrendeQuote: 64,
+    autoAnteilBeiWiederkehrend: 50,
     firstResponseHeuteMin: 110,
     stundenSatzEur: 55,
+    besichtigungsquoteHeute: 11,
+    conversionUpliftPct: 14,
+    besichtigungZuAbschlussQuote: 18,
+    deckungsbeitragProAbschlussEur: 3000,
   },
   team: {
     label: "Kleines Team",
     headline: "Der beste Beispielpfad für den ersten Check",
     summary: "Ein kleines Team mit spürbarer Eingangslast, aber noch genug Nähe zum Tagesgeschäft, um Regeln und Freigaben schnell nachzuschärfen.",
-    watch: "Achten Sie hier besonders auf Erstreaktion, Freigabequote und die Frage, ob der sichere Auto-Korridor breit genug für einen Pilot ist.",
+    watch: "Achten Sie hier besonders auf Erstreaktion, Freigabequote und die Frage, ob der sichere Auto-Senden-Korridor breit genug für einen Pilot ist.",
     anfragenProWoche: 58,
     minutenProAnfrage: 8,
-    wiederkehrendeQuote: 68,
-    autoAnteilBeiWiederkehrend: 56,
+    wiederkehrendeQuote: 72,
+    autoAnteilBeiWiederkehrend: 62,
     firstResponseHeuteMin: 85,
     stundenSatzEur: 65,
+    besichtigungsquoteHeute: 13,
+    conversionUpliftPct: 18,
+    besichtigungZuAbschlussQuote: 20,
+    deckungsbeitragProAbschlussEur: 3500,
   },
   volume: {
     label: "Hohes Volumen",
@@ -71,10 +106,14 @@ const PRESETS: Record<
     watch: "Hier zählt vor allem, ob Qualitätschecks und Freigabelogik bei höherem Volumen stabil bleiben.",
     anfragenProWoche: 110,
     minutenProAnfrage: 7,
-    wiederkehrendeQuote: 74,
-    autoAnteilBeiWiederkehrend: 64,
+    wiederkehrendeQuote: 78,
+    autoAnteilBeiWiederkehrend: 70,
     firstResponseHeuteMin: 70,
     stundenSatzEur: 75,
+    besichtigungsquoteHeute: 15,
+    conversionUpliftPct: 22,
+    besichtigungZuAbschlussQuote: 22,
+    deckungsbeitragProAbschlussEur: 4000,
   },
 };
 
@@ -83,23 +122,58 @@ export default function ROICalculator() {
   const isRoiPage = pathname === "/roi-rechner";
   const [preset, setPreset] = useState<PresetKey>("team");
   const [anfragenProWoche, setAnfragenProWoche] = useState(PRESETS.team.anfragenProWoche);
+  const [anfragenProWocheDraft, setAnfragenProWocheDraft] = useState(String(PRESETS.team.anfragenProWoche));
   const [minutenProAnfrage, setMinutenProAnfrage] = useState(PRESETS.team.minutenProAnfrage);
+  const [minutenProAnfrageDraft, setMinutenProAnfrageDraft] = useState(String(PRESETS.team.minutenProAnfrage));
   const [wiederkehrendeQuote, setWiederkehrendeQuote] = useState(PRESETS.team.wiederkehrendeQuote);
   const [autoAnteilBeiWiederkehrend, setAutoAnteilBeiWiederkehrend] = useState(
     PRESETS.team.autoAnteilBeiWiederkehrend,
   );
   const [firstResponseHeuteMin, setFirstResponseHeuteMin] = useState(PRESETS.team.firstResponseHeuteMin);
+  const [firstResponseHeuteMinDraft, setFirstResponseHeuteMinDraft] = useState(
+    String(PRESETS.team.firstResponseHeuteMin),
+  );
   const [stundenSatzEur, setStundenSatzEur] = useState(PRESETS.team.stundenSatzEur);
+  const [stundenSatzEurDraft, setStundenSatzEurDraft] = useState(String(PRESETS.team.stundenSatzEur));
+  const [showRevenueScenario, setShowRevenueScenario] = useState(false);
+  const [besichtigungsquoteHeute, setBesichtigungsquoteHeute] = useState(PRESETS.team.besichtigungsquoteHeute);
+  const [besichtigungsquoteHeuteDraft, setBesichtigungsquoteHeuteDraft] = useState(
+    String(PRESETS.team.besichtigungsquoteHeute),
+  );
+  const [conversionUpliftPct, setConversionUpliftPct] = useState(PRESETS.team.conversionUpliftPct);
+  const [besichtigungZuAbschlussQuote, setBesichtigungZuAbschlussQuote] = useState(
+    PRESETS.team.besichtigungZuAbschlussQuote,
+  );
+  const [besichtigungZuAbschlussQuoteDraft, setBesichtigungZuAbschlussQuoteDraft] = useState(
+    String(PRESETS.team.besichtigungZuAbschlussQuote),
+  );
+  const [deckungsbeitragProAbschlussEur, setDeckungsbeitragProAbschlussEur] = useState(
+    PRESETS.team.deckungsbeitragProAbschlussEur,
+  );
+  const [deckungsbeitragProAbschlussEurDraft, setDeckungsbeitragProAbschlussEurDraft] = useState(
+    String(PRESETS.team.deckungsbeitragProAbschlussEur),
+  );
 
   const applyPreset = (key: PresetKey) => {
     const p = PRESETS[key];
     setPreset(key);
     setAnfragenProWoche(p.anfragenProWoche);
+    setAnfragenProWocheDraft(String(p.anfragenProWoche));
     setMinutenProAnfrage(p.minutenProAnfrage);
+    setMinutenProAnfrageDraft(String(p.minutenProAnfrage));
     setWiederkehrendeQuote(p.wiederkehrendeQuote);
     setAutoAnteilBeiWiederkehrend(p.autoAnteilBeiWiederkehrend);
     setFirstResponseHeuteMin(p.firstResponseHeuteMin);
+    setFirstResponseHeuteMinDraft(String(p.firstResponseHeuteMin));
     setStundenSatzEur(p.stundenSatzEur);
+    setStundenSatzEurDraft(String(p.stundenSatzEur));
+    setBesichtigungsquoteHeute(p.besichtigungsquoteHeute);
+    setBesichtigungsquoteHeuteDraft(String(p.besichtigungsquoteHeute));
+    setConversionUpliftPct(p.conversionUpliftPct);
+    setBesichtigungZuAbschlussQuote(p.besichtigungZuAbschlussQuote);
+    setBesichtigungZuAbschlussQuoteDraft(String(p.besichtigungZuAbschlussQuote));
+    setDeckungsbeitragProAbschlussEur(p.deckungsbeitragProAbschlussEur);
+    setDeckungsbeitragProAbschlussEurDraft(String(p.deckungsbeitragProAbschlussEur));
     void trackPublicEvent({
       event: "marketing_roi_preset_select",
       source: "website",
@@ -112,14 +186,15 @@ export default function ROICalculator() {
   const model = useMemo(() => {
     const wiederkehrendeFaelle = anfragenProWoche * (wiederkehrendeQuote / 100);
     const autoFaelle = wiederkehrendeFaelle * (autoAnteilBeiWiederkehrend / 100);
-    const manuelleFaelle = Math.max(0, anfragenProWoche - autoFaelle);
+    const assistFaelle = Math.max(0, anfragenProWoche - autoFaelle);
     const autoQuote = clamp(autoFaelle / Math.max(1, anfragenProWoche), 0, 1);
     const minutenProAutoFall = Math.max(1.5, minutenProAnfrage * 0.28);
     const qaKontrollMinProAutoFall = 0.7;
+    const minutenProAssistFall = Math.max(2.4, minutenProAnfrage * 0.72);
 
     const zeitHeuteMinProWoche = anfragenProWoche * minutenProAnfrage;
     const zeitMitAdvaicMinProWoche =
-      manuelleFaelle * minutenProAnfrage +
+      assistFaelle * minutenProAssistFall +
       autoFaelle * minutenProAutoFall +
       autoFaelle * qaKontrollMinProAutoFall;
 
@@ -133,13 +208,26 @@ export default function ROICalculator() {
     const firstResponseGewinnPct = (firstResponseGewinnMin / Math.max(1, medianFirstResponseHeute)) * 100;
     const within60Heute = clamp(100 - (medianFirstResponseHeute - 25) * 0.82, 10, 95);
     const within60MitAdvaic = clamp(within60Heute + autoQuote * 30, within60Heute + 1, 99);
+    const anfragenProMonat = anfragenProWoche * 4.33;
+    const besichtigungenHeuteProMonat = anfragenProMonat * (besichtigungsquoteHeute / 100);
+    const besichtigungenMitAdvaicProMonat =
+      anfragenProMonat * ((besichtigungsquoteHeute * (1 + conversionUpliftPct / 100)) / 100);
+    const zusaetzlicheBesichtigungenProMonat = Math.max(
+      0,
+      besichtigungenMitAdvaicProMonat - besichtigungenHeuteProMonat,
+    );
+    const zusaetzlicheAbschluesseProMonat =
+      zusaetzlicheBesichtigungenProMonat * (besichtigungZuAbschlussQuote / 100);
+    const zusaetzlicherDeckungsbeitragProMonat =
+      zusaetzlicheAbschluesseProMonat * deckungsbeitragProAbschlussEur;
 
     return {
       wiederkehrendeFaelle,
       autoFaelle,
-      manuelleFaelle,
+      assistFaelle,
       minutenProAutoFall,
       qaKontrollMinProAutoFall,
+      minutenProAssistFall,
       zeitHeuteMinProWoche,
       zeitMitAdvaicMinProWoche,
       gesparteMinutenProWoche,
@@ -152,6 +240,12 @@ export default function ROICalculator() {
       firstResponseGewinnPct,
       within60Heute,
       within60MitAdvaic,
+      anfragenProMonat,
+      besichtigungenHeuteProMonat,
+      besichtigungenMitAdvaicProMonat,
+      zusaetzlicheBesichtigungenProMonat,
+      zusaetzlicheAbschluesseProMonat,
+      zusaetzlicherDeckungsbeitragProMonat,
     };
   }, [
     anfragenProWoche,
@@ -160,17 +254,21 @@ export default function ROICalculator() {
     autoAnteilBeiWiederkehrend,
     firstResponseHeuteMin,
     stundenSatzEur,
+    besichtigungsquoteHeute,
+    conversionUpliftPct,
+    besichtigungZuAbschlussQuote,
+    deckungsbeitragProAbschlussEur,
   ]);
 
   const nextAction = useMemo(() => {
     if (model.autoQuote < 0.28) {
       return {
         title: "Nächster Hebel: Regelwerk schärfen",
-        text: "Ihre Auto-Quote ist noch niedrig. Für einen spürbaren ROI sollten zuerst wiederkehrende Erstantworten mit sauberem Objektbezug präziser definiert werden.",
+        text: "Ihre Auto-Senden-Quote ist noch niedrig. Für einen spürbaren ROI sollten zuerst wiederkehrende Erstantworten mit sauberem Objektbezug präziser definiert werden.",
         bullets: [
-          "Top-3 wiederkehrende Erstfragen explizit als Auto-Fälle setzen",
+          "Top-3 wiederkehrende Erstfragen explizit als Auto-Senden-Fälle setzen",
           "Fehlende oder widersprüchliche Objektbezüge konsequent auf Freigabe lassen",
-          "Nach 7 Tagen Auto- und Freigabe-Quote erneut prüfen",
+          "Nach 7 Tagen Auto-Senden- und Freigabe-Quote erneut prüfen",
         ],
         href: "/autopilot-regeln",
         cta: "Regeln konkretisieren",
@@ -198,7 +296,7 @@ export default function ROICalculator() {
         bullets: [
           "KPI-Ziel vor Start festlegen (Antwortzeit, QA-Quote, Freigabe-zu-Senden)",
           "Wöchentlich nur einen Regelsatz gleichzeitig anpassen",
-          "Ab Woche 3 Auto-Anteil nur bei stabiler Qualität erhöhen",
+          "Ab Woche 3 Auto-Senden-Anteil nur bei stabiler Qualität erhöhen",
         ],
         href: "/signup?entry=roi-next-action",
         cta: "Pilot starten",
@@ -208,11 +306,11 @@ export default function ROICalculator() {
     return {
       title: "Nächster Hebel: konservativ testen",
       text: "Das Potenzial ist vorhanden, aber noch nicht maximal. Ein konservativer Pilot liefert schnell belastbare echte Werte.",
-      bullets: [
-        "Mit höherer Freigabequote starten und Risiko gering halten",
-        "Reale Zeitersparnis pro Woche im Team dokumentieren",
-        "Nach 14 Tagen Auto- und Qualitätsgrenzen nachschärfen",
-      ],
+        bullets: [
+          "Mit höherer Freigabequote starten und Risiko gering halten",
+          "Reale Zeitersparnis pro Woche im Team dokumentieren",
+          "Nach 14 Tagen Auto-Senden- und Qualitätsgrenzen nachschärfen",
+        ],
       href: "/signup?entry=roi-conservative",
       cta: "Konservativ testen",
     };
@@ -234,8 +332,8 @@ export default function ROICalculator() {
         <div className="max-w-[74ch]">
           <h2 className="h2">ROI-Rechner: Zeitpotenzial realistisch einschätzen</h2>
           <p className="body mt-4 text-[var(--muted)]">
-            Tragen Sie Ihre Werte ein. Die Schätzung ist konservativ aufgebaut, zeigt alle Annahmen offen und verbindet
-            operative KPI mit einer monetären Einordnung.
+            Tragen Sie Ihre Werte ein. Die Schätzung bildet Auto-Senden, Zeitgewinn in Freigabe, Vorqualifizierung
+            und sichtbare Arbeitsreihenfolge gemeinsam ab. Alle Annahmen bleiben offen nachvollziehbar.
           </p>
         </div>
 
@@ -275,11 +373,12 @@ export default function ROICalculator() {
               <label className="block">
                 <span className="text-sm font-semibold text-[var(--text)]">Anfragen pro Woche</span>
                 <input
-                  type="number"
-                  min={5}
-                  max={500}
-                  value={anfragenProWoche}
-                  onChange={(e) => setAnfragenProWoche(clamp(Number(e.target.value || 0), 5, 500))}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={anfragenProWocheDraft}
+                  onChange={(e) => updateDraftValue(e.target.value, setAnfragenProWocheDraft, setAnfragenProWoche)}
+                  onBlur={() => commitDraftValue(anfragenProWocheDraft, 5, 500, setAnfragenProWocheDraft, setAnfragenProWoche)}
                   className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] shadow-[var(--shadow-sm)] focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
                 />
               </label>
@@ -287,11 +386,12 @@ export default function ROICalculator() {
               <label className="block">
                 <span className="text-sm font-semibold text-[var(--text)]">Minuten pro Anfrage (heute)</span>
                 <input
-                  type="number"
-                  min={2}
-                  max={30}
-                  value={minutenProAnfrage}
-                  onChange={(e) => setMinutenProAnfrage(clamp(Number(e.target.value || 0), 2, 30))}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={minutenProAnfrageDraft}
+                  onChange={(e) => updateDraftValue(e.target.value, setMinutenProAnfrageDraft, setMinutenProAnfrage)}
+                  onBlur={() => commitDraftValue(minutenProAnfrageDraft, 2, 30, setMinutenProAnfrageDraft, setMinutenProAnfrage)}
                   className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] shadow-[var(--shadow-sm)] focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
                 />
               </label>
@@ -299,11 +399,12 @@ export default function ROICalculator() {
               <label className="block">
                 <span className="text-sm font-semibold text-[var(--text)]">Interner Stundensatz (EUR)</span>
                 <input
-                  type="number"
-                  min={30}
-                  max={250}
-                  value={stundenSatzEur}
-                  onChange={(e) => setStundenSatzEur(clamp(Number(e.target.value || 0), 30, 250))}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={stundenSatzEurDraft}
+                  onChange={(e) => updateDraftValue(e.target.value, setStundenSatzEurDraft, setStundenSatzEur)}
+                  onBlur={() => commitDraftValue(stundenSatzEurDraft, 30, 250, setStundenSatzEurDraft, setStundenSatzEur)}
                   className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] shadow-[var(--shadow-sm)] focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
                 />
               </label>
@@ -311,11 +412,12 @@ export default function ROICalculator() {
               <label className="block">
                 <span className="text-sm font-semibold text-[var(--text)]">Median Erstreaktion heute (Minuten)</span>
                 <input
-                  type="number"
-                  min={10}
-                  max={720}
-                  value={firstResponseHeuteMin}
-                  onChange={(e) => setFirstResponseHeuteMin(clamp(Number(e.target.value || 0), 10, 720))}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={firstResponseHeuteMinDraft}
+                  onChange={(e) => updateDraftValue(e.target.value, setFirstResponseHeuteMinDraft, setFirstResponseHeuteMin)}
+                  onBlur={() => commitDraftValue(firstResponseHeuteMinDraft, 10, 720, setFirstResponseHeuteMinDraft, setFirstResponseHeuteMin)}
                   className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] shadow-[var(--shadow-sm)] focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
                 />
               </label>
@@ -337,7 +439,7 @@ export default function ROICalculator() {
 
               <label className="block md:col-span-2">
                 <span className="text-sm font-semibold text-[var(--text)]">
-                  Auto-Anteil innerhalb dieser wiederkehrenden Erstantworten: {autoAnteilBeiWiederkehrend} %
+                  Auto-Senden-Anteil innerhalb dieser wiederkehrenden Erstantworten: {autoAnteilBeiWiederkehrend} %
                 </span>
                 <input
                   type="range"
@@ -350,12 +452,141 @@ export default function ROICalculator() {
                 />
               </label>
             </div>
+
+            <article className="mt-6 rounded-2xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="max-w-[58ch]">
+                  <p className="text-sm font-semibold text-[var(--text)]">Optional: Conversion- und Umsatzhebel</p>
+                  <p className="helper mt-2">
+                    Diese Ebene bleibt bewusst optional. Sie modelliert kein Versprechen, sondern ein offenes
+                    Szenario aus schnellerer Erstreaktion, besserem Follow-up und höherer Besichtigungsquote.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRevenueScenario((value) => !value)}
+                  className="btn-secondary whitespace-nowrap"
+                >
+                  {showRevenueScenario ? "Szenario ausblenden" : "Szenario einblenden"}
+                </button>
+              </div>
+
+              {showRevenueScenario ? (
+                <div className="mt-5 grid gap-5 md:grid-cols-2">
+                  <label className="block">
+                    <span className="text-sm font-semibold text-[var(--text)]">
+                      Heutige Anfrage-zu-Besichtigung-Quote (%)
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={besichtigungsquoteHeuteDraft}
+                      onChange={(e) =>
+                        updateDraftValue(
+                          e.target.value,
+                          setBesichtigungsquoteHeuteDraft,
+                          setBesichtigungsquoteHeute,
+                        )
+                      }
+                      onBlur={() =>
+                        commitDraftValue(
+                          besichtigungsquoteHeuteDraft,
+                          1,
+                          80,
+                          setBesichtigungsquoteHeuteDraft,
+                          setBesichtigungsquoteHeute,
+                        )
+                      }
+                      className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] shadow-[var(--shadow-sm)] focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-sm font-semibold text-[var(--text)]">
+                      Besichtigung-zu-Abschluss-/Beauftragungsquote (%)
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={besichtigungZuAbschlussQuoteDraft}
+                      onChange={(e) =>
+                        updateDraftValue(
+                          e.target.value,
+                          setBesichtigungZuAbschlussQuoteDraft,
+                          setBesichtigungZuAbschlussQuote,
+                        )
+                      }
+                      onBlur={() =>
+                        commitDraftValue(
+                          besichtigungZuAbschlussQuoteDraft,
+                          1,
+                          80,
+                          setBesichtigungZuAbschlussQuoteDraft,
+                          setBesichtigungZuAbschlussQuote,
+                        )
+                      }
+                      className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] shadow-[var(--shadow-sm)] focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
+                    />
+                  </label>
+
+                  <label className="block md:col-span-2">
+                    <span className="text-sm font-semibold text-[var(--text)]">
+                      Angenommener relativer Uplift auf die Besichtigungsquote: {conversionUpliftPct} %
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={40}
+                      step={1}
+                      value={conversionUpliftPct}
+                      onChange={(e) => setConversionUpliftPct(clamp(Number(e.target.value || 0), 0, 40))}
+                      className="mt-2 w-full accent-[var(--gold)]"
+                    />
+                    <p className="helper mt-2">
+                      Gemeint ist kein Wunderwert, sondern ein Szenario aus schnellerer Reaktion, sauberem Follow-up
+                      und weniger verlorenen qualifizierten Anfragen.
+                    </p>
+                  </label>
+
+                  <label className="block md:col-span-2">
+                    <span className="text-sm font-semibold text-[var(--text)]">
+                      Durchschnittlicher Deckungsbeitrag / Provision pro Abschluss (EUR)
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={deckungsbeitragProAbschlussEurDraft}
+                      onChange={(e) =>
+                        updateDraftValue(
+                          e.target.value,
+                          setDeckungsbeitragProAbschlussEurDraft,
+                          setDeckungsbeitragProAbschlussEur,
+                        )
+                      }
+                      onBlur={() =>
+                        commitDraftValue(
+                          deckungsbeitragProAbschlussEurDraft,
+                          500,
+                          50000,
+                          setDeckungsbeitragProAbschlussEurDraft,
+                          setDeckungsbeitragProAbschlussEur,
+                        )
+                      }
+                      className="mt-2 w-full rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] shadow-[var(--shadow-sm)] focus:outline-none focus:ring-4 focus:ring-[var(--gold-soft)]"
+                    />
+                  </label>
+                </div>
+              ) : null}
+            </article>
           </article>
 
           <article className="card-base lg:col-span-5 overflow-hidden p-0">
             <div className="h-1 w-full bg-[linear-gradient(90deg,var(--gold),rgba(201,162,39,0.08))]" />
             <div className="p-6 md:p-7">
-              <p className="text-sm font-semibold text-[var(--text)]">Konservative Modellrechnung</p>
+              <p className="text-sm font-semibold text-[var(--text)]">Betriebsnahe Modellrechnung</p>
               <div className="mt-4 space-y-3">
                 <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
                   <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">
@@ -366,13 +597,13 @@ export default function ROICalculator() {
                   </p>
                 </div>
                 <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
-                  <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Auto-Fälle/Woche</p>
+                  <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Auto-Senden-Fälle/Woche</p>
                   <p className="mt-1 text-xl font-semibold text-[var(--text)]">{formatNumber(model.autoFaelle)}</p>
                 </div>
                 <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
-                  <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Auto-Quote gesamt</p>
+                  <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Auto-Senden-Quote gesamt</p>
                   <p className="mt-1 text-xl font-semibold text-[var(--text)]">{formatNumber(model.autoQuote * 100)} %</p>
-                  <p className="helper mt-1">Rest bleibt bewusst in manuell/Freigabe: {formatNumber(100 - model.autoQuote * 100)} %</p>
+                  <p className="helper mt-1">Rest bleibt bewusst in Assistenz/Freigabe: {formatNumber(100 - model.autoQuote * 100)} %</p>
                 </div>
                 <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
                   <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Gesparte Stunden/Monat</p>
@@ -385,6 +616,55 @@ export default function ROICalculator() {
                   <p className="mt-1 text-xl font-semibold text-[var(--text)]">{formatCurrency(model.monetarerHebelProMonat)}</p>
                   <p className="helper mt-1">Basierend auf internem Stundensatz: {formatCurrency(stundenSatzEur)} / Stunde</p>
                 </div>
+                {showRevenueScenario ? (
+                  <>
+                    <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
+                      <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">
+                        Zusätzliche Besichtigungen/Monat
+                      </p>
+                      <p className="mt-1 text-xl font-semibold text-[var(--text)]">
+                        {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(
+                          model.zusaetzlicheBesichtigungenProMonat,
+                        )}
+                      </p>
+                      <p className="helper mt-1">
+                        Heute:{" "}
+                        {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(
+                          model.besichtigungenHeuteProMonat,
+                        )}{" "}
+                        · Mit Szenario:{" "}
+                        {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(
+                          model.besichtigungenMitAdvaicProMonat,
+                        )}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
+                      <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">
+                        Zusätzliche Abschlüsse/Monat
+                      </p>
+                      <p className="mt-1 text-xl font-semibold text-[var(--text)]">
+                        {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 2 }).format(
+                          model.zusaetzlicheAbschluesseProMonat,
+                        )}
+                      </p>
+                      <p className="helper mt-1">
+                        Auf Basis von {formatNumber(besichtigungZuAbschlussQuote)} % Besichtigung-zu-Abschluss.
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
+                      <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">
+                        Optionales Umsatzszenario/Monat
+                      </p>
+                      <p className="mt-1 text-xl font-semibold text-[var(--text)]">
+                        {formatCurrency(model.zusaetzlicherDeckungsbeitragProMonat)}
+                      </p>
+                      <p className="helper mt-1">
+                        Transparente Szenariorechnung aus Besichtigungsquote, Uplift und Deckungsbeitrag. Kein
+                        garantierter Mehrumsatz.
+                      </p>
+                    </div>
+                  </>
+                ) : null}
                 <div className="rounded-xl bg-[var(--surface-2)] p-3 ring-1 ring-[var(--border)]">
                   <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Zeitbudget pro Woche</p>
                   <p className="mt-1 text-sm font-semibold text-[var(--text)]">
@@ -419,8 +699,9 @@ export default function ROICalculator() {
               </div>
 
               <p className="helper mt-4">
-                Annahme: Nicht jede Nachricht wird automatisiert. Fälle mit fehlenden Angaben, Konfliktpotenzial oder
-                Risikoindikatoren bleiben in der Freigabe und werden weiterhin manuell entschieden.
+                Annahme: Nicht jede Nachricht wird automatisch gesendet. Fälle mit fehlenden Angaben, Konfliktpotenzial
+                oder Risikoindikatoren bleiben in der Freigabe, sparen aber trotzdem bereits Zeit durch Vorqualifizierung,
+                klaren Status und vorbereiteten Kontext.
               </p>
 
               <article className="mt-4 rounded-xl bg-white p-4 ring-1 ring-[var(--border)]">
@@ -428,11 +709,27 @@ export default function ROICalculator() {
                   Annahmen im aktuellen Modell
                 </p>
                 <ul className="mt-2 space-y-1 text-sm text-[var(--muted)]">
-                  <li>Auto-Fall Bearbeitung: {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(model.minutenProAutoFall)} Min</li>
-                  <li>QA-/Monitoring-Aufwand je Auto-Fall: {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(model.qaKontrollMinProAutoFall)} Min</li>
-                  <li>Manuelle Fälle pro Woche: {formatNumber(model.manuelleFaelle)}</li>
+                  <li>Auto-Senden-Fall Bearbeitung: {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(model.minutenProAutoFall)} Min</li>
+                  <li>QA-/Monitoring-Aufwand je Auto-Senden-Fall: {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(model.qaKontrollMinProAutoFall)} Min</li>
+                  <li>Freigabe-/Assist-Fall Bearbeitung: {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(model.minutenProAssistFall)} Min</li>
+                  <li>Freigabe-/Assist-Fälle pro Woche: {formatNumber(model.assistFaelle)}</li>
                 </ul>
               </article>
+
+              {showRevenueScenario ? (
+                <article className="mt-4 rounded-xl bg-white p-4 ring-1 ring-[var(--border)]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">
+                    Annahmen im Conversion-Szenario
+                  </p>
+                  <ul className="mt-2 space-y-1 text-sm text-[var(--muted)]">
+                    <li>Anfragen pro Monat: {new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(model.anfragenProMonat)}</li>
+                    <li>Heutige Besichtigungsquote: {formatNumber(besichtigungsquoteHeute)} %</li>
+                    <li>Relativer Uplift auf diese Quote: {formatNumber(conversionUpliftPct)} %</li>
+                    <li>Besichtigung-zu-Abschluss-/Beauftragungsquote: {formatNumber(besichtigungZuAbschlussQuote)} %</li>
+                    <li>Deckungsbeitrag / Provision pro Abschluss: {formatCurrency(deckungsbeitragProAbschlussEur)}</li>
+                  </ul>
+                </article>
+              ) : null}
 
               <article className="mt-4 rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
                 <h3 className="text-sm font-semibold text-[var(--text)]">{nextAction.title}</h3>
@@ -470,6 +767,13 @@ export default function ROICalculator() {
                         gesparte_stunden_monat: Number(model.gesparteStundenProMonat.toFixed(2)),
                         monetarer_hebel_monat: Number(model.monetarerHebelProMonat.toFixed(0)),
                         first_response_gain_min: Number(model.firstResponseGewinnMin.toFixed(1)),
+                        revenue_scenario_enabled: showRevenueScenario,
+                        conversion_uplift_pct: conversionUpliftPct,
+                        besichtigungsquote_heute_pct: besichtigungsquoteHeute,
+                        besichtigung_zu_abschluss_pct: besichtigungZuAbschlussQuote,
+                        optional_revenue_scenario_monat: Number(
+                          model.zusaetzlicherDeckungsbeitragProMonat.toFixed(0),
+                        ),
                       },
                     })
                   }

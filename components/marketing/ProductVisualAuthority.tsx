@@ -4,7 +4,7 @@ import LoopVideo from "./produkt/LoopVideo";
 const visualItems = [
   {
     id: "regeln",
-    title: "Greift Auto oder Freigabe?",
+    title: "Greift Auto-Senden oder Freigabe?",
     label: "Schlüsselfrage",
     text: "Dieser Shot zeigt die sichtbare Versandentscheidung im echten Ablauf.",
     webm: "/loops/tour-rules.webm",
@@ -24,7 +24,7 @@ const visualItems = [
   },
   {
     id: "qualitaet",
-    title: "Greifen Checks vor dem Versand?",
+    title: "Greifen Checks vor Auto-Senden?",
     label: "Frage 3",
     text: "Ton, Vollständigkeit und Risiko werden vor dem Senden geprüft.",
     webm: "/loops/tour-checks.webm",
@@ -114,7 +114,7 @@ export default function ProductVisualAuthority({
                       Dieses Bild beantwortet
                     </div>
                     <p className="mt-3 text-sm leading-6 text-[var(--text)]">
-                      Ist sofort sichtbar, ob Advaic sendet, stoppt oder bewusst in die Freigabe übergibt?
+                      Ist sofort sichtbar, ob Advaic automatisch sendet, stoppt oder bewusst in die Freigabe übergibt?
                     </p>
                   </div>
                 </div>

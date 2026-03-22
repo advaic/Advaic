@@ -18,9 +18,24 @@ const intents = [
     href: "/best-software-immobilienanfragen",
   },
   {
+    title: "Anfragenmanagement für Immobilienmakler",
+    text: "Operativer Leitfaden von Eingang, Einordnung und Antwortpfad bis zum kontrollierten Follow-up.",
+    href: "/anfragenmanagement-immobilienmakler",
+  },
+  {
     title: "Immobilienanfragen automatisieren",
     text: "Konkreter Ablauf von Eingang bis Versand inkl. Freigabe und Qualitätschecks.",
     href: "/immobilienanfragen-automatisieren",
+  },
+  {
+    title: "Antwortzeit bei Immobilienanfragen",
+    text: "Wie schnell Makler realistisch reagieren sollten, wo Zeit verloren geht und welche KPI wirklich zählen.",
+    href: "/antwortzeit-immobilienanfragen",
+  },
+  {
+    title: "Follow-up-E-Mails für Immobilienmakler",
+    text: "Wie Makler sinnvoll nachfassen, welche Taktung konservativ startet und wann Follow-ups stoppen müssen.",
+    href: "/follow-up-emails-immobilienmakler",
   },
   {
     title: "E-Mail-Automatisierung für Immobilienmakler",
@@ -61,6 +76,11 @@ const intents = [
     title: "Advaic vs. CRM-Tools",
     text: "Klare Abgrenzung: CRM als System of Record, Advaic als Ausführungssystem für Anfragen.",
     href: "/advaic-vs-crm-tools",
+  },
+  {
+    title: "Maklersoftware Vergleich 2026",
+    text: "Orientierung für Maklerbüros, die Maklersoftware, CRM und Anfrageausführung sauber voneinander trennen wollen.",
+    href: "/maklersoftware-vergleich",
   },
   {
     title: "Integrationen (Gmail & Outlook)",

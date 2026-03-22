@@ -40,8 +40,8 @@ export default function QualityChecks() {
           </Link>
         </div>
         <p className="body mt-4 max-w-[70ch] text-[var(--muted)]">
-          Damit Autopilot im Alltag sicher nutzbar bleibt, wird jede Auto-Antwort vor dem Versand in mehreren
-          Schritten geprüft.
+          Damit Autopilot im Alltag sicher nutzbar bleibt, wird jede automatisch gesendete Antwort vor dem Versand in
+          mehreren Schritten geprüft.
         </p>
         <div className="mt-10 grid gap-3 md:grid-cols-2">
           {checks.map((check) => (

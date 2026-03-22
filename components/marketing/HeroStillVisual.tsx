@@ -3,7 +3,7 @@ import LoopVideo from "./produkt/LoopVideo";
 const proofItems = [
   {
     id: "decision",
-    label: "Auto oder Freigabe",
+    label: "Auto-Senden oder Freigabe",
     text: "Die sichtbare Frage im Hero: sendet Advaic oder stoppt es bewusst?",
   },
   {

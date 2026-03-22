@@ -4,7 +4,7 @@ import Container from "./Container";
 
 const columns = [
   {
-    title: "Auto senden (wenn klar)",
+    title: "Auto-Senden (wenn klar)",
     icon: ShieldCheck,
     items: [
       "Echte Interessenten-Anfragen mit vollständigen Angaben",

@@ -12,7 +12,7 @@ import {
 const starterBullets = [
   "14 Tage im echten Postfach testen",
   `Danach ${STARTER_PUBLIC_PRICE_LABEL}`,
-  "Regeln für Auto senden, Zur Freigabe und Ignorieren",
+  "Regeln für Auto-Senden, Zur Freigabe und Ignorieren",
   "Freigabe-Inbox bei fehlenden Angaben, no-reply-Absendern oder sensiblen Inhalten",
   "Qualitätschecks vor jedem Auto-Versand",
   "Follow-ups mit Stop-Regeln und Pausenlogik",

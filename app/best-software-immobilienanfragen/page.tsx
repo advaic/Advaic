@@ -2,62 +2,131 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
+import MarketingJumpLink from "@/components/marketing/MarketingJumpLink";
 import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
 import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
-const mustHaveCriteria = [
-  "Klare Trennung zwischen echten Interessenten-Anfragen und irrelevanten E-Mails.",
-  "Verbindliche Entscheidungspfade: Auto senden, Zur Freigabe oder Ignorieren.",
-  "Qualitätschecks vor Versand (Relevanz, Kontext, Vollständigkeit, Ton, Risiko, Lesbarkeit).",
-  "Verlauf mit Zeitstempel, damit jede Entscheidung nachprüfbar bleibt.",
-  "Kontrollierte Follow-up-Logik mit Stop-Regeln bei Antwort oder Risiko.",
+const LAST_UPDATED = "21. März 2026";
+
+const summary = [
+  "Software für Immobilienanfragen ist keine einzelne Produktkategorie. In der Praxis stehen Makler meist zwischen Maklersoftware, CRM, gemeinsamem Postfach, Sequenzen und spezialisierter Anfrageautomation.",
+  "Die wichtigste Unterscheidung ist nicht KI versus keine KI, sondern Datenhaltung versus Ausführung: Wer organisiert Daten, und wer entscheidet über die nächste Nachricht?",
+  "Für einen belastbaren Anfragebetrieb zählen vor allem Eingangserkennung, klare Regeln für Automatik oder Freigabe, Qualitätschecks, Verlauf und kontrolliertes Nachfassen.",
 ];
 
-const evaluationFramework = [
+const contents = [
+  { href: "#kurzfassung", label: "Kurzfassung" },
+  { href: "#methodik", label: "Methodik" },
+  { href: "#shortlist", label: "Kategorien im Überblick" },
+  { href: "#checkliste", label: "Prüfschema" },
+  { href: "#stack", label: "Welche Kombination passt?" },
+  { href: "#advaic-fit", label: "Wann Advaic passt" },
+  { href: "#faq", label: "FAQ" },
+];
+
+const methodology = [
+  "Die Seite kombiniert aktuelle Suchsignale aus der Search Console mit aktuellen Herstellerseiten aus dem Maklersoftware-, CRM- und Anfrage-Umfeld.",
+  "Verglichen werden nicht nur Features, sondern die operative Rolle im Makleralltag: Eingang, Zuordnung, Antwort, Freigabe, Verlauf und Nachfassen.",
+  "Genannte Anbieter stehen hier als Marktbeispiele für unterschiedliche Kategorien. Die Seite ist keine vollständige Marktübersicht und erhebt keinen pauschalen Anspruch auf einen Testsieger.",
+];
+
+const shortlist = [
   {
-    title: "Eingang",
-    question: "Erkennt das System zuverlässig, was eine Anfrage ist?",
-    warning: "Wenn alles im gleichen Topf landet, steigt der manuelle Aufwand trotz Tool weiter.",
+    category: "Maklersoftware / Immobilien-CRM",
+    examples: "onOffice, FLOWFACT, Propstack",
+    solves: "Objekte, Kontakte, Pipeline, Portalanbindung, E-Mail-Verwaltung, teamweite Datenhaltung.",
+    watch: "Oft stark als Arbeitsbasis, aber nicht automatisch spezialisiert auf Freigabe- und Qualitätslogik pro Anfrage.",
   },
   {
-    title: "Entscheidung",
-    question: "Ist klar geregelt, wann Auto-Versand erlaubt ist?",
-    warning: "Ohne klare Policy landen Nachrichten mit fehlenden Angaben oder Risiko schnell im falschen Kanal.",
+    category: "Allgemeines CRM mit Sequenzen",
+    examples: "HubSpot",
+    solves: "CRM, Marketing, Sequenzen, Serviceprozesse, Reporting und Steuerung der Pipeline.",
+    watch: "Nicht immobilien-spezifisch. Der operative Immobilien-Anfrageprozess muss oft erst modelliert werden.",
   },
   {
-    title: "Antwortqualität",
-    question: "Gibt es vor Versand harte Prüfungen jenseits reiner Textgenerierung?",
-    warning: "Ohne QA-Checks steigt das Risiko unpassender Antworten.",
+    category: "Gemeinsames Postfach / serviceorientierte Systeme",
+    examples: "Zendesk",
+    solves: "Teamverteilung, Ticketing, Status, Servicekommunikation und kanalübergreifende Unterstützung.",
+    watch: "Stark für Inbox-Organisation, aber nicht automatisch auf Objektbezug, Immobilienquellen und Freigabe von Maklerantworten optimiert.",
   },
   {
-    title: "Kontrolle",
-    question: "Können Sie Nachrichten mit Lücken oder Risiko aktiv freigeben, bearbeiten oder stoppen?",
-    warning: "Ohne Freigabepfad fehlt das Sicherheitsnetz im Alltag.",
-  },
-  {
-    title: "Nachvollziehbarkeit",
-    question: "Sehen Sie pro Anfrage den kompletten Verlauf?",
-    warning: "Ohne Verlauf wird Support und Teamsteuerung schnell reaktiv.",
+    category: "Spezialisierte Anfrageausführung",
+    examples: "Advaic",
+    solves: "Eingang prüfen, Antwortpfad festlegen, Qualitätschecks, Freigabe, Nachfassen und Verlauf im Anfragealltag.",
+    watch: "Kein Ersatz für vollständige Objekt- und Dealverwaltung.",
   },
 ];
 
-const implementationSteps = [
+const checkItems = [
   {
-    title: "1) Startprofil definieren",
-    text: "Konservativ beginnen: hoher Freigabeanteil, nur Anfragen mit sauberem Objektbezug und vollständigen Angaben automatisiert senden.",
+    title: "1) Eingang",
+    text: "Erkennt das System zuverlässig, was eine echte Interessenten-Anfrage ist und was nicht? Ohne saubere Trennung steigen manuelle Klicks trotz Tool.",
   },
   {
-    title: "2) Qualitätsgrenzen festziehen",
-    text: "Fälle mit unklarem Objektbezug, Konflikten oder fehlenden Pflichtinfos verpflichtend in die Freigabe legen.",
+    title: "2) Entscheidung",
+    text: "Ist sichtbar, wann automatisch geantwortet, wann gestoppt und wann zur Freigabe gelegt wird? Genau hier scheitern viele scheinbar smarte Konfigurationen.",
   },
   {
-    title: "3) Follow-ups stufenweise aktivieren",
-    text: "Erst wenn Erstreaktion und Freigabequalität stabil sind, Follow-up-Regeln ausrollen.",
+    title: "3) Qualität",
+    text: "Gibt es vor Versand Prüfungen auf Kontext, Vollständigkeit, Ton und Risiko statt nur Textgenerierung?",
   },
   {
-    title: "4) KPI-basiert ausbauen",
-    text: "Freigabe-zu-Senden-Quote, QA-Korrekturzeit und Erstreaktionszeit wöchentlich prüfen.",
+    title: "4) Nachvollziehbarkeit",
+    text: "Kann Ihr Team später noch sehen, was wann passiert ist und warum? Ohne Verlauf wird Support schnell reaktiv.",
+  },
+  {
+    title: "5) Nachfassen",
+    text: "Sind Nachfassungen kontrollierbar, stoppbar und an Antworten oder Meetings gekoppelt? Ohne Stopp-Logik wird Nachfassen schnell störend.",
+  },
+  {
+    title: "6) Einführung",
+    text: "Wie schnell kommt ein kleines Maklerteam zu einem sicheren Startprofil? Ein gutes Tool ist nicht nur mächtig, sondern einführbar.",
+  },
+];
+
+const stackSignals = [
+  {
+    title: "CRM zuerst",
+    text: "Wenn Kontakte, Objekte, Zuständigkeiten und Pipeline noch nicht sauber gepflegt sind, lösen Sie zuerst die Datenbasis. Sonst kippt jede spätere Automation.",
+  },
+  {
+    title: "Anfrage-System zusätzlich",
+    text: "Wenn Ihr CRM grundsätzlich passt, aber das Anfragepostfach trotzdem langsam, inkonsistent oder riskant bleibt, ergänzen Sie eine spezialisierte Anfrage-Schicht.",
+  },
+  {
+    title: "Inbox-/Service-Fokus",
+    text: "Wenn mehrere Kanäle, Status und Zuständigkeiten dominieren, sind Inbox- oder Service-Systeme wertvoll. Für Immobilienlogik reichen sie oft allein nicht aus.",
+  },
+];
+
+const advaicFit = [
+  "Sie haben wiederkehrende Interessenten-Anfragen, die mit klaren Regeln schneller beantwortet werden könnten.",
+  "Ihr Team braucht sichtbare Gründe, warum etwas automatisch gesendet oder in die Freigabe gelegt wurde.",
+  "Sie möchten nicht das ganze CRM ersetzen, sondern den operativen Antwortfluss sauberer machen.",
+];
+
+const advaicNotFit = [
+  "Sie suchen primär ein zentrales System für Objekt-, Kontakt- und Dealverwaltung.",
+  "Fast alle Anfragen sind hoch individuell, verhandlungsnah oder konfliktbeladen.",
+  "Sie haben noch keine belastbare Daten- und Zuständigkeitslogik im Maklerbüro.",
+];
+
+const faqs = [
+  {
+    question: "Was ist bei Anfrage-Software am wichtigsten?",
+    answer:
+      "Am wichtigsten ist nicht Textqualität allein, sondern die saubere Kombination aus Eingangserkennung, Entscheidungslogik, Qualitätschecks, Freigabe und Verlauf.",
+  },
+  {
+    question: "Reicht ein allgemeines KI-Schreibtool aus?",
+    answer:
+      "Für einzelne Textaufgaben kann es reichen. Für einen belastbaren Anfragebetrieb fehlen meist Prozesslogik, Stop-Regeln, Freigabe und Nachvollziehbarkeit.",
+  },
+  {
+    question: "Wann ist Advaic sinnvoller als ein weiterer CRM-Umbau?",
+    answer:
+      "Wenn Ihr CRM als Datenbasis funktioniert, der Engpass aber weiterhin im Anfragepostfach liegt. Dann ist eine spezialisierte Ausführungsschicht oft der klarere Hebel als ein kompletter Systemwechsel.",
   },
 ];
 
@@ -65,39 +134,49 @@ const sources = [
   {
     label: "Google: Creating helpful, reliable, people-first content",
     href: "https://developers.google.com/search/docs/fundamentals/creating-helpful-content",
-    note: "Einordnung, warum inhaltliche Qualität wichtiger ist als skalierte SEO-Masse ohne Mehrwert.",
+    note: "Leitlinie für hilfreiche, originäre Seiten statt bloßer SEO-Umschreibungen.",
   },
   {
-    label: "Google: FAQ structured data",
-    href: "https://developers.google.com/search/docs/appearance/structured-data/faqpage",
-    note: "Maschinenlesbare FAQ-Auszeichnung für präzisere Einordnung.",
+    label: "Google: How to write reviews",
+    href: "https://developers.google.com/search/docs/specialty/ecommerce/write-high-quality-reviews",
+    note: "Orientierung für Vergleichsseiten mit Methodik, Differenzierung und Belegen.",
   },
   {
-    label: "Google: Review snippet structured data",
-    href: "https://developers.google.com/search/docs/appearance/structured-data/review-snippet",
-    note: "Orientierung zur strukturierten Darstellung von Bewertungsinformationen.",
+    label: "onOffice: Immobiliensoftware",
+    href: "https://onoffice.com/immobiliensoftware/",
+    note: "Herstellerseite mit Fokus auf Maklersoftware, CRM, E-Mail-Verwaltung und Anfragenmanager.",
   },
   {
-    label: "Capterra: Real Estate Software",
-    href: "https://www.capterra.com/real-estate-software/",
-    note: "Externe Marktübersicht für Vergleich und Vendor-Recherche.",
+    label: "FLOWFACT: Automatische Anfragenverarbeitung",
+    href: "https://flowfact.de/anfragenverarbeitung/",
+    note: "Herstellerseite für Portal-Anfragen, automatische Verarbeitung und Exposéversand.",
   },
   {
-    label: "G2: Real Estate CRM",
-    href: "https://www.g2.com/categories/real-estate-crm",
-    note: "Externe Kategorieübersicht zur Bewertung von CRM-zentrierten Lösungen.",
+    label: "Propstack: Makler-CRM für Immobilienunternehmen",
+    href: "https://www.propstack.de/immobilienunternehmen/",
+    note: "Herstellerseite mit Fokus auf Makler-CRM, Anfragenmanager und digitale Vermarktungsprozesse.",
+  },
+  {
+    label: "HubSpot: Create and edit sequences",
+    href: "https://knowledge.hubspot.com/sequences/create-and-edit-sequences",
+    note: "Offizielle Dokumentation zu Nachfass-Sequenzen, Sendefenstern und automatischer Steuerung.",
+  },
+  {
+    label: "Zendesk: CRM für Immobilienmakler",
+    href: "https://www.zendesk.de/sell/crm/crm-fur-immobilienmakler/",
+    note: "Beispiel für service- und inbox-nahe CRM-/Kommunikationsprozesse im Immobilienkontext.",
   },
 ];
 
 export const metadata: Metadata = buildMarketingMetadata({
-  title: "Best Software für Immobilienanfragen",
-  ogTitle: "Best Software für Immobilienanfragen | Advaic",
+  title: "Software für Immobilienanfragen im Vergleich 2026",
+  ogTitle: "Software für Immobilienanfragen im Vergleich | Advaic",
   description:
-    "Auswahlleitfaden für Makler: Welche Software erkennt Anfragen sauber, trifft belastbare Versandentscheidungen und hält Freigabe und Verlauf im Griff?",
+    "Vergleich für Makler: Welche Software eingehende Immobilienanfragen sauber erkennt, Antworten kontrolliert ausführt und wann CRM, Inbox oder Advaic sinnvoll sind.",
   path: "/best-software-immobilienanfragen",
   template: "compare",
-  eyebrow: "Softwarevergleich",
-  proof: "Eingang, Freigabe und Qualitätschecks sind wichtiger als generisches KI-Wording.",
+  eyebrow: "Vergleich 2026",
+  proof: "Für Anfrage-Software zählen Eingang, klare Regeln für Automatik oder Freigabe, Qualitätschecks und Stop-Regeln fürs Nachfassen.",
 });
 
 export default function BestSoftwareImmobilienanfragenPage() {
@@ -107,39 +186,26 @@ export default function BestSoftwareImmobilienanfragenPage() {
     "@graph": [
       {
         "@type": "Article",
-        headline: "Best Software für Immobilienanfragen",
+        headline: "Software für Immobilienanfragen im Vergleich 2026",
         inLanguage: "de-DE",
-        about: ["Immobilienanfragen", "E-Mail-Automatisierung", "Maklerprozesse"],
         mainEntityOfPage: `${siteUrl}/best-software-immobilienanfragen`,
+        dateModified: "2026-03-21",
+        about: ["Software für Immobilienanfragen", "Makler-CRM", "Inbox", "Follow-up", "Freigabe"],
+        author: {
+          "@type": "Organization",
+          name: "Advaic Redaktion",
+        },
       },
       {
         "@type": "FAQPage",
-        mainEntity: [
-          {
-            "@type": "Question",
-            name: "Welche Funktion ist bei Anfrage-Software am wichtigsten?",
-            acceptedAnswer: {
-              "@type": "Answer",
-              text: "Entscheidend ist eine klare Entscheidungslogik: wann automatisch gesendet wird, wann Freigabe nötig ist und wie Qualitätschecks vor Versand greifen.",
-            },
+        mainEntity: faqs.map((item) => ({
+          "@type": "Question",
+          name: item.question,
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: item.answer,
           },
-          {
-            "@type": "Question",
-            name: "Reicht ein allgemeines KI-Schreibtool aus?",
-            acceptedAnswer: {
-              "@type": "Answer",
-              text: "Für reines Formulieren kann es reichen. Für Maklerprozesse braucht es zusätzlich Eingangserkennung, Guardrails, Freigabe-Inbox und nachvollziehbaren Verlauf.",
-            },
-          },
-          {
-            "@type": "Question",
-            name: "Wie startet man ohne unnötiges Risiko?",
-            acceptedAnswer: {
-              "@type": "Answer",
-              text: "Mit einem konservativen Startprofil: hohe Freigabequote, klare Auto-Fälle und kontrollierter Ausbau erst nach stabilen KPI.",
-            },
-          },
-        ],
+        })),
       },
     ],
   };
@@ -148,42 +214,53 @@ export default function BestSoftwareImmobilienanfragenPage() {
     <AiDiscoveryPageTemplate
       breadcrumbItems={[
         { name: "Startseite", path: "/" },
-        { name: "Best Software Immobilienanfragen", path: "/best-software-immobilienanfragen" },
+        { name: "Software für Immobilienanfragen", path: "/best-software-immobilienanfragen" },
       ]}
       schema={schema}
-      kicker="Kaufentscheidung"
-      title="Best Software für Immobilienanfragen: Welche Lösungen wirklich zuverlässig arbeiten"
-      description="Prüfen Sie Eingang, Entscheidungslogik, Qualitätschecks, Freigabe und Verlauf. Genau daran entscheidet sich, ob Software Maklerteams wirklich entlastet."
+      kicker="Vergleich 2026"
+      title="Software für Immobilienanfragen: Welche Lösungen im Alltag wirklich tragen"
+      description="Diese Seite vergleicht nicht nur Features, sondern die operative Rolle von Maklersoftware, CRM, Inbox-Systemen und spezialisierter Anfrageausführung. Genau dort entscheidet sich, ob Ihr Team wirklich schneller und sicherer arbeitet."
       actions={
         <>
-          <Link href="/produkt#ablauf" className="btn-secondary">
-            Ablauf im Produkt ansehen
+          <Link href="/anfragenmanagement-immobilienmakler" className="btn-secondary">
+            Anfragenmanagement öffnen
           </Link>
-          <Link href="/signup?entry=best-software-anfragen" className="btn-primary">
+          <Link href="/signup?entry=best-software-anfragen-2026" className="btn-primary">
             {MARKETING_PRIMARY_CTA_LABEL}
           </Link>
         </>
       }
+      mobileQuickActions={
+        <article className="card-base p-4">
+          <p className="label">Schnellwahl</p>
+          <p className="helper mt-2">Direkt zu den Kategorien oder zu der Frage springen, wann Advaic passt.</p>
+          <div className="mt-3 grid gap-2">
+            <MarketingJumpLink href="#shortlist" className="btn-secondary w-full justify-center">
+              Kategorien
+            </MarketingJumpLink>
+            <MarketingJumpLink href="#advaic-fit" className="btn-secondary w-full justify-center">
+              Wann Advaic passt
+            </MarketingJumpLink>
+          </div>
+        </article>
+      }
       stage="bewertung"
       stageContext="best-software-immobilienanfragen"
-      primaryHref="/signup?entry=best-software-stage"
+      primaryHref="/signup?entry=best-software-stage-2026"
       primaryLabel="Mit echten Anfragen prüfen"
-      secondaryHref="/manuell-vs-advaic"
-      secondaryLabel="Prozessvergleich öffnen"
+      secondaryHref="/maklersoftware-vergleich"
+      secondaryLabel="Maklersoftware Vergleich"
       sources={sources}
-      sourcesDescription="Die Quellen unten helfen bei SEO-/AI-Auffindbarkeit und Softwarevergleich. Sie dienen als Orientierungs- und Prüfgrundlage für Ihre eigene Entscheidung."
+      sourcesCheckedLabel={LAST_UPDATED}
+      sourcesDescription="Die Quellen unten kombinieren Google-Leitlinien für hilfreiche Vergleichsinhalte mit aktuellen Herstellerseiten aus dem Markt. Für die finale Beschaffung sollten Sie immer Ihre eigenen Anfragefälle in Demos testen."
     >
-      <section className="marketing-section-clear py-20 md:py-28">
+      <section id="kurzfassung" className="py-8 md:py-10">
         <Container>
-          <div className="grid gap-6 lg:grid-cols-12">
-            <article className="card-base p-6 lg:col-span-8 md:p-8">
-              <h2 className="h3">Woran Sie gute Anfrage-Software sofort erkennen</h2>
-              <p className="body mt-4 text-[var(--muted)]">
-                Gute Software reduziert Klicks und operative Reibung. Sie brauchen ein System,
-                das klar begründet, warum etwas automatisch gesendet wird oder bewusst in Ihrer Freigabe bleibt.
-              </p>
-              <ul className="mt-5 space-y-2 text-sm text-[var(--muted)]">
-                {mustHaveCriteria.map((item) => (
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <article className="card-base p-6 md:p-8">
+              <h2 className="h3">Kurzfassung in 90 Sekunden</h2>
+              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                {summary.map((item) => (
                   <li key={item} className="flex items-start gap-2">
                     <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
                     <span>{item}</span>
@@ -191,63 +268,178 @@ export default function BestSoftwareImmobilienanfragenPage() {
                 ))}
               </ul>
             </article>
-            <article className="card-base p-6 lg:col-span-4">
-              <h2 className="h3">Kurzregel für die Auswahl</h2>
+
+            <aside className="card-base hidden p-6 lg:block">
+              <p className="label">Inhaltsverzeichnis</p>
+              <div className="mt-4 grid gap-2">
+                {contents.map((item) => (
+                  <MarketingJumpLink
+                    key={item.href}
+                    href={item.href}
+                    className="rounded-xl bg-[var(--surface-2)] px-4 py-3 text-sm font-medium text-[var(--text)] ring-1 ring-[var(--border)] transition hover:-translate-y-[1px]"
+                  >
+                    {item.label}
+                  </MarketingJumpLink>
+                ))}
+              </div>
+            </aside>
+          </div>
+        </Container>
+      </section>
+
+      <section id="methodik" className="marketing-section-clear py-14 md:py-18">
+        <Container>
+          <div className="grid gap-4 md:grid-cols-2">
+            <article className="card-base p-6 md:p-8">
+              <p className="label">Autor & Stand</p>
+              <h2 className="h3 mt-3">Advaic Redaktion</h2>
               <p className="helper mt-3">
-                Wenn ein Tool nicht sauber beantwortet, wann es sendet, wann es stoppt und warum, reicht es für
-                risikoarme Anfrageautomatisierung meist nicht aus.
+                Produkt- und Prozessteam mit Fokus auf Anfrageprozesse, Freigabelogik und sichere Einführung im
+                Makleralltag.
               </p>
+              <div className="mt-5 rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                <p className="text-sm font-semibold text-[var(--text)]">Aktualisiert</p>
+                <p className="mt-2 text-sm text-[var(--muted)]">{LAST_UPDATED}</p>
+              </div>
+            </article>
+
+            <article className="card-base p-6 md:p-8">
+              <p className="label">Methodik</p>
+              <h2 className="h3 mt-3">Wie diese Seite vergleicht</h2>
+              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                {methodology.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
             </article>
           </div>
         </Container>
       </section>
 
-      <section className="marketing-soft-warm py-20 md:py-28">
+      <section id="shortlist" className="marketing-soft-cool py-20 md:py-28">
         <Container>
-          <h2 className="h2">Das 5-Punkte-Prüfschema für Ihre Shortlist</h2>
+          <div className="max-w-[78ch]">
+            <h2 className="h2">Die sinnvolle Auswahl: erst Kategorie verstehen, dann Produkt prüfen</h2>
+            <p className="body mt-4 text-[var(--muted)]">
+              Viele Makler springen direkt auf eine Produktdemo, obwohl noch nicht klar ist, welche Produktkategorie
+              überhaupt den eigenen Engpass löst. Die Tabelle unten trennt deshalb zuerst die Systemrollen.
+            </p>
+          </div>
+
+          <div className="mt-8 overflow-x-auto rounded-[var(--radius)] bg-white ring-1 ring-[var(--border)] shadow-[var(--shadow-sm)]">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-[var(--border)]">
+                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Kategorie</th>
+                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Beispiele</th>
+                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Was sie löst</th>
+                  <th className="px-4 py-3 font-semibold text-[var(--text)]">Worauf Sie achten sollten</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shortlist.map((item) => (
+                  <tr key={item.category} className="border-b border-[var(--border)] align-top">
+                    <td className="px-4 py-4 font-medium text-[var(--text)]">{item.category}</td>
+                    <td className="px-4 py-4 text-[var(--muted)]">{item.examples}</td>
+                    <td className="px-4 py-4 text-[var(--muted)]">{item.solves}</td>
+                    <td className="px-4 py-4 text-[var(--muted)]">{item.watch}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Container>
+      </section>
+
+      <section id="checkliste" className="marketing-section-clear py-20 md:py-28">
+        <Container>
+          <h2 className="h2">Das 6-Punkte-Prüfschema für Anfrage-Software</h2>
           <div className="mt-8 grid gap-4 md:grid-cols-2">
-            {evaluationFramework.map((item) => (
+            {checkItems.map((item) => (
               <article key={item.title} className="card-base p-6">
                 <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
-                <p className="mt-3 text-sm font-medium text-[var(--text)]">{item.question}</p>
-                <p className="helper mt-2">{item.warning}</p>
+                <p className="helper mt-3">{item.text}</p>
               </article>
             ))}
           </div>
         </Container>
       </section>
 
-      <section className="marketing-section-clear py-20 md:py-28">
+      <section id="stack" className="marketing-soft-warm py-20 md:py-28">
         <Container>
-          <article className="card-base p-6 md:p-8">
-            <h2 className="h3">So führen Sie neue Anfrage-Software kontrolliert ein</h2>
-            <div className="mt-5 space-y-3">
-              {implementationSteps.map((step) => (
-                <article key={step.title} className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
-                  <p className="text-sm font-semibold text-[var(--text)]">{step.title}</p>
-                  <p className="helper mt-2">{step.text}</p>
-                </article>
-              ))}
-            </div>
-          </article>
+          <h2 className="h2">Welche Kombination typischerweise wann passt</h2>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {stackSignals.map((item) => (
+              <article key={item.title} className="card-base p-6">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
+                <p className="helper mt-3">{item.text}</p>
+              </article>
+            ))}
+          </div>
 
-          <article className="card-base mt-4 p-6 md:p-8">
-            <h2 className="h3">Diese Seiten helfen bei der Auswahl</h2>
+          <article className="card-base mt-6 p-6 md:p-8">
+            <h3 className="h3">Sinnvolle Vertiefungen</h3>
             <div className="mt-4 flex flex-wrap gap-2">
-              <Link href="/best-ai-tools-immobilienmakler" className="btn-secondary">
-                Best AI Tools Immobilienmakler
+              <Link href="/maklersoftware-vergleich" className="btn-secondary">
+                Maklersoftware Vergleich
               </Link>
-              <Link href="/advaic-vs-crm-tools" className="btn-secondary">
-                Advaic vs. CRM-Tools
+              <Link href="/crm-fuer-immobilienmakler" className="btn-secondary">
+                CRM für Immobilienmakler
               </Link>
-              <Link href="/produkt" className="btn-secondary">
-                Produktseite
+              <Link href="/anfragenmanagement-immobilienmakler" className="btn-secondary">
+                Anfragenmanagement
               </Link>
-              <Link href="/faq" className="btn-secondary">
-                FAQ
+              <Link href="/follow-up-emails-immobilienmakler" className="btn-secondary">
+                Nachfass-E-Mails
               </Link>
             </div>
           </article>
+        </Container>
+      </section>
+
+      <section id="advaic-fit" className="marketing-section-clear py-20 md:py-28">
+        <Container>
+          <div className="grid gap-4 md:grid-cols-2">
+            <article className="card-base p-6 md:p-8">
+              <h2 className="h3">Wann Advaic gut passt</h2>
+              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                {advaicFit.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+            <article className="card-base p-6 md:p-8">
+              <h2 className="h3">Wann Sie zuerst etwas anderes lösen sollten</h2>
+              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                {advaicNotFit.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          </div>
+        </Container>
+      </section>
+
+      <section id="faq" className="marketing-section-clear py-20 md:py-28">
+        <Container>
+          <h2 className="h2">Häufige Fragen</h2>
+          <div className="mt-8 space-y-4">
+            {faqs.map((item) => (
+              <article key={item.question} className="card-base p-6 md:p-8">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.question}</h3>
+                <p className="helper mt-3">{item.answer}</p>
+              </article>
+            ))}
+          </div>
         </Container>
       </section>
     </AiDiscoveryPageTemplate>

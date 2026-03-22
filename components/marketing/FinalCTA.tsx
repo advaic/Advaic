@@ -12,7 +12,7 @@ const micro = [
   "Freigabe bei fehlenden Angaben",
 ];
 const trustNotes = [
-  "Auto nur bei sauberem Objektbezug und vollständigen Angaben",
+  "Auto-Senden nur bei sauberem Objektbezug und vollständigen Angaben",
   "Freigabe bei fehlenden Informationen, Risiko oder no-reply-Absendern",
   "Qualitätschecks vor jedem Versand",
   "Verlauf mit Status und Zeitstempel",
@@ -31,7 +31,7 @@ export default function FinalCTA() {
               <h2 className="h2 text-balance">Prüfen Sie 14 Tage im echten Postfach, ob Advaic für Ihr Team passt.</h2>
               <p className="body mt-4 max-w-[62ch] text-[var(--muted)]">
                 Testen Sie Advaic 14 Tage im echten Postfach. Danach läuft Starter für {STARTER_PUBLIC_PRICE_LABEL}
-                weiter. Sie starten mit enger Freigabegrenze und geben Auto-Versand nur dort frei, wo Angaben,
+                weiter. Sie starten mit enger Freigabegrenze und geben Auto-Senden nur dort frei, wo Angaben,
                 Empfänger und Inhalt sauber prüfbar sind.
               </p>
 

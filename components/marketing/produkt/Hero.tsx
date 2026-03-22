@@ -46,11 +46,11 @@ export default function Hero() {
             </h1>
             <p className="body-lg mt-4 max-w-[56ch] text-[var(--muted)] md:mt-6">
               <span className="md:hidden">
-                Sie sehen, wann Auto-Versand greift, wann Freigabe übernimmt und welche Checks vor dem Versand laufen.
+                Sie sehen, wann Auto-Senden greift, wann Freigabe übernimmt und welche Checks vor dem Versand laufen.
               </span>
               <span className="hidden md:inline">
                 Diese Seite zeigt Eingang, Regelprüfung, Qualitätschecks, Freigabe und Versand im echten Ablauf. Sie
-                sehen, wann Auto-Versand greift und an welchen Stellen Ihr Team bewusst übernimmt.
+                sehen, wann Auto-Senden greift und an welchen Stellen Ihr Team bewusst übernimmt.
               </span>
             </p>
           </div>

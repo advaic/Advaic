@@ -22,7 +22,7 @@ const steps = [
     title: "Autopilot für sauber prüfbare Anfragen aktivieren",
     text: "Zuerst laufen nur Anfragen automatisch, bei denen Objektbezug, Empfänger und erforderliche Angaben vollständig vorliegen. Alles andere bleibt in Ihrer Freigabe.",
     stage: "Rollout",
-    outcome: "Auto startet nur in einem engen, sicheren Korridor.",
+    outcome: "Auto-Senden startet nur in einem engen, sicheren Korridor.",
   },
   {
     id: "04",
@@ -40,7 +40,7 @@ export default function HowItWorks() {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-end">
           <div>
             <p className="section-kicker">So starten Sie</p>
-            <h2 className="h2 mt-2">Erst Regeln festlegen. Dann Auto-Versand freigeben.</h2>
+            <h2 className="h2 mt-2">Erst Regeln festlegen. Dann Auto-Senden freigeben.</h2>
             <p className="body mt-4 max-w-[68ch] text-[var(--muted)]">
               Sie verbinden das Postfach, legen Stil und Grenzen fest und testen zuerst mit enger Freigabegrenze.
               Erst wenn Antworten und Regeln im Alltag tragen, bekommt der Autopilot mehr Verantwortung.
@@ -101,7 +101,7 @@ export default function HowItWorks() {
           <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-xl bg-[rgba(11,15,23,0.03)] px-4 py-3 ring-1 ring-[var(--border)]">
               <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">Grundregel</p>
-              <p className="mt-2 text-sm text-[var(--text)]">Erst Regeln und Freigaben prüfen, dann den Auto-Anteil erhöhen.</p>
+              <p className="mt-2 text-sm text-[var(--text)]">Erst Regeln und Freigaben prüfen, dann den Auto-Senden-Anteil erhöhen.</p>
             </div>
             <div className="rounded-xl bg-[rgba(11,15,23,0.03)] px-4 py-3 ring-1 ring-[var(--border)]">
               <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">Freigabe</p>

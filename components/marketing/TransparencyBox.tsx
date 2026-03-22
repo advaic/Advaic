@@ -35,7 +35,7 @@ export default function TransparencyBox() {
               <h3 className="h3">Policy-Überblick</h3>
               <div className="mt-5 space-y-3 text-sm">
                 <div className="rounded-xl bg-[var(--surface-2)] px-3 py-2 text-[var(--text)] ring-1 ring-[var(--gold-soft)]">
-                  <strong>Auto:</strong> klare Interessenten-Anfragen
+                  <strong>Auto-Senden:</strong> klare Interessenten-Anfragen
                 </div>
                 <div className="rounded-xl bg-[var(--surface-2)] px-3 py-2 text-[var(--text)] ring-1 ring-[var(--gold-soft)]">
                   <strong>Freigabe:</strong> fehlende Angaben, Konflikte oder sensible Aussagen

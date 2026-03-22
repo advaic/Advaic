@@ -115,8 +115,26 @@ const routes: RouteConfig[] = [
     priority: 0.8,
   },
   {
+    path: "/maklersoftware-vergleich",
+    sourceFiles: ["app/maklersoftware-vergleich/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.8,
+  },
+  {
+    path: "/crm-fuer-immobilienmakler",
+    sourceFiles: ["app/crm-fuer-immobilienmakler/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.8,
+  },
+  {
     path: "/best-software-immobilienanfragen",
     sourceFiles: ["app/best-software-immobilienanfragen/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.8,
+  },
+  {
+    path: "/anfragenmanagement-immobilienmakler",
+    sourceFiles: ["app/anfragenmanagement-immobilienmakler/page.tsx"],
     changeFrequency: "monthly",
     priority: 0.8,
   },
@@ -131,6 +149,12 @@ const routes: RouteConfig[] = [
     sourceFiles: ["app/immobilienanfragen-automatisieren/page.tsx"],
     changeFrequency: "monthly",
     priority: 0.78,
+  },
+  {
+    path: "/antwortzeit-immobilienanfragen",
+    sourceFiles: ["app/antwortzeit-immobilienanfragen/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.76,
   },
   {
     path: "/email-automatisierung-immobilienmakler",
@@ -165,6 +189,12 @@ const routes: RouteConfig[] = [
   {
     path: "/follow-up-logik",
     sourceFiles: ["app/follow-up-logik/page.tsx"],
+    changeFrequency: "monthly",
+    priority: 0.74,
+  },
+  {
+    path: "/follow-up-emails-immobilienmakler",
+    sourceFiles: ["app/follow-up-emails-immobilienmakler/page.tsx"],
     changeFrequency: "monthly",
     priority: 0.74,
   },
