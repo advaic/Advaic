@@ -453,6 +453,8 @@ type ProspectDiscoveryResponse = {
     skipped_existing: number;
     skipped_irrelevant: number;
     failed: number;
+    search_hits?: number;
+    search_issue?: string | null;
   }>;
   error?: string;
   details?: string;
@@ -1359,6 +1361,21 @@ export default function CrmControlCenter({
       const json = (await res.json().catch(() => ({}))) as ProspectDiscoveryResponse;
       if (!res.ok || !json?.ok) {
         throw new Error(json?.details || json?.error || "Prospect-Discovery fehlgeschlagen.");
+      }
+
+      const failedSearchCities = (Array.isArray(json.by_city) ? json.by_city : []).filter(
+        (row) => Number(row.search_hits || 0) === 0 && Number(row.failed || 0) > 0,
+      );
+      if (Number(json.created || 0) === 0 && Number(json.selected || 0) === 0 && Number(json.failed || 0) > 0) {
+        const failedCitySummary = failedSearchCities
+          .map((row) => `${row.city}: ${String(row.search_issue || "keine verwertbaren Suchtreffer")}`)
+          .slice(0, 3)
+          .join(" · ");
+        throw new Error(
+          failedCitySummary
+            ? `Discovery aktuell ohne verwertbare Suchtreffer. ${failedCitySummary}`
+            : "Discovery aktuell ohne verwertbare Suchtreffer.",
+        );
       }
 
       const citySummary = (Array.isArray(json.by_city) ? json.by_city : [])

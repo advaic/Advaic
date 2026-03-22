@@ -42,11 +42,19 @@ const execFileAsync = promisify(execFile);
 const DISCOVERY_SEARCH_USER_AGENT =
   "Mozilla/5.0 (compatible; AdvaicCRMProspectDiscovery/1.0; +https://advaic.com)";
 
+type SearchProvider = "duckduckgo" | "bing";
+
 type SearchResult = {
   title: string;
   url: string;
   query: string;
-  source: "duckduckgo";
+  source: SearchProvider;
+};
+
+type SearchProviderResult = {
+  provider: SearchProvider;
+  results: SearchResult[];
+  issue: string | null;
 };
 
 type ScoredSearchResult = SearchResult & {
@@ -78,6 +86,8 @@ type DiscoveryCitySummary = {
   skipped_existing: number;
   skipped_irrelevant: number;
   failed: number;
+  search_hits?: number;
+  search_issue?: string | null;
 };
 
 export type ProspectDiscoveryRunResult = {
@@ -230,6 +240,49 @@ function decodeDuckDuckGoTarget(value: string) {
   }
 }
 
+function decodeBingTarget(value: string) {
+  const normalized = normalizeUrl(decodeHtml(value));
+  if (!normalized) return null;
+  try {
+    const url = new URL(normalized);
+    if (!/bing\.com$/i.test(url.hostname)) return normalized;
+    if (!/^\/(?:ck\/a|aclick)$/i.test(url.pathname)) return normalized;
+    const target = cleanLine(url.searchParams.get("u"), 2000);
+    if (!target) return normalized;
+
+    const decodeCandidate = (input: string) => {
+      const trimmed = cleanLine(input, 2000);
+      if (!trimmed) return null;
+      const direct = normalizeUrl(trimmed);
+      if (direct) return direct;
+      try {
+        return normalizeUrl(decodeURIComponent(trimmed));
+      } catch {
+        return null;
+      }
+    };
+
+    const direct = decodeCandidate(target);
+    if (direct) return direct;
+
+    const encoded = target.replace(/^a1/i, "");
+    if (encoded) {
+      try {
+        const normalizedBase64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalizedBase64.padEnd(Math.ceil(normalizedBase64.length / 4) * 4, "=");
+        const decoded = Buffer.from(padded, "base64").toString("utf8");
+        const decodedUrl = decodeCandidate(decoded);
+        if (decodedUrl) return decodedUrl;
+      } catch {
+        // Ignore malformed Bing redirect payloads.
+      }
+    }
+    return normalized;
+  } catch {
+    return normalized;
+  }
+}
+
 function parseDuckDuckGoResults(html: string, query: string, maxResults: number) {
   const results: SearchResult[] = [];
   const anchorRegex = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
@@ -252,16 +305,102 @@ function parseDuckDuckGoResults(html: string, query: string, maxResults: number)
   return results;
 }
 
+function parseBingResults(html: string, query: string, maxResults: number) {
+  const results: SearchResult[] = [];
+  const blockRegex = /<li\b[^>]*class="[^"]*\bb_algo\b[^"]*"[\s\S]*?<\/li>/gi;
+  let match: RegExpExecArray | null = null;
+  while ((match = blockRegex.exec(html))) {
+    const block = match[0] || "";
+    const anchorMatch =
+      block.match(/<h2\b[^>]*>\s*<a\b([^>]*)>([\s\S]*?)<\/a>/i) ||
+      block.match(/<a\b([^>]*)>([\s\S]*?)<\/a>/i);
+    if (!anchorMatch) continue;
+    const href = decodeBingTarget(anchorMatch[1] ? extractAttr(anchorMatch[1], "href") : "");
+    if (!href) continue;
+    const title = stripHtml(anchorMatch[2] || "");
+    if (!title) continue;
+    results.push({
+      title,
+      url: href,
+      query,
+      source: "bing",
+    });
+    if (results.length >= maxResults) break;
+  }
+  return results;
+}
+
 async function searchDuckDuckGo(query: string, maxResults: number, timeoutMs: number) {
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=de-de`;
-  const html = await fetchSearchHtml(url, timeoutMs);
-  if (!html) return [];
-  return parseDuckDuckGoResults(html, query, maxResults);
+  const { html, issue } = await fetchSearchHtml(url, timeoutMs);
+  if (!html) {
+    return {
+      provider: "duckduckgo" as const,
+      results: [],
+      issue: issue || "DuckDuckGo konnte nicht geladen werden.",
+    } satisfies SearchProviderResult;
+  }
+  const results = parseDuckDuckGoResults(html, query, maxResults);
+  return {
+    provider: "duckduckgo" as const,
+    results,
+    issue: results.length ? null : "DuckDuckGo lieferte keine verwertbaren Treffer.",
+  } satisfies SearchProviderResult;
+}
+
+async function searchBing(query: string, maxResults: number, timeoutMs: number) {
+  const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=de-DE&cc=de`;
+  const { html, issue } = await fetchSearchHtml(url, timeoutMs);
+  if (!html) {
+    return {
+      provider: "bing" as const,
+      results: [],
+      issue: issue || "Bing konnte nicht geladen werden.",
+    } satisfies SearchProviderResult;
+  }
+  const results = parseBingResults(html, query, maxResults);
+  return {
+    provider: "bing" as const,
+    results,
+    issue: results.length ? null : "Bing lieferte keine verwertbaren Treffer.",
+  } satisfies SearchProviderResult;
+}
+
+async function searchDiscoveryProviders(query: string, maxResults: number, timeoutMs: number) {
+  const attempts = await Promise.all([searchDuckDuckGo(query, maxResults, timeoutMs), searchBing(query, maxResults, timeoutMs)]);
+  const results: SearchResult[] = [];
+  const seenUrls = new Set<string>();
+  for (const attempt of attempts) {
+    for (const result of attempt.results) {
+      const key = normalizeUrl(result.url) || cleanLine(result.url, 1200);
+      if (!key || seenUrls.has(key)) continue;
+      seenUrls.add(key);
+      results.push(result);
+      if (results.length >= maxResults) break;
+    }
+    if (results.length >= maxResults) break;
+  }
+
+  const issue = results.length
+    ? null
+    : attempts
+        .map((attempt) => {
+          const label = attempt.provider === "duckduckgo" ? "DuckDuckGo" : "Bing";
+          return attempt.issue ? `${label}: ${attempt.issue}` : null;
+        })
+        .filter(Boolean)
+        .join(" | ");
+
+  return {
+    results,
+    issue: cleanLine(issue, 320) || null,
+  };
 }
 
 async function fetchSearchHtml(url: string, timeoutMs: number) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let fetchIssue: string | null = null;
   try {
     const res = await fetch(url, {
       signal: controller.signal,
@@ -273,10 +412,13 @@ async function fetchSearchHtml(url: string, timeoutMs: number) {
     });
     if (res.ok) {
       const html = await res.text();
-      if (html) return html;
+      if (html) return { html, issue: null };
+      fetchIssue = "Leere Antwort erhalten.";
+    } else {
+      fetchIssue = `HTTP ${res.status}.`;
     }
-  } catch {
-    // Fall through to curl fallback below.
+  } catch (error: any) {
+    fetchIssue = cleanLine(error?.message || "Fetch fehlgeschlagen.", 180) || "Fetch fehlgeschlagen.";
   } finally {
     clearTimeout(timeout);
   }
@@ -302,9 +444,21 @@ async function fetchSearchHtml(url: string, timeoutMs: number) {
       },
     );
     const html = String(stdout || "");
-    return html || null;
-  } catch {
-    return null;
+    if (html) return { html, issue: null };
+    return {
+      html: null,
+      issue: cleanLine(fetchIssue || "curl lieferte eine leere Antwort.", 220) || "Suchseite konnte nicht geladen werden.",
+    };
+  } catch (error: any) {
+    const stderr = cleanLine(error?.stderr || error?.message || "", 180);
+    return {
+      html: null,
+      issue:
+        cleanLine(
+          [fetchIssue, stderr].filter(Boolean).join(" Danach curl fehlgeschlagen: "),
+          220,
+        ) || "Suchseite konnte nicht geladen werden.",
+    };
   }
 }
 
@@ -592,6 +746,8 @@ export async function runProspectDiscovery(args: {
       skipped_existing: 0,
       skipped_irrelevant: 0,
       failed: 0,
+      search_hits: 0,
+      search_issue: null,
     };
 
     const queries = [
@@ -600,14 +756,21 @@ export async function runProspectDiscovery(args: {
         `makler ${cityVariant} immobilien`,
       ]),
     ];
+    const uniqueQueries = [...new Set(queries)];
     const resultPool: ScoredSearchResult[] = [];
     const seenSearchDomains = new Set<string>();
+    const searchIssues: string[] = [];
 
     const queryResults = await Promise.all(
-      [...new Set(queries)].map((query) => searchDuckDuckGo(query, perCityLimit * 6, timeoutMs)),
+      uniqueQueries.map((query) => searchDiscoveryProviders(query, perCityLimit * 6, timeoutMs)),
     );
-    for (const results of queryResults) {
-      for (const result of results) {
+    for (let index = 0; index < queryResults.length; index += 1) {
+      const searchResult = queryResults[index];
+      const query = uniqueQueries[index];
+      if (searchResult.issue) {
+        searchIssues.push(`${query}: ${searchResult.issue}`);
+      }
+      for (const result of searchResult.results) {
         const domainKey = domainKeyFor(result.url);
         if (domainKey && seenSearchDomains.has(domainKey)) continue;
         const baseSearchScore = scoreSearchResult(result, city);
@@ -629,9 +792,12 @@ export async function runProspectDiscovery(args: {
         });
       }
     }
+    citySummary.search_hits = resultPool.length;
 
     if (resultPool.length === 0) {
       citySummary.failed += 1;
+      citySummary.search_issue =
+        cleanLine(searchIssues.join(" | "), 320) || "Keine verwertbaren Suchtreffer fuer diese Stadt.";
       failed += 1;
       byCity.push(citySummary);
       continue;

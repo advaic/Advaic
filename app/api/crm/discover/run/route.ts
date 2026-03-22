@@ -23,6 +23,14 @@ function normalizeCities(value: unknown) {
   return [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))].slice(0, 10);
 }
 
+function buildDiscoverySearchFailureDetails(rows: Array<{ city?: string; search_hits?: number; search_issue?: string | null }>) {
+  return rows
+    .filter((row) => Number(row?.search_hits || 0) === 0)
+    .map((row) => `${String(row?.city || "Unbekannte Stadt")}: ${String(row?.search_issue || "keine verwertbaren Suchtreffer")}`)
+    .slice(0, 4)
+    .join(" | ");
+}
+
 export async function POST(req: NextRequest) {
   const auth = await requireOwnerApiUser(req);
   if (!auth.ok) return auth.response;
@@ -101,6 +109,28 @@ export async function POST(req: NextRequest) {
       })
       .eq("id", runRow.id)
       .eq("agent_id", auth.user.id);
+
+    const searchProvidersUnavailable =
+      Number(result.selected || 0) === 0 &&
+      Number(result.created || 0) === 0 &&
+      Array.isArray(result.by_city) &&
+      result.by_city.length > 0 &&
+      result.by_city.every((row) => Number(row?.search_hits || 0) === 0);
+
+    if (searchProvidersUnavailable) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "crm_discovery_search_unavailable",
+          details:
+            buildDiscoverySearchFailureDetails(result.by_city) ||
+            "Discovery konnte aktuell keine verwertbaren Suchtreffer laden.",
+          run_id: String(runRow.id),
+          ...result,
+        },
+        { status: 502 },
+      );
+    }
 
     return NextResponse.json({
       ok: true,
