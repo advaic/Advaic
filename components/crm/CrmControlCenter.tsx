@@ -1250,6 +1250,49 @@ export default function CrmControlCenter({
     }
   }
 
+  async function runProspectEnrichment(
+    prospectId: string,
+    opts?: {
+      force?: boolean;
+      expectContactChannel?: boolean;
+    },
+  ) {
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    setSelectedProspectId(prospectId);
+    try {
+      const res = await fetch(`/api/crm/prospects/${prospectId}/enrich`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          force: Boolean(opts?.force),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.details || json?.error || "Enrichment fehlgeschlagen.");
+      }
+
+      const pageCount = Array.isArray(json?.pages_crawled) ? json.pages_crawled.length : 0;
+      const researchSuffix = json?.research?.status
+        ? ` ${researchStatusLabel(json.research.status)} · ${Number(json?.research?.score || 0)}/100.`
+        : "";
+      const contactSuffix =
+        opts?.expectContactChannel && !json?.applied_updates?.contact_email && !json?.applied_updates?.linkedin_url
+          ? " Kein neuer Kontaktkanal gefunden, Prospect ist jetzt für manuelle Ergänzung geöffnet."
+          : "";
+
+      setSuccess(`Research-Crawl fertig: ${pageCount} Seiten geprüft.${researchSuffix}${contactSuffix}`);
+      await refresh();
+      await loadProspectDetail(prospectId);
+    } catch (e: any) {
+      setError(String(e?.message || "Enrichment fehlgeschlagen."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function applyNextBestAction() {
     if (!nextAction) return;
     const code = String(nextAction.recommended_code || "");
@@ -1260,8 +1303,31 @@ export default function CrmControlCenter({
       return;
     }
 
+    if (
+      prospectId &&
+      (code === "enrich_research_before_outreach" ||
+        code === "refresh_research_before_outreach")
+    ) {
+      await runProspectEnrichment(prospectId, { force: code === "refresh_research_before_outreach" });
+      return;
+    }
+
+    if (prospectId && code === "fill_contact_channel") {
+      await runProspectEnrichment(prospectId, {
+        force: true,
+        expectContactChannel: true,
+      });
+      return;
+    }
+
     if (prospectId) {
       setSelectedProspectId(prospectId);
+    }
+
+    if (code === "handle_reply_now") {
+      setReplyPendingOnly(true);
+      setSuccess("Prospect geöffnet. Reply-Inbox und Verlauf unten prüfen und Antwort bearbeiten.");
+      return;
     }
 
     if (code === "invite_pilot_after_reply") {
@@ -1278,6 +1344,11 @@ export default function CrmControlCenter({
       setSuccess(
         "Kanalwechsel empfohlen. Prospect wurde markiert. Nächster Schritt: Telefon, LinkedIn oder Kontaktformular.",
       );
+      return;
+    }
+
+    if (code === "review_ready_draft") {
+      setSuccess("Prospect geöffnet. Vorliegenden Entwurf unten prüfen und bei Bedarf direkt senden.");
       return;
     }
 
