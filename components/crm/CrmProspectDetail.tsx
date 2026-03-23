@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DraftClaimHighlight from "@/components/crm/DraftClaimHighlight";
+import DraftRewriteDiff, { type DraftRewriteSnapshot } from "@/components/crm/DraftRewriteDiff";
 import OutboundEvidenceInspector, {
   type DraftEvidenceReview,
 } from "@/components/crm/OutboundEvidenceInspector";
@@ -56,6 +57,8 @@ type Prospect = {
   personalization_evidence: string | null;
   hypothesis_confidence: number | null;
   personalization_hook: string | null;
+  target_group: string | null;
+  process_hint: string | null;
   pain_point_hypothesis: string | null;
   fit_score: number;
   priority: "A" | "B" | "C";
@@ -146,6 +149,28 @@ type MessagePackItem = {
 };
 
 type DraftReview = DraftEvidenceReview;
+
+type DraftRewriteResponse = {
+  ok: boolean;
+  generated_with?: "ai" | "fallback";
+  rewritten_draft?: {
+    subject: string;
+    body: string;
+  } | null;
+  current_review?: DraftReview | null;
+  rewrite_review?: DraftReview | null;
+  improvement_summary?: string | null;
+  change_summary?: string | null;
+  error?: string;
+  details?: string;
+};
+
+type DraftReviewResponse = {
+  ok: boolean;
+  review?: DraftReview | null;
+  error?: string;
+  details?: string;
+};
 
 type RankedContactCandidate = {
   id: string | null;
@@ -255,6 +280,22 @@ const EVENT_LABELS: Record<string, string> = {
   no_interest: "Kein Interesse",
   follow_up_due: "Follow-up fällig",
 };
+
+function buildDraftSignature(args: {
+  channel: string;
+  kind: string;
+  subject: string;
+  body: string;
+}) {
+  return [
+    String(args.channel || "").trim().toLowerCase(),
+    String(args.kind || "").trim().toLowerCase(),
+    String(args.subject || "").trim(),
+    String(args.body || "")
+      .replace(/\r/g, "")
+      .trim(),
+  ].join("::");
+}
 
 function formatDate(iso: string | null | undefined) {
   if (!iso) return "–";
@@ -457,10 +498,15 @@ export default function CrmProspectDetail({
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
   const [draftReview, setDraftReview] = useState<DraftReview | null>(null);
   const [draftReviewStale, setDraftReviewStale] = useState(false);
+  const [draftReviewRefreshing, setDraftReviewRefreshing] = useState(false);
+  const [draftRewriteSnapshot, setDraftRewriteSnapshot] = useState<DraftRewriteSnapshot | null>(null);
+  const [lastReviewedDraftSignature, setLastReviewedDraftSignature] = useState<string | null>(null);
+  const [rewriteBusy, setRewriteBusy] = useState(false);
   const [strategy, setStrategy] = useState<StrategyDecision | null>(null);
   const [rankedContacts, setRankedContacts] = useState<RankedContactCandidate[]>([]);
   const [strategyLoading, setStrategyLoading] = useState(false);
   const [feedbackBusyKey, setFeedbackBusyKey] = useState<string | null>(null);
+  const draftReviewRequestRef = useRef(0);
   const [sequenceStartAt, setSequenceStartAt] = useState(
     toDateTimeLocalValue(new Date().toISOString()),
   );
@@ -506,6 +552,18 @@ export default function CrmProspectDetail({
     () => getRiskLevel({ prospect, nextAction }),
     [prospect, nextAction],
   );
+  const currentDraftSignature = useMemo(
+    () =>
+      buildDraftSignature({
+        channel: draftChannel,
+        kind: draftKind,
+        subject: draftSubject,
+        body: draftBody,
+      }),
+    [draftBody, draftChannel, draftKind, draftSubject],
+  );
+  const hasDetailedDraftReview = Boolean(draftReview?.evidence_alignment);
+  const latestDraftSignatureRef = useRef(currentDraftSignature);
   const researchAssessment = useMemo(
     () =>
       assessResearchReadiness({
@@ -591,6 +649,81 @@ export default function CrmProspectDetail({
     });
   }, [draftChannel, prospect, rankedContacts, selectedContactForSafety, strategy]);
 
+  function applyDraftImprovement(nextBody: string, successText: string) {
+    setDraftBody(nextBody);
+    if (draftReview) {
+      setDraftReviewStale(true);
+    }
+    setError(null);
+    setSuccess(successText);
+  }
+
+  async function rewriteDraftWithAi() {
+    if (!draftBody.trim()) {
+      setError("Bitte zuerst einen Nachrichtentext eingeben.");
+      return;
+    }
+    const previousSubject = draftSubject;
+    const previousBody = draftBody;
+    const previousReview = draftReview;
+    setRewriteBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/crm/prospects/${prospectId}/draft-rewrite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel: draftChannel,
+          message_kind: draftKind,
+          subject: draftSubject,
+          body: draftBody,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as DraftRewriteResponse;
+      if (!res.ok || !json?.ok || !json?.rewritten_draft?.body) {
+        throw new Error(json?.details || json?.error || "Rewrite konnte nicht erzeugt werden.");
+      }
+      const nextSubject = String(json.rewritten_draft.subject || "").trim();
+      const nextBody = String(json.rewritten_draft.body || "").trim();
+      const nextReview = (json.rewrite_review || null) as DraftReview | null;
+      setDraftSubject(nextSubject);
+      setDraftBody(nextBody);
+      setDraftReview(nextReview);
+      setDraftReviewStale(false);
+      setDraftReviewRefreshing(false);
+      setLastReviewedDraftSignature(
+        buildDraftSignature({
+          channel: draftChannel,
+          kind: draftKind,
+          subject: nextSubject,
+          body: nextBody,
+        }),
+      );
+      setDraftRewriteSnapshot({
+        previousSubject,
+        previousBody,
+        nextSubject,
+        nextBody,
+        previousReview,
+        nextReview,
+        generatedWith: json.generated_with || null,
+        improvementSummary: json.improvement_summary || null,
+        changeSummary: json.change_summary || null,
+      });
+      setSuccess(
+        [json.improvement_summary, json.change_summary]
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+          .join(" "),
+      );
+    } catch (e: any) {
+      setError(String(e?.message || "Rewrite konnte nicht erzeugt werden."));
+    } finally {
+      setRewriteBusy(false);
+    }
+  }
+
   async function loadStrategy(force?: boolean) {
     setStrategyLoading(true);
     try {
@@ -661,6 +794,89 @@ export default function CrmProspectDetail({
   useEffect(() => {
     void loadStrategy();
   }, [prospectId]);
+
+  useEffect(() => {
+    latestDraftSignatureRef.current = currentDraftSignature;
+  }, [currentDraftSignature]);
+
+  useEffect(() => {
+    const trimmedBody = draftBody.trim();
+    if (!trimmedBody) {
+      setDraftReview(null);
+      setDraftReviewStale(false);
+      setDraftReviewRefreshing(false);
+      setLastReviewedDraftSignature(null);
+      return;
+    }
+
+    const shouldRefresh =
+      currentDraftSignature !== lastReviewedDraftSignature ||
+      draftReviewStale ||
+      !hasDetailedDraftReview;
+    if (!shouldRefresh) return;
+
+    const signatureAtSchedule = currentDraftSignature;
+    const timeoutId = window.setTimeout(() => {
+      const requestId = draftReviewRequestRef.current + 1;
+      draftReviewRequestRef.current = requestId;
+      setDraftReviewRefreshing(true);
+
+      void (async () => {
+        try {
+          const res = await fetch(`/api/crm/prospects/${prospectId}/draft-review`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              channel: draftChannel,
+              message_kind: draftKind,
+              subject: draftSubject,
+              body: draftBody,
+            }),
+          });
+          const json = (await res.json().catch(() => ({}))) as DraftReviewResponse;
+          if (!res.ok || !json?.ok || !json?.review) {
+            throw new Error(json?.details || json?.error || "Draft-Review konnte nicht aktualisiert werden.");
+          }
+          if (
+            draftReviewRequestRef.current !== requestId ||
+            latestDraftSignatureRef.current !== signatureAtSchedule
+          ) {
+            return;
+          }
+          setDraftReview(json.review);
+          setDraftReviewStale(false);
+          setDraftReviewRefreshing(false);
+          setLastReviewedDraftSignature(signatureAtSchedule);
+        } catch {
+          if (
+            draftReviewRequestRef.current !== requestId ||
+            latestDraftSignatureRef.current !== signatureAtSchedule
+          ) {
+            return;
+          }
+        } finally {
+          if (
+            draftReviewRequestRef.current === requestId &&
+            latestDraftSignatureRef.current === signatureAtSchedule
+          ) {
+            setDraftReviewRefreshing(false);
+          }
+        }
+      })();
+    }, 900);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    currentDraftSignature,
+    draftBody,
+    draftChannel,
+    draftKind,
+    draftReviewStale,
+    draftSubject,
+    hasDetailedDraftReview,
+    lastReviewedDraftSignature,
+    prospectId,
+  ]);
 
   async function updateStage(stage: string) {
     setBusy(true);
@@ -837,10 +1053,23 @@ export default function CrmProspectDetail({
       if (json?.strategy) {
         setStrategy(normalizeStrategyDecision(json.strategy));
       }
-      setDraftSubject(String(json?.template?.subject || "").trim());
-      setDraftBody(String(json?.template?.body || "").trim());
-      setDraftReview((json?.template_review || null) as DraftReview | null);
+      const nextSubject = String(json?.template?.subject || "").trim();
+      const nextBody = String(json?.template?.body || "").trim();
+      const review = (json?.template_review || null) as DraftReview | null;
+      setDraftSubject(nextSubject);
+      setDraftBody(nextBody);
+      setDraftReview(review);
       setDraftReviewStale(false);
+      setDraftReviewRefreshing(false);
+      setLastReviewedDraftSignature(
+        buildDraftSignature({
+          channel: draftChannel,
+          kind: draftKind,
+          subject: nextSubject,
+          body: nextBody,
+        }),
+      );
+      setDraftRewriteSnapshot(null);
       setSuccess(
         json?.template_review
           ? `Empfohlene Nachricht geladen. ${outboundQualityStatusLabel(json.template_review.status)} · ${json.template_review.score}/100.`
@@ -880,19 +1109,35 @@ export default function CrmProspectDetail({
       if (rows.length > 0) {
         const first = rows[0];
         setSelectedVariant(first.variant);
-        setDraftChannel(first.channel === "email" || first.channel === "linkedin" || first.channel === "telefon" ? first.channel : "email");
-        setDraftSubject(first.subject || "");
-        setDraftBody(first.body || "");
-        setDraftReview(
+        const nextChannel =
+          first.channel === "email" || first.channel === "linkedin" || first.channel === "telefon"
+            ? first.channel
+            : "email";
+        const nextSubject = first.subject || "";
+        const nextBody = first.body || "";
+        const review =
           first.review_status && typeof first.review_score === "number"
             ? {
                 status: first.review_status,
                 score: first.review_score,
                 summary: String(first.review_summary || "").trim(),
               }
-            : null,
-        );
+            : null;
+        setDraftChannel(nextChannel);
+        setDraftSubject(nextSubject);
+        setDraftBody(nextBody);
+        setDraftReview(review);
         setDraftReviewStale(false);
+        setDraftReviewRefreshing(false);
+        setLastReviewedDraftSignature(
+          buildDraftSignature({
+            channel: nextChannel,
+            kind: draftKind,
+            subject: nextSubject,
+            body: nextBody,
+          }),
+        );
+        setDraftRewriteSnapshot(null);
       }
       setSuccess(
         json?.pack_review
@@ -908,19 +1153,32 @@ export default function CrmProspectDetail({
 
   function applyPackVariant(item: MessagePackItem) {
     setSelectedVariant(item.variant || null);
-    setDraftChannel(item.channel);
-    setDraftSubject(item.subject || "");
-    setDraftBody(item.body || "");
-    setDraftReview(
+    const nextChannel = item.channel;
+    const nextSubject = item.subject || "";
+    const nextBody = item.body || "";
+    const review =
       item.review_status && typeof item.review_score === "number"
         ? {
             status: item.review_status,
             score: item.review_score,
             summary: String(item.review_summary || "").trim(),
           }
-        : null,
-    );
+        : null;
+    setDraftChannel(nextChannel);
+    setDraftSubject(nextSubject);
+    setDraftBody(nextBody);
+    setDraftReview(review);
     setDraftReviewStale(false);
+    setDraftReviewRefreshing(false);
+    setLastReviewedDraftSignature(
+      buildDraftSignature({
+        channel: nextChannel,
+        kind: draftKind,
+        subject: nextSubject,
+        body: nextBody,
+      }),
+    );
+    setDraftRewriteSnapshot(null);
     setSuccess(`Variante ${item.variant} übernommen.`);
   }
 
@@ -979,6 +1237,8 @@ export default function CrmProspectDetail({
       }
       setDraftReview((createJson?.review || null) as DraftReview | null);
       setDraftReviewStale(false);
+      setDraftReviewRefreshing(false);
+      setLastReviewedDraftSignature(currentDraftSignature);
 
       const messageId = String(createJson?.message?.id || "");
       const createdChannel = String(createJson?.message?.channel || draftChannel);
@@ -1948,6 +2208,11 @@ export default function CrmProspectDetail({
                 if (draftReview) setDraftReviewStale(true);
               }}
             />
+            {draftReviewRefreshing && !draftReview ? (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                Draft wird automatisch neu bewertet…
+              </div>
+            ) : null}
             <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`rounded-full border px-2 py-0.5 ${contactSafetyBadgeClass(contactSafety.level)}`}>
@@ -1973,6 +2238,29 @@ export default function CrmProspectDetail({
                 body={draftBody}
                 review={draftReview}
                 stale={draftReviewStale}
+                refreshing={draftReviewRefreshing}
+                prospectContext={{
+                  companyName: prospect.company_name,
+                  city: prospect.city,
+                  objectFocus: prospect.object_focus,
+                  personalizationHook: prospect.personalization_hook,
+                  targetGroup: prospect.target_group,
+                  processHint: prospect.process_hint,
+                  responsePromisePublic: prospect.response_promise_public,
+                  appointmentFlowPublic: prospect.appointment_flow_public,
+                  docsFlowPublic: prospect.docs_flow_public,
+                }}
+                evidenceRows={evidence}
+                onApplySuggestion={applyDraftImprovement}
+                onRequestAiRewrite={() => void rewriteDraftWithAi()}
+                rewriteBusy={rewriteBusy}
+              />
+            ) : null}
+            {draftRewriteSnapshot ? (
+              <DraftRewriteDiff
+                snapshot={draftRewriteSnapshot}
+                currentSubject={draftSubject}
+                currentBody={draftBody}
               />
             ) : null}
             <div className="grid gap-2 md:grid-cols-3">

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DraftClaimHighlight from "@/components/crm/DraftClaimHighlight";
+import DraftRewriteDiff, { type DraftRewriteSnapshot } from "@/components/crm/DraftRewriteDiff";
 import OutboundEvidenceInspector, {
   type DraftEvidenceReview,
 } from "@/components/crm/OutboundEvidenceInspector";
@@ -45,6 +46,8 @@ type Prospect = {
   primary_objection?: string | null;
   automation_readiness?: string | null;
   cta_preference_guess?: string | null;
+  target_group?: string | null;
+  process_hint?: string | null;
   updated_at?: string | null;
 };
 
@@ -238,6 +241,13 @@ type OutreachMessage = {
 
 type DraftReview = DraftEvidenceReview;
 
+type DraftReviewResponse = {
+  ok: boolean;
+  review?: DraftReview | null;
+  error?: string;
+  details?: string;
+};
+
 type OutreachEvent = {
   id: string;
   message_id: string | null;
@@ -246,6 +256,22 @@ type OutreachEvent = {
   event_at: string;
   created_at: string;
 };
+
+function buildDraftSignature(args: {
+  channel: string;
+  kind: string;
+  subject: string;
+  body: string;
+}) {
+  return [
+    String(args.channel || "").trim().toLowerCase(),
+    String(args.kind || "").trim().toLowerCase(),
+    String(args.subject || "").trim(),
+    String(args.body || "")
+      .replace(/\r/g, "")
+      .trim(),
+  ].join("::");
+}
 
 type PerformanceChannelMetric = {
   channel: string;
@@ -471,6 +497,21 @@ type CandidateReviewResponse = {
     company_name: string;
   } | null;
   reason?: string | null;
+  error?: string;
+  details?: string;
+};
+
+type DraftRewriteResponse = {
+  ok: boolean;
+  generated_with?: "ai" | "fallback";
+  rewritten_draft?: {
+    subject: string;
+    body: string;
+  } | null;
+  current_review?: DraftReview | null;
+  rewrite_review?: DraftReview | null;
+  improvement_summary?: string | null;
+  change_summary?: string | null;
   error?: string;
   details?: string;
 };
@@ -837,6 +878,10 @@ export default function CrmControlCenter({
   const [newDraftChannel, setNewDraftChannel] = useState("email");
   const [newDraftReview, setNewDraftReview] = useState<DraftReview | null>(null);
   const [newDraftReviewStale, setNewDraftReviewStale] = useState(false);
+  const [newDraftReviewRefreshing, setNewDraftReviewRefreshing] = useState(false);
+  const [newDraftRewriteSnapshot, setNewDraftRewriteSnapshot] = useState<DraftRewriteSnapshot | null>(null);
+  const [lastReviewedDraftSignature, setLastReviewedDraftSignature] = useState<string | null>(null);
+  const [draftRewriteBusy, setDraftRewriteBusy] = useState(false);
   const [sendProvider, setSendProvider] = useState<"auto" | "gmail" | "outlook">("auto");
   const [noteBusy, setNoteBusy] = useState(false);
   const [draftBusy, setDraftBusy] = useState(false);
@@ -859,6 +904,19 @@ export default function CrmControlCenter({
   const [candidateBusyId, setCandidateBusyId] = useState<string | null>(null);
   const [discoveryCitiesInput, setDiscoveryCitiesInput] = useState("Berlin, Hamburg, München");
   const [discoveryPerCityLimit, setDiscoveryPerCityLimit] = useState(3);
+  const draftReviewRequestRef = useRef(0);
+  const currentDraftSignature = useMemo(
+    () =>
+      buildDraftSignature({
+        channel: newDraftChannel,
+        kind: newDraftKind,
+        subject: newDraftSubject,
+        body: newDraftBody,
+      }),
+    [newDraftBody, newDraftChannel, newDraftKind, newDraftSubject],
+  );
+  const latestDraftSignatureRef = useRef(currentDraftSignature);
+  const hasDetailedDraftReview = Boolean(newDraftReview?.evidence_alignment);
 
   const loadNextAction = useCallback(async () => {
     try {
@@ -1046,6 +1104,10 @@ export default function CrmControlCenter({
   }, [data.prospects, selectedProspectId]);
 
   useEffect(() => {
+    latestDraftSignatureRef.current = currentDraftSignature;
+  }, [currentDraftSignature]);
+
+  useEffect(() => {
     setAutomationNote(data.automation?.reason || "");
   }, [data.automation?.reason, data.automation?.updated_at]);
 
@@ -1072,12 +1134,175 @@ export default function CrmControlCenter({
   useEffect(() => {
     setNewDraftReview(null);
     setNewDraftReviewStale(false);
+    setNewDraftReviewRefreshing(false);
+    setNewDraftRewriteSnapshot(null);
+    setLastReviewedDraftSignature(null);
   }, [selectedProspectId]);
+
+  useEffect(() => {
+    if (!selectedProspectId) return;
+    const trimmedBody = newDraftBody.trim();
+    if (!trimmedBody) {
+      setNewDraftReview(null);
+      setNewDraftReviewStale(false);
+      setNewDraftReviewRefreshing(false);
+      setLastReviewedDraftSignature(null);
+      return;
+    }
+
+    const shouldRefresh =
+      currentDraftSignature !== lastReviewedDraftSignature ||
+      newDraftReviewStale ||
+      !hasDetailedDraftReview;
+    if (!shouldRefresh) return;
+
+    const signatureAtSchedule = currentDraftSignature;
+    const timeoutId = window.setTimeout(() => {
+      const requestId = draftReviewRequestRef.current + 1;
+      draftReviewRequestRef.current = requestId;
+      setNewDraftReviewRefreshing(true);
+
+      void (async () => {
+        try {
+          const res = await fetch(`/api/crm/prospects/${selectedProspectId}/draft-review`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              channel: newDraftChannel,
+              message_kind: newDraftKind,
+              subject: newDraftSubject,
+              body: newDraftBody,
+            }),
+          });
+          const json = (await res.json().catch(() => ({}))) as DraftReviewResponse;
+          if (!res.ok || !json?.ok || !json?.review) {
+            throw new Error(json?.details || json?.error || "Draft-Review konnte nicht aktualisiert werden.");
+          }
+          if (
+            draftReviewRequestRef.current !== requestId ||
+            latestDraftSignatureRef.current !== signatureAtSchedule
+          ) {
+            return;
+          }
+          setNewDraftReview(json.review);
+          setNewDraftReviewStale(false);
+          setNewDraftReviewRefreshing(false);
+          setLastReviewedDraftSignature(signatureAtSchedule);
+        } catch {
+          if (
+            draftReviewRequestRef.current !== requestId ||
+            latestDraftSignatureRef.current !== signatureAtSchedule
+          ) {
+            return;
+          }
+        } finally {
+          if (
+            draftReviewRequestRef.current === requestId &&
+            latestDraftSignatureRef.current === signatureAtSchedule
+          ) {
+            setNewDraftReviewRefreshing(false);
+          }
+        }
+      })();
+    }, 900);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    currentDraftSignature,
+    hasDetailedDraftReview,
+    lastReviewedDraftSignature,
+    newDraftBody,
+    newDraftChannel,
+    newDraftKind,
+    newDraftReviewStale,
+    newDraftSubject,
+    selectedProspectId,
+  ]);
 
   const selectedProspect = useMemo(
     () => data.prospects.find((p) => p.id === selectedProspectId) || null,
     [data.prospects, selectedProspectId],
   );
+  const applyNewDraftImprovement = useCallback(
+    (nextBody: string, successText: string) => {
+      setNewDraftBody(nextBody);
+      if (newDraftReview) {
+        setNewDraftReviewStale(true);
+      }
+      setError(null);
+      setSuccess(successText);
+    },
+    [newDraftReview],
+  );
+  const rewriteSelectedDraftWithAi = useCallback(async () => {
+    if (!selectedProspectId) {
+      setError("Bitte zuerst einen Prospect auswählen.");
+      return;
+    }
+    if (!newDraftBody.trim()) {
+      setError("Bitte zuerst einen Nachrichtentext eingeben.");
+      return;
+    }
+    const previousSubject = newDraftSubject;
+    const previousBody = newDraftBody;
+    const previousReview = newDraftReview;
+    setDraftRewriteBusy(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/crm/prospects/${selectedProspectId}/draft-rewrite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel: newDraftChannel,
+          message_kind: newDraftKind,
+          subject: newDraftSubject,
+          body: newDraftBody,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as DraftRewriteResponse;
+      if (!res.ok || !json?.ok || !json?.rewritten_draft?.body) {
+        throw new Error(json?.details || json?.error || "Rewrite konnte nicht erzeugt werden.");
+      }
+      const nextSubject = String(json.rewritten_draft.subject || "").trim();
+      const nextBody = String(json.rewritten_draft.body || "").trim();
+      const nextReview = (json.rewrite_review || null) as DraftReview | null;
+      setNewDraftSubject(nextSubject);
+      setNewDraftBody(nextBody);
+      setNewDraftReview(nextReview);
+      setNewDraftReviewStale(false);
+      setNewDraftReviewRefreshing(false);
+      setLastReviewedDraftSignature(
+        buildDraftSignature({
+          channel: newDraftChannel,
+          kind: newDraftKind,
+          subject: nextSubject,
+          body: nextBody,
+        }),
+      );
+      setNewDraftRewriteSnapshot({
+        previousSubject,
+        previousBody,
+        nextSubject,
+        nextBody,
+        previousReview,
+        nextReview,
+        generatedWith: json.generated_with || null,
+        improvementSummary: json.improvement_summary || null,
+        changeSummary: json.change_summary || null,
+      });
+      setSuccess(
+        [json.improvement_summary, json.change_summary]
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+          .join(" "),
+      );
+    } catch (e: any) {
+      setError(String(e?.message || "Rewrite konnte nicht erzeugt werden."));
+    } finally {
+      setDraftRewriteBusy(false);
+    }
+  }, [newDraftBody, newDraftChannel, newDraftKind, newDraftSubject, selectedProspectId]);
   const selectedChangeSummary = useMemo(() => {
     for (const note of notes) {
       const metadata = note?.metadata && typeof note.metadata === "object" ? note.metadata : {};
@@ -1508,12 +1733,26 @@ export default function CrmControlCenter({
 
   function rescueBlockedDraft(item: BlockedDraftQueueItem) {
     setSelectedProspectId(item.prospect_id);
-    setNewDraftKind(item.message_kind || "custom");
-    setNewDraftChannel(item.channel || "email");
-    setNewDraftSubject(item.subject || "");
-    setNewDraftBody(item.body || "");
+    const nextKind = item.message_kind || "custom";
+    const nextChannel = item.channel || "email";
+    const nextSubject = item.subject || "";
+    const nextBody = item.body || "";
+    setNewDraftKind(nextKind);
+    setNewDraftChannel(nextChannel);
+    setNewDraftSubject(nextSubject);
+    setNewDraftBody(nextBody);
     setNewDraftReview(item.review || null);
     setNewDraftReviewStale(false);
+    setNewDraftReviewRefreshing(false);
+    setLastReviewedDraftSignature(
+      buildDraftSignature({
+        channel: nextChannel,
+        kind: nextKind,
+        subject: nextSubject,
+        body: nextBody,
+      }),
+    );
+    setNewDraftRewriteSnapshot(null);
     setSuccess(`${item.company_name}: Draft in den Editor geladen.`);
     if (typeof window !== "undefined") {
       window.requestAnimationFrame(() => {
@@ -1634,6 +1873,8 @@ export default function CrmControlCenter({
       const review = (json?.review || null) as DraftReview | null;
       setNewDraftReview(review);
       setNewDraftReviewStale(false);
+      setNewDraftReviewRefreshing(false);
+      setLastReviewedDraftSignature(currentDraftSignature);
       setSuccess(
         review
           ? `Nachrichtendraft gespeichert. ${outboundQualityStatusLabel(review.status)} · ${review.score}/100.`
@@ -1660,11 +1901,23 @@ export default function CrmControlCenter({
       if (!res.ok || !json?.ok) {
         throw new Error(json?.details || json?.error || "Template konnte nicht erzeugt werden.");
       }
-      setNewDraftSubject(String(json?.template?.subject || "").trim());
-      setNewDraftBody(String(json?.template?.body || "").trim());
+      const nextSubject = String(json?.template?.subject || "").trim();
+      const nextBody = String(json?.template?.body || "").trim();
       const review = (json?.template_review || null) as DraftReview | null;
+      setNewDraftSubject(nextSubject);
+      setNewDraftBody(nextBody);
       setNewDraftReview(review);
       setNewDraftReviewStale(false);
+      setNewDraftReviewRefreshing(false);
+      setLastReviewedDraftSignature(
+        buildDraftSignature({
+          channel: newDraftChannel,
+          kind: newDraftKind,
+          subject: nextSubject,
+          body: nextBody,
+        }),
+      );
+      setNewDraftRewriteSnapshot(null);
       setSuccess(
         review
           ? `Tester-Einladung übernommen. ${outboundQualityStatusLabel(review.status)} · ${review.score}/100.`
@@ -4512,6 +4765,11 @@ export default function CrmControlCenter({
                 if (newDraftReview) setNewDraftReviewStale(true);
               }}
             />
+            {newDraftReviewRefreshing && !newDraftReview ? (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                Draft wird automatisch neu bewertet…
+              </div>
+            ) : null}
             {selectedContactSafety ? (
               <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
                 <div className="flex flex-wrap items-center gap-2">
@@ -4541,6 +4799,29 @@ export default function CrmControlCenter({
                 body={newDraftBody}
                 review={newDraftReview}
                 stale={newDraftReviewStale}
+                refreshing={newDraftReviewRefreshing}
+                prospectContext={
+                  selectedProspect
+                    ? {
+                        companyName: selectedProspect.company_name,
+                        city: selectedProspect.city,
+                        objectFocus: selectedProspect.object_focus,
+                        personalizationHook: selectedProspect.personalization_hook,
+                        targetGroup: selectedProspect.target_group,
+                        processHint: selectedProspect.process_hint,
+                      }
+                    : null
+                }
+                onApplySuggestion={applyNewDraftImprovement}
+                onRequestAiRewrite={() => void rewriteSelectedDraftWithAi()}
+                rewriteBusy={draftRewriteBusy}
+              />
+            ) : null}
+            {newDraftRewriteSnapshot ? (
+              <DraftRewriteDiff
+                snapshot={newDraftRewriteSnapshot}
+                currentSubject={newDraftSubject}
+                currentBody={newDraftBody}
               />
             ) : null}
             <button
