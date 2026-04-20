@@ -8,134 +8,213 @@ import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDisco
 import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
 import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
-const LAST_UPDATED = "21. März 2026";
+const LAST_UPDATED = "4. April 2026";
 
 const summary = [
-  "Wer nach Maklersoftware sucht, meint oft drei Dinge gleichzeitig: CRM, Objektverwaltung und operative Anfragebearbeitung. Genau diese Vermischung macht viele Vergleiche unbrauchbar.",
-  "Es gibt keinen seriösen pauschalen Testsieger für jedes Maklerbüro. Gute Entscheidungen hängen vor allem an Bürogröße, Prozessreife und dem größten operativen Engpass.",
-  "Wenn Ihr Kernproblem im Anfragepostfach liegt, reicht der reine Blick auf klassische Maklersoftware oft nicht aus. Dann brauchen Sie zusätzlich eine spezialisierte Ausführungsschicht.",
+  "Wer nach Maklersoftware sucht, meint oft CRM, Objektverwaltung, Portalanbindung und Anfrageprozess gleichzeitig. Genau diese Vermischung macht viele Vergleiche schwach.",
+  "Es gibt keinen seriösen pauschalen Testsieger für jedes Maklerbüro. Die beste Maklersoftware hängt an Bürotyp, Datenlage, Anfragevolumen und Einführungsaufwand.",
+  "Für viele Teams ist nicht nur die Maklersoftware entscheidend, sondern die Frage, ob der eigentliche Engpass in Datenpflege oder im Anfragepostfach liegt.",
 ];
 
 const contents = [
   { href: "#kurzfassung", label: "Kurzfassung" },
   { href: "#methodik", label: "Methodik" },
-  { href: "#vergleich", label: "Systemvergleich" },
-  { href: "#buero-fit", label: "Was zu welchem Bürotyp passt" },
+  { href: "#testsieger", label: "Testsieger?" },
+  { href: "#vergleich", label: "Vergleich" },
+  { href: "#preise", label: "Preislogik" },
+  { href: "#buero-fit", label: "Bürotyp" },
   { href: "#demo-fragen", label: "Demo-Fragen" },
-  { href: "#advaic-rolle", label: "Rolle von Advaic" },
+  { href: "#anfrageprozess", label: "Anfrageprozess" },
+  { href: "#faq", label: "FAQ" },
 ];
 
 const methodology = [
-  "Die Seite fasst aktuelle Herstellerinformationen, aktuelle Suchsignale aus der Search Console und den typischen Einsatz im deutschsprachigen Makleralltag zusammen.",
-  "Bewertet wird nach Bürotyp, Prozessfokus, Einführungsaufwand, Steuerbarkeit und der Frage, ob ein System eher Datenhaltung oder operative Ausführung löst.",
-  "Die Tabelle unten ist bewusst keine Punktewertung mit künstlichem Gesamtsieger, sondern eine Orientierung für die passende Kombination.",
+  "Die Seite bündelt aktuelle Search-Console-Signale von Advaic mit aktuellen Herstellerseiten von onOffice, FLOWFACT, Propstack und HubSpot.",
+  "Verglichen wird nicht nach künstlicher Punktewertung, sondern nach vier realen Kaufkriterien: Arbeitsbasis, Anfrageprozess, Einführbarkeit und öffentliche Preislogik.",
+  "Preisangaben unten sind aus öffentlichen Herstellerseiten vom 4. April 2026 zusammengefasst. Sie ersetzen kein individuelles Angebot und keine Live-Demo.",
+];
+
+const testsiegerReality = [
+  {
+    title: "Kein pauschaler Testsieger",
+    text: "Die beste Maklersoftware für ein kleines Team mit viel Portalvolumen ist nicht automatisch die beste Lösung für ein größeres Büro mit starker Akquise- und Objektverwaltung.",
+  },
+  {
+    title: "Maklersoftware und Anfrageprozess sind nicht dasselbe",
+    text: "Viele Systeme decken Kontakt-, Objekt- und Portalprozesse ab. Der Engpass liegt im Alltag aber oft bei der Entscheidung über einzelne eingehende Anfragen.",
+  },
+  {
+    title: "Öffentliche Preise sind nur der Einstieg",
+    text: "Monatspreise sind hilfreich, aber Setup, Schulung, Zusatzmodule, Schnittstellen und interner Pflegeaufwand entscheiden oft stärker über die echte Gesamtkostenlage.",
+  },
 ];
 
 const softwareRows = [
   {
     system: "onOffice",
-    focus: "Klassische Maklersoftware mit Objekt-, Adress-, E-Mail- und Portalprozessen.",
-    fit: "Büros, die ein breites System für Immobilienverwaltung, CRM und Vermarktungsabläufe suchen.",
-    watch: "Prüfen, wie gut Ihr Team mit Konfiguration, Datenpflege und täglichem Mail-Handling im echten Betrieb arbeitet.",
+    focus: "Breite Maklersoftware für Objekte, Adressen, E-Mails, Portale und standardisierte Vermarktungsabläufe.",
+    price: "ab 79 € pro Nutzer/Monat; all-in 99 €; zzgl. 50 € Servicepauschale je Unternehmen und Setup",
+    fit: "Stark für Büros, die ein etabliertes, funktionsreiches System mit vielen Modulen und Portalnähe suchen.",
+    watch: "Prüfen Sie genau, wie viel Konfiguration, Pflege und tägliches Mail-Handling Ihr Team realistisch tragen kann.",
   },
   {
     system: "FLOWFACT",
-    focus: "CRM-/Immobiliensoftware mit Kontaktverwaltung, E-Mail-Funktionen, API und Zusatzmodulen.",
-    fit: "Maklerbüros, die einen breiten digitalen Arbeitsalltag in einem etablierten Immobilien-Ökosystem abbilden wollen.",
-    watch: "Achten Sie auf Einrichtungsaufwand, Tiefe der Einführung und darauf, ob der operative Anfrageprozess wirklich sauber genug abgedeckt ist.",
+    focus: "Immobiliensoftware und CRM mit Akquise, Kontaktverwaltung, Portalübertragung und automatisierter Anfragenverarbeitung.",
+    price: "79 € pro Lizenz/Monat zzgl. 279 € Einrichtung",
+    fit: "Gut für Maklerbüros, die einen breiten digitalen Standardprozess mit Branchenfokus und kurzerem Einstieg suchen.",
+    watch: "Achten Sie darauf, ob Ihr Anfrageprozess im Alltag wirklich mit den Standardabläufen abgedeckt ist oder zusätzliche Logik braucht.",
   },
   {
     system: "Propstack",
-    focus: "Modernes Immobilien-CRM mit mobiler Nutzung, E-Mail-Bearbeitung und digitalen Standardprozessen.",
-    fit: "Teams, die stark auf browserbasiertes Arbeiten, Geschwindigkeit und ein zeitgemäßes CRM setzen.",
-    watch: "Wichtig ist die Frage, ob Standardprozesse und die E-Mail-Bearbeitung im System für Ihren Anfragebetrieb ausreichen oder ergänzt werden müssen.",
+    focus: "Browserbasiertes Immobilien-CRM mit mobilen Prozessen, E-Mail-Postfach-Integration und starkem Fokus auf digitale Standardabläufe.",
+    price: "Standard 99 € pro Lizenz/Monat zzgl. 279 € Einrichtung; Enterprise auf Anfrage",
+    fit: "Sinnvoll für Teams, die moderne Bedienung, Geschwindigkeit und mobiles Arbeiten priorisieren.",
+    watch: "Wichtig ist die Frage, wie weit die Standardprozesse für Ihre konkrete Maklerpraxis reichen und wo Individualisierung nötig wird.",
   },
   {
     system: "HubSpot",
-    focus: "Allgemeines CRM mit starkem Marketing-, Vertriebs- und Service-Ökosystem.",
-    fit: "Maklerteams mit starkem Inbound-, Marketing- oder Multichannel-Fokus und der Bereitschaft, Immobilienlogik selbst zu modellieren.",
-    watch: "Nicht immobilien-spezifisch. Der Fit hängt stark daran, wie viel Struktur Sie selbst aufbauen wollen.",
+    focus: "Allgemeines CRM mit Marketing-, Vertriebs-, Service- und Inbox-Funktionen, aber ohne Maklerlogik von Haus aus.",
+    price: "kostenloser Einstieg; zusätzliche Hubs und tiefere Automatisierung kosten extra",
+    fit: "Passt eher zu Teams mit starkem Inbound-, Marketing- oder Multichannel-Fokus und hoher Bereitschaft zur eigenen Modellierung.",
+    watch: "Nicht maklerspezifisch. Der operative Fit hängt stark daran, wie viel Immobilienlogik, Datenstruktur und Automation Sie selbst aufbauen wollen.",
+  },
+];
+
+const priceNotes = [
+  {
+    title: "Lizenzpreis ist nicht Gesamtkosten",
+    text: "Bei onOffice, FLOWFACT und Propstack kommen neben der monatlichen Lizenz je nach Modell Einrichtung, Service oder Schulung hinzu.",
   },
   {
-    system: "Advaic",
-    focus: "Spezialisierte Anfrageausführung mit Eingang, Entscheidungslogik, Qualitätschecks, Freigabe und Nachfassen.",
-    fit: "Teams, die bereits Systeme für Daten und Vermarktung haben, aber die Antwortlogik im Postfach sauberer lösen müssen.",
-    watch: "Kein Ersatz für ein vollständiges Makler-CRM oder für umfassende Objekt- und Dealverwaltung.",
+    title: "Freier Einstieg heißt nicht automatisch günstiger Betrieb",
+    text: "HubSpot senkt die Hürde beim Start. Für größere Teams oder tiefere Automatisierung steigen die tatsächlichen Kosten jedoch oft erst später sichtbar an.",
+  },
+  {
+    title: "Zusatzmodule und Partnerlösungen prüfen",
+    text: "Ein günstiger Grundpreis hilft wenig, wenn genau Ihre Kernlücke nur über Zusatzprodukte, Schnittstellen oder Prozessumbauten geschlossen wird.",
   },
 ];
 
 const officeFits = [
   {
     title: "Einzelmakler oder Neugründung",
-    text: "Priorisieren Sie Übersicht, schnelle Einführung und saubere Grundprozesse. Oft ist eine schlanke Maklersoftware oder ein CRM zuerst sinnvoll, bevor weitere Ebenen dazukommen.",
+    text: "Wichtig sind Übersicht, schneller Einstieg und eine saubere Datenbasis. Hier zählt weniger der größte Funktionsumfang als ein System, das Sie wirklich im Alltag pflegen.",
   },
   {
-    title: "Kleines Team mit viel Portalanfrage-Aufkommen",
-    text: "Hier lohnt sich der Blick auf zwei Ebenen: Maklersoftware für Daten und Vermarktung plus eine spezialisierte Schicht für Anfrageeingang, Freigabe und Antwortqualität.",
+    title: "Kleines Team mit viel Portalanfrage-Volumen",
+    text: "Die größte Frage ist oft nicht nur Maklersoftware, sondern Reaktionsgeschwindigkeit. Prüfen Sie deshalb Maklersoftware und Anfrageprozess getrennt.",
   },
   {
-    title: "Etabliertes Büro mit bestehendem CRM",
-    text: "Vor einer Migration sollten Sie prüfen, ob wirklich das CRM das Problem ist oder ob eher Reaktionszeit, Nachfassen und operative Kontrolllogik fehlen.",
+    title: "Etabliertes Büro mit gewachsener Datenbasis",
+    text: "Bevor Sie migrieren, sollten Sie sauber prüfen, ob wirklich das Kernsystem schwach ist oder ob eher Anfragefluss, Freigabe und Nachfassen nicht sauber gelöst sind.",
+  },
+  {
+    title: "Marketing- und Inbound-starkes Team",
+    text: "Dann können allgemeinere CRM-Plattformen interessant werden. Entscheidend ist aber, wie viel branchenspezifische Struktur Sie zusätzlich aufbauen müssen.",
   },
 ];
 
 const demoQuestions = [
-  "Wie wird eine neue Portalanfrage vom Eingang bis zur Antwort dokumentiert?",
-  "Wo sehen Sie pro Nachricht, warum automatisch gesendet oder gestoppt wurde?",
-  "Wie aufwändig ist der Systemstart für ein kleines Team ohne Vollzeit-Admin?",
-  "Welche Rolle spielen Objektbezug, Pflichtangaben und Freigabe im operativen Standardfall?",
-  "Welche Daten müssen Sie vor der Einführung sauber gepflegt haben, damit das System im Alltag trägt?",
+  "Wie läuft eine neue Portalanfrage vom Eingang bis zur ersten Antwort in Ihrem Standardprozess?",
+  "Welche Teile der E-Mail- und Anfragebearbeitung sind im Kernprodukt enthalten und welche brauchen Zusatzlogik?",
+  "Was kostet das System realistisch inklusive Einrichtung, Zusatzmodulen und Onboarding im ersten Jahr?",
+  "Wie gut funktioniert der Alltag für ein kleines Team ohne Vollzeit-Admin wirklich?",
+  "Welche Datenpflege muss vor dem Go-live sauber stehen, damit das System nicht im Alltag ausfranst?",
+  "Wo sehen Sie im System, was automatisch lief, was manuell geprüft wurde und warum?",
+];
+
+const requestProcessTruth = [
+  {
+    title: "Wann Maklersoftware allein oft reicht",
+    text: "Wenn Ihr Hauptproblem heute in Objekten, Kontakten, Portalpflege, Historie und Aufgaben liegt, sollten Sie zuerst die Maklersoftware sauber aufsetzen.",
+  },
+  {
+    title: "Wann Maklersoftware allein oft nicht reicht",
+    text: "Wenn der Engpass trotz bestehendem CRM weiter im Anfragepostfach liegt, helfen Datenhaltung und Portalverwaltung allein meist nicht genug.",
+  },
+  {
+    title: "Wo Advaic in der Landschaft sinnvoll passt",
+    text: "Advaic ist keine Maklersoftware, sondern eine zusätzliche operative Schicht für Anfrageeingang, Entscheidungslogik, Freigabe, Qualitätschecks und Nachfassen.",
+  },
 ];
 
 const advaicFit = [
-  "Wenn Ihr Büro bereits CRM- oder Maklersoftware nutzt, aber im Anfragepostfach Zeit, Konsistenz oder Kontrolle verliert.",
-  "Wenn Sie Auto-Senden nur für klar prüfbare Fälle freigeben wollen und alles andere sicher in einer Freigabe landen soll.",
-  "Wenn Sie eine zusätzliche operative Ebene suchen, statt das gesamte CRM zu ersetzen.",
+  "Ihr Büro nutzt bereits ein CRM oder eine Maklersoftware, verliert aber im Anfragepostfach weiter Zeit, Konsistenz oder Kontrolle.",
+  "Sie wollen Auto-Senden nur für klar prüfbare Standardfälle freigeben und Lücken-, Risiko- oder Ausnahmefälle bewusst in der Freigabe halten.",
+  "Sie möchten nicht das ganze CRM ersetzen, sondern den operativen Antwortfluss sauberer und nachvollziehbarer machen.",
 ];
 
 const advaicNotFit = [
-  "Wenn Sie zuerst ein zentrales System für Kontakte, Objekte und Deals benötigen.",
-  "Wenn Ihr Büro praktisch keine wiederkehrenden Anfrage-Muster hat.",
-  "Wenn Sie einen einzigen Anbieter für wirklich alle Maklerprozesse suchen und keine modulare Kombination wollen.",
+  "Sie brauchen zuerst ein zentrales System für Kontakte, Objekte und Deals.",
+  "Ihr Büro hat kaum wiederkehrende Anfrage-Muster oder sehr wenig E-Mail-Volumen.",
+  "Sie suchen einen einzigen Anbieter, der jede Maklerfunktion und jede Sonderlogik in einer Oberfläche abbildet.",
+];
+
+const faqItems = [
+  {
+    question: "Welche Maklersoftware ist 2026 die beste?",
+    answer:
+      "Es gibt keinen seriösen pauschalen Testsieger. Die beste Maklersoftware hängt davon ab, ob Ihr Engpass in der Datenbasis, der Vermarktung oder im Anfrageprozess liegt.",
+  },
+  {
+    question: "Was kostet Maklersoftware für Immobilienmakler?",
+    answer:
+      "Öffentliche Herstellerpreise zeigen aktuell grob: onOffice startet bei 79 € pro Nutzer und Monat, FLOWFACT Residential bei 79 € pro Lizenz und Monat, Propstack Standard bei 99 € pro Lizenz und Monat. Dazu kommen je nach Anbieter Einrichtung, Service oder Zusatzmodule.",
+  },
+  {
+    question: "Welche Maklersoftware passt für kleine Büros?",
+    answer:
+      "Für kleine Büros ist meist entscheidend, wie schnell das Team produktiv wird und wie viel laufende Pflege realistisch ist. Ein großes Funktionspaket hilft wenig, wenn der Alltag daran hängen bleibt.",
+  },
+  {
+    question: "Reicht Maklersoftware allein für Portalanfragen?",
+    answer:
+      "Teilweise ja. Viele Systeme decken Portalprozesse und Anfragenverarbeitung ab. Wenn die eigentliche Lücke aber in Freigabe, Qualitätskontrolle und der Entscheidung pro Nachricht liegt, braucht es oft zusätzliche Prozesslogik.",
+  },
 ];
 
 const sources = [
   {
+    label: "Google: How to write reviews",
+    href: "https://developers.google.com/search/docs/specialty/ecommerce/write-high-quality-reviews",
+    note: "Leitlinie für hilfreiche Vergleichsseiten mit Methodik, Differenzierung und echtem Nutzwert.",
+  },
+  {
     label: "onOffice: Immobiliensoftware",
     href: "https://onoffice.com/immobiliensoftware/",
-    note: "Offizielle Herstellerseite mit Fokus auf Maklersoftware, CRM und Portalprozesse.",
+    note: "Offizielle Herstellerseite mit Maklersoftware-Funktionen, Anfragenmanager und öffentlicher Preisübersicht.",
   },
   {
     label: "FLOWFACT: Produkt",
     href: "https://flowfact.de/produkt/",
-    note: "Offizielle Herstellerseite für CRM-/Immobiliensoftware, API und Zusatzleistungen.",
+    note: "Offizielle Herstellerseite mit Funktionsumfang, Preisrahmen und Branchenfokus für Maklerbüros.",
   },
   {
-    label: "Propstack: Immobilien-CRM",
-    href: "https://www.propstack.de/",
-    note: "Offizielle Herstellerseite für modernes Immobilien-CRM und mobile Arbeitsweise.",
+    label: "FLOWFACT: Automatische Anfragenverarbeitung",
+    href: "https://flowfact.de/anfragenverarbeitung/",
+    note: "Offizielle Produktseite zur automatischen Verarbeitung von Portalanfragen und Exposéversand.",
+  },
+  {
+    label: "Propstack: Preise & Lizenzen",
+    href: "https://www.propstack.de/preis/",
+    note: "Offizielle Preis- und Lizenzseite mit Standard- und Enterprise-Modell.",
   },
   {
     label: "HubSpot: CRM-Software für Immobilienmakler",
     href: "https://www.hubspot.de/products/crm/real-estate",
-    note: "Offizielle Herstellerseite für ein allgemeineres CRM mit Einsatz im Immobilienbereich.",
-  },
-  {
-    label: "Google: How to write reviews",
-    href: "https://developers.google.com/search/docs/specialty/ecommerce/write-high-quality-reviews",
-    note: "Leitlinie für hilfreiche Vergleichsinhalte mit Methodik, Differenzierung und Originalnutzen.",
+    note: "Offizielle Herstellerseite für den kostenlosen Einstieg und die allgemeine CRM-/Inbox-Perspektive.",
   },
 ];
 
 export const metadata: Metadata = buildMarketingMetadata({
-  title: "Maklersoftware Vergleich 2026",
+  title: "Maklersoftware Vergleich 2026: Welche Immobilienmakler-Software passt?",
   ogTitle: "Maklersoftware Vergleich 2026 | Advaic",
   description:
-    "Maklersoftware im Vergleich: onOffice, FLOWFACT, Propstack, HubSpot und die Rolle spezialisierter Anfrage-Logik wie Advaic. Für wen welches System passt.",
+    "Maklersoftware im Vergleich: onOffice, FLOWFACT, Propstack und HubSpot. Mit Preislogik, Bürotyp, Testsieger-Frage und der Rolle von Advaic im Anfrageprozess.",
   path: "/maklersoftware-vergleich",
   template: "compare",
   eyebrow: "Maklersoftware",
-  proof: "Nicht jeder Makler braucht denselben Stack. Entscheidend sind Bürotyp, Prozessreife und Anfrage-Engpass.",
+  proof: "Kein pauschaler Testsieger: relevant sind Bürotyp, Preislogik und der echte Anfrage-Engpass.",
 });
 
 export default function MaklersoftwareVergleichPage() {
@@ -147,13 +226,13 @@ export default function MaklersoftwareVergleichPage() {
         "@type": "Article",
         headline: "Maklersoftware Vergleich 2026",
         inLanguage: "de-DE",
-        dateModified: "2026-03-21",
+        dateModified: "2026-04-04",
         mainEntityOfPage: `${siteUrl}/maklersoftware-vergleich`,
         author: {
           "@type": "Organization",
           name: "Advaic Redaktion",
         },
-        about: ["Maklersoftware", "CRM für Immobilienmakler", "Immobiliensoftware", "Anfrageautomation"],
+        about: ["Maklersoftware", "Immobilienmakler Software", "CRM für Immobilienmakler", "Anfrageprozess"],
       },
       {
         "@type": "ItemList",
@@ -162,6 +241,17 @@ export default function MaklersoftwareVergleichPage() {
           "@type": "ListItem",
           position: index + 1,
           name: row.system,
+        })),
+      },
+      {
+        "@type": "FAQPage",
+        mainEntity: faqItems.map((item) => ({
+          "@type": "Question",
+          name: item.question,
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: item.answer,
+          },
         })),
       },
     ],
@@ -175,8 +265,8 @@ export default function MaklersoftwareVergleichPage() {
       ]}
       schema={schema}
       kicker="Maklersoftware"
-      title="Maklersoftware Vergleich 2026: Welches System für welchen Makleralltag passt"
-      description="Diese Seite sucht keinen künstlichen Testsieger. Sie trennt sauber zwischen Maklersoftware, CRM und spezialisierter Anfrageausführung und zeigt, welche Kombination typischerweise wann passt."
+      title="Maklersoftware Vergleich 2026: Welche Immobilienmakler-Software passt wirklich?"
+      description="Diese Seite beantwortet die ehrliche Frage hinter vielen Suchen nach Maklersoftware, Makler Software oder Immobilienmakler-Software-Testsieger: Welches System passt zu Ihrem Bürotyp, Ihrer Preislogik und Ihrem Anfrageprozess?"
       actions={
         <>
           <Link href="/crm-fuer-immobilienmakler" className="btn-secondary">
@@ -190,13 +280,13 @@ export default function MaklersoftwareVergleichPage() {
       mobileQuickActions={
         <article className="card-base p-4">
           <p className="label">Schnellwahl</p>
-          <p className="helper mt-2">Direkt zur Vergleichstabelle oder zur Rolle von Advaic springen.</p>
+          <p className="helper mt-2">Direkt zum Vergleich oder zur Preislogik springen.</p>
           <div className="mt-3 grid gap-2">
             <MarketingJumpLink href="#vergleich" className="btn-secondary w-full justify-center">
               Vergleich öffnen
             </MarketingJumpLink>
-            <MarketingJumpLink href="#advaic-rolle" className="btn-secondary w-full justify-center">
-              Advaic-Rolle
+            <MarketingJumpLink href="#preise" className="btn-secondary w-full justify-center">
+              Preislogik
             </MarketingJumpLink>
           </div>
         </article>
@@ -205,11 +295,11 @@ export default function MaklersoftwareVergleichPage() {
       stageContext="maklersoftware-vergleich"
       primaryHref="/signup?entry=maklersoftware-vergleich-stage"
       primaryLabel="Mit echten Fällen prüfen"
-      secondaryHref="/best-ai-tools-immobilienmakler"
-      secondaryLabel="KI-Tools Vergleich"
+      secondaryHref="/tools-fuer-immobilienmakler"
+      secondaryLabel="Maklertools einordnen"
       sources={sources}
       sourcesCheckedLabel={LAST_UPDATED}
-      sourcesDescription="Die Quellen unten zeigen aktuelle Herstellerpositionierungen und die Google-Leitlinie für hilfreiche Vergleichsseiten. Für die Beschaffung sollten Sie immer zusätzlich Live-Demos und reale Anfragefälle prüfen."
+      sourcesDescription="Die Quellen unten verbinden aktuelle Herstellerseiten mit Googles Leitlinie für hilfreiche Vergleichsseiten. Für die Beschaffung sollten Sie immer zusätzlich mit echten Objekt- und Anfragefällen testen."
     >
       <section id="kurzfassung" className="py-8 md:py-10">
         <Container>
@@ -251,12 +341,18 @@ export default function MaklersoftwareVergleichPage() {
               <p className="label">Autor & Stand</p>
               <h2 className="h3 mt-3">Advaic Redaktion</h2>
               <p className="helper mt-3">
-                Produkt- und Prozessteam mit Fokus auf Anfrageprozesse, Freigabelogik und Auswahlkriterien für
-                Systemlandschaften für Makler.
+                Produkt- und Prozessteam mit Fokus auf Maklersoftware, Anfrageprozesse und operative Auswahlkriterien
+                für kleine und mittlere Maklerbüros.
               </p>
-              <div className="mt-5 rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
-                <p className="text-sm font-semibold text-[var(--text)]">Aktualisiert</p>
-                <p className="mt-2 text-sm text-[var(--muted)]">{LAST_UPDATED}</p>
+              <div className="mt-5 grid gap-3 text-sm text-[var(--muted)] sm:grid-cols-2">
+                <div className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                  <p className="font-semibold text-[var(--text)]">Aktualisiert</p>
+                  <p className="mt-2">{LAST_UPDATED}</p>
+                </div>
+                <div className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                  <p className="font-semibold text-[var(--text)]">Seitentyp</p>
+                  <p className="mt-2">Vergleichs- und Auswahlhilfe</p>
+                </div>
               </div>
             </article>
 
@@ -276,13 +372,34 @@ export default function MaklersoftwareVergleichPage() {
         </Container>
       </section>
 
+      <section id="testsieger" className="marketing-soft-warm py-20 md:py-28">
+        <Container>
+          <div className="max-w-[78ch]">
+            <h2 className="h2">Maklersoftware Testsieger? Die ehrliche Antwort</h2>
+            <p className="body mt-4 text-[var(--muted)]">
+              Viele Suchanfragen lauten nach Testsieger oder bester Maklersoftware. Für Maklerbüros ist die wichtigere
+              Frage aber fast immer: Welche Immobilienmakler-Software passt zu unserem Alltag, unserem Anfragevolumen
+              und unserem Team wirklich?
+            </p>
+          </div>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {testsiegerReality.map((item) => (
+              <article key={item.title} className="card-base p-6">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
+                <p className="helper mt-3">{item.text}</p>
+              </article>
+            ))}
+          </div>
+        </Container>
+      </section>
+
       <section id="vergleich" className="marketing-soft-cool py-20 md:py-28">
         <Container>
           <div className="max-w-[78ch]">
-            <h2 className="h2">Systemvergleich: Wer welchen Job im Makleralltag gut abdeckt</h2>
+            <h2 className="h2">Maklersoftware im Vergleich: System, Preislogik und typischer Fit</h2>
             <p className="body mt-4 text-[var(--muted)]">
-              Gute Kaufentscheidungen entstehen nicht durch die Frage „welches System ist objektiv das beste“, sondern
-              durch die Frage „welches System löst unseren Engpass mit vertretbarem Einführungsaufwand“.
+              Der Vergleich unten kombiniert den öffentlichen Preisrahmen mit Bürotyp und Engpass. Genau das fehlt in
+              vielen Seiten, die nur Features nebeneinanderstellen.
             </p>
           </div>
 
@@ -292,6 +409,7 @@ export default function MaklersoftwareVergleichPage() {
             columns={[
               { key: "system", label: "System", emphasize: true },
               { key: "focus", label: "Fokus" },
+              { key: "price", label: "Öffentliche Preislogik" },
               { key: "fit", label: "Typischer Fit" },
               { key: "watch", label: "Worauf Sie achten sollten" },
             ]}
@@ -299,10 +417,24 @@ export default function MaklersoftwareVergleichPage() {
         </Container>
       </section>
 
+      <section id="preise" className="marketing-section-clear py-20 md:py-28">
+        <Container>
+          <h2 className="h2">Was die Preisangaben bei Maklersoftware wirklich bedeuten</h2>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {priceNotes.map((item) => (
+              <article key={item.title} className="card-base p-6">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
+                <p className="helper mt-3">{item.text}</p>
+              </article>
+            ))}
+          </div>
+        </Container>
+      </section>
+
       <section id="buero-fit" className="marketing-section-clear py-20 md:py-28">
         <Container>
-          <h2 className="h2">Welche Lösung zu welchem Bürotyp passt</h2>
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
+          <h2 className="h2">Welche Maklersoftware zu welchem Bürotyp passt</h2>
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
             {officeFits.map((item) => (
               <article key={item.title} className="card-base p-6">
                 <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
@@ -316,7 +448,7 @@ export default function MaklersoftwareVergleichPage() {
       <section id="demo-fragen" className="marketing-soft-warm py-20 md:py-28">
         <Container>
           <article className="card-base p-6 md:p-8">
-            <h2 className="h2">Fünf Fragen, die Sie in jeder Demo stellen sollten</h2>
+            <h2 className="h2">Sechs Fragen, die Sie in jeder Maklersoftware-Demo stellen sollten</h2>
             <ul className="mt-5 space-y-2 text-sm text-[var(--muted)]">
               {demoQuestions.map((item) => (
                 <li key={item} className="flex items-start gap-2">
@@ -329,11 +461,29 @@ export default function MaklersoftwareVergleichPage() {
         </Container>
       </section>
 
-      <section id="advaic-rolle" className="marketing-section-clear py-20 md:py-28">
+      <section id="anfrageprozess" className="marketing-section-clear py-20 md:py-28">
         <Container>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="max-w-[78ch]">
+            <h2 className="h2">Was viele Maklersoftware-Vergleiche auslassen: den Anfrageprozess</h2>
+            <p className="body mt-4 text-[var(--muted)]">
+              Genau hier entsteht im Alltag oft die eigentliche Friktion. Ein gutes CRM hilft bei Daten und Historie.
+              Der Engpass kann trotzdem weiter bei Freigabe, Qualitätskontrolle und der Entscheidung pro Nachricht
+              liegen.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {requestProcessTruth.map((item) => (
+              <article key={item.title} className="card-base p-6">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
+                <p className="helper mt-3">{item.text}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
             <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Wann Advaic zusätzlich Sinn ergibt</h2>
+              <h3 className="h3">Wann Advaic zusätzlich Sinn ergibt</h3>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
                 {advaicFit.map((item) => (
                   <li key={item} className="flex items-start gap-2">
@@ -343,8 +493,9 @@ export default function MaklersoftwareVergleichPage() {
                 ))}
               </ul>
             </article>
+
             <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Wann Advaic nicht die erste Baustelle ist</h2>
+              <h3 className="h3">Wann Advaic nicht die erste Baustelle ist</h3>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
                 {advaicNotFit.map((item) => (
                   <li key={item} className="flex items-start gap-2">
@@ -359,20 +510,37 @@ export default function MaklersoftwareVergleichPage() {
           <article className="card-base mt-6 p-6 md:p-8">
             <h3 className="h3">Nächste sinnvolle Seiten</h3>
             <div className="mt-4 flex flex-wrap gap-2">
+              <Link href="/tools-fuer-immobilienmakler" className="btn-secondary">
+                Tools für Immobilienmakler
+              </Link>
+              <Link href="/maklersoftware-preise-vergleichen" className="btn-secondary">
+                Preise vergleichen
+              </Link>
               <Link href="/crm-fuer-immobilienmakler" className="btn-secondary">
                 CRM für Immobilienmakler
               </Link>
               <Link href="/best-ai-tools-immobilienmakler" className="btn-secondary">
                 KI-Tools Vergleich
               </Link>
-              <Link href="/advaic-vs-crm-tools" className="btn-secondary">
-                Advaic vs. CRM
-              </Link>
-              <Link href="/produkt" className="btn-secondary">
-                Produkt ansehen
+              <Link href="/best-software-immobilienanfragen" className="btn-secondary">
+                Software für Immobilienanfragen
               </Link>
             </div>
           </article>
+        </Container>
+      </section>
+
+      <section id="faq" className="marketing-section-clear py-20 md:py-28">
+        <Container>
+          <h2 className="h2">Häufige Fragen zu Maklersoftware</h2>
+          <div className="mt-8 space-y-4">
+            {faqItems.map((item) => (
+              <article key={item.question} className="card-base p-6 md:p-8">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.question}</h3>
+                <p className="helper mt-3">{item.answer}</p>
+              </article>
+            ))}
+          </div>
         </Container>
       </section>
     </AiDiscoveryPageTemplate>

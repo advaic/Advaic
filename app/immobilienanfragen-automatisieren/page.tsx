@@ -410,6 +410,12 @@ export default function ImmobilienanfragenAutomatisierenPage() {
               <Link href="/qualitaetschecks" className="btn-secondary">
                 Qualitätschecks
               </Link>
+              <Link href="/immobilienscout-anfragen-automatisieren" className="btn-secondary">
+                ImmoScout-Anfragen
+              </Link>
+              <Link href="/anfragenqualifizierung-immobilienmakler" className="btn-secondary">
+                Anfragenqualifizierung
+              </Link>
               <Link href="/follow-up-emails-immobilienmakler" className="btn-secondary">
                 Nachfass-E-Mails
               </Link>

@@ -1,137 +1,316 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getSiteUrl } from "@/lib/seo/site-url";
 import Container from "@/components/marketing/Container";
-import PageShell from "@/components/marketing/PageShell";
-import PageIntro from "@/components/marketing/PageIntro";
-import StageCTA from "@/components/marketing/StageCTA";
+import MarketingJumpLink from "@/components/marketing/MarketingJumpLink";
 import ManualVsAdvaicComparison from "@/components/marketing/ManualVsAdvaicComparison";
 import ProcessFlowComparison from "@/components/marketing/ProcessFlowComparison";
 import SafeStartConfigurator from "@/components/marketing/SafeStartConfigurator";
-import FinalCTA from "@/components/marketing/FinalCTA";
+import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDiscoveryPageTemplate";
 import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
 import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
-const briefPoints = [
+const LAST_UPDATED = "4. April 2026";
+
+const summary = [
+  "Manuelle Anfragebearbeitung ist nicht grundsätzlich falsch. Für wenige, stark individuelle Fälle bleibt sie oft der sauberste Weg.",
+  "Sobald aber Anfragevolumen, Reaktionsdruck und Nachfassen gleichzeitig steigen, wird reine Handarbeit schnell uneinheitlich und schwer steuerbar.",
+  "Advaic ersetzt nicht jeden manuellen Schritt, sondern entlastet vor allem klar prüfbare Standardfälle und hält Ausnahmen bewusst in der Freigabe.",
+];
+
+const contents = [
+  { href: "#kurzfassung", label: "Kurzfassung" },
+  { href: "#methodik", label: "Methodik" },
+  { href: "#wann-manuell", label: "Wann manuell sinnvoll bleibt" },
+  { href: "#vergleich", label: "Direkter Vergleich" },
+  { href: "#prozessvergleich", label: "Prozessdarstellung" },
+  { href: "#kippunkte", label: "Wo Handarbeit kippt" },
+  { href: "#safe-start-konfiguration", label: "Sicherer Start" },
+  { href: "#advaic", label: "Advaic" },
+  { href: "#faq", label: "FAQ" },
+];
+
+const methodology = [
+  "Die Seite verbindet Primärquellen zu Antwortgeschwindigkeit, Makler-Postfächern, Anfragenverarbeitung und kontrollierter Automatisierung mit Advaics Sicht auf den operativen Anfrageprozess.",
+  "Verglichen wird nicht nur nach Funktionslisten, sondern nach echter Alltagsarbeit: Eingang prüfen, priorisieren, beantworten, nachfassen und Verlauf dokumentieren.",
+  "Die interaktiven Modelle auf der Seite sind konservative Planungswerkzeuge. Sie sollen helfen, einen vernünftigen Startkorridor zu definieren, nicht ein Ergebnis zu garantieren.",
+];
+
+const manualStillMakesSense = [
   {
-    title: "Zeitverlust entsteht nicht in einem Schritt, sondern im gesamten Fluss",
-    text: "Die operative Last entsteht kumulativ: Eingang lesen, Relevanz prüfen, Antwort schreiben, nachfassen, Verlauf dokumentieren. Advaic entlastet genau entlang dieser Kette.",
+    title: "Wenig relevantes Anfragevolumen",
+    text: "Wenn nur wenige qualifizierte Anfragen pro Woche eingehen, ist der manuelle Aufwand häufig überschaubar und eine zusätzliche Prozessschicht nicht automatisch nötig.",
   },
   {
-    title: "Sicherheitsrisiko entsteht bei fehlenden Angaben und Zeitdruck",
-    text: "Wenn viele Anfragen parallel kommen, steigt das Risiko unvollständiger oder unpassender Antworten. Advaic verlagert Nachrichten mit fehlenden Angaben oder Qualitätswarnung automatisch in die Freigabe.",
+    title: "Hoher Anteil an Sonderfällen",
+    text: "Wenn fast jede Anfrage individuelle Rückfragen, heikle Abstimmungen oder stark erklärungsbedürftige Objekte betrifft, sollte der Mensch weiterhin der Hauptpfad bleiben.",
   },
   {
-    title: "Transparenz entscheidet über Steuerbarkeit",
-    text: "Ohne klaren Verlauf ist nicht sichtbar, warum etwas gesendet oder gestoppt wurde. Advaic dokumentiert Eingang, Entscheidung, QA, Versand und Follow-up-Status.",
+    title: "Datenbasis und Zuständigkeiten sind noch unsauber",
+    text: "Wenn Objektbezug, Verantwortlichkeiten oder Freigaberegeln noch ungeklärt sind, löst Automatisierung das Grundproblem nicht. Dann braucht das Team zuerst klare Abläufe.",
+  },
+  {
+    title: "Es gibt niemanden für Freigabe und Nachsteuerung",
+    text: "Kontrollierte Automatisierung funktioniert nur dann gut, wenn Regeln gepflegt, Freigaben geprüft und Korrekturgründe ernst genommen werden.",
   },
 ];
 
-const rolloutPlan = [
+const pressurePoints = [
   {
-    title: "Woche 1: Beobachten und kalibrieren",
-    text: "Starten Sie mit hoher Freigabequote. Prüfen Sie täglich, welche Fälle sauber automatisierbar sind und welche bewusst manuell bleiben sollten.",
+    title: "Mehrere Kanäle zur gleichen Zeit",
+    text: "Portale, Website, E-Mail und Rückfragen erzeugen schnell parallele Eingänge. Ohne klare Logik wird das Postfach zum Engpass.",
   },
   {
-    title: "Woche 2: Auto-Fälle sauber eingrenzen",
-    text: "Definieren Sie Auto-Fälle wie Verfügbarkeit, Unterlagen, Terminvorschlag und nächste Prozessschritte. Konflikte, Beschwerden und Nachrichten mit fehlenden Kerndaten bleiben in der Freigabe.",
+    title: "Viele wiederkehrende Erstantworten",
+    text: "Standardfragen zu Verfügbarkeit, Unterlagen, Besichtigung oder nächstem Schritt binden im manuellen Betrieb täglich Zeit, obwohl sie inhaltlich ähnlich sind.",
   },
   {
-    title: "Woche 3: Follow-ups vorsichtig aktivieren",
-    text: "Aktivieren Sie Follow-ups zunächst konservativ mit klaren Stopp-Regeln. Messen Sie, ob Reaktionszeit und Rücklauf stabiler werden.",
+    title: "Uneinheitliches Nachfassen",
+    text: "Wenn Nachfass-E-Mails nur nach Bauchgefühl versendet werden, sinkt die Verlässlichkeit. Manche Fälle bekommen zu viel Aufmerksamkeit, andere gar keine.",
   },
   {
-    title: "Woche 4: KPI-basiert ausbauen",
-    text: "Erhöhen Sie den Auto-Anteil nur bei stabiler Qualität. Relevante KPI: Freigabequote, QA-Fehlerquote, Erstreaktionszeit, manuelle Minuten pro Anfrage.",
+    title: "Lücken im Verlauf",
+    text: "Sobald mehrere Personen beteiligt sind, wird ohne saubere Dokumentation unklar, was bereits geantwortet, geprüft oder bewusst gestoppt wurde.",
+  },
+];
+
+const advaicFit = [
+  "Ihr Team bearbeitet viele ähnliche Erstantworten, möchte aber riskante oder unklare Fälle bewusst manuell behalten.",
+  "Sie wollen Reaktionszeit und Konsistenz verbessern, ohne den gesamten Anfrageprozess blind auf Vollautomatik zu stellen.",
+  "Sie brauchen nachvollziehbare Freigabepfade und eine klarere Dokumentation, weil manuelle Bearbeitung im Tagesgeschäft zu unübersichtlich wird.",
+];
+
+const advaicNotFit = [
+  "Ihr Büro hat nur sehr wenig relevantes Anfragevolumen oder fast ausschließlich Sonderfälle.",
+  "Sie suchen vor allem ein System für Kontakte, Objekte und Zuständigkeiten. Dann ist zuerst ein CRM oder saubere Prozessgrundlage wichtiger.",
+  "Niemand im Team kann Regeln, Freigaben und Ausnahmefälle verlässlich betreuen. Dann ist auch ein vorsichtiger Start zu früh.",
+];
+
+const faqItems = [
+  {
+    question: "Ist manuelle Anfragebearbeitung grundsätzlich schlechter als Advaic?",
+    answer:
+      "Nein. Für wenige, stark individuelle oder heikle Fälle ist manuelle Bearbeitung oft die richtige Wahl. Der Vorteil von Advaic entsteht vor allem dort, wo wiederkehrende Standardfälle sauber erkennbar sind und der manuelle Prozess unter Volumen oder Zeitdruck instabil wird.",
+  },
+  {
+    question: "Welche Fälle sollten bewusst manuell bleiben?",
+    answer:
+      "Beschwerden, Konflikte, Preisverhandlungen, unklare Zuständigkeiten, fehlende Kerndaten oder sensible Sonderfälle sollten in der Regel nicht automatisch versendet werden. Genau dafür braucht es Freigabe- und Stopplogik.",
+  },
+  {
+    question: "Muss Advaic von Anfang an vollautomatisch laufen?",
+    answer:
+      "Nein. Ein sauberer Start ist meist bewusst eng. Typisch ist ein kleiner Korridor für klar prüfbare Erstantworten, während der Rest zunächst in der Freigabe bleibt und erst später erweitert wird.",
+  },
+  {
+    question: "Kann Advaic parallel zu CRM und manuellen Abläufen genutzt werden?",
+    answer:
+      "Ja. In vielen Maklerbüros ist genau diese Kombination sinnvoll: CRM für Datenbasis und Historie, Advaic für den operativen Anfragefluss und manuelle Bearbeitung für Sonderfälle, Eskalationen oder individuelle Beratung.",
   },
 ];
 
 const sources = [
   {
-    label: "Harvard Business Review – The Short Life of Online Sales Leads",
+    label: "Harvard Business Review: The Short Life of Online Sales Leads",
     href: "https://hbr.org/2011/03/the-short-life-of-online-sales-leads",
-    note: "Referenz für den Zusammenhang zwischen Reaktionsgeschwindigkeit und Anfragen-Qualifizierung.",
+    note: "Grundlage für die Einordnung, warum Reaktionsgeschwindigkeit im Anfrageprozess wirtschaftlich relevant ist.",
   },
   {
-    label: "McKinsey – The social economy",
-    href: "https://www.mckinsey.com/industries/technology-media-and-telecommunications/our-insights/the-social-economy",
-    note: "Referenz für den hohen E-Mail-Anteil in wissensintensiver Arbeit als Produktivitätsfaktor.",
+    label: "onOffice Enterprise Hilfe: Anfragenmanager einrichten",
+    href: "https://de.enterprisehilfe.onoffice.com/help_entries/administrative-anleitungen/anfragenmanager-einrichten/",
+    note: "Offizielle Hilfeseite zur Strukturierung und Einrichtung eines Makler-Anfragenmanagers.",
   },
   {
-    label: "NAR 2024 Profile Highlights",
-    href: "https://www.nar.realtor/sites/default/files/2024-11/2024-profile-of-home-buyers-and-sellers-highlights-11-04-2024_2.pdf",
-    note: "Internationale Referenz für digital gestartete Immobilienprozesse und Maklerrelevanz.",
+    label: "onOffice Enterprise Hilfe: Einstellungen im Anfragenmanager",
+    href: "https://de.enterprisehilfe.onoffice.com/help_entries/einstellungen-anfragenmanager/",
+    note: "Offizielle Quelle zur operativen Steuerung, Priorisierung und Bearbeitungslogik im Anfrageeingang.",
   },
   {
-    label: "Destatis – Wohnen in Deutschland",
-    href: "https://www.destatis.de/DE/Themen/Gesellschaft-Umwelt/Wohnen/_inhalt.html",
-    note: "Offizielle deutsche Datenbasis zur Wohn- und Marktlage als Umfeldfaktor für Maklerprozesse.",
+    label: "FLOWFACT: Automatische Anfragenverarbeitung",
+    href: "https://flowfact.de/anfragenverarbeitung/",
+    note: "Offizielle Herstellerseite zur automatisierten Bearbeitung eingehender Portalanfragen im Maklerkontext.",
   },
   {
-    label: "EUR-Lex – DSGVO Zusammenfassung",
-    href: "https://eur-lex.europa.eu/DE/legal-content/summary/general-data-protection-regulation-gdpr.html",
-    note: "Rechtliche Einordnung für datenschutzkonformen Betrieb; keine Rechtsberatung.",
+    label: "Propstack Hilfe: Anfragen verstehen",
+    href: "https://support.propstack.de/hc/de/articles/18360650832413-Anfragen-verstehen",
+    note: "Offizielle Hilfeseite zur Interpretation und operativen Einordnung von Anfragen im Makleralltag.",
+  },
+  {
+    label: "HubSpot Knowledge Base: Create and edit sequences",
+    href: "https://knowledge.hubspot.com/sequences/create-and-edit-sequences",
+    note: "Offizielle Quelle für sauberes, regelbasiertes Nachfassen statt rein manueller Einzelsteuerung.",
+  },
+  {
+    label: "NIST: AI Risk Management Framework",
+    href: "https://www.nist.gov/itl/ai-risk-management-framework",
+    note: "Rahmen für kontrollierte Automatisierung mit klaren Grenzen, Nachvollziehbarkeit und Risikobewusstsein.",
   },
 ];
 
 export const metadata: Metadata = buildMarketingMetadata({
-  title: "Manuell vs. Advaic für Makler",
-  ogTitle: "Manuell vs. Advaic | Prozessvergleich für Makler",
+  title: "Manuell vs. Advaic 2026: Wann Handarbeit reicht und wann Automatisierung sinnvoller ist",
+  ogTitle: "Manuell vs. Advaic 2026 | Advaic",
   description:
-    "Vergleich pro Prozessschritt: lesen, einordnen, antworten, nachfassen und dokumentieren. So sehen Sie, wo manuelle Bearbeitung Zeit kostet und wo Advaic entlastet.",
+    "Vergleich für Makler: Wo reine manuelle Anfragebearbeitung sinnvoll bleibt, wo sie kippt und wie Advaic mit Freigabe, Qualitätsprüfung und Nachfassen entlasten kann.",
   path: "/manuell-vs-advaic",
   template: "compare",
-  eyebrow: "Vergleich",
-  proof: "Zeit, Risiko und Transparenz pro Prozessschritt mit echter Entscheidungssubstanz.",
+  eyebrow: "Manuell vs. Advaic",
+  proof: "Vergleich zwischen reiner Handarbeit und kontrollierter Anfrageautomation mit Fokus auf Zeit, Risiko und Nachvollziehbarkeit.",
 });
 
 export default function ManualVsAdvaicPage() {
-  return (
-    <PageShell>
-      <PageIntro
-        kicker="Vergleich"
-        title="Wo manuelle Anfragebearbeitung Zeit kostet und wo Advaic entlastet"
-        description="Verglichen wird nicht eine Featureliste, sondern der echte Ablauf: lesen, einordnen, antworten, nachfassen und dokumentieren. Genau dort entscheidet sich, ob ein Team spürbar entlastet wird."
-        actions={
-          <>
-            <Link href="/produkt" className="btn-secondary">
-              Produkt prüfen
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              {MARKETING_PRIMARY_CTA_LABEL}
-            </Link>
-          </>
-        }
-      />
+  const siteUrl = getSiteUrl();
+  const schema = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        headline: "Manuell vs. Advaic 2026",
+        inLanguage: "de-DE",
+        mainEntityOfPage: `${siteUrl}/manuell-vs-advaic`,
+        dateModified: "2026-04-04",
+        author: {
+          "@type": "Organization",
+          name: "Advaic Redaktion",
+        },
+        about: ["Makler", "Anfragenmanagement", "manuelle Bearbeitung", "Automatisierung", "Freigabe"],
+      },
+      {
+        "@type": "FAQPage",
+        mainEntity: faqItems.map((item) => ({
+          "@type": "Question",
+          name: item.question,
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: item.answer,
+          },
+        })),
+      },
+    ],
+  };
 
-      <section className="marketing-section-clear py-14 md:py-18">
+  return (
+    <AiDiscoveryPageTemplate
+      breadcrumbItems={[
+        { name: "Startseite", path: "/" },
+        { name: "Manuell vs. Advaic", path: "/manuell-vs-advaic" },
+      ]}
+      schema={schema}
+      kicker="Manuell vs. Advaic"
+      title="Manuell vs. Advaic: Wann reine Handarbeit reicht und wann kontrollierte Automatisierung sinnvoller wird"
+      description="Die relevante Frage ist nicht, ob alles automatisiert werden kann. Die relevante Frage ist, welche Anfragen bewusst manuell bleiben sollten und wo kontrollierte Automatisierung den Makleralltag tatsächlich entlastet."
+      actions={
+        <>
+          <Link href="/anfragenmanagement-immobilienmakler" className="btn-secondary">
+            Anfragenmanagement
+          </Link>
+          <Link href="/signup?entry=manuell-vs-advaic" className="btn-primary">
+            {MARKETING_PRIMARY_CTA_LABEL}
+          </Link>
+        </>
+      }
+      mobileQuickActions={
+        <article className="card-base p-4">
+          <p className="label">Schnellwahl</p>
+          <p className="helper mt-2">Direkt in den Vergleich oder zur Startempfehlung springen.</p>
+          <div className="mt-3 grid gap-2">
+            <MarketingJumpLink href="#vergleich" className="btn-secondary w-full justify-center">
+              Vergleich
+            </MarketingJumpLink>
+            <MarketingJumpLink href="#safe-start-konfiguration" className="btn-secondary w-full justify-center">
+              Sicherer Start
+            </MarketingJumpLink>
+          </div>
+        </article>
+      }
+      stage="entscheidung"
+      stageContext="manuell-vs-advaic"
+      primaryHref="/signup?entry=manuell-vs-advaic-stage"
+      primaryLabel="Mit echten Fällen testen"
+      secondaryHref="/roi-rechner"
+      secondaryLabel="ROI berechnen"
+      sources={sources}
+      sourcesCheckedLabel={LAST_UPDATED}
+      sourcesDescription="Die Quellen unten stützen die Einordnung von Antwortgeschwindigkeit, Makler-Anfrageprozessen und kontrollierter Automatisierung. Für die konkrete Entscheidung sollten Sie immer eigene Anfrageverläufe, Freigabegründe und Ihr bestehendes Systemsetup mitprüfen."
+    >
+      <section id="kurzfassung" className="py-8 md:py-10">
         <Container>
-          <div className="grid gap-6 lg:grid-cols-12">
-            <article className="card-base p-6 lg:col-span-8 md:p-8">
-              <h2 className="h3">Worauf Sie in diesem Vergleich wirklich achten sollten</h2>
-              <p className="body mt-4 text-[var(--muted)]">
-                Viele Makler vergleichen Tools über Funktionen. Entscheidend ist aber die Wirkung im Tagesgeschäft:
-                Wie viel Zeit bleibt pro Anfrage manuell? Wie stark sinkt das Risiko falscher Antworten? Wie gut
-                bleibt der Verlauf für Team und Support nachvollziehbar?
-              </p>
-              <p className="body mt-4 text-[var(--muted)]">
-                Genau dafür ist dieser Vergleich gebaut: erst Engpässe sichtbar machen, dann Guardrails prüfen und
-                anschließend mit Safe-Start kontrolliert testen. So wird aus einer Demo eine belastbare
-                Betriebsentscheidung.
-              </p>
-            </article>
-            <article className="card-base p-6 lg:col-span-4">
-              <h2 className="h3">Für wen dieser Vergleich relevant ist</h2>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <article className="card-base p-6 md:p-8">
+              <h2 className="h3">Kurzfassung in 90 Sekunden</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                <li>Makler mit regelmäßigem Anfrageaufkommen und Zeitdruck im Postfach</li>
-                <li>Teams, die Automatisierung wollen, aber Sicherheitsgrenzen klar definieren müssen</li>
-                <li>Entscheider, die die Einführung über KPI und nicht über Bauchgefühl steuern möchten</li>
+                {summary.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+
+            <aside className="card-base hidden p-6 lg:block">
+              <p className="label">Inhaltsverzeichnis</p>
+              <div className="mt-4 grid gap-2">
+                {contents.map((item) => (
+                  <MarketingJumpLink
+                    key={item.href}
+                    href={item.href}
+                    className="rounded-xl bg-[var(--surface-2)] px-4 py-3 text-sm font-medium text-[var(--text)] ring-1 ring-[var(--border)] transition hover:-translate-y-[1px]"
+                  >
+                    {item.label}
+                  </MarketingJumpLink>
+                ))}
+              </div>
+            </aside>
+          </div>
+        </Container>
+      </section>
+
+      <section id="methodik" className="marketing-section-clear py-14 md:py-18">
+        <Container>
+          <div className="grid gap-4 md:grid-cols-2">
+            <article className="card-base p-6 md:p-8">
+              <p className="label">Autor & Stand</p>
+              <h2 className="h3 mt-3">Advaic Redaktion</h2>
+              <p className="helper mt-3">
+                Produkt- und Prozessteam mit Fokus auf Anfrageeingang, Antwortlogik, Freigabe und saubere
+                Arbeitsteilung zwischen Handarbeit und Automatisierung im Makleralltag.
+              </p>
+              <div className="mt-5 rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                <p className="text-sm font-semibold text-[var(--text)]">Aktualisiert</p>
+                <p className="mt-2 text-sm text-[var(--muted)]">{LAST_UPDATED}</p>
+              </div>
+            </article>
+
+            <article className="card-base p-6 md:p-8">
+              <p className="label">Methodik</p>
+              <h2 className="h3 mt-3">Wie dieser Vergleich zu lesen ist</h2>
+              <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+                {methodology.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
+                ))}
               </ul>
             </article>
           </div>
+        </Container>
+      </section>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            {briefPoints.map((item) => (
-              <article key={item.title} className="card-base card-hover p-6">
+      <section id="wann-manuell" className="marketing-soft-cool py-20 md:py-28">
+        <Container>
+          <div className="max-w-[78ch]">
+            <h2 className="h2">Wann manuelle Bearbeitung völlig sinnvoll bleiben kann</h2>
+            <p className="body mt-4 text-[var(--muted)]">
+              Eine gute Vergleichsseite muss auch klar benennen, wann zusätzliche Automatisierung keinen echten Mehrwert
+              bringt. Genau diese Fälle sollten Maklerbüros vor jeder Einführung sauber prüfen.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
+            {manualStillMakesSense.map((item) => (
+              <article key={item.title} className="card-base p-6">
                 <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
                 <p className="helper mt-3">{item.text}</p>
               </article>
@@ -140,103 +319,89 @@ export default function ManualVsAdvaicPage() {
         </Container>
       </section>
 
-      <StageCTA
-        stage="bewertung"
-        primaryHref="/signup?entry=vergleich-stage"
-        primaryLabel="Mit Safe-Start testen"
-        secondaryHref="/roi-rechner"
-        secondaryLabel="ROI berechnen"
-        context="manuell-vs-advaic"
-      />
+      <ManualVsAdvaicComparison id="vergleich" />
 
-      <ManualVsAdvaicComparison />
       <ProcessFlowComparison />
 
-      <section className="marketing-soft-warm py-20 md:py-28">
+      <section id="kippunkte" className="marketing-soft-warm py-20 md:py-28">
         <Container>
-          <div className="max-w-[74ch]">
-            <h2 className="h2">Wo manuelle Prozesse in der Praxis kippen</h2>
+          <div className="max-w-[78ch]">
+            <h2 className="h2">Wo reine Handarbeit im Makleralltag typischerweise kippt</h2>
             <p className="body mt-4 text-[var(--muted)]">
-              In der Realität ist selten ein einzelner Fehler das Problem. Meistens kippt der Prozess, wenn Volumen,
-              Geschwindigkeit und fehlende Klarheit gleichzeitig steigen. Dann entstehen Antwortverzug, inkonsistente Texte
-              und fehlende Übersicht im Verlauf.
+              Problematisch wird manuelle Bearbeitung selten wegen eines einzelnen Schritts. Der Engpass entsteht meist
+              dann, wenn mehrere kleine Aufgaben gleichzeitig unter Zeitdruck sauber erledigt werden müssen.
             </p>
           </div>
 
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            <article className="card-base p-6">
-              <h3 className="h3">Zeitrisiko</h3>
-              <p className="helper mt-3">
-                Jede manuelle wiederkehrende Erstantwort blockiert Zeit für Beratung und Abschlussarbeit. Der Engpass
-                entsteht bei häufigen Routineanfragen, nicht bei wenigen Spezialfällen.
-              </p>
-            </article>
-            <article className="card-base p-6">
-              <h3 className="h3">Qualitätsrisiko</h3>
-              <p className="helper mt-3">
-                Unter Zeitdruck steigen Auslassungen und unpräzise Antworten. Im Maklerkontext schadet das unmittelbar
-                Vertrauen und Rücklaufquote.
-              </p>
-            </article>
-            <article className="card-base p-6">
-              <h3 className="h3">Steuerungsrisiko</h3>
-              <p className="helper mt-3">
-                Wenn Entscheidungen nicht strukturiert geloggt sind, wird Support reaktiv und kaum noch steuernd. Genau hier
-                braucht es klare Status- und Guardrail-Logik.
-              </p>
-            </article>
+          <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {pressurePoints.map((item) => (
+              <article key={item.title} className="card-base p-6">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
+                <p className="helper mt-3">{item.text}</p>
+              </article>
+            ))}
           </div>
         </Container>
       </section>
 
       <SafeStartConfigurator />
 
-      <section className="marketing-section-clear py-20 md:py-28">
+      <section id="advaic" className="marketing-section-clear py-20 md:py-28">
         <Container>
-          <div className="grid gap-6 lg:grid-cols-12">
-            <article className="card-base p-6 lg:col-span-7 md:p-8">
-              <h2 className="h3">Einführungsplan für die ersten 30 Tage</h2>
-              <p className="helper mt-3">
-                Die höchste Erfolgswahrscheinlichkeit entsteht über stufenweisen Betrieb: erst Beobachtung, dann
-                Kalibrierung, danach gezielte Ausweitung.
-              </p>
-              <div className="mt-5 space-y-3">
-                {rolloutPlan.map((step) => (
-                  <article key={step.title} className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
-                    <p className="text-sm font-semibold text-[var(--text)]">{step.title}</p>
-                    <p className="helper mt-2">{step.text}</p>
-                  </article>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+            <article className="card-base p-6 md:p-8">
+              <p className="label">Wo Advaic passt</p>
+              <h2 className="h3 mt-3">Wenn Sie Entlastung wollen, ohne die Kontrolle abzugeben</h2>
+              <ul className="mt-5 space-y-2 text-sm text-[var(--muted)]">
+                {advaicFit.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
                 ))}
+              </ul>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Link href="/antwortzeit-immobilienanfragen" className="btn-secondary">
+                  Antwortzeit
+                </Link>
+                <Link href="/email-automatisierung-immobilienmakler" className="btn-secondary">
+                  E-Mail-Automatisierung
+                </Link>
+                <Link href="/crm-fuer-immobilienmakler" className="btn-secondary">
+                  CRM-Vergleich
+                </Link>
               </div>
             </article>
 
-            <article className="card-base p-6 lg:col-span-5 md:p-8">
-              <h2 className="h3">Quellen & Methodik</h2>
-              <p className="helper mt-3">
-                Die Vergleichslogik kombiniert öffentliche Studien mit konservativer Modellierung. Zahlen dienen als
-                Orientierung für eine fundierte Testentscheidung.
-              </p>
-              <div className="mt-4 space-y-3">
-                {sources.map((source) => (
-                  <article key={source.href} className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
-                    <a
-                      href={source.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-semibold text-[var(--text)] underline underline-offset-4"
-                    >
-                      {source.label}
-                    </a>
-                    <p className="helper mt-2">{source.note}</p>
-                  </article>
+            <article className="card-base p-6 md:p-8">
+              <p className="label">Wo Advaic eher nicht passt</p>
+              <h2 className="h3 mt-3">Wenn die Grundlagen noch nicht stehen</h2>
+              <ul className="mt-5 space-y-2 text-sm text-[var(--muted)]">
+                {advaicNotFit.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </article>
           </div>
         </Container>
       </section>
 
-      <FinalCTA />
-    </PageShell>
+      <section id="faq" className="marketing-soft-cool py-20 md:py-28">
+        <Container>
+          <h2 className="h2">Häufige Fragen</h2>
+          <div className="mt-8 space-y-4">
+            {faqItems.map((item) => (
+              <article key={item.question} className="card-base p-6 md:p-8">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.question}</h3>
+                <p className="helper mt-3">{item.answer}</p>
+              </article>
+            ))}
+          </div>
+        </Container>
+      </section>
+    </AiDiscoveryPageTemplate>
   );
 }

@@ -406,6 +406,9 @@ export default function AntwortzeitImmobilienanfragenPage() {
               <Link href="/anfragenmanagement-immobilienmakler" className="btn-secondary">
                 Anfragenmanagement
               </Link>
+              <Link href="/immobilienanfragen-nachfassen" className="btn-secondary">
+                Immobilienanfragen nachfassen
+              </Link>
               <Link href="/immobilienanfragen-automatisieren" className="btn-secondary">
                 Automatisierungsleitfaden
               </Link>

@@ -68,7 +68,7 @@ export default function SafeStartConfigurator({ id = "safe-start-konfiguration" 
             : 10;
 
     const modeLabel =
-      autoShare <= 15 ? "Assist-Start (sehr kontrolliert)" : autoShare <= 30 ? "Balancierter Start" : "Aktiver Start";
+      autoShare <= 15 ? "Sehr vorsichtiger Start" : autoShare <= 30 ? "Ausgewogener Start" : "Aktiver Start";
 
     const fitScore = Math.max(
       25,
@@ -86,30 +86,30 @@ export default function SafeStartConfigurator({ id = "safe-start-konfiguration" 
 
     const fitLevel =
       fitScore >= 75
-        ? "Sehr guter Fit"
+        ? "Sehr passend"
         : fitScore >= 58
-          ? "Guter Fit mit konservativem Start"
-          : "Selektiver Fit (Assist-Start empfohlen)";
+          ? "Passend mit vorsichtigem Start"
+          : "Eher selektiv geeignet";
 
     const fitReason =
       fitScore >= 75
         ? "Ihr Profil hat genügend Volumen und genügend wiederkehrende Erstantworten, damit kontrollierte Automatisierung schnell Wirkung zeigt."
         : fitScore >= 58
-          ? "Advaic passt, wenn Sie mit enger Freigabelogik starten und den Auto-Anteil schrittweise erhöhen."
-          : "Automatisierung sollte zunächst nur Anfragen mit sauberem Objektbezug, vollständigen Kerndaten und unkritischem Inhalt abdecken. Freigabe bleibt der Hauptpfad.";
+          ? "Advaic passt, wenn Sie mit enger Freigabelogik starten und den automatischen Anteil schrittweise erhöhen."
+          : "Automatisierung sollte zunächst nur Anfragen mit sauberem Objektbezug, vollständigen Kerndaten und unkritischem Inhalt abdecken. Die Freigabe bleibt dann zunächst der Hauptpfad.";
 
     const nextActions =
       fitScore >= 75
         ? [
             "Woche 1: Erstantworten mit klarem Objektbezug, vollständigen Kerndaten und freigegebenem Versandkorridor auf Auto aktivieren.",
             "Woche 2: Freigabegründe clustern und Regeln präzisieren.",
-            "Ab Woche 3: Follow-up Stufe 1 auf 48h prüfen.",
+            "Ab Woche 3: erste Nachfassstufe nach 48 Stunden prüfen.",
           ]
         : fitScore >= 58
           ? [
-              "Woche 1: Hoher Freigabeanteil, nur eng definierte Auto-Fälle.",
+              "Woche 1: Hoher Freigabeanteil, nur eng definierte automatische Fälle.",
               "Woche 2: Ton- und Vollständigkeitsregeln nachschärfen.",
-              "Ab Woche 3: Auto-Anteil nur bei stabiler QA erhöhen.",
+              "Ab Woche 3: automatischen Anteil nur bei stabiler Qualitätsprüfung erhöhen.",
             ]
           : [
               "Start: Autopilot auf minimalen Kernkorridor begrenzen.",
@@ -174,16 +174,16 @@ export default function SafeStartConfigurator({ id = "safe-start-konfiguration" 
     <section id={id} className="marketing-soft-cool py-20 md:py-28">
       <Container>
         <div className="max-w-[76ch]">
-          <h2 className="h2">Interaktive Safe-Start-Konfiguration</h2>
+          <h2 className="h2">Sicherer Start: Empfehlung für Ihre erste Konfiguration</h2>
           <p className="body mt-4 text-[var(--muted)]">
-            Beantworten Sie fünf kurze Punkte und erhalten Sie eine konkrete Startempfehlung für Auto, Freigabe,
-            Ignorieren und Follow-ups. Ziel ist ein kontrollierter Start ohne Qualitätsrisiko.
+            Beantworten Sie fünf kurze Punkte und erhalten Sie eine konkrete Empfehlung für automatische Antworten,
+            Freigabe, Ignorieren und Nachfassen. Ziel ist ein kontrollierter Start ohne unnötiges Qualitätsrisiko.
           </p>
         </div>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-12">
           <article className="card-base p-6 lg:col-span-7 md:p-7">
-            <h3 className="h3">Mini-Wizard</h3>
+            <h3 className="h3">Kurze Selbsteinschätzung</h3>
             <p className="helper mt-2">Wählen Sie die Optionen, die Ihren aktuellen Betrieb am besten treffen.</p>
 
             <div className="mt-5 space-y-5">
@@ -260,7 +260,7 @@ export default function SafeStartConfigurator({ id = "safe-start-konfiguration" 
               </fieldset>
 
               <fieldset>
-                <legend className="text-sm font-semibold text-[var(--text)]">Follow-ups</legend>
+                <legend className="text-sm font-semibold text-[var(--text)]">Nachfassen</legend>
                 <div className="mt-2 grid gap-2 sm:grid-cols-3">
                   {[
                     { value: "aus", label: "Aus" },
@@ -322,7 +322,7 @@ export default function SafeStartConfigurator({ id = "safe-start-konfiguration" 
                   <span className="font-semibold text-[var(--text)]">ca. {recommendation.weeklyRequests} Anfragen</span>
                 </p>
                 <p className="text-sm text-[var(--muted)]">
-                  Auto senden (klar):{" "}
+                  Automatisch senden:{" "}
                   <span className="font-semibold text-[var(--text)]">{recommendation.autoShare} %</span>
                 </p>
                 <p className="text-sm text-[var(--muted)]">
@@ -333,17 +333,17 @@ export default function SafeStartConfigurator({ id = "safe-start-konfiguration" 
                   Ignorieren: <span className="font-semibold text-[var(--text)]">{recommendation.ignoreShare} %</span>
                 </p>
                 <p className="text-sm text-[var(--muted)]">
-                  Max. Auto-Versand pro Tag:{" "}
+                  Max. automatische Antworten pro Tag:{" "}
                   <span className="font-semibold text-[var(--text)]">{recommendation.dailyAutoCap}</span>
                 </p>
                 <p className="text-sm text-[var(--muted)]">
-                  Follow-up Stufe 1:{" "}
+                  Nachfassen Stufe 1:{" "}
                   <span className="font-semibold text-[var(--text)]">
                     {recommendation.followUpFirstHours ? `${recommendation.followUpFirstHours} h` : "deaktiviert"}
                   </span>
                 </p>
                 <p className="text-sm text-[var(--muted)]">
-                  Follow-up Stufe 2:{" "}
+                  Nachfassen Stufe 2:{" "}
                   <span className="font-semibold text-[var(--text)]">
                     {recommendation.followUpSecondHours ? `${recommendation.followUpSecondHours} h` : "deaktiviert"}
                   </span>
@@ -354,13 +354,13 @@ export default function SafeStartConfigurator({ id = "safe-start-konfiguration" 
                 <p className="text-sm font-semibold text-[var(--text)]">Warum diese Empfehlung?</p>
                 <p className="helper mt-2">
                   Ziel ist ein kontrollierter Start: Erstantworten mit sauberem Objektbezug automatisieren, Fälle mit
-                  fehlenden Angaben oder Risikosignalen bewusst in Ihrer Freigabe halten und Follow-ups nur in
+                  fehlenden Angaben oder Risikosignalen bewusst in Ihrer Freigabe halten und Nachfassen nur in
                   sinnvollen Stufen aktivieren.
                 </p>
               </article>
 
               <article className="mt-4 rounded-xl bg-white p-4 ring-1 ring-[var(--border)]">
-                <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Fit-Diagnose (5 Fragen)</p>
+                <p className="text-xs uppercase tracking-[0.08em] text-[var(--muted)]">Eignung in Kürze</p>
                 <p className="mt-1 text-lg font-semibold text-[var(--text)]">
                   {recommendation.fitLevel} · {recommendation.fitScore}/100
                 </p>
@@ -380,7 +380,7 @@ export default function SafeStartConfigurator({ id = "safe-start-konfiguration" 
                   {MARKETING_PRIMARY_CTA_LABEL}
                 </Link>
                 <Link href="/manuell-vs-advaic#vergleich" className="btn-secondary">
-                  Mit manuell vergleichen
+                  Zum Vergleich
                 </Link>
               </div>
             </div>

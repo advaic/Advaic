@@ -220,6 +220,14 @@ export default function BranchenKleineMaklerbuerosPage() {
                 </li>
               ))}
             </ul>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Link href="/maklersoftware-fuer-kleine-maklerbueros" className="btn-secondary">
+                Passende Maklersoftware
+              </Link>
+              <Link href="/immobilienanfragen-priorisieren" className="btn-secondary">
+                Anfragen priorisieren
+              </Link>
+            </div>
           </article>
 
           <article className="card-base mt-4 p-6">

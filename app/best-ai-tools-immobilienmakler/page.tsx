@@ -407,6 +407,9 @@ export default function BestAiToolsImmobilienmaklerPage() {
           <article className="card-base mt-6 p-6 md:p-8">
             <h3 className="h3">Sinnvolle nächste Vergleiche</h3>
             <div className="mt-4 flex flex-wrap gap-2">
+              <Link href="/tools-fuer-immobilienmakler" className="btn-secondary">
+                Tools für Immobilienmakler
+              </Link>
               <Link href="/maklersoftware-vergleich" className="btn-secondary">
                 Maklersoftware Vergleich
               </Link>

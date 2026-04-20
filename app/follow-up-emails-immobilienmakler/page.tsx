@@ -7,116 +7,168 @@ import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDisco
 import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
 import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
-const LAST_UPDATED = "21. März 2026";
+const LAST_UPDATED = "4. April 2026";
 
 const summary = [
-  "Gute Nachfass-E-Mails erinnern an eine offene Anfrage, ohne Druck aufzubauen oder den Kontext zu verlieren.",
-  "Es gibt keine universell perfekte Taktung. Ein konservativer Start mit klaren Stopp-Regeln ist fast immer besser als aggressive Sequenzen.",
-  "Für Makler zählt vor allem, ob Nachfassungen bei Antwort, Terminbuchung, Kontextwechsel oder Risikosignalen sofort stoppen.",
+  "Nachfass-E-Mails funktionieren im Makleralltag nur dann gut, wenn die erste Antwort schnell und hilfreich war. Follow-up repariert keinen schwachen Anfrageeingang.",
+  "Für die meisten Büros reichen zum Start ein bis zwei Erinnerungen mit klarer Begründung, festen Abständen in Werktagen und harten Stoppsignalen.",
+  "Wirklich gute Nachfasslogik erhöht nicht die Zahl versendeter Mails, sondern die Zahl sinnvoll fortgeführter Gespräche.",
 ];
 
 const contents = [
   { href: "#kurzfassung", label: "Kurzfassung" },
   { href: "#methodik", label: "Methodik" },
   { href: "#grundregeln", label: "Grundregeln" },
-  { href: "#cadence", label: "Konservative Taktung" },
-  { href: "#stop", label: "Stop-Regeln" },
-  { href: "#kpis", label: "Kennzahlen" },
-  { href: "#advaic", label: "Mit Advaic" },
+  { href: "#situationen", label: "Typische Situationen" },
+  { href: "#taktung", label: "Zeitabstände" },
+  { href: "#stoppsignale", label: "Stoppsignale" },
+  { href: "#kennzahlen", label: "Kennzahlen" },
+  { href: "#advaic", label: "Advaic" },
+  { href: "#faq", label: "FAQ" },
 ];
 
 const methodology = [
-  "Die Empfehlungen basieren auf offiziellen HubSpot-Dokumenten zu Sequenzen und automatischer Beendigung, auf HBR zur Geschwindigkeit digitaler Leads und auf Advaics operativer Nachfasslogik.",
-  "Die Taktungsbeispiele unten sind Startpunkte für den Makleralltag, keine universellen Branchenregeln. Teamgröße, Markt, Objekttyp und bestehende Reaktionszeit verändern, was im Alltag sinnvoll ist.",
-  "Der Schwerpunkt liegt bewusst auf hilfreichem, kontrolliertem Nachfassen statt auf maximaler Kontaktfrequenz.",
+  "Die Empfehlungen verbinden aktuelle offizielle HubSpot-Dokumentation zu Sequenzen, Antworten im selben Verlauf und automatischen Stopps mit allgemeiner Forschung zur Reaktionsgeschwindigkeit digitaler Leads.",
+  "Die Zeitabstände auf dieser Seite sind bewusst als Richtwerte formuliert. Markt, Objekttyp, Teamgröße und die eigene Erstreaktionszeit verändern, was im Alltag wirklich sinnvoll ist.",
+  "Der Fokus liegt auf hilfreicher Kommunikation im Anfrageprozess, nicht auf maximaler Kontaktfrequenz oder künstlichem Druck.",
 ];
 
 const coreRules = [
   {
-    title: "Nur auf echte offene Fragen nachfassen",
-    text: "Nachfassen sollte ein offenes Gespräch weiterführen und kein Massenmuster ohne Bezug versenden.",
+    title: "Erstreaktion vor Nachfassen",
+    text: "Wenn die erste Antwort schon zu spät, unklar oder unvollständig war, bringt eine automatische Erinnerung meist wenig. Follow-up baut auf einem sauberen Start auf.",
   },
   {
-    title: "Im selben E-Mail-Verlauf bleiben, wenn das dem Empfänger hilft",
-    text: "Gerade bei Makleranfragen hilft derselbe E-Mail-Verlauf, damit Interessenten nicht neu sortieren müssen, worum es ging.",
+    title: "Nur bei offenem Gespräch nachfassen",
+    text: "Nachfass-E-Mails sollten an eine echte offene Frage anschließen: Unterlagen erhalten, Besichtigung abstimmen, Rückfrage klären oder nächsten Schritt bestätigen.",
   },
   {
-    title: "Sofort stoppen, wenn der Kontext kippt",
-    text: "Antwort, Termin, Abwesenheitsnotiz, Konflikt oder neue Information sind klare Gründe zum Stoppen oder Prüfen.",
+    title: "Ein klarer nächster Schritt pro Mail",
+    text: "Gute Follow-ups bitten nicht um alles gleichzeitig. Sie geben eine konkrete Handlung vor: Rückmeldung zu Unterlagen, Terminauswahl oder kurze Bestätigung.",
   },
   {
-    title: "Nie Frequenz vor Relevanz stellen",
-    text: "Eine gute Nachfasslogik erhöht nicht die Anzahl versendeter Mails, sondern die Zahl sinnvoller Erinnerungen.",
+    title: "Sofort stoppen, wenn sich der Kontext ändert",
+    text: "Antworten, Termine, Abwesenheitsnotizen, Konfliktsignale oder neue Informationen sind keine Randfälle, sondern der Kern einer sauberen Nachfasslogik.",
   },
 ];
 
-const cadenceSteps = [
+const situations = [
   {
-    title: "Stufe 1: 24 bis 48 Stunden nach der ersten Antwort",
-    text: "Geeignet für frische, zeitnahe Anfragen mit hoher Abschlussnähe. Der Ton sollte kurz, hilfreich und konkret bleiben.",
+    title: "Exposé oder Unterlagen gesendet, keine Rückmeldung",
+    text: "Eine kurze Erinnerung nach zwei Werktagen ist oft sinnvoll, wenn klar gefragt wurde, ob weitere Informationen oder ein Termin gewünscht sind.",
   },
   {
-    title: "Stufe 2: weitere 48 bis 72 Stunden später",
-    text: "Nur wenn weiterhin keine Antwort vorliegt und das Thema noch aktuell ist. Die zweite Stufe sollte eher Klarheit schaffen als Druck erhöhen.",
+    title: "Besichtigung vorgeschlagen, aber kein Termin bestätigt",
+    text: "Eine zweite Erinnerung darf helfen, offene Terminvorschläge zu klären. Danach ist meist eine manuelle Prüfung sinnvoller als weitere Automatik.",
   },
   {
-    title: "Danach meist stoppen oder manuell prüfen",
-    text: "Spätestens nach zwei Stufen sollte geprüft werden, ob weiteres Nachfassen noch hilfreich ist oder bereits Reibung erzeugt.",
+    title: "Interessent hat eine konkrete Rückfrage offengelassen",
+    text: "Hier darf die Nachfass-E-Mail direkt auf die unbeantwortete Frage Bezug nehmen. Ohne klaren Bezug wirkt dieselbe Nachricht schnell wie Serienversand.",
+  },
+  {
+    title: "Es liegt schon eine Antwort oder Abwesenheitsnotiz vor",
+    text: "Dann ist kein weiteres automatisches Nachfassen sinnvoll. Der Fall gehört entweder in den manuellen nächsten Schritt oder bleibt bis zum passenden Zeitpunkt gestoppt.",
   },
 ];
 
-const stopRules = [
-  "Der Interessent antwortet auf die Nachricht oder schreibt separat zurück.",
-  "Ein Termin wird gebucht oder der nächste Schritt ist bereits bestätigt.",
-  "Eine Abwesenheitsnotiz oder ein anderer Sonderfall erfordert eine manuelle Prüfung.",
-  "Der Objekt- oder Anfragekontext hat sich verändert.",
-  "Qualitäts- oder Risikoprüfungen schlagen vor Versand fehl.",
+const timingSteps = [
+  {
+    title: "Tag 0: Erstantwort senden",
+    text: "Schnell, hilfreich und mit einem eindeutigen nächsten Schritt. Ohne saubere Erstreaktion sollten Sie keine Folgestufen planen.",
+  },
+  {
+    title: "Nach 2 Werktagen: erste Erinnerung",
+    text: "Kurz halten, Bezug auf die vorherige Nachricht nehmen und nur einen konkreten nächsten Schritt anbieten.",
+  },
+  {
+    title: "Nach weiteren 2 bis 3 Werktagen: zweite Erinnerung",
+    text: "Nur bei weiterhin offenem Gespräch und nur dann, wenn der Fall operativ noch aktuell ist. Danach steigt das Risiko unnötiger Reibung deutlich.",
+  },
+  {
+    title: "Danach: stoppen oder manuell entscheiden",
+    text: "Mehrere automatische Stufen sind für Maklerbüros selten der beste Start. Besser ist ein kontrollierter Übergang in manuelle Prüfung oder bewusster Stopp.",
+  },
+];
+
+const stopSignals = [
+  "Der Interessent antwortet direkt oder in einem anderen Verlauf.",
+  "Ein Termin wird gebucht oder der nächste Schritt ist bestätigt.",
+  "Eine Abwesenheitsnotiz verschiebt den sinnvollen Zeitpunkt.",
+  "Objekt, Verfügbarkeit oder Zuständigkeit haben sich geändert.",
+  "Qualitäts- oder Risikoprüfungen markieren die Nachricht als Ausnahmefall.",
+  "Der Tonfall oder die Vorgeschichte sprechen gegen weitere Automatisierung.",
 ];
 
 const messagePrinciples = [
   {
-    title: "Hilfreich statt drängend",
-    text: "Das Ziel ist Klarheit: Brauchen Sie noch Unterlagen, einen Termin oder weitere Infos? Nicht: künstliche Verknappung ohne echten Anlass.",
+    title: "Im selben E-Mail-Verlauf bleiben, wenn der Kontext dort schon sauber liegt",
+    text: "Gerade bei offenen Anfragen hilft ein gemeinsamer Verlauf, weil der Empfänger nicht neu zusammensuchen muss, worum es ging. Genau deshalb unterstützen viele Sequenz-Tools Antworten im selben Verlauf.",
   },
   {
-    title: "Ein nächster Schritt",
-    text: "Jede Nachfass-E-Mail sollte einen einfachen nächsten Schritt enthalten: Unterlagen anfordern, Termin bestätigen, Rückfrage beantworten.",
+    title: "Hilfreich erinnern, nicht drängen",
+    text: "Eine gute Nachfass-E-Mail fragt nicht pauschal nach, sondern bietet eine sinnvolle Entscheidung an: Termin abstimmen, Unterlagen ergänzen oder kurz Rückmeldung geben.",
   },
   {
-    title: "Keine neue Unsicherheit erzeugen",
-    text: "Wenn Angaben fehlen oder der Fall sensibel wird, geht die Mail nicht raus, sondern in die Freigabe oder in die manuelle Bearbeitung.",
+    title: "Unsicherheit lieber anhalten als kaschieren",
+    text: "Wenn Angaben fehlen oder der Fall sensibel geworden ist, sollte keine generische Mail verschickt werden. Dann ist Freigabe oder manuelle Übernahme sauberer.",
   },
 ];
 
 const kpis = [
-  "Antwortquote nach der ersten Nachfass-Stufe",
-  "Antwortquote nach der zweiten Nachfass-Stufe",
-  "Quote automatisch gestoppter Nachfassungen durch Antwort oder Meeting",
-  "Freigabequote bei Fällen mit Nachfassen",
-  "Beschwerden, Abmeldungen oder negative Reaktionen nach dem Nachfassen",
+  {
+    title: "Antwortquote nach der ersten Erinnerung",
+    text: "Zeigt, ob die erste Nachfassstufe wirklich hilfreiche offene Gespräche trifft oder nur zusätzliche Aktivität erzeugt.",
+  },
+  {
+    title: "Stopprate durch Antwort oder Termin",
+    text: "Macht sichtbar, wie oft Folgekommunikation korrekt beendet wird, statt unnötig weiterzulaufen.",
+  },
+  {
+    title: "Manuelle Übernahmequote",
+    text: "Zeigt, wie viele Fälle bewusst aus der Automatik herausgenommen werden. Das ist kein Makel, sondern oft ein Zeichen kontrollierter Qualität.",
+  },
+  {
+    title: "Negative Reaktionen auf Nachfass-E-Mails",
+    text: "Beschwerden, Abmeldungen oder irritierte Antworten sind ein frühes Warnsignal für zu viel Frequenz oder zu wenig Kontext.",
+  },
+  {
+    title: "Zeit bis zum geklärten nächsten Schritt",
+    text: "Nicht jede Antwort ist wertvoll. Entscheidend ist, ob aus dem Follow-up ein klarer nächster Schritt entsteht.",
+  },
 ];
 
 const advaicFit = [
-  "Advaic behandelt Nachfassen nicht als starres Mailing, sondern als Fortsetzung eines bestehenden Anfrageverlaufs.",
-  "Vor jeder Nachfassmail greifen dieselben Qualitäts- und Risiko-Checks wie vor einer normalen Antwort.",
-  "Wenn der Kontext kippt, ein Warnsignal auftaucht oder Informationen fehlen, landet der Fall nicht im Auto-Versand, sondern in der Freigabe.",
+  "Wenn Ihr Team viele ähnliche Interessenten-Anfragen bearbeitet und Nachfassen bisher uneinheitlich oder zu spät passiert.",
+  "Wenn Sie Folgekommunikation nur dann automatisch senden wollen, wenn Kontext, Qualitätsprüfung und Stoppsignale sauber zusammenpassen.",
+  "Wenn Nachfassen nicht als starre Sequenz, sondern als Fortsetzung eines realen Anfrageverlaufs organisiert werden soll.",
 ];
 
-const faqs = [
+const advaicNotFit = [
+  "Wenn die Erstreaktion schon ungeklärt ist und der eigentliche Engpass noch im Anfrageeingang liegt.",
+  "Wenn fast jede Folgekommunikation hoch individuell, konfliktbeladen oder verhandlungsnah ist.",
+  "Wenn Sie primär ein allgemeines Tool für Newsletter- oder Vertriebssequenzen suchen und nicht eine operative Schicht für Makleranfragen.",
+];
+
+const faqItems = [
   {
     question: "Wie viele Nachfass-E-Mails sind für Makler sinnvoll?",
     answer:
-      "Für einen konservativen Start reichen meist ein bis zwei Stufen. Danach steigt die Gefahr, dass Nachfassungen eher stören als helfen.",
+      "Für einen sauberen Start reichen meist ein bis zwei Erinnerungen. Alles darüber hinaus sollte nur mit klarer Begründung und nach Sicht auf echte Reaktionen erweitert werden.",
   },
   {
-    question: "Soll eine Nachfass-E-Mail im selben Thread bleiben?",
+    question: "Soll die Nachfass-E-Mail im selben Verlauf bleiben?",
     answer:
-      "Oft ja, weil der Empfänger den Kontext direkt sieht. Genau deshalb verweisen viele Sequenz-Tools auf Antworten im selben Thread als hilfreiche Option.",
+      "Oft ja, weil der Empfänger den bisherigen Kontext direkt sieht. Entscheidend ist, dass der bestehende Verlauf sauber ist und nicht bereits durch Antworten oder Sonderfälle überholt wurde.",
   },
   {
-    question: "Wann sollte eine Nachfass-E-Mail nicht automatisch gesendet werden?",
+    question: "Wann sollte nicht automatisch nachgefasst werden?",
     answer:
-      "Sobald eine Antwort vorliegt, ein Termin gebucht wurde, der Kontext sich verändert hat oder ein Qualitäts- oder Risikosignal eine manuelle Prüfung sinnvoll macht.",
+      "Sobald eine Antwort vorliegt, ein Termin bestätigt wurde, eine Abwesenheitsnotiz aktiv ist, wichtige Informationen fehlen oder der Fall inhaltlich sensibel geworden ist.",
+  },
+  {
+    question: "Ist Follow-up das Gleiche wie Lead-Nurturing?",
+    answer:
+      "Nein. Auf dieser Seite geht es um konkrete offene Makleranfragen. Lead-Nurturing beschreibt meist breitere Kommunikationsstrecken ohne unmittelbaren Anfragekontext.",
   },
 ];
 
@@ -124,39 +176,39 @@ const sources = [
   {
     label: "Harvard Business Review – The Short Life of Online Sales Leads",
     href: "https://hbr.org/2011/03/the-short-life-of-online-sales-leads",
-    note: "Referenz für die wirtschaftliche Bedeutung schneller, strukturierter Reaktion auf digitale Anfragen.",
+    note: "Zeigt, warum schnelle und strukturierte Reaktion auf digitale Anfragen wirtschaftlich relevant bleibt.",
   },
   {
     label: "HubSpot: Create and edit sequences",
     href: "https://knowledge.hubspot.com/sequences/create-and-edit-sequences",
-    note: "Offizielle Dokumentation zu Sequenzen, Sendefenstern, Geschäftstagen und Zeitsteuerung.",
+    note: "Offizielle Dokumentation zu Sendefenstern, Werktagen und grundlegender Ablaufsteuerung in Sequenzen.",
   },
   {
     label: "HubSpot: Unenroll contacts from a sequence",
     href: "https://knowledge.hubspot.com/sequences/unenroll-from-sequence",
-    note: "Offizielle Dokumentation zu automatischen Stoppsignalen wie Antwort, Termin oder Abmeldung vom Versand.",
+    note: "Offizielle Quelle zu automatischen Stoppsignalen wie Antwort, Termin oder Abmeldung.",
   },
   {
     label: "HubSpot: Create an email thread in a sequence",
     href: "https://knowledge.hubspot.com/de/sequences/create-an-email-thread-with-your-sequence",
-    note: "Offizielle Dokumentation dazu, wann Antworten im selben Thread in Sequenzen sinnvoll sind.",
+    note: "Offizielle Dokumentation dazu, wann eine Nachfass-Mail im selben E-Mail-Verlauf sinnvoll geführt werden kann.",
   },
   {
     label: "NIST – AI Risk Management Framework",
     href: "https://www.nist.gov/itl/ai-risk-management-framework",
-    note: "Rahmen für kontrollierte, nachvollziehbare und risikobewusste Automationslogik.",
+    note: "Rahmen für kontrollierte, nachvollziehbare und risikobewusste Automationsentscheidungen.",
   },
 ];
 
 export const metadata: Metadata = buildMarketingMetadata({
-  title: "Follow-up-E-Mails für Immobilienmakler",
-  ogTitle: "Follow-up-E-Mails für Immobilienmakler | Advaic",
+  title: "Follow-up-E-Mails für Immobilienmakler 2026",
+  ogTitle: "Follow-up-E-Mails für Immobilienmakler 2026 | Advaic",
   description:
-    "Leitfaden für Makler: Wie Follow-up-E-Mails sinnvoll getaktet, sauber gestoppt und im passenden E-Mail-Verlauf geführt werden, ohne Interessenten zu nerven.",
+    "Praxisleitfaden für Makler: sinnvolle Zeitabstände, klare Stoppsignale und bessere Nachfass-E-Mails im echten Anfrageprozess.",
   path: "/follow-up-emails-immobilienmakler",
   template: "guide",
-  eyebrow: "Leitfaden zum Nachfassen",
-  proof: "Hilfreiches Nachfassen braucht Taktung, Kontext im Thread und harte Stop-Regeln.",
+  eyebrow: "Follow-up-E-Mails",
+  proof: "Gutes Nachfassen folgt klaren Zeitabständen, bleibt im Kontext und stoppt bei Antwort oder Termin.",
 });
 
 export default function FollowUpEmailsImmobilienmaklerPage() {
@@ -166,19 +218,26 @@ export default function FollowUpEmailsImmobilienmaklerPage() {
     "@graph": [
       {
         "@type": "Article",
-        headline: "Follow-up-E-Mails für Immobilienmakler",
+        headline: "Follow-up-E-Mails für Immobilienmakler 2026",
         inLanguage: "de-DE",
         mainEntityOfPage: `${siteUrl}/follow-up-emails-immobilienmakler`,
-        dateModified: "2026-03-21",
+        dateModified: "2026-04-04",
         author: {
           "@type": "Organization",
           name: "Advaic Redaktion",
         },
-        about: ["Follow-up-E-Mails", "Immobilienmakler", "Antworten im selben Thread", "Stop-Regeln", "Sequenzen"],
+        about: [
+          "Follow-up-E-Mails",
+          "Immobilienmakler",
+          "Nachfassen",
+          "E-Mail-Verlauf",
+          "Stoppsignale",
+          "Anfrageprozess",
+        ],
       },
       {
         "@type": "FAQPage",
-        mainEntity: faqs.map((item) => ({
+        mainEntity: faqItems.map((item) => ({
           "@type": "Question",
           name: item.question,
           acceptedAnswer: {
@@ -197,9 +256,9 @@ export default function FollowUpEmailsImmobilienmaklerPage() {
         { name: "Follow-up-E-Mails für Immobilienmakler", path: "/follow-up-emails-immobilienmakler" },
       ]}
       schema={schema}
-      kicker="Leitfaden zum Nachfassen"
-      title="Follow-up-E-Mails für Immobilienmakler: hilfreich nachfassen, sauber stoppen"
-      description="Diese Seite zeigt, wie Makler Follow-up-E-Mails sinnvoll takten, wann Nachfassungen im selben E-Mail-Verlauf bleiben sollten und welche Stop-Regeln vor jeder automatischen Stufe Pflicht sind."
+      kicker="Follow-up-E-Mails"
+      title="Follow-up-E-Mails für Immobilienmakler: sinnvoll nachfassen, rechtzeitig stoppen"
+      description="Diese Seite zeigt, welche Zeitabstände im Makleralltag für Nachfass-E-Mails sinnvoll sind, wann Sie im selben E-Mail-Verlauf bleiben sollten und bei welchen Signalen automatische Folgekommunikation sofort endet."
       actions={
         <>
           <Link href="/follow-up-logik" className="btn-secondary">
@@ -213,13 +272,13 @@ export default function FollowUpEmailsImmobilienmaklerPage() {
       mobileQuickActions={
         <article className="card-base p-4">
           <p className="label">Schnellwahl</p>
-          <p className="helper mt-2">Direkt zur Taktung oder zu den Stop-Regeln springen.</p>
+          <p className="helper mt-2">Direkt zu den Zeitabständen oder den Stoppsignalen springen.</p>
           <div className="mt-3 grid gap-2">
-            <MarketingJumpLink href="#cadence" className="btn-secondary w-full justify-center">
-              Taktung
+            <MarketingJumpLink href="#taktung" className="btn-secondary w-full justify-center">
+              Zeitabstände
             </MarketingJumpLink>
-            <MarketingJumpLink href="#stop" className="btn-secondary w-full justify-center">
-              Stop-Regeln
+            <MarketingJumpLink href="#stoppsignale" className="btn-secondary w-full justify-center">
+              Stoppsignale
             </MarketingJumpLink>
           </div>
         </article>
@@ -232,7 +291,7 @@ export default function FollowUpEmailsImmobilienmaklerPage() {
       secondaryLabel="Anfragenmanagement"
       sources={sources}
       sourcesCheckedLabel={LAST_UPDATED}
-      sourcesDescription="Die Quellen unten verbinden aktuelle offizielle Dokumentation zu Sequenzen und Stop-Logik mit einer allgemeinen Research- und Risikoperspektive. Die optimale Taktung hängt trotzdem immer von Ihrem Markt und Ihrem Antwortverhalten ab."
+      sourcesDescription="Die Quellen unten verbinden aktuelle offizielle Produktdokumentation zu Sequenzen und Stopplogik mit allgemeiner Forschung zur Bearbeitung digitaler Anfragen. Die genannten Zeitabstände sind bewusst als Richtwerte zu lesen, nicht als starre Branchenregel."
     >
       <section id="kurzfassung" className="py-8 md:py-10">
         <Container>
@@ -274,8 +333,8 @@ export default function FollowUpEmailsImmobilienmaklerPage() {
               <p className="label">Autor & Stand</p>
               <h2 className="h3 mt-3">Advaic Redaktion</h2>
               <p className="helper mt-3">
-                Produkt- und Prozessteam mit Fokus auf Antwortqualität, Stop-Logik und kontrolliertes Nachfassen für
-                Maklerbüros.
+                Produkt- und Prozessteam mit Fokus auf Antwortqualität, Nachfassen und kontrollierte
+                Kommunikationslogik für Maklerbüros.
               </p>
               <div className="mt-5 rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
                 <p className="text-sm font-semibold text-[var(--text)]">Aktualisiert</p>
@@ -285,7 +344,7 @@ export default function FollowUpEmailsImmobilienmaklerPage() {
 
             <article className="card-base p-6 md:p-8">
               <p className="label">Methodik</p>
-              <h2 className="h3 mt-3">Wie diese Empfehlungen zu lesen sind</h2>
+              <h2 className="h3 mt-3">Wie diese Seite zu lesen ist</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
                 {methodology.map((item) => (
                   <li key={item} className="flex items-start gap-2">
@@ -301,7 +360,7 @@ export default function FollowUpEmailsImmobilienmaklerPage() {
 
       <section id="grundregeln" className="marketing-soft-cool py-20 md:py-28">
         <Container>
-          <h2 className="h2">Vier Grundregeln für gutes Nachfassen im Makleralltag</h2>
+          <h2 className="h2">Vier Grundregeln für gute Nachfass-E-Mails</h2>
           <div className="mt-8 grid gap-4 md:grid-cols-2">
             {coreRules.map((item) => (
               <article key={item.title} className="card-base p-6">
@@ -313,18 +372,18 @@ export default function FollowUpEmailsImmobilienmaklerPage() {
         </Container>
       </section>
 
-      <section id="cadence" className="marketing-section-clear py-20 md:py-28">
+      <section id="situationen" className="marketing-section-clear py-20 md:py-28">
         <Container>
           <div className="max-w-[78ch]">
-            <h2 className="h2">Konservative Taktung für den Start</h2>
+            <h2 className="h2">Typische Situationen im Makleralltag</h2>
             <p className="body mt-4 text-[var(--muted)]">
-              Diese Abstände sind Startpunkte, keine starren Regeln. Entscheidend ist, ob Ihr Team im Alltag
-              nachvollziehen kann, warum eine Stufe noch sinnvoll ist oder besser stoppt.
+              Nachfassen ist nur dann hilfreich, wenn die Situation noch offen und verständlich ist. Die besten
+              Setups unterscheiden deshalb nicht nach Marketingkampagne, sondern nach echtem Anfragekontext.
             </p>
           </div>
 
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {cadenceSteps.map((item) => (
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
+            {situations.map((item) => (
               <article key={item.title} className="card-base p-6">
                 <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
                 <p className="helper mt-3">{item.text}</p>
@@ -334,13 +393,34 @@ export default function FollowUpEmailsImmobilienmaklerPage() {
         </Container>
       </section>
 
-      <section id="stop" className="marketing-soft-warm py-20 md:py-28">
+      <section id="taktung" className="marketing-soft-warm py-20 md:py-28">
+        <Container>
+          <div className="max-w-[78ch]">
+            <h2 className="h2">Zeitabstände, mit denen viele Teams gut starten</h2>
+            <p className="body mt-4 text-[var(--muted)]">
+              Diese Abstände sind ein vorsichtiger Start für offene Makleranfragen. Entscheidend ist nicht die
+              Schlagzahl, sondern ob jede Stufe noch nachvollziehbar zum Fall passt.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {timingSteps.map((item) => (
+              <article key={item.title} className="card-base p-6">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
+                <p className="helper mt-3">{item.text}</p>
+              </article>
+            ))}
+          </div>
+        </Container>
+      </section>
+
+      <section id="stoppsignale" className="marketing-section-clear py-20 md:py-28">
         <Container>
           <div className="grid gap-4 md:grid-cols-2">
             <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Stop-Regeln vor jeder weiteren Stufe</h2>
+              <h2 className="h3">Stoppsignale vor jeder weiteren Nachricht</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {stopRules.map((item) => (
+                {stopSignals.map((item) => (
                   <li key={item} className="flex items-start gap-2">
                     <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
                     <span>{item}</span>
@@ -348,9 +428,10 @@ export default function FollowUpEmailsImmobilienmaklerPage() {
                 ))}
               </ul>
             </article>
+
             <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Was eine gute Nachfass-E-Mail ausmacht</h2>
-              <div className="space-y-4">
+              <h2 className="h3">Was eine gute Nachfass-Mail auszeichnet</h2>
+              <div className="mt-4 space-y-4">
                 {messagePrinciples.map((item) => (
                   <article key={item.title} className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
                     <p className="text-sm font-semibold text-[var(--text)]">{item.title}</p>
@@ -363,54 +444,84 @@ export default function FollowUpEmailsImmobilienmaklerPage() {
         </Container>
       </section>
 
-      <section id="kpis" className="marketing-section-clear py-20 md:py-28">
+      <section id="kennzahlen" className="marketing-soft-cool py-20 md:py-28">
         <Container>
-          <article className="card-base p-6 md:p-8">
-            <h2 className="h2">Kennzahlen für die Steuerung des Nachfassens</h2>
-            <ul className="mt-5 grid gap-2 text-sm text-[var(--muted)] md:grid-cols-2">
-              {kpis.map((item) => (
-                <li key={item} className="flex items-start gap-2">
-                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </article>
+          <div className="max-w-[78ch]">
+            <h2 className="h2">Kennzahlen, die Nachfassen wirklich steuerbar machen</h2>
+            <p className="body mt-4 text-[var(--muted)]">
+              Gute Follow-up-Logik misst nicht nur Versandmengen. Wichtiger ist, ob aus offenen Gesprächen schneller
+              ein geklärter nächster Schritt wird und unnötige Folgekommunikation zuverlässig stoppt.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {kpis.map((item) => (
+              <article key={item.title} className="card-base p-6">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
+                <p className="helper mt-3">{item.text}</p>
+              </article>
+            ))}
+          </div>
         </Container>
       </section>
 
       <section id="advaic" className="marketing-section-clear py-20 md:py-28">
         <Container>
-          <article className="card-base p-6 md:p-8">
-            <h2 className="h2">Wie Advaic Nachfassen steuert</h2>
-            <ul className="mt-5 space-y-2 text-sm text-[var(--muted)]">
-              {advaicFit.map((item) => (
-                <li key={item} className="flex items-start gap-2">
-                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <Link href="/follow-up-logik" className="btn-secondary">
-                Nachfasslogik im Produkt
-              </Link>
-              <Link href="/anfragenmanagement-immobilienmakler" className="btn-secondary">
-                Anfragenmanagement
-              </Link>
-              <Link href="/qualitaetschecks" className="btn-secondary">
-                Qualitätschecks
-              </Link>
-            </div>
-          </article>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+            <article className="card-base p-6 md:p-8">
+              <p className="label">Wo Advaic passt</p>
+              <h2 className="h3 mt-3">Wenn Nachfassen Teil des echten Anfrageprozesses sein soll</h2>
+              <ul className="mt-5 space-y-2 text-sm text-[var(--muted)]">
+                {advaicFit.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Link href="/follow-up-logik" className="btn-secondary">
+                  Nachfasslogik im Produkt
+                </Link>
+                <Link href="/immobilienanfragen-nachfassen" className="btn-secondary">
+                  Immobilienanfragen nachfassen
+                </Link>
+                <Link href="/immobilienscout-anfragen-nachfassen" className="btn-secondary">
+                  ImmoScout nachfassen
+                </Link>
+                <Link href="/besichtigungserinnerungen-automatisieren" className="btn-secondary">
+                  Besichtigungserinnerungen
+                </Link>
+                <Link href="/anfragenmanagement-immobilienmakler" className="btn-secondary">
+                  Anfragenmanagement
+                </Link>
+                <Link href="/antwortzeit-immobilienanfragen" className="btn-secondary">
+                  Antwortzeit
+                </Link>
+              </div>
+            </article>
+
+            <article className="card-base p-6 md:p-8">
+              <p className="label">Wo Advaic eher nicht passt</p>
+              <h2 className="h3 mt-3">Wenn der Engpass noch woanders liegt</h2>
+              <ul className="mt-5 space-y-2 text-sm text-[var(--muted)]">
+                {advaicNotFit.map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          </div>
         </Container>
       </section>
 
-      <section className="marketing-section-clear py-20 md:py-28">
+      <section id="faq" className="marketing-section-clear py-20 md:py-28">
         <Container>
           <h2 className="h2">Häufige Fragen</h2>
           <div className="mt-8 space-y-4">
-            {faqs.map((item) => (
+            {faqItems.map((item) => (
               <article key={item.question} className="card-base p-6 md:p-8">
                 <h3 className="text-base font-semibold text-[var(--text)]">{item.question}</h3>
                 <p className="helper mt-3">{item.answer}</p>

@@ -8,168 +8,249 @@ import AiDiscoveryPageTemplate from "@/components/marketing/ai-discovery/AiDisco
 import { MARKETING_PRIMARY_CTA_LABEL } from "@/components/marketing/cta-copy";
 import { buildMarketingMetadata } from "@/lib/seo/marketing-metadata";
 
-const LAST_UPDATED = "21. März 2026";
+const LAST_UPDATED = "4. April 2026";
 
 const summary = [
-  "Ein gutes CRM für Immobilienmakler ist zuerst ein zentrales System für Kontakte, Objekte, Aktivitäten, Aufgaben und Pipeline.",
-  "Viele Makler versuchen zusätzlich den kompletten Anfrageprozess im CRM zu lösen. Das kann funktionieren, ist aber nicht automatisch die beste operative Lösung.",
-  "Der Kernunterschied liegt zwischen Datenhaltung und Ausführung: Ein CRM organisiert Beziehungen und Vorgänge, ein Anfrage-System steuert Antworten, Freigabe und Nachfassen pro Nachricht.",
+  "Ein CRM für Immobilienmakler ist zuerst die Arbeitsbasis für Kontakte, Objekte, Aktivitäten, Aufgaben und Historie.",
+  "Die eigentliche Auswahlfrage lautet oft nicht nur: Welches CRM ist gut? Sondern: Brauchen wir ein branchenspezifisches Makler-CRM oder ein allgemeineres CRM mit mehr Eigenaufbau?",
+  "Wenn der Engpass trotz CRM im Anfragepostfach bleibt, reicht die Datenbasis allein meist nicht. Dann braucht das Büro zusätzlich eine operative Schicht für Antwortlogik, Freigabe und Nachfassen.",
 ];
 
 const contents = [
   { href: "#kurzfassung", label: "Kurzfassung" },
-  { href: "#was-ein-crm-loest", label: "Was ein CRM lösen soll" },
-  { href: "#grenzen", label: "Wo CRM an Grenzen stößt" },
-  { href: "#crm-vs-anfrage", label: "CRM vs. Anfrage-System" },
-  { href: "#auswahl", label: "Auswahlkriterien" },
-  { href: "#advaic-fit", label: "Wann Advaic ergänzt" },
+  { href: "#methodik", label: "Methodik" },
+  { href: "#crm-job", label: "CRM-Aufgabe" },
+  { href: "#vergleich", label: "Vergleich" },
+  { href: "#preise", label: "Preislogik" },
+  { href: "#team-fit", label: "Bürotyp" },
+  { href: "#demo-fragen", label: "Demo-Fragen" },
+  { href: "#anfrageprozess", label: "Anfrageprozess" },
+  { href: "#faq", label: "FAQ" },
+];
+
+const methodology = [
+  "Die Seite bündelt aktuelle Search-Console-Signale von Advaic mit offiziellen Herstellerseiten von onOffice, FLOWFACT, Propstack und HubSpot.",
+  "Verglichen wird nicht nach künstlicher Punktewertung, sondern nach vier Kaufkriterien: CRM-Arbeitsbasis, Anfragebezug, Einführbarkeit und öffentliche Preislogik.",
+  "Preisangaben unten sind aus öffentlichen Herstellerseiten vom 4. April 2026 zusammengefasst. Sie ersetzen kein individuelles Angebot und keine Live-Demo.",
 ];
 
 const crmJobs = [
-  "Kontakte, Eigentümer, Interessenten und Partner zentral pflegen",
-  "Objekte, Suchprofile, Aktivitäten und Aufgaben strukturiert verwalten",
-  "Pipeline- und Vermarktungsfortschritt nachvollziehbar halten",
-  "Teamarbeit, Rechte, Historie und Wiedervorlagen organisieren",
-];
-
-const crmLimits = [
-  "Ob eine einzelne eingehende E-Mail automatisch beantwortet, gestoppt oder zur Freigabe gelegt werden sollte, ist nicht automatisch eine CRM-Kernstärke.",
-  "Je allgemeiner das CRM, desto mehr Prozesslogik muss das Maklerbüro oft selbst modellieren.",
-  "Wenn das Postfach der operative Engpass ist, reichen Kontakt- und Vorgangsdaten allein für bessere Reaktionsqualität meist nicht aus.",
-];
-
-const comparisonRows = [
   {
-    topic: "Kernaufgabe",
-    crm: "Kontakte, Objekte, Pipeline, Historie, Teamstruktur.",
-    workflow: "Eingehende Anfragen prüfen, Antwortpfad steuern, Qualität sichern, Freigabe und Nachfassen steuern.",
+    title: "Zentrale Datenbasis",
+    text: "Ein gutes Makler-CRM verbindet Kontakte, Objekte, Aktivitäten und Zuständigkeiten an einem Ort statt über Tabellen, Postfächer und Einzellösungen.",
   },
   {
-    topic: "Entscheidung pro Nachricht",
-    crm: "Je nach System und Einrichtung indirekt oder über selbst gebaute Regeln.",
-    workflow: "Direkt als Kernlogik: automatisch senden, zur Freigabe oder ignorieren, jeweils mit Begründung.",
+    title: "Nachvollziehbare Historie",
+    text: "Das Team muss sehen, wer wann mit wem Kontakt hatte, welches Objekt betroffen ist und welche Aufgabe als Nächstes ansteht.",
   },
   {
-    topic: "Datenpflege",
-    crm: "Sehr stark. Saubere Stammdaten sind die Grundlage des Systems.",
-    workflow: "Nutzt vorhandene Daten, löst aber primär den operativen Nachrichtenteil.",
+    title: "Objekt- und Vermarktungsbezug",
+    text: "Im Makleralltag reicht ein reines Adress-CRM selten. Entscheidend ist, wie sauber Objektverwaltung, Portale, Suchprofile und Vermarktungsabläufe mitlaufen.",
   },
   {
-    topic: "Freigabe bei Risiko oder Lücken",
-    crm: "Nicht automatisch die zentrale Stärke.",
-    workflow: "Typischer Kernfall für klare Regeln und manuelle Prüfung.",
-  },
-  {
-    topic: "Einführung",
-    crm: "Kann umfangreicher sein, weil Datenmodell, Rechte und Prozesse sauber aufgesetzt werden müssen.",
-    workflow: "Kann schlanker starten, wenn der Umfang bewusst auf Anfragebearbeitung begrenzt bleibt.",
+    title: "Teamsteuerung statt Einzelpostfach",
+    text: "Ein CRM soll Verantwortung, Wiedervorlagen und Transparenz im Büro verbessern. Genau daran scheitern viele gewachsene Setups ohne saubere Systembasis.",
   },
 ];
 
-const selectionCriteria = [
+const crmRows = [
   {
-    title: "1) Wie sauber ist Ihr Datenmodell?",
-    text: "Ohne Objekt-, Kontakt- und Zuständigkeitslogik bringt auch das beste CRM keinen stabilen Betrieb.",
+    system: "onOffice",
+    focus: "Branchenspezifisches Makler-CRM mit Objekt-, Adress-, E-Mail-, Portal- und Vermarktungslogik in einer breiten Suite.",
+    price: "ab 79 € pro Nutzer/Monat; all-in 99 €; zzgl. 50 € Servicepauschale je Unternehmen und Setup",
+    fit: "Passt zu Büros, die ein etabliertes Makler-CRM mit vielen Modulen, Portalnähe und tiefer Objektlogik suchen.",
+    watch: "Wichtig ist, wie viel Konfiguration, Pflege und Prozessdisziplin Ihr Team im Alltag wirklich tragen kann.",
   },
   {
-    title: "2) Wo verlieren Sie heute die meiste Zeit?",
-    text: "Bei Wiedervorlagen und Historie spricht viel für CRM-Optimierung. Bei Eingang, Antwort und Freigabe spricht viel für einen ergänzenden Anfrageprozess.",
+    system: "FLOWFACT",
+    focus: "Makler-CRM mit Kontaktverwaltung, Objekt- und Portalprozessen sowie breitem digitalem Branchen-Setup.",
+    price: "79 € pro Lizenz/Monat zzgl. 279 € Einrichtung",
+    fit: "Gut für Maklerbüros, die ein branchenspezifisches CRM mit klarer Kontakt- und Vermarktungsbasis suchen.",
+    watch: "Prüfen Sie sauber, welche Teile Ihres Anfragealltags im Standard gut abgedeckt sind und wo zusätzliche Prozesslogik nötig wird.",
   },
   {
-    title: "3) Wie standardisiert sind Ihre Antworten?",
-    text: "Je mehr wiederkehrende Erstantworten es gibt, desto stärker lohnt sich eine spezialisierte operative Logik zusätzlich zum CRM.",
+    system: "Propstack",
+    focus: "Browserbasiertes Immobilien-CRM mit starkem Fokus auf Geschwindigkeit, mobile Nutzung und digitale Standardprozesse.",
+    price: "Standard 99 € pro Lizenz/Monat zzgl. 279 € Einrichtung; Enterprise auf Anfrage",
+    fit: "Sinnvoll für Teams, die ein modernes Makler-CRM mit schneller Bedienung und klaren Standardabläufen priorisieren.",
+    watch: "Entscheidend ist, wie weit die Standardisierung zu Ihrer konkreten Maklerpraxis passt und wo Individualisierung erforderlich wird.",
   },
   {
-    title: "4) Wer administriert das System?",
-    text: "Die beste Auswahl nützt wenig, wenn das Team keinen realistischen Weg in Einrichtung, Training und laufende Pflege hat.",
+    system: "HubSpot",
+    focus: "Allgemeines CRM mit Marketing-, Vertriebs-, Service- und Inbox-Funktionen, aber ohne branchenspezifische Maklerlogik von Haus aus.",
+    price: "kostenloser Einstieg; zusätzliche Hubs und tiefere Automatisierung kosten extra",
+    fit: "Passt eher zu inbound- und marketingstarken Teams, die Immobilienlogik, Datenmodell und Prozesse bewusst selbst aufbauen wollen.",
+    watch: "Nicht maklerspezifisch. Der Fit hängt stark daran, wie viel Struktur, Automatisierung und Objektlogik intern modelliert werden soll.",
+  },
+];
+
+const priceNotes = [
+  {
+    title: "Monatspreis ist nur der Einstieg",
+    text: "Bei onOffice, FLOWFACT und Propstack kommen neben der Lizenz je nach Modell Einrichtung, Service, Schulung oder Zusatzmodule hinzu.",
+  },
+  {
+    title: "Branchenspezifisch heißt nicht automatisch günstiger",
+    text: "Ein Makler-CRM spart oft Eigenaufbau. Dafür können Einführung, Migration und laufende Pflege stärker ins Gewicht fallen als der nackte Lizenzpreis.",
+  },
+  {
+    title: "Freier Einstieg heißt nicht automatisch niedrige Gesamtkosten",
+    text: "Allgemeine CRM-Plattformen wie HubSpot senken die Einstiegshürde. Für tiefere Automatisierung, Teamprozesse und zusätzliche Hubs steigen die realen Kosten oft später an.",
+  },
+];
+
+const teamFits = [
+  {
+    title: "Neugründung oder Einzelmakler",
+    text: "Wichtig sind Übersicht, schneller Start und ein System, das im Alltag wirklich gepflegt wird. Ein riesiger Funktionsumfang hilft wenig, wenn die Datenbasis nicht sauber bleibt.",
+  },
+  {
+    title: "Kleines Maklerbüro mit viel Portalgeschäft",
+    text: "Hier lohnt die Trennung zwischen CRM und Anfrageprozess besonders. Das CRM strukturiert Kontakte und Objekte, der eigentliche Engpass liegt aber oft in der Erstreaktion auf eingehende Anfragen.",
+  },
+  {
+    title: "Etabliertes Büro mit gewachsener Datenbasis",
+    text: "Bevor Sie migrieren, sollten Sie prüfen, ob wirklich das CRM das Problem ist oder eher Freigabe, Nachfassen und operative Steuerung im Anfrageeingang.",
+  },
+  {
+    title: "Inbound- und marketingstarkes Team",
+    text: "Dann können allgemeinere CRM-Plattformen attraktiv werden. Entscheidend ist, wie gut sich Objektlogik, Zuständigkeiten und Makleralltag ohne zu viel Eigenbau abbilden lassen.",
+  },
+];
+
+const demoQuestions = [
+  "Wie sauber verbindet das CRM Kontakte, Objekte, Aktivitäten, Aufgaben und Zuständigkeiten im Alltag?",
+  "Welche Teile von Portal-, E-Mail- und Anfrageprozessen sind im Kernprodukt enthalten und welche nicht?",
+  "Was kostet das System realistisch im ersten Jahr inklusive Einrichtung, Zusatzmodulen und Onboarding?",
+  "Wie gut funktioniert das CRM für ein kleines Team ohne Vollzeit-Admin wirklich?",
+  "Welche Daten müssen vor dem Start bereinigt oder ergänzt werden, damit das System tragfähig wird?",
+  "Wo sieht das Team, was automatisch lief, was manuell nachgefasst wurde und welche Fälle offen sind?",
+];
+
+const requestProcessTruth = [
+  {
+    title: "Wann CRM die Hauptbaustelle ist",
+    text: "Wenn Kontakte, Objekte, Zuständigkeiten und Historie nicht sauber strukturiert sind, sollten Sie zuerst das CRM als Arbeitsbasis stabilisieren.",
+  },
+  {
+    title: "Wann CRM allein nicht reicht",
+    text: "Wenn das Büro bereits ein funktionierendes CRM hat, aber im Anfragepostfach weiter Zeit, Qualität oder Kontrolle verliert, liegt das Problem meist nicht mehr in der Datenhaltung.",
+  },
+  {
+    title: "Wo Advaic sinnvoll ergänzt",
+    text: "Advaic ist kein CRM, sondern eine zusätzliche operative Schicht für Anfrageeingang, Antwortlogik, Freigabe, Qualitätschecks und Nachfassen.",
   },
 ];
 
 const advaicFit = [
-  "Ihr CRM ist im Grundsatz okay, aber der Anfrageeingang bleibt trotzdem langsam oder inkonsistent.",
-  "Sie möchten Auto-Senden nur bei sauberen Fällen erlauben und Konflikt-, Lücken- oder Ausnahmefälle bewusst in die Freigabe legen.",
+  "Ihr CRM ist als Datenbasis grundsätzlich brauchbar, aber der Anfrageeingang bleibt trotzdem langsam, uneinheitlich oder schwer kontrollierbar.",
+  "Sie möchten automatische Antworten nur für klar prüfbare Standardfälle freigeben und Ausnahmen bewusst in eine Freigabe legen.",
   "Sie wollen keine komplette CRM-Migration erzwingen, nur weil der operative Antwortprozess hakt.",
 ];
 
-const crmFirst = [
-  "Sie arbeiten noch mit Tabellen, Einzelsystemen oder verstreuten Postfächern ohne zentrale Historie.",
-  "Kontakte, Objekte und Zuständigkeiten sind im Büro nicht konsistent gepflegt.",
-  "Das größere Problem liegt in Transparenz, Aufgabensteuerung und Deal- oder Objektverwaltung, nicht in der Antwortlogik einzelner Anfragen.",
+const advaicNotFit = [
+  "Sie brauchen zuerst ein sauberes System für Kontakte, Objekte, Verantwortlichkeiten und Historie.",
+  "Ihr Team arbeitet noch ohne belastbare Datenbasis oder mit stark verstreuten Einzelsystemen.",
+  "Sie suchen primär ein vollwertiges Makler-CRM und nicht zuerst eine zusätzliche Schicht für Anfragebearbeitung.",
+];
+
+const faqItems = [
+  {
+    question: "Welches CRM ist 2026 das beste für Immobilienmakler?",
+    answer:
+      "Es gibt keinen seriösen pauschalen Sieger. Das passende CRM hängt daran, ob Sie vor allem ein branchenspezifisches Makler-CRM, ein allgemeineres Inbound-CRM oder zusätzlich eine operative Lösung für den Anfrageprozess brauchen.",
+  },
+  {
+    question: "Brauchen Immobilienmakler überhaupt ein CRM?",
+    answer:
+      "Sobald Kontakte, Objekte, Aktivitäten und Wiedervorlagen teamweit gesteuert werden müssen, ist ein CRM meist sinnvoll. Es schafft die zentrale Arbeitsbasis für Makleralltag, Vermarktung und Historie.",
+  },
+  {
+    question: "Reicht ein CRM auch für eingehende Immobilienanfragen?",
+    answer:
+      "Teilweise ja. Viele Systeme dokumentieren Anfragen und unterstützen Standardabläufe. Wenn die eigentliche Lücke aber in Antwortlogik, Freigabe und Qualitätskontrolle pro Nachricht liegt, reicht CRM allein oft nicht aus.",
+  },
+  {
+    question: "Was kostet ein CRM für Immobilienmakler?",
+    answer:
+      "Öffentliche Preise zeigen aktuell grob: onOffice startet bei 79 € pro Nutzer und Monat, FLOWFACT Residential bei 79 € pro Lizenz und Monat, Propstack Standard bei 99 € pro Lizenz und Monat. Dazu kommen je nach Anbieter Einrichtung, Service oder Zusatzmodule.",
+  },
 ];
 
 const sources = [
   {
+    label: "Google: How to write reviews",
+    href: "https://developers.google.com/search/docs/specialty/ecommerce/write-high-quality-reviews",
+    note: "Leitlinie für hilfreiche Vergleichsseiten mit Methodik, Differenzierung und echtem Nutzwert.",
+  },
+  {
     label: "onOffice: Immobiliensoftware",
     href: "https://onoffice.com/immobiliensoftware/",
-    note: "Offizielle Herstellerseite für Immobilienverwaltung, CRM und Portalprozesse.",
+    note: "Offizielle Herstellerseite mit Makler-CRM-, Objekt-, Portal- und Preisinformationen.",
+  },
+  {
+    label: "FLOWFACT: Produkt",
+    href: "https://flowfact.de/produkt/",
+    note: "Offizielle Herstellerseite mit CRM-Funktionen, Preisrahmen und Branchenfokus für Maklerbüros.",
   },
   {
     label: "FLOWFACT: Kontaktverwaltung",
     href: "https://flowfact.de/kontaktverwaltung/",
-    note: "Offizielle Herstellerseite für zentrale Kontakt- und Aktivitätsverwaltung im Maklerkontext.",
+    note: "Offizielle CRM-Seite zur Rolle von Kontaktpflege, Historie und Anfrageprozess im Makleralltag.",
   },
   {
     label: "Propstack: Immobilien-CRM",
-    href: "https://www.propstack.de/",
-    note: "Offizielle Herstellerseite für CRM, mobile Nutzung und digitale Standardprozesse.",
+    href: "https://www.propstack.de/immobilien-crm/",
+    note: "Offizielle Herstellerseite mit Fokus auf browserbasiertes Makler-CRM und digitale Standardprozesse.",
+  },
+  {
+    label: "Propstack: Preise & Lizenzen",
+    href: "https://www.propstack.de/preis/",
+    note: "Offizielle Preis- und Lizenzseite mit Standard- und Enterprise-Modell.",
   },
   {
     label: "HubSpot: CRM-Software für Immobilienmakler",
     href: "https://www.hubspot.de/products/crm/real-estate",
-    note: "Beispiel für eine allgemeinere CRM-Plattform mit Marketing-, Service- und Vertriebsfokus.",
-  },
-  {
-    label: "Zendesk: CRM für Immobilienmakler",
-    href: "https://www.zendesk.de/sell/crm/crm-fur-immobilienmakler/",
-    note: "Beispiel für eine stärker kommunikations- und servicebezogene CRM-Perspektive.",
+    note: "Offizielle Herstellerseite zur allgemeinen CRM-Perspektive mit Marketing-, Vertriebs- und Inbox-Fokus.",
   },
 ];
 
 export const metadata: Metadata = buildMarketingMetadata({
-  title: "CRM für Immobilienmakler: Auswahlhilfe 2026",
-  ogTitle: "CRM für Immobilienmakler | Advaic",
+  title: "CRM für Immobilienmakler 2026: Welches CRM passt?",
+  ogTitle: "CRM für Immobilienmakler 2026 | Advaic",
   description:
-    "Leitfaden für Makler: Was ein CRM wirklich lösen soll, wo CRM an operative Grenzen stößt und wann spezialisierte Anfrage-Logik wie Advaic zusätzlich sinnvoll wird.",
+    "CRM für Immobilienmakler im Vergleich: onOffice, FLOWFACT, Propstack und HubSpot. Mit Preislogik, Bürotyp, CRM-Aufgabe und der Grenze zwischen CRM und Anfrageprozess.",
   path: "/crm-fuer-immobilienmakler",
-  template: "guide",
-  eyebrow: "CRM-Leitfaden",
-  proof: "CRM organisiert Daten und Beziehungen. Anfrageausführung ist eine eigene operative Schicht.",
+  template: "compare",
+  eyebrow: "CRM für Immobilienmakler",
+  proof: "Ein CRM löst Datenbasis und Historie. Antwortlogik im Anfragepostfach ist oft eine eigene operative Baustelle.",
 });
 
 export default function CrmFuerImmobilienmaklerPage() {
   const siteUrl = getSiteUrl();
-  const faqItems = [
-    {
-      question: "Brauchen Immobilienmakler überhaupt ein CRM?",
-      answer:
-        "Sobald Kontakte, Objekte, Aktivitäten und Wiedervorlagen teamweit gesteuert werden müssen, ist ein CRM meist sinnvoll. Es bildet die Daten- und Prozessbasis für den Makleralltag.",
-    },
-    {
-      question: "Reicht ein CRM auch für eingehende Anfragen?",
-      answer:
-        "Teilweise ja, aber nicht automatisch optimal. Ein CRM kann Anfragen dokumentieren, doch die operative Entscheidung über Auto, Freigabe und Qualitätschecks pro Nachricht ist oft eine eigene Stärke spezialisierter Systeme.",
-    },
-    {
-      question: "Wann ergänzt Advaic ein CRM sinnvoll?",
-      answer:
-        "Wenn das CRM als zentrale Datenbasis funktioniert, aber der Anfrageeingang trotzdem langsam, inkonsistent oder schwer kontrollierbar bleibt. Dann ergänzt Advaic den operativen Antwortfluss.",
-    },
-  ];
-
   const schema = {
     "@context": "https://schema.org",
     "@graph": [
       {
         "@type": "Article",
-        headline: "CRM für Immobilienmakler",
+        headline: "CRM für Immobilienmakler 2026",
         inLanguage: "de-DE",
-        dateModified: "2026-03-21",
+        dateModified: "2026-04-04",
         mainEntityOfPage: `${siteUrl}/crm-fuer-immobilienmakler`,
         author: {
           "@type": "Organization",
           name: "Advaic Redaktion",
         },
-        about: ["CRM für Immobilienmakler", "Immobiliensoftware", "Anfrageprozesse", "Maklerbetrieb"],
+        about: ["CRM für Immobilienmakler", "Makler-CRM", "Immobilien-CRM", "Anfrageprozess"],
+      },
+      {
+        "@type": "ItemList",
+        name: "CRM-Systeme für Immobilienmakler im Vergleich",
+        itemListElement: crmRows.map((row, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: row.system,
+        })),
       },
       {
         "@type": "FAQPage",
@@ -192,9 +273,9 @@ export default function CrmFuerImmobilienmaklerPage() {
         { name: "CRM für Immobilienmakler", path: "/crm-fuer-immobilienmakler" },
       ]}
       schema={schema}
-      kicker="CRM-Leitfaden"
-      title="CRM für Immobilienmakler: Was ein CRM wirklich lösen soll"
-      description="Diese Seite trennt bewusst zwischen CRM als zentraler Datenbasis und operativer Anfrageausführung. Genau an dieser Grenze entstehen im Makleralltag viele Fehlentscheidungen bei der Software-Auswahl."
+      kicker="CRM für Immobilienmakler"
+      title="CRM für Immobilienmakler 2026: Welches CRM passt wirklich?"
+      description="Diese Seite beantwortet die eigentliche Kauffrage hinter vielen Suchen nach CRM für Immobilienmakler: Welches System trägt Kontakte, Objekte und Teamarbeit wirklich gut und wo beginnt eine eigene Baustelle im Anfrageprozess?"
       actions={
         <>
           <Link href="/maklersoftware-vergleich" className="btn-secondary">
@@ -208,13 +289,13 @@ export default function CrmFuerImmobilienmaklerPage() {
       mobileQuickActions={
         <article className="card-base p-4">
           <p className="label">Schnellwahl</p>
-          <p className="helper mt-2">Direkt zur Tabelle CRM vs. Anfrage-System oder zu der Frage springen, wann Advaic passt.</p>
+          <p className="helper mt-2">Direkt zum CRM-Vergleich oder zum Anfrageprozess springen.</p>
           <div className="mt-3 grid gap-2">
-            <MarketingJumpLink href="#crm-vs-anfrage" className="btn-secondary w-full justify-center">
+            <MarketingJumpLink href="#vergleich" className="btn-secondary w-full justify-center">
               Vergleich öffnen
             </MarketingJumpLink>
-            <MarketingJumpLink href="#advaic-fit" className="btn-secondary w-full justify-center">
-              Advaic ergänzt
+            <MarketingJumpLink href="#anfrageprozess" className="btn-secondary w-full justify-center">
+              Anfrageprozess
             </MarketingJumpLink>
           </div>
         </article>
@@ -223,11 +304,11 @@ export default function CrmFuerImmobilienmaklerPage() {
       stageContext="crm-fuer-immobilienmakler"
       primaryHref="/signup?entry=crm-stage"
       primaryLabel="Mit echten Anfragen prüfen"
-      secondaryHref="/advaic-vs-crm-tools"
-      secondaryLabel="Advaic vs. CRM"
+      secondaryHref="/tools-fuer-immobilienmakler"
+      secondaryLabel="Maklertools einordnen"
       sources={sources}
       sourcesCheckedLabel={LAST_UPDATED}
-      sourcesDescription="Die Quellen zeigen aktuelle Herstellerpositionierungen im CRM-/Maklersoftware-Markt. Für die Auswahl sollten Sie zusätzlich mit echten Objekt- und Anfragefällen testen."
+      sourcesDescription="Die Quellen unten verbinden aktuelle Herstellerseiten mit Googles Leitlinie für hilfreiche Vergleichsseiten. Für die Auswahl sollten Sie immer zusätzlich mit echten Objekt-, Kontakt- und Anfragefällen testen."
     >
       <section id="kurzfassung" className="py-8 md:py-10">
         <Container>
@@ -262,27 +343,33 @@ export default function CrmFuerImmobilienmaklerPage() {
         </Container>
       </section>
 
-      <section id="was-ein-crm-loest" className="marketing-section-clear py-14 md:py-18">
+      <section id="methodik" className="marketing-section-clear py-14 md:py-18">
         <Container>
           <div className="grid gap-4 md:grid-cols-2">
             <article className="card-base p-6 md:p-8">
               <p className="label">Autor & Stand</p>
               <h2 className="h3 mt-3">Advaic Redaktion</h2>
               <p className="helper mt-3">
-                Produkt- und Prozessteam mit Fokus auf Anfrageprozesse, CRM-Abgrenzung und operative Einführung in
-                Maklerbüros.
+                Produkt- und Prozessteam mit Fokus auf Maklersoftware, CRM-Abgrenzung und operative Auswahlkriterien
+                für kleine und mittlere Maklerbüros.
               </p>
-              <div className="mt-5 rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
-                <p className="text-sm font-semibold text-[var(--text)]">Aktualisiert</p>
-                <p className="mt-2 text-sm text-[var(--muted)]">{LAST_UPDATED}</p>
+              <div className="mt-5 grid gap-3 text-sm text-[var(--muted)] sm:grid-cols-2">
+                <div className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                  <p className="font-semibold text-[var(--text)]">Aktualisiert</p>
+                  <p className="mt-2">{LAST_UPDATED}</p>
+                </div>
+                <div className="rounded-xl bg-[var(--surface-2)] p-4 ring-1 ring-[var(--border)]">
+                  <p className="font-semibold text-[var(--text)]">Seitentyp</p>
+                  <p className="mt-2">Vergleichs- und Auswahlhilfe</p>
+                </div>
               </div>
             </article>
 
             <article className="card-base p-6 md:p-8">
-              <p className="label">Was ein CRM lösen soll</p>
-              <h2 className="h3 mt-3">Die Grundjobs eines guten Makler-CRM</h2>
+              <p className="label">Methodik</p>
+              <h2 className="h3 mt-3">Was hier verglichen wird und was nicht</h2>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {crmJobs.map((item) => (
+                {methodology.map((item) => (
                   <li key={item} className="flex items-start gap-2">
                     <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
                     <span>{item}</span>
@@ -294,46 +381,17 @@ export default function CrmFuerImmobilienmaklerPage() {
         </Container>
       </section>
 
-      <section id="grenzen" className="marketing-soft-cool py-20 md:py-28">
-        <Container>
-          <h2 className="h2">Wo CRM im Anfragebetrieb oft an Grenzen stößt</h2>
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {crmLimits.map((item) => (
-              <article key={item} className="card-base p-6">
-                <p className="helper">{item}</p>
-              </article>
-            ))}
-          </div>
-        </Container>
-      </section>
-
-      <section id="crm-vs-anfrage" className="marketing-section-clear py-20 md:py-28">
+      <section id="crm-job" className="marketing-soft-warm py-20 md:py-28">
         <Container>
           <div className="max-w-[78ch]">
-            <h2 className="h2">CRM vs. Anfrage-System: Zwei Ebenen, zwei Jobs</h2>
+            <h2 className="h2">Was ein CRM für Immobilienmakler wirklich leisten soll</h2>
             <p className="body mt-4 text-[var(--muted)]">
-              Viele Makler versuchen beide Ebenen in einer einzigen Kaufentscheidung zu lösen. In der Praxis hilft es,
-              sauber zwischen Datenhaltung und operativer Nachrichtenausführung zu unterscheiden.
+              Viele CRM-Seiten reden über Funktionen. Für die Auswahl ist wichtiger, welchen Grundjob das System im
+              Makleralltag zuverlässig trägt. Genau daran sollte sich die Entscheidung zuerst orientieren.
             </p>
           </div>
-
-          <ResponsiveComparisonTable
-            rows={comparisonRows}
-            rowKey={(row) => row.topic}
-            columns={[
-              { key: "topic", label: "Vergleichspunkt", emphasize: true },
-              { key: "crm", label: "CRM" },
-              { key: "workflow", label: "Anfrage-System" },
-            ]}
-          />
-        </Container>
-      </section>
-
-      <section id="auswahl" className="marketing-soft-warm py-20 md:py-28">
-        <Container>
-          <h2 className="h2">Vier Auswahlkriterien vor jeder CRM-Entscheidung</h2>
           <div className="mt-8 grid gap-4 md:grid-cols-2">
-            {selectionCriteria.map((item) => (
+            {crmJobs.map((item) => (
               <article key={item.title} className="card-base p-6">
                 <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
                 <p className="helper mt-3">{item.text}</p>
@@ -343,11 +401,97 @@ export default function CrmFuerImmobilienmaklerPage() {
         </Container>
       </section>
 
-      <section id="advaic-fit" className="marketing-section-clear py-20 md:py-28">
+      <section id="vergleich" className="marketing-soft-cool py-20 md:py-28">
         <Container>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="max-w-[78ch]">
+            <h2 className="h2">CRM für Immobilienmakler im Vergleich: System, Preislogik und typischer Fit</h2>
+            <p className="body mt-4 text-[var(--muted)]">
+              Der Vergleich unten trennt branchenspezifische Makler-CRMs von einem allgemeineren CRM-Ansatz und zeigt,
+              wo die Unterschiede in Preislogik, Einführungsaufwand und Alltagstauglichkeit liegen.
+            </p>
+          </div>
+
+          <ResponsiveComparisonTable
+            rows={crmRows}
+            rowKey={(row) => row.system}
+            columns={[
+              { key: "system", label: "System", emphasize: true },
+              { key: "focus", label: "CRM-Schwerpunkt" },
+              { key: "price", label: "Öffentliche Preislogik" },
+              { key: "fit", label: "Typischer Fit" },
+              { key: "watch", label: "Worauf Sie achten sollten" },
+            ]}
+          />
+        </Container>
+      </section>
+
+      <section id="preise" className="marketing-section-clear py-20 md:py-28">
+        <Container>
+          <h2 className="h2">Was die Preisangaben bei CRM-Systemen wirklich bedeuten</h2>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {priceNotes.map((item) => (
+              <article key={item.title} className="card-base p-6">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
+                <p className="helper mt-3">{item.text}</p>
+              </article>
+            ))}
+          </div>
+        </Container>
+      </section>
+
+      <section id="team-fit" className="marketing-section-clear py-20 md:py-28">
+        <Container>
+          <h2 className="h2">Welches CRM zu welchem Maklerbüro passt</h2>
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
+            {teamFits.map((item) => (
+              <article key={item.title} className="card-base p-6">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
+                <p className="helper mt-3">{item.text}</p>
+              </article>
+            ))}
+          </div>
+        </Container>
+      </section>
+
+      <section id="demo-fragen" className="marketing-soft-warm py-20 md:py-28">
+        <Container>
+          <article className="card-base p-6 md:p-8">
+            <h2 className="h2">Sechs Fragen, die Sie in jeder CRM-Demo stellen sollten</h2>
+            <ul className="mt-5 space-y-2 text-sm text-[var(--muted)]">
+              {demoQuestions.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </Container>
+      </section>
+
+      <section id="anfrageprozess" className="marketing-section-clear py-20 md:py-28">
+        <Container>
+          <div className="max-w-[78ch]">
+            <h2 className="h2">Was viele CRM-Seiten auslassen: den Anfrageprozess</h2>
+            <p className="body mt-4 text-[var(--muted)]">
+              Ein CRM organisiert Daten, Historie und Teamarbeit. Die eigentliche Friktion im Makleralltag entsteht
+              aber oft im Eingang neuer Anfragen: Wer antwortet, wann automatisch gesendet wird und welche Fälle
+              bewusst in die Freigabe gehen.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {requestProcessTruth.map((item) => (
+              <article key={item.title} className="card-base p-6">
+                <h3 className="text-base font-semibold text-[var(--text)]">{item.title}</h3>
+                <p className="helper mt-3">{item.text}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
             <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Wann Advaic ein CRM sinnvoll ergänzt</h2>
+              <h3 className="h3">Wann Advaic ein CRM sinnvoll ergänzt</h3>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
                 {advaicFit.map((item) => (
                   <li key={item} className="flex items-start gap-2">
@@ -359,9 +503,9 @@ export default function CrmFuerImmobilienmaklerPage() {
             </article>
 
             <article className="card-base p-6 md:p-8">
-              <h2 className="h3">Wann CRM zuerst die richtige Baustelle ist</h2>
+              <h3 className="h3">Wann Advaic nicht die erste Baustelle ist</h3>
               <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                {crmFirst.map((item) => (
+                {advaicNotFit.map((item) => (
                   <li key={item} className="flex items-start gap-2">
                     <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--gold)]" />
                     <span>{item}</span>
@@ -372,28 +516,31 @@ export default function CrmFuerImmobilienmaklerPage() {
           </div>
 
           <article className="card-base mt-6 p-6 md:p-8">
-            <h2 className="h3">Weiterlesen</h2>
+            <h3 className="h3">Nächste sinnvolle Seiten</h3>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link href="/maklersoftware-vergleich" className="btn-secondary">
                 Maklersoftware Vergleich
               </Link>
-              <Link href="/advaic-vs-crm-tools" className="btn-secondary">
-                Advaic vs. CRM
+              <Link href="/crm-vs-maklersoftware" className="btn-secondary">
+                CRM vs. Maklersoftware
+              </Link>
+              <Link href="/tools-fuer-immobilienmakler" className="btn-secondary">
+                Tools für Immobilienmakler
+              </Link>
+              <Link href="/best-software-immobilienanfragen" className="btn-secondary">
+                Software für Immobilienanfragen
               </Link>
               <Link href="/best-ai-tools-immobilienmakler" className="btn-secondary">
                 KI-Tools Vergleich
-              </Link>
-              <Link href="/integrationen" className="btn-secondary">
-                Integrationen
               </Link>
             </div>
           </article>
         </Container>
       </section>
 
-      <section className="marketing-section-clear py-20 md:py-28">
+      <section id="faq" className="marketing-section-clear py-20 md:py-28">
         <Container>
-          <h2 className="h2">Häufige Fragen</h2>
+          <h2 className="h2">Häufige Fragen zu CRM für Immobilienmakler</h2>
           <div className="mt-8 space-y-4">
             {faqItems.map((item) => (
               <article key={item.question} className="card-base p-6 md:p-8">
